@@ -1,0 +1,120 @@
+/* Main view — fully transparent, Live2D floats on the desktop */
+.main-view {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  cursor: grab;
+}
+.main-view:active {
+  cursor: grabbing;
+}
+
+/* Absolutely fills .main-view, bypassing percentage-height quirks */
+.main-content {
+  position: absolute;
+  inset: 0;
+}
+
+/* Default placeholder when no model is configured */
+.char-default {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.char-emoji {
+  font-size: 80px;
+  line-height: 1;
+  user-select: none;
+  filter: drop-shadow(0 4px 24px rgba(120, 100, 255, 0.5));
+}
+
+/* Hover overlay — pill buttons at bottom center */
+.hover-overlay {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  animation: overlay-in 0.15s ease;
+  pointer-events: auto;
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.hover-btn {
+  padding: 7px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: rgba(20, 15, 40, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background 0.15s,
+    transform 0.1s;
+}
+.hover-btn:hover {
+  background: rgba(40, 30, 70, 0.9);
+  color: rgba(255, 255, 255, 0.95);
+  transform: translateY(-1px);
+}
+.hover-btn:active {
+  transform: translateY(0);
+}
+.hover-btn.primary {
+  background: rgba(90, 70, 200, 0.85);
+  border-color: rgba(120, 100, 255, 0.4);
+  color: #fff;
+}
+.hover-btn.primary:hover {
+  background: rgba(110, 90, 220, 0.9);
+}
+
+/* Live2D loading/error overlays (used by Live2DCanvas) */
+.live2d-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.live2d-status > * {
+  background: rgba(10, 8, 20, 0.75);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.live2d-error > * {
+  background: rgba(60, 10, 10, 0.85);
+  color: rgba(255, 120, 120, 0.95);
+}
+.live2d-error small {
+  font-size: 11px;
+  text-align: center;
+  max-width: 280px;
+}

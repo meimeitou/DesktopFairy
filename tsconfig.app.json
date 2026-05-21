@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
+    "paths": {
+      "@framework/*": ["./src/live2d/framework/*"]
+    },
+    "module": "esnext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+    "strict": false,
+    "useDefineForClassFields": false,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": false,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting (applies to our source; framework code is excluded via Vite's esbuild) */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "erasableSyntaxOnly": false,
+    "noFallthroughCasesInSwitch": false
+  },
+  "include": ["src", "src/live2d/core"],
+  "exclude": ["src/live2d/framework"]
+}
