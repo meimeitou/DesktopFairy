@@ -1,151 +1,165 @@
 import { useState, useEffect } from "react";
+import ProviderSettingsSection from "../components/settings/ProviderSettingsSection";
+import PersonaSettingsSection from "../components/settings/PersonaSettingsSection";
+import SelectionSettingsSection from "../components/settings/SelectionSettingsSection";
+import Live2DSettingsSection from "../components/settings/Live2DSettingsSection";
+import {
+  loadSettings,
+  saveSettings,
+  type AppSettings,
+} from "../shared/settings";
 import "./SettingsPage.css";
 
 const api = window.electronAPI;
 
-const SIZE_MAP = {
-  small: { width: 280, height: 320 },
-  medium: { width: 380, height: 400 },
-  large: { width: 480, height: 500 },
-};
+type SettingsTab = "model" | "persona" | "selection" | "character" | "about";
 
-interface Settings {
-  apiBaseUrl: string;
-  apiKey: string;
-  modelName: string;
-  ttsEnabled: boolean;
-  modelPath: string;
-  windowSize: "small" | "medium" | "large";
+interface MenuItem {
+  id: SettingsTab;
+  label: string;
+  icon: string;
 }
 
-const DEFAULT_SETTINGS: Settings = {
-  apiBaseUrl: "https://api.openai.com/v1",
-  apiKey: "",
-  modelName: "gpt-4o-mini",
-  ttsEnabled: false,
-  modelPath: "/models/Hiyori/Hiyori.model3.json",
-  windowSize: "medium",
-};
+const MENU_PRIMARY: MenuItem[] = [
+  { id: "model", label: "AI 模型", icon: "☁️" },
+  { id: "persona", label: "人设", icon: "✨" },
+  { id: "selection", label: "划词助手", icon: "✂️" },
+];
 
-function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem("da_settings");
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
-}
+const MENU_SECONDARY: MenuItem[] = [
+  { id: "character", label: "Live2D 配置", icon: "🎭" },
+  { id: "about", label: "关于", icon: "ℹ️" },
+];
 
 interface Props {
-  onClose: () => void;
-  /** When true, renders without the custom window-frame (used in standalone window) */
+  onClose?: () => void;
   standalone?: boolean;
+  embedded?: boolean;
 }
 
-export default function SettingsPage({ onClose, standalone = false }: Props) {
-  const [settings, setSettings] = useState<Settings>(loadSettings);
+function SettingsSidebar({
+  active,
+  onSelect,
+}: {
+  active: SettingsTab;
+  onSelect: (tab: SettingsTab) => void;
+}) {
+  const renderItem = (item: MenuItem) => (
+    <button
+      key={item.id}
+      type="button"
+      className={`settings-menu-item${active === item.id ? " active" : ""}`}
+      onClick={() => onSelect(item.id)}
+    >
+      <span className="settings-menu-icon">{item.icon}</span>
+      <span className="settings-menu-label">{item.label}</span>
+    </button>
+  );
+
+  return (
+    <aside className="settings-sidebar">
+      <div className="settings-sidebar-title">设置</div>
+      <nav className="settings-menu">
+        {MENU_PRIMARY.map(renderItem)}
+        <div className="settings-menu-divider" />
+        {MENU_SECONDARY.map(renderItem)}
+      </nav>
+    </aside>
+  );
+}
+
+export default function SettingsPage({
+  onClose,
+  standalone = false,
+  embedded = false,
+}: Props) {
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("model");
 
   useEffect(() => {
-    localStorage.setItem("da_settings", JSON.stringify(settings));
+    saveSettings(settings);
+    api.invoke("settings:sync", settings).catch(() => {});
   }, [settings]);
 
-  const update = (patch: Partial<Settings>) =>
+  useEffect(() => {
+    (async () => {
+      const shortcut = await api.getShortcut();
+      if (shortcut) {
+        setSettings((prev) => ({ ...prev, selectionShortcut: shortcut }));
+      }
+    })();
+  }, []);
+
+  const update = (patch: Partial<AppSettings>) =>
     setSettings((prev) => ({ ...prev, ...patch }));
 
-  const body = (
-    <div className="settings-body">
-      <section className="settings-section">
-        <h3>AI 模型</h3>
-        <div className="field">
-          <label>API Base URL</label>
-          <input
-            type="text"
-            value={settings.apiBaseUrl}
-            onChange={(e) => update({ apiBaseUrl: e.target.value })}
-            placeholder="https://api.openai.com/v1"
-          />
-        </div>
-        <div className="field">
-          <label>API Key</label>
-          <input
-            type="password"
-            value={settings.apiKey}
-            onChange={(e) => update({ apiKey: e.target.value })}
-            placeholder="sk-..."
-          />
-        </div>
-        <div className="field">
-          <label>模型</label>
-          <input
-            type="text"
-            value={settings.modelName}
-            onChange={(e) => update({ modelName: e.target.value })}
-            placeholder="gpt-4o-mini"
-          />
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h3>语音 (TTS)</h3>
-        <div className="field field-row">
-          <label>启用语音播报</label>
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={settings.ttsEnabled}
-              onChange={(e) => update({ ttsEnabled: e.target.checked })}
+  const renderContent = () => {
+    switch (activeTab) {
+      case "model":
+        return (
+          <>
+            <ProviderSettingsSection
+              settings={settings}
+              onChange={setSettings}
             />
-            <span className="toggle-track" />
-          </label>
-        </div>
-      </section>
+            <section className="settings-section">
+              <h3>语音 (TTS)</h3>
+              <div className="field field-row">
+                <label>启用语音播报</label>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={settings.ttsEnabled}
+                    onChange={(e) => update({ ttsEnabled: e.target.checked })}
+                  />
+                  <span className="toggle-track" />
+                </label>
+              </div>
+            </section>
+          </>
+        );
+      case "persona":
+        return (
+          <PersonaSettingsSection settings={settings} onChange={update} />
+        );
+      case "selection":
+        return (
+          <SelectionSettingsSection settings={settings} onChange={update} />
+        );
+      case "character":
+        return (
+          <Live2DSettingsSection settings={settings} onChange={update} />
+        );
+      case "about":
+        return (
+          <section className="settings-section">
+            <h3>关于</h3>
+            <p className="about-text">DesktopFairy v0.1.0</p>
+            <p className="about-text secondary">阶段一：桌面壳与基础 UI ✓</p>
+            <p className="about-text secondary">阶段二：Live2D SDK 接入 ✓</p>
+            <p className="about-text secondary">阶段三：OpenAI 兼容流式对话 ✓</p>
+          </section>
+        );
+      default:
+        return null;
+    }
+  };
 
-      <section className="settings-section">
-        <h3>Live2D 角色</h3>
-        <div className="field">
-          <label>模型路径</label>
-          <input
-            type="text"
-            value={settings.modelPath}
-            onChange={(e) => update({ modelPath: e.target.value })}
-            placeholder="/models/MyModel/MyModel.model3.json"
-          />
-        </div>
-        <div className="field">
-          <label>窗口大小</label>
-          <select
-            value={settings.windowSize}
-            onChange={(e) => {
-              const val = e.target.value as Settings["windowSize"];
-              update({ windowSize: val });
-              const size = SIZE_MAP[val] ?? SIZE_MAP.medium;
-              api.invoke("resize_main_window", {
-                width: size.width,
-                height: size.height,
-              });
-            }}
-          >
-            <option value="small">小 (280 × 320)</option>
-            <option value="medium">中 (380 × 400)</option>
-            <option value="large">大 (480 × 500)</option>
-          </select>
-        </div>
-        <p className="about-text secondary">
-          将模型文件夹放入 public/models/，填写相对路径
-        </p>
-      </section>
-
-      <section className="settings-section">
-        <h3>关于</h3>
-        <p className="about-text">DesktopFairy v0.1.0</p>
-        <p className="about-text secondary">阶段一：桌面壳与基础 UI ✓</p>
-        <p className="about-text secondary">阶段二：Live2D SDK 接入 ✓</p>
-      </section>
+  const layout = (
+    <div className="settings-layout">
+      <SettingsSidebar active={activeTab} onSelect={setActiveTab} />
+      <main className="settings-content">
+        <div className="settings-content-body">{renderContent()}</div>
+      </main>
     </div>
   );
 
+  if (embedded) {
+    return <div className="settings-embedded">{layout}</div>;
+  }
+
   if (standalone) {
-    return <div className="settings-standalone">{body}</div>;
+    return <div className="settings-standalone">{layout}</div>;
   }
 
   return (
@@ -154,7 +168,7 @@ export default function SettingsPage({ onClose, standalone = false }: Props) {
         <span className="app-name" data-tauri-drag-region>
           设置
         </span>
-        <button className="icon-btn close-btn" onClick={onClose} title="关闭">
+        <button className="icon-btn close-btn" onClick={onClose ?? (() => window.close())} title="关闭">
           <svg
             width="14"
             height="14"
@@ -168,7 +182,7 @@ export default function SettingsPage({ onClose, standalone = false }: Props) {
           </svg>
         </button>
       </div>
-      {body}
+      {layout}
     </div>
   );
 }

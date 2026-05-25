@@ -1,12 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Live2DCanvas from "../components/Live2DCanvas";
 import "./MainView.css";
-
-const SIZE_MAP = {
-  small: { width: 280, height: 320 },
-  medium: { width: 380, height: 400 },
-  large: { width: 480, height: 500 },
-};
 
 const DEFAULT_MODEL = "/models/Hiyori/Hiyori.model3.json";
 
@@ -27,25 +21,74 @@ export default function MainView() {
   const [modelPath, setModelPath] = useState<string>(
     initial.modelPath || DEFAULT_MODEL,
   );
+  const [modelScale, setModelScale] = useState<number>(
+    initial.modelScale ?? 1.0,
+  );
+  const [modelOffsetX, setModelOffsetX] = useState<number>(
+    initial.modelOffsetX ?? 0,
+  );
+  const [modelOffsetY, setModelOffsetY] = useState<number>(
+    initial.modelOffsetY ?? 0,
+  );
+  const [live2dReactive, setLive2dReactive] = useState<boolean>(
+    initial.live2dReactive !== false,
+  );
   const [isHovered, setIsHovered] = useState(false);
 
-  // Resize window on mount + re-assert float behavior
-  useEffect(() => {
-    const { windowSize = "medium" } = readSettings();
-    const size =
-      SIZE_MAP[windowSize as keyof typeof SIZE_MAP] ?? SIZE_MAP.medium;
-    api.windowSetSize(size.width, size.height);
-    api.invoke("reapply_window_float");
+  const applySettings = useCallback((s: Record<string, unknown>) => {
+    if (typeof s.modelPath === "string") {
+      setModelPath(s.modelPath || DEFAULT_MODEL);
+    }
+    if (typeof s.modelScale === "number") {
+      setModelScale(s.modelScale);
+    }
+    if (typeof s.modelOffsetX === "number") {
+      setModelOffsetX(s.modelOffsetX);
+    }
+    if (typeof s.modelOffsetY === "number") {
+      setModelOffsetY(s.modelOffsetY);
+    }
+    if (typeof s.live2dReactive === "boolean") {
+      setLive2dReactive(s.live2dReactive);
+    }
   }, []);
 
-  // Re-read settings when window gets focus (user closed settings window)
+  // Resize window on mount + re-assert float behavior + sync settings to main
   useEffect(() => {
-    const onFocus = () => {
-      const s = readSettings();
-      setModelPath(s.modelPath || DEFAULT_MODEL);
-    };
+    const s = readSettings();
+    const w = s.windowWidth ?? 200;
+    const h = s.windowHeight ?? 400;
+    api.windowSetSize(w, h);
+    api.invoke("reapply_window_float");
+    api.invoke("settings:sync", s).catch(() => {});
+  }, []);
+
+  // Apply settings pushed from the chat/settings window immediately
+  useEffect(() => {
+    const off = api.onSettingsUpdated?.((settings) => {
+      applySettings(settings);
+    });
+    return () => off?.();
+  }, [applySettings]);
+
+  // Fallback when user focuses the model window directly
+  useEffect(() => {
+    const onFocus = () => applySettings(readSettings());
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
+  }, [applySettings]);
+
+  // Switch model from tray menu
+  useEffect(() => {
+    const unsubscribe = api.onSwitchModel((newPath: string) => {
+      setModelPath(newPath);
+      const s = readSettings();
+      localStorage.setItem(
+        "da_settings",
+        JSON.stringify({ ...s, modelPath: newPath }),
+      );
+    });
+    return unsubscribe;
   }, []);
 
   // Custom drag: bypasses macOS restriction that blocks startDragging() from
@@ -113,7 +156,13 @@ export default function MainView() {
     >
       <div className="main-content">
         {modelPath ? (
-          <Live2DCanvas modelPath={modelPath} />
+          <Live2DCanvas
+            modelPath={modelPath}
+            modelScale={modelScale}
+            modelOffsetX={modelOffsetX}
+            modelOffsetY={modelOffsetY}
+            live2dReactive={live2dReactive}
+          />
         ) : (
           <div className="char-default">
             <span className="char-emoji">🧚</span>

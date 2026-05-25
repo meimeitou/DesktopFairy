@@ -1,25 +1,23 @@
 import MainView from "./pages/MainView";
-import SettingsPage from "./pages/SettingsPage";
-import ChatPage from "./pages/ChatPage";
+import ChatApp from "./pages/ChatApp";
+import TipView from "./pages/TipView";
 import "./App.css";
 
-const windowType = new URLSearchParams(window.location.search).get("window");
+const params = new URLSearchParams(window.location.search);
+const windowType = params.get("window");
 
 function App() {
-  if (windowType === "settings") {
+  if (windowType === "chat" || windowType === "settings") {
     return (
       <div className="app">
-        <SettingsPage onClose={() => window.close()} standalone />
+        <ChatApp />
       </div>
     );
   }
 
-  if (windowType === "chat") {
-    return (
-      <div className="app">
-        <ChatPage />
-      </div>
-    );
+  if (windowType === "tip") {
+    const text = params.get("text") || "";
+    return <TipView text={text} />;
   }
 
   return (

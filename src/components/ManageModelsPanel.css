@@ -1,0 +1,182 @@
+.manage-models-trigger {
+  margin-top: 4px;
+}
+
+.manage-models-open-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(120, 100, 255, 0.12);
+  border: 1px solid rgba(120, 100, 255, 0.35);
+  border-radius: 7px;
+  color: rgba(220, 210, 255, 0.95);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.manage-models-open-btn:hover {
+  background: rgba(120, 100, 255, 0.22);
+}
+
+.manage-models-count {
+  padding: 1px 6px;
+  background: rgba(120, 100, 255, 0.35);
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.manage-models-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.manage-models-panel {
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: rgb(22, 18, 38);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.manage-models-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 8px;
+}
+
+.manage-models-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.manage-models-close {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.manage-models-desc {
+  margin: 0 16px 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.45;
+}
+
+.manage-models-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.manage-models-toolbar input[type="search"] {
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  outline: none;
+}
+
+.manage-models-toolbar button {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+.manage-models-toolbar button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.manage-models-toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.manage-models-list {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0 16px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  max-height: 320px;
+}
+
+.manage-models-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.manage-models-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.manage-models-item span {
+  word-break: break-all;
+}
+
+.manage-models-empty {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.manage-models-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.manage-models-selected {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.manage-models-save {
+  padding: 8px 20px;
+  background: rgba(90, 70, 200, 0.85);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.manage-models-save:hover {
+  background: rgba(110, 90, 220, 0.95);
+}

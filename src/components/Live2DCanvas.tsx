@@ -1,16 +1,75 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Live2DController } from "../live2d/Live2DController";
+import { parseReactionCommand } from "../shared/live2dReactions";
 
 interface Props {
   modelPath: string;
+  modelScale?: number;
+  modelOffsetX?: number;
+  modelOffsetY?: number;
+  live2dReactive?: boolean;
 }
 
 type Status = "loading" | "ready" | "error";
 
-export default function Live2DCanvas({ modelPath }: Props) {
+const api = window.electronAPI;
+
+export default function Live2DCanvas({
+  modelPath,
+  modelScale = 1.0,
+  modelOffsetX = 0,
+  modelOffsetY = 0,
+  live2dReactive = true,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const controllerRef = useRef<Live2DController | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
+
+  const refreshCanvasLayout = useCallback(() => {
+    requestAnimationFrame(() => controllerRef.current?.resize());
+  }, []);
+
+  const handleLive2DCommand = useCallback((cmd: string) => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (cmd === "random_motion") {
+      controller.triggerRandomMotion();
+      return;
+    }
+    if (cmd === "next_expression") {
+      controller.nextExpression();
+      return;
+    }
+    const parsed = parseReactionCommand(cmd);
+    if (parsed) {
+      controller.applyReaction(parsed.reaction, parsed.assistantText);
+    }
+  }, []);
+
+  useEffect(() => {
+    controllerRef.current?.setScale(modelScale);
+    refreshCanvasLayout();
+  }, [modelScale, refreshCanvasLayout]);
+
+  useEffect(() => {
+    controllerRef.current?.setOffset(modelOffsetX, modelOffsetY);
+    refreshCanvasLayout();
+  }, [modelOffsetX, modelOffsetY, refreshCanvasLayout]);
+
+  useEffect(() => {
+    const unsubscribe = api.onLive2DCommand(handleLive2DCommand);
+    return unsubscribe;
+  }, [handleLive2DCommand]);
+
+  useEffect(() => {
+    window.addEventListener("resize", refreshCanvasLayout);
+    const off = api.onMainWindowLayoutChanged?.(refreshCanvasLayout);
+    return () => {
+      window.removeEventListener("resize", refreshCanvasLayout);
+      off?.();
+    };
+  }, [refreshCanvasLayout]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -20,15 +79,18 @@ export default function Live2DCanvas({ modelPath }: Props) {
     setErrorMsg("");
 
     let cancelled = false;
-    let controller: Live2DController | null = null;
+    let trackingTimer: ReturnType<typeof setInterval> | null = null;
 
     (async () => {
       try {
-        controller = new Live2DController(canvas);
+        const controller = new Live2DController(canvas);
+        controllerRef.current = controller;
         await controller.initialize(modelPath);
+        controller.setScale(modelScale);
+        controller.setOffset(modelOffsetX, modelOffsetY);
         if (cancelled) {
           controller.release();
-          controller = null;
+          controllerRef.current = null;
           return;
         }
         setStatus("ready");
@@ -40,17 +102,53 @@ export default function Live2DCanvas({ modelPath }: Props) {
       }
     })();
 
-    const onMouseMove = (e: MouseEvent) =>
-      controller?.setDraggingFromEvent(e.clientX, e.clientY);
-    window.addEventListener("mousemove", onMouseMove);
+    const startTracking = () => {
+      if (trackingTimer) return;
+      trackingTimer = setInterval(async () => {
+        if (!controllerRef.current) return;
+        try {
+          const [cursor, winPos] = await Promise.all([
+            api.screenGetCursorPoint(),
+            api.windowGetPosition(),
+          ]);
+          if (cursor && winPos) {
+            controllerRef.current.setDraggingFromScreen(
+              cursor.x,
+              cursor.y,
+              winPos
+            );
+          }
+        } catch {
+          /* ignore IPC errors during tracking */
+        }
+      }, 50);
+    };
+
+    const stopTracking = () => {
+      if (trackingTimer) {
+        clearInterval(trackingTimer);
+        trackingTimer = null;
+      }
+    };
+
+    startTracking();
 
     return () => {
       cancelled = true;
-      window.removeEventListener("mousemove", onMouseMove);
-      controller?.release();
-      controller = null;
+      stopTracking();
+      controllerRef.current?.release();
+      controllerRef.current = null;
     };
-  }, [modelPath]);
+  }, [modelPath, modelScale, modelOffsetX, modelOffsetY]);
+
+  // Random expression loop only when reactive mode is off
+  useEffect(() => {
+    if (live2dReactive || status !== "ready") return;
+    const expressionTimer = setInterval(() => {
+      controllerRef.current?.setRandomExpression();
+    }, 8000);
+    return () => clearInterval(expressionTimer);
+  }, [live2dReactive, status, modelPath]);
 
   return (
     <div style={{ position: "absolute", inset: 0 }}>

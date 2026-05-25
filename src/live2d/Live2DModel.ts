@@ -119,6 +119,22 @@ export class Live2DModel extends CubismUserModel {
     return this.startMotion(group, no, priority, onFinished);
   }
 
+  /** Pick a random motion from the first non-empty group. */
+  startRandomMotionFromAnyGroup(
+    priority: number,
+    onFinished?: FinishedMotionCallback,
+  ): CubismMotionQueueEntryHandle {
+    if (!this._modelSetting) return InvalidMotionQueueEntryHandleValue;
+    const groupCount = this._modelSetting.getMotionGroupCount();
+    for (let g = 0; g < groupCount; g++) {
+      const group = this._modelSetting.getMotionGroupName(g);
+      if (this._modelSetting.getMotionCount(group) > 0) {
+        return this.startRandomMotion(group, priority, onFinished);
+      }
+    }
+    return InvalidMotionQueueEntryHandleValue;
+  }
+
   setExpression(expressionId: string): void {
     const motion = this._expressions.get(expressionId);
     if (motion) {
@@ -130,6 +146,10 @@ export class Live2DModel extends CubismUserModel {
     if (this._expressions.size === 0) return;
     const keys = [...this._expressions.keys()];
     this.setExpression(keys[Math.floor(Math.random() * keys.length)]);
+  }
+
+  getExpressionNames(): string[] {
+    return [...this._expressions.keys()];
   }
 
   // ── per-frame update & draw ───────────────────────────────────────────────

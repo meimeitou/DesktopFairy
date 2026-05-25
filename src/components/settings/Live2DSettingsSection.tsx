@@ -1,0 +1,403 @@
+import { useCallback, useEffect, useState } from "react";
+import type { AppSettings, CustomLive2DModel } from "../../shared/settings";
+import { isLocalModelPath, modelDisplayName } from "../../shared/live2dPaths";
+
+const api = window.electronAPI;
+
+interface Live2DModelOption {
+  name: string;
+  path: string;
+  source?: "bundled" | "local";
+}
+
+interface ModelCapabilities {
+  expressions: string[];
+  motionGroups: string[];
+}
+
+interface Props {
+  settings: AppSettings;
+  onChange: (patch: Partial<AppSettings>) => void;
+}
+
+const SIZE_PRESETS = [
+  { label: "小", width: 160, height: 320 },
+  { label: "中", width: 200, height: 400 },
+  { label: "大", width: 250, height: 500 },
+  { label: "宽", width: 320, height: 400 },
+];
+
+const EMPTY_CAPS: ModelCapabilities = { expressions: [], motionGroups: [] };
+
+const OFFSET_INPUT_PATTERN = /^-?\d*$/;
+
+function formatOffsetDisplay(value: number): string {
+  return value === 0 ? "" : String(value);
+}
+
+function parseOffsetInput(raw: string): number {
+  if (raw === "" || raw === "-") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function OffsetNumberInput({
+  value,
+  onChange,
+  placeholder = "0",
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState(() => formatOffsetDisplay(value));
+
+  useEffect(() => {
+    setDraft(formatOffsetDisplay(value));
+  }, [value]);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder={placeholder}
+      value={draft}
+      onChange={(e) => {
+        const raw = e.target.value.trim();
+        if (!OFFSET_INPUT_PATTERN.test(raw)) return;
+        setDraft(raw);
+        if (raw !== "" && raw !== "-") {
+          onChange(parseOffsetInput(raw));
+        }
+      }}
+      onBlur={() => {
+        const next = parseOffsetInput(draft);
+        onChange(next);
+        setDraft(formatOffsetDisplay(next));
+      }}
+    />
+  );
+}
+
+export default function Live2DSettingsSection({ settings, onChange }: Props) {
+  const [models, setModels] = useState<Live2DModelOption[]>([]);
+  const [caps, setCaps] = useState<ModelCapabilities>(EMPTY_CAPS);
+  const [pickError, setPickError] = useState<string | null>(null);
+  const [pickWarning, setPickWarning] = useState<string | null>(null);
+
+  const refreshModels = useCallback(() => {
+    api
+      .invoke("live2d:list_models")
+      .then((list) => setModels(Array.isArray(list) ? list : []))
+      .catch(() => setModels([]));
+  }, []);
+
+  useEffect(() => {
+    refreshModels();
+  }, [refreshModels, settings.customModels]);
+
+  const appendCustomModel = (
+    customModels: CustomLive2DModel[],
+    entry: CustomLive2DModel
+  ): CustomLive2DModel[] => {
+    if (customModels.some((m) => m.path === entry.path)) return customModels;
+    return [...customModels, entry];
+  };
+
+  const browseLocalModel = async () => {
+    setPickError(null);
+    setPickWarning(null);
+    try {
+      const result = (await api.invoke("live2d:select_model_dir")) as {
+        canceled?: boolean;
+        error?: string;
+        warning?: string;
+        name?: string;
+        path?: string;
+      };
+      if (result.canceled) return;
+      if (result.error) {
+        setPickError(result.error);
+        return;
+      }
+      if (!result.path) {
+        setPickError("未选择有效的模型目录");
+        return;
+      }
+      if (result.warning) setPickWarning(result.warning);
+      const entry: CustomLive2DModel = {
+        name: result.name || modelDisplayName(result.path),
+        path: result.path,
+      };
+      onChange({
+        modelPath: result.path,
+        customModels: appendCustomModel(settings.customModels, entry),
+      });
+      api.invoke("live2d:switch_model", result.path).catch(() => {});
+      refreshModels();
+    } catch {
+      setPickError("打开目录选择器失败");
+    }
+  };
+
+  useEffect(() => {
+    if (!settings.modelPath.trim()) {
+      setCaps(EMPTY_CAPS);
+      return;
+    }
+    api
+      .invoke("live2d:inspect_model", settings.modelPath)
+      .then((result) => {
+        const data = result as ModelCapabilities;
+        setCaps({
+          expressions: Array.isArray(data?.expressions) ? data.expressions : [],
+          motionGroups: Array.isArray(data?.motionGroups) ? data.motionGroups : [],
+        });
+      })
+      .catch(() => setCaps(EMPTY_CAPS));
+  }, [settings.modelPath]);
+
+  const selectModel = (modelPath: string) => {
+    onChange({ modelPath });
+    api.invoke("live2d:switch_model", modelPath).catch(() => {});
+  };
+
+  const sendCommand = (cmd: string) => {
+    api.invoke("live2d:command", cmd).catch(() => {});
+  };
+
+  const hasMotions = caps.motionGroups.length > 0;
+  const hasExpressions = caps.expressions.length > 0;
+
+  return (
+    <section className="settings-section">
+      <h3>Live2D 配置</h3>
+
+      <div className="field">
+        <label>选择模型</label>
+        <div className="live2d-model-toolbar">
+          <button
+            type="button"
+            className="settings-action-btn"
+            onClick={() => void browseLocalModel()}
+          >
+            浏览本地目录…
+          </button>
+        </div>
+        {pickError && <p className="about-text error-text">{pickError}</p>}
+        {pickWarning && (
+          <p className="about-text secondary">{pickWarning}</p>
+        )}
+        {models.length > 0 ? (
+          <div className="model-picker">
+            {models.map((model) => (
+              <button
+                key={model.path}
+                type="button"
+                className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}`}
+                onClick={() => selectModel(model.path)}
+                title={model.path}
+              >
+                {model.name}
+                <span className="model-picker-source">
+                  {model.source === "local" ? "本地" : "内置"}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="about-text secondary">
+            未找到模型。内置模型请放入 public/models/，或使用「浏览本地目录」选择已下载的模型文件夹。
+          </p>
+        )}
+      </div>
+
+      <div className="field">
+        <label>模型路径</label>
+        <input
+          type="text"
+          value={settings.modelPath}
+          onChange={(e) => onChange({ modelPath: e.target.value })}
+          onBlur={() => {
+            const trimmed = settings.modelPath.trim();
+            if (!trimmed) return;
+            if (isLocalModelPath(trimmed)) {
+              const entry: CustomLive2DModel = {
+                name: modelDisplayName(trimmed),
+                path: trimmed,
+              };
+              onChange({
+                modelPath: trimmed,
+                customModels: appendCustomModel(settings.customModels, entry),
+              });
+            }
+            api.invoke("live2d:switch_model", trimmed).catch(() => {});
+          }}
+          placeholder="/models/MyModel/MyModel.model3.json 或本机绝对路径"
+        />
+      </div>
+
+      <div className="field">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={settings.live2dReactive}
+            onChange={(e) => onChange({ live2dReactive: e.target.checked })}
+          />
+          拟人化反应（随聊天切换表情，关闭后恢复随机表情）
+        </label>
+      </div>
+
+      <div className="field">
+        <label>动作与表情</label>
+        <div className="live2d-action-row">
+          <button
+            type="button"
+            className="settings-action-btn"
+            onClick={() => sendCommand("random_motion")}
+            disabled={!hasMotions}
+            title={hasMotions ? "随机播放 Idle 动作" : "当前模型未配置动作"}
+          >
+            切换动作
+          </button>
+          <button
+            type="button"
+            className="settings-action-btn"
+            onClick={() => sendCommand("next_expression")}
+            disabled={!hasExpressions}
+            title={
+              hasExpressions
+                ? `依次切换表情（共 ${caps.expressions.length} 个）`
+                : "当前模型未配置表情（如 Hiyori）"
+            }
+          >
+            下一个表情
+          </button>
+        </div>
+        {!hasMotions && !hasExpressions && (
+          <p className="about-text secondary">当前模型未定义动作或表情。</p>
+        )}
+        {hasMotions && !hasExpressions && (
+          <p className="about-text secondary">
+            当前模型有动作组（{caps.motionGroups.join("、")}），但无表情文件。
+          </p>
+        )}
+        {hasExpressions && (
+          <p className="about-text secondary">
+            表情：{caps.expressions.join("、")}
+          </p>
+        )}
+      </div>
+
+      <div className="field">
+        <label>窗口大小</label>
+        <div className="size-presets">
+          {SIZE_PRESETS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              className={`size-preset-btn${settings.windowWidth === p.width && settings.windowHeight === p.height ? " active" : ""}`}
+              onClick={() => {
+                onChange({ windowWidth: p.width, windowHeight: p.height });
+                api.invoke("resize_main_window", {
+                  width: p.width,
+                  height: p.height,
+                });
+              }}
+            >
+              {p.label}
+              <span className="size-hint">
+                {p.width}×{p.height}
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="size-inputs">
+          <div className="size-input-group">
+            <span>W</span>
+            <input
+              type="number"
+              min={80}
+              max={800}
+              value={settings.windowWidth}
+              onChange={(e) => onChange({ windowWidth: Number(e.target.value) })}
+              onBlur={() =>
+                api.invoke("resize_main_window", {
+                  width: settings.windowWidth,
+                  height: settings.windowHeight,
+                })
+              }
+            />
+          </div>
+          <span className="size-sep">×</span>
+          <div className="size-input-group">
+            <span>H</span>
+            <input
+              type="number"
+              min={80}
+              max={1200}
+              value={settings.windowHeight}
+              onChange={(e) => onChange({ windowHeight: Number(e.target.value) })}
+              onBlur={() =>
+                api.invoke("resize_main_window", {
+                  width: settings.windowWidth,
+                  height: settings.windowHeight,
+                })
+              }
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="field">
+        <label>模型缩放</label>
+        <select
+          value={settings.modelScale}
+          onChange={(e) => onChange({ modelScale: Number(e.target.value) })}
+        >
+          <option value={0.5}>0.5×</option>
+          <option value={0.75}>0.75×</option>
+          <option value={1.0}>1×（默认）</option>
+          <option value={1.5}>1.5×</option>
+          <option value={2.0}>2×</option>
+          <option value={2.5}>2.5×</option>
+        </select>
+      </div>
+
+      <div className="field">
+        <label>模型位置偏移</label>
+        <p className="about-text secondary">
+          相对窗口中心微调，单位像素。默认 0。
+        </p>
+        <div className="live2d-offset-grid">
+          <div className="live2d-offset-item">
+            <span>左右（负值向左，正值向右）</span>
+            <OffsetNumberInput
+              value={settings.modelOffsetX}
+              onChange={(modelOffsetX) => onChange({ modelOffsetX })}
+            />
+          </div>
+          <div className="live2d-offset-item">
+            <span>上下（负值向上，正值向下）</span>
+            <OffsetNumberInput
+              value={settings.modelOffsetY}
+              onChange={(modelOffsetY) => onChange({ modelOffsetY })}
+            />
+          </div>
+        </div>
+        <button
+          type="button"
+          className="link-btn live2d-offset-reset"
+          onClick={() => onChange({ modelOffsetX: 0, modelOffsetY: 0 })}
+        >
+          重置偏移
+        </button>
+      </div>
+
+      <p className="about-text secondary">
+        内置模型放在 public/models/；本地下载的模型可通过「浏览本地目录」选择，将自动使用该目录下的
+        .model3.json 配置文件。
+      </p>
+    </section>
+  );
+}

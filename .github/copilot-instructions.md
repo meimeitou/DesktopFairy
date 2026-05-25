@@ -1,5 +1,7 @@
 # DesktopFairy — Copilot Instructions
 
+**语言要求：除代码、专业术语（如 DNS、API、IP、Git 等）外，所有回复一律使用中文。**
+
 ## Project Overview
 
 macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React + TypeScript** (frontend). See [docs/arch.md](../docs/arch.md) for full architecture and roadmap.

@@ -9,6 +9,13 @@ import { CubismWebGLOffscreenManager } from '@framework/rendering/cubismoffscree
 import { Live2DModel } from './Live2DModel';
 import { TextureManager } from './TextureManager';
 import { updateTime } from './pal';
+import { MotionGroupIdle, PriorityForce } from './define';
+import { InvalidMotionQueueEntryHandleValue } from '@framework/motion/cubismmotionqueuemanager';
+import {
+  resolveExpressionForReaction,
+  type Live2DReaction,
+} from '../shared/live2dReactions';
+import { toLoadableModelUrl } from '../shared/live2dPaths';
 
 export class Live2DController {
   private _canvas: HTMLCanvasElement;
@@ -19,6 +26,10 @@ export class Live2DController {
   private _rafId: number | null = null;
   private _running = false;
   private _resizeObserver: ResizeObserver | null = null;
+  private _scale = 1.0;
+  private _offsetX = 0;
+  private _offsetY = 0;
+  private _expressionIndex = -1;
 
   constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
@@ -33,6 +44,7 @@ export class Live2DController {
    * rendering has begun.  Throws on any load failure.
    */
   async initialize(modelUrl: string): Promise<void> {
+    const loadUrl = toLoadableModelUrl(modelUrl);
     // ── WebGL context ──────────────────────────────────────────────────────
     const gl = this._canvas.getContext('webgl2', {
       alpha: true,
@@ -62,9 +74,9 @@ export class Live2DController {
     // e.g. "/models/Hiyori/Hiyori.model3.json"
     //   → dir  = "/models/Hiyori/"
     //   → file = "Hiyori.model3.json"
-    const lastSlash = modelUrl.lastIndexOf('/');
-    const modelDir = modelUrl.slice(0, lastSlash + 1);
-    const modelFile = modelUrl.slice(lastSlash + 1);
+    const lastSlash = loadUrl.lastIndexOf('/');
+    const modelDir = loadUrl.slice(0, lastSlash + 1);
+    const modelFile = loadUrl.slice(lastSlash + 1);
 
     this._model = new Live2DModel();
     await this._model.load(gl, this._textureManager, this._frameBuffer, modelDir, modelFile);
@@ -75,6 +87,21 @@ export class Live2DController {
 
     // ── Start render loop ───────────────────────────────────────────────────
     this.run();
+  }
+
+  setScale(scale: number): void {
+    this._scale = scale;
+  }
+
+  /** Offset model from window center in CSS pixels (+x right, +y down). */
+  setOffset(x: number, y: number): void {
+    this._offsetX = x;
+    this._offsetY = y;
+  }
+
+  /** Recompute WebGL buffer size from current canvas layout. */
+  resize(): void {
+    this._resizeCanvas();
   }
 
   /** Start (or resume) the requestAnimationFrame render loop. */
@@ -109,9 +136,18 @@ export class Live2DController {
         const modelWidth = this._model.getModel()?.getCanvasWidth() ?? 1;
         if (modelWidth > 1.0 && width < height) {
           this._model.getModelMatrix().setWidth(2.0);
-          projection.scale(1.0, width / height);
+          projection.scale(1.0 * this._scale, width / height * this._scale);
         } else {
-          projection.scale(height / width, 1.0);
+          projection.scale(height / width * this._scale, 1.0 * this._scale);
+        }
+
+        const cssW = canvas.clientWidth || width;
+        const cssH = canvas.clientHeight || height;
+        if (cssW > 0 && cssH > 0 && (this._offsetX !== 0 || this._offsetY !== 0)) {
+          projection.translateRelative(
+            (this._offsetX / cssW) * 2,
+            -(this._offsetY / cssH) * 2,
+          );
         }
 
         this._model.update();
@@ -152,12 +188,25 @@ export class Live2DController {
 
   /**
    * Set eye-tracking target from raw mouse event coordinates.
-   * Converts screen coords to the model's [-1,1] NDC space.
+   * Converts window-relative coords to the model's [-1,1] NDC space.
    */
   setDraggingFromEvent(clientX: number, clientY: number): void {
     const rect = this._canvas.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * 2 - 1;
     const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+    this._model?.setDragging(x, y);
+  }
+
+  /**
+   * Set eye-tracking target from global screen coordinates.
+   * Converts global screen coords to the model's [-1,1] NDC space using window position.
+   */
+  setDraggingFromScreen(screenX: number, screenY: number, windowPosition: { x: number; y: number }): void {
+    const rect = this._canvas.getBoundingClientRect();
+    const canvasX = screenX - windowPosition.x;
+    const canvasY = screenY - windowPosition.y;
+    const x = ((canvasX - rect.left) / rect.width) * 2 - 1;
+    const y = -(((canvasY - rect.top) / rect.height) * 2 - 1);
     this._model?.setDragging(x, y);
   }
 
@@ -175,6 +224,50 @@ export class Live2DController {
 
   setRandomExpression(): void {
     this._model?.setRandomExpression();
+  }
+
+  getExpressionNames(): string[] {
+    return this._model?.getExpressionNames() ?? [];
+  }
+
+  /** Apply a semantic reaction using expressions available on the current model. */
+  applyReaction(reaction: Live2DReaction, assistantText?: string): void {
+    const expr = resolveExpressionForReaction(
+      reaction,
+      this.getExpressionNames(),
+      assistantText
+    );
+    if (expr) {
+      this.setExpression(expr);
+      return;
+    }
+    if (reaction === "replyError" || reaction === "userSend") {
+      this.triggerRandomMotion();
+    }
+  }
+
+  /** Advance to the next expression in order and log its name. */
+  nextExpression(): boolean {
+    if (!this._model) return false;
+    const names = this._model.getExpressionNames();
+    if (names.length === 0) return false;
+    this._expressionIndex = (this._expressionIndex + 1) % names.length;
+    const name = names[this._expressionIndex];
+    this._model.setExpression(name);
+    console.log(`[Live2D] Expression → "${name}" (${this._expressionIndex + 1}/${names.length})`);
+    return true;
+  }
+
+  /** Trigger a random idle motion (manual trigger uses force priority). */
+  triggerRandomMotion(): void {
+    if (!this._model) return;
+    let handle = this._model.startRandomMotion(MotionGroupIdle, PriorityForce);
+    if (handle === InvalidMotionQueueEntryHandleValue) {
+      handle = this._model.startRandomMotionFromAnyGroup(PriorityForce);
+    }
+    if (handle === InvalidMotionQueueEntryHandleValue) {
+      console.log('[Live2D] No motions available');
+    }
   }
 
   // ── private helpers ───────────────────────────────────────────────────────

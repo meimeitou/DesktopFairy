@@ -1,0 +1,99 @@
+import type { ChatAttachment } from "./chatAttachments";
+import { isImageExt } from "./chatAttachments";
+
+export type ChatRole = "user" | "assistant";
+
+export interface ChatMsg {
+  id: string;
+  role: ChatRole;
+  content: string;
+  type?: "clear";
+  error?: boolean;
+  attachments?: ChatAttachment[];
+}
+
+export type ApiContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export type ApiMessage = {
+  role: "system" | "user" | "assistant";
+  content: string | ApiContentPart[];
+};
+
+export function filterAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
+  const clearIndex = messages.findLastIndex((m) => m.type === "clear");
+  if (clearIndex === -1) return messages;
+  return messages.slice(clearIndex + 1);
+}
+
+export function filterForApi(messages: ChatMsg[]): ChatMsg[] {
+  return filterAfterContextClear(messages).filter(
+    (m) => m.type !== "clear" && !m.error
+  );
+}
+
+function appendTextFileBlocks(
+  text: string,
+  files: { name: string; text: string }[]
+): string {
+  if (files.length === 0) return text;
+  const blocks = files.map(
+    (f) => `\n\n---\n**${f.name}**\n\`\`\`\n${f.text}\n\`\`\``
+  );
+  return text + blocks.join("");
+}
+
+export function buildApiMessages(
+  history: ChatMsg[],
+  userText: string,
+  attachmentPayloads: {
+    textFiles: { name: string; text: string }[];
+    images: { name: string; dataUrl: string }[];
+  },
+  systemPrompt?: string
+): ApiMessage[] {
+  const result: ApiMessage[] = [];
+  if (systemPrompt?.trim()) {
+    result.push({ role: "system", content: systemPrompt.trim() });
+  }
+
+  for (const m of history) {
+    if (m.type === "clear" || m.error) continue;
+    result.push({ role: m.role, content: m.content });
+  }
+
+  const textWithFiles = appendTextFileBlocks(
+    userText,
+    attachmentPayloads.textFiles
+  );
+
+  if (attachmentPayloads.images.length === 0) {
+    result.push({ role: "user", content: textWithFiles });
+    return result;
+  }
+
+  const parts: ApiContentPart[] = [];
+  if (textWithFiles.trim()) {
+    parts.push({ type: "text", text: textWithFiles });
+  }
+  for (const img of attachmentPayloads.images) {
+    parts.push({
+      type: "image_url",
+      image_url: { url: img.dataUrl },
+    });
+  }
+  result.push({ role: "user", content: parts.length > 0 ? parts : textWithFiles });
+  return result;
+}
+
+export function isSupportedFileName(name: string): boolean {
+  const ext = name.includes(".") ? `.${name.split(".").pop()?.toLowerCase()}` : "";
+  return (
+    isImageExt(ext) ||
+    [
+      ".txt", ".md", ".markdown", ".json", ".csv", ".xml", ".yaml", ".yml",
+      ".js", ".ts", ".tsx", ".jsx", ".py", ".html", ".css", ".log",
+    ].includes(ext)
+  );
+}

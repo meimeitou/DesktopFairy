@@ -1,5 +1,7 @@
 export {};
 
+import type { ChatAttachment } from "./shared/chatAttachments";
+
 declare global {
   interface Window {
     electronAPI: {
@@ -8,6 +10,34 @@ declare global {
       windowSetSize: (width: number, height: number) => Promise<void>;
       windowGetPosition: () => Promise<{ x: number; y: number } | null>;
       windowSetPosition: (x: number, y: number) => Promise<void>;
+      screenGetCursorPoint: () => Promise<{ x: number; y: number }>;
+      onChatPrefill: (
+        callback: (payload: {
+          text?: string;
+          autoSend?: boolean;
+          attachments?: ChatAttachment[];
+        }) => void
+      ) => void;
+      onChatNavigate: (
+        callback: (view: "chat" | "settings") => void
+      ) => () => void;
+      onSettingsUpdated: (
+        callback: (settings: Record<string, unknown>) => void
+      ) => () => void;
+      onMainWindowLayoutChanged: (callback: () => void) => () => void;
+      getShortcut: () => Promise<string>;
+      setShortcut: (shortcut: string) => Promise<boolean>;
+      onLive2DCommand: (callback: (cmd: string) => void) => () => void;
+      onSwitchModel: (callback: (modelPath: string) => void) => () => void;
+      onChatStreamChunk: (
+        callback: (payload: { requestId: string; delta: string }) => void
+      ) => () => void;
+      onChatStreamDone: (
+        callback: (payload: { requestId: string; aborted?: boolean }) => void
+      ) => () => void;
+      onChatStreamError: (
+        callback: (payload: { requestId: string; message: string }) => void
+      ) => () => void;
     };
   }
 }
