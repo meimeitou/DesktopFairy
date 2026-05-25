@@ -192,6 +192,7 @@ export class Live2DController {
    */
   setDraggingFromEvent(clientX: number, clientY: number): void {
     const rect = this._canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     const x = ((clientX - rect.left) / rect.width) * 2 - 1;
     const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
     this._model?.setDragging(x, y);
@@ -203,6 +204,7 @@ export class Live2DController {
    */
   setDraggingFromScreen(screenX: number, screenY: number, windowPosition: { x: number; y: number }): void {
     const rect = this._canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     const canvasX = screenX - windowPosition.x;
     const canvasY = screenY - windowPosition.y;
     const x = ((canvasX - rect.left) / rect.width) * 2 - 1;
@@ -275,9 +277,12 @@ export class Live2DController {
   private _resizeCanvas(): void {
     if (!this._gl) return;
     const canvas = this._canvas;
+    const cssW = canvas.clientWidth;
+    const cssH = canvas.clientHeight;
+    if (cssW <= 0 || cssH <= 0) return;
     const dpr = window.devicePixelRatio;
-    canvas.width = canvas.clientWidth * dpr;
-    canvas.height = canvas.clientHeight * dpr;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
     this._gl.viewport(0, 0, canvas.width, canvas.height);
   }
 }

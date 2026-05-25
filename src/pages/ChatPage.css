@@ -241,6 +241,11 @@
   opacity: 0.85;
 }
 
+.msg-attachment-missing {
+  opacity: 0.65;
+  color: rgba(255, 180, 120, 0.95);
+}
+
 .chat-input-area {
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }

@@ -33,6 +33,37 @@ export function filterForApi(messages: ChatMsg[]): ChatMsg[] {
   );
 }
 
+export const DEFAULT_API_MAX_MESSAGES = 40;
+export const DEFAULT_API_MAX_CHARS = 24_000;
+
+function messageCharLength(msg: ChatMsg): number {
+  return msg.content.length;
+}
+
+/** Keep newest messages within count/char budget for API requests. */
+export function trimMessagesForApi(
+  messages: ChatMsg[],
+  options?: { maxMessages?: number; maxChars?: number }
+): ChatMsg[] {
+  const maxMessages = options?.maxMessages ?? DEFAULT_API_MAX_MESSAGES;
+  const maxChars = options?.maxChars ?? DEFAULT_API_MAX_CHARS;
+  if (messages.length === 0) return messages;
+
+  const kept: ChatMsg[] = [];
+  let totalChars = 0;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    const len = messageCharLength(msg);
+    if (kept.length >= maxMessages) break;
+    if (kept.length > 0 && totalChars + len > maxChars) break;
+    kept.unshift(msg);
+    totalChars += len;
+  }
+
+  return kept;
+}
+
 function appendTextFileBlocks(
   text: string,
   files: { name: string; text: string }[]

@@ -6,13 +6,19 @@ import {
   type ChatMsg,
   buildApiMessages,
   filterForApi,
+  trimMessagesForApi,
 } from "../shared/chatMessages";
+import {
+  buildChatSession,
+  normalizeChatSession,
+  trimSessionForStorage,
+  type ChatSession,
+} from "../shared/chatSession";
 import {
   loadSettings,
   saveSettings,
   getSelectableModels,
   getActiveApiConfig,
-  resolveModelNameForProvider,
   getActiveModelName,
   type AppSettings,
 } from "../shared/settings";
@@ -21,6 +27,7 @@ import { notifyLive2DIfReactive } from "../shared/live2dReactions";
 import "./ChatPage.css";
 
 const api = window.electronAPI;
+const SESSION_SAVE_DEBOUNCE_MS = 400;
 
 function genId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -41,10 +48,12 @@ function MessageBubble({
   msg,
   streaming,
   isLast,
+  invalidAttachmentPaths,
 }: {
   msg: ChatMsg;
   streaming: boolean;
   isLast: boolean;
+  invalidAttachmentPaths: Set<string>;
 }) {
   const [copied, setCopied] = useState(false);
   const isStreamingAssistant =
@@ -70,8 +79,12 @@ function MessageBubble({
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="msg-attachments">
             {msg.attachments.map((a) => (
-              <span key={a.id} className="msg-attachment-tag">
-                📎 {a.name}
+              <span
+                key={a.id}
+                className={`msg-attachment-tag${invalidAttachmentPaths.has(a.path) ? " msg-attachment-missing" : ""}`}
+              >
+                {invalidAttachmentPaths.has(a.path) ? "⚠" : "📎"} {a.name}
+                {invalidAttachmentPaths.has(a.path) ? "（附件已失效）" : ""}
               </span>
             ))}
           </div>
@@ -107,6 +120,31 @@ function MessageBubble({
   );
 }
 
+async function collectInvalidAttachmentPaths(
+  messages: ChatMsg[]
+): Promise<Set<string>> {
+  const paths = new Set<string>();
+  for (const msg of messages) {
+    for (const attachment of msg.attachments ?? []) {
+      paths.add(attachment.path);
+    }
+  }
+  const invalid = new Set<string>();
+  await Promise.all(
+    [...paths].map(async (filePath) => {
+      try {
+        const stat = (await api.invoke("file:stat_path", filePath)) as {
+          exists?: boolean;
+        };
+        if (!stat?.exists) invalid.add(filePath);
+      } catch {
+        invalid.add(filePath);
+      }
+    })
+  );
+  return invalid;
+}
+
 export default function ChatPage({
   embedded = false,
   clearRef,
@@ -121,10 +159,18 @@ export default function ChatPage({
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [chatSettings, setChatSettings] = useState<AppSettings>(loadSettings);
+  const [invalidAttachmentPaths, setInvalidAttachmentPaths] = useState(
+    () => new Set<string>()
+  );
+  const [sessionReady, setSessionReady] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
+  const inputRef = useRef("");
+  const attachmentsRef = useRef<ChatAttachment[]>([]);
   const requestIdRef = useRef<string>("");
   const handleSendRef = useRef<(text?: string) => void>(() => {});
+  const sessionLoadedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectableModels = getSelectableModels(chatSettings);
   const activeModelName = getActiveModelName(chatSettings);
@@ -132,6 +178,88 @@ export default function ChatPage({
   useEffect(() => {
     chatMessagesRef.current = messages;
   }, [messages]);
+
+  useEffect(() => {
+    inputRef.current = input;
+  }, [input]);
+
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  const persistSession = useCallback(async () => {
+    if (!sessionLoadedRef.current) return;
+    const session = trimSessionForStorage(
+      buildChatSession(
+        chatMessagesRef.current,
+        inputRef.current,
+        attachmentsRef.current
+      )
+    );
+    await api.invoke("chat:session:save", session);
+  }, []);
+
+  const scheduleSessionSave = useCallback(() => {
+    if (!sessionLoadedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      void persistSession();
+    }, SESSION_SAVE_DEBOUNCE_MS);
+  }, [persistSession]);
+
+  const flushSessionSave = useCallback(() => {
+    if (!sessionLoadedRef.current) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    void persistSession();
+  }, [persistSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const raw = (await api.invoke("chat:session:load")) as unknown;
+        if (cancelled) return;
+        const session = normalizeChatSession(raw);
+        setMessages(session.messages);
+        setInput(session.draftInput ?? "");
+        setAttachments(session.draftAttachments ?? []);
+        const invalid = await collectInvalidAttachmentPaths(session.messages);
+        if (!cancelled) setInvalidAttachmentPaths(invalid);
+      } catch {
+        if (!cancelled) setMessages([]);
+      } finally {
+        if (!cancelled) {
+          sessionLoadedRef.current = true;
+          setSessionReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    scheduleSessionSave();
+  }, [messages, input, attachments, sessionReady, scheduleSessionSave]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      flushSessionSave();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      flushSessionSave();
+    };
+  }, [flushSessionSave]);
 
   useEffect(() => {
     notifyLive2DIfReactive(loadSettings().live2dReactive, "chatOpen");
@@ -184,6 +312,7 @@ export default function ChatPage({
         "replyDone",
         assistantText
       );
+      flushSessionSave();
     });
 
     const offError = api.onChatStreamError(({ requestId, message }) => {
@@ -203,6 +332,7 @@ export default function ChatPage({
         };
         return next;
       });
+      flushSessionSave();
     });
 
     return () => {
@@ -210,7 +340,7 @@ export default function ChatPage({
       offDone?.();
       offError?.();
     };
-  }, []);
+  }, [flushSessionSave]);
 
   useEffect(() => {
     const el = messagesContainerRef.current;
@@ -271,7 +401,7 @@ export default function ChatPage({
         return;
       }
 
-      const history = filterForApi(messages);
+      const history = trimMessagesForApi(filterForApi(messages));
       const payloadMessages = buildApiMessages(
         history,
         text,
@@ -326,9 +456,10 @@ export default function ChatPage({
             };
             return next;
           });
+          flushSessionSave();
         });
     },
-    [input, streaming, messages, attachments, loadAttachmentPayloads]
+    [input, streaming, messages, attachments, loadAttachmentPayloads, flushSessionSave]
   );
 
   useEffect(() => {
@@ -366,6 +497,11 @@ export default function ChatPage({
     setMessages([]);
     setInput("");
     setAttachments([]);
+    setInvalidAttachmentPaths(new Set());
+    void api.invoke(
+      "chat:session:save",
+      trimSessionForStorage(buildChatSession([], "", []))
+    );
   }, [streaming, messages.length]);
 
   useEffect(() => {
@@ -398,6 +534,7 @@ export default function ChatPage({
                 msg={m}
                 streaming={streaming}
                 isLast={i === messages.length - 1}
+                invalidAttachmentPaths={invalidAttachmentPaths}
               />
             )
           )

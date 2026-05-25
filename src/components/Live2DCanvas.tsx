@@ -23,8 +23,11 @@ export default function Live2DCanvas({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<Live2DController | null>(null);
+  const layoutRef = useRef({ modelScale, modelOffsetX, modelOffsetY });
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
+
+  layoutRef.current = { modelScale, modelOffsetX, modelOffsetY };
 
   const refreshCanvasLayout = useCallback(() => {
     requestAnimationFrame(() => controllerRef.current?.resize());
@@ -86,8 +89,9 @@ export default function Live2DCanvas({
         const controller = new Live2DController(canvas);
         controllerRef.current = controller;
         await controller.initialize(modelPath);
-        controller.setScale(modelScale);
-        controller.setOffset(modelOffsetX, modelOffsetY);
+        const layout = layoutRef.current;
+        controller.setScale(layout.modelScale);
+        controller.setOffset(layout.modelOffsetX, layout.modelOffsetY);
         if (cancelled) {
           controller.release();
           controllerRef.current = null;
@@ -139,7 +143,7 @@ export default function Live2DCanvas({
       controllerRef.current?.release();
       controllerRef.current = null;
     };
-  }, [modelPath, modelScale, modelOffsetX, modelOffsetY]);
+  }, [modelPath]);
 
   // Random expression loop only when reactive mode is off
   useEffect(() => {

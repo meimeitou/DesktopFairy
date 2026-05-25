@@ -96,11 +96,18 @@ export default function ChatApp() {
       </header>
 
       <main className="chat-app-body">
-        {view === "chat" ? (
+        <div
+          className={`chat-app-panel${view === "chat" ? "" : " chat-app-panel-hidden"}`}
+          aria-hidden={view !== "chat"}
+        >
           <ChatPage embedded />
-        ) : (
+        </div>
+        <div
+          className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}
+          aria-hidden={view !== "settings"}
+        >
           <SettingsPage embedded />
-        )}
+        </div>
       </main>
     </div>
   );

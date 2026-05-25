@@ -23,11 +23,83 @@ interface Props {
 }
 
 const SIZE_PRESETS = [
-  { label: "小", width: 160, height: 320 },
-  { label: "中", width: 200, height: 400 },
-  { label: "大", width: 250, height: 500 },
-  { label: "宽", width: 320, height: 400 },
+  { label: "小", width: 80, height: 160 },
+  { label: "中", width: 160, height: 320 },
+  { label: "大", width: 200, height: 400 },
 ];
+
+const MIN_WINDOW_WIDTH = 80;
+const MIN_WINDOW_HEIGHT = 160;
+const MAX_WINDOW_WIDTH = 800;
+const MAX_WINDOW_HEIGHT = 1200;
+
+const SIZE_INPUT_PATTERN = /^\d*$/;
+
+function clampWindowSize(width: number, height: number): { width: number; height: number } {
+  return {
+    width: Math.min(
+      MAX_WINDOW_WIDTH,
+      Math.max(MIN_WINDOW_WIDTH, Math.round(width) || MIN_WINDOW_WIDTH)
+    ),
+    height: Math.min(
+      MAX_WINDOW_HEIGHT,
+      Math.max(MIN_WINDOW_HEIGHT, Math.round(height) || MIN_WINDOW_HEIGHT)
+    ),
+  };
+}
+
+function SizeNumberInput({
+  value,
+  min,
+  max,
+  onChange,
+  onCommit,
+  deferChangeUntilCommit = false,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+  onCommit?: (value: number) => void;
+  deferChangeUntilCommit?: boolean;
+}) {
+  const [draft, setDraft] = useState(() => String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commit = (raw: string) => {
+    const parsed =
+      raw === "" ? min : Math.min(max, Math.max(min, Math.round(Number(raw)) || min));
+    onChange(parsed);
+    onCommit?.(parsed);
+    setDraft(String(parsed));
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft}
+      onChange={(e) => {
+        const raw = e.target.value.trim();
+        if (!SIZE_INPUT_PATTERN.test(raw)) return;
+        setDraft(raw);
+        if (!deferChangeUntilCommit && raw !== "") {
+          const n = Number(raw);
+          if (Number.isFinite(n)) onChange(n);
+        }
+      }}
+      onBlur={() => commit(draft)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
 
 const EMPTY_CAPS: ModelCapabilities = { expressions: [], motionGroups: [] };
 
@@ -380,35 +452,49 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
         <div className="size-inputs">
           <div className="size-input-group">
             <span>W</span>
-            <input
-              type="number"
-              min={80}
-              max={800}
+            <SizeNumberInput
               value={settings.windowWidth}
-              onChange={(e) => onChange({ windowWidth: Number(e.target.value) })}
-              onBlur={() =>
-                api.invoke("resize_main_window", {
-                  width: settings.windowWidth,
-                  height: settings.windowHeight,
-                })
-              }
+              min={MIN_WINDOW_WIDTH}
+              max={MAX_WINDOW_WIDTH}
+              deferChangeUntilCommit
+              onChange={(windowWidth) => {
+                const { width: w, height: h } = clampWindowSize(
+                  windowWidth,
+                  settings.windowHeight
+                );
+                onChange({ windowWidth: w, windowHeight: h });
+              }}
+              onCommit={(width) => {
+                const { width: w, height: h } = clampWindowSize(
+                  width,
+                  settings.windowHeight
+                );
+                api.invoke("resize_main_window", { width: w, height: h });
+              }}
             />
           </div>
           <span className="size-sep">×</span>
           <div className="size-input-group">
             <span>H</span>
-            <input
-              type="number"
-              min={80}
-              max={1200}
+            <SizeNumberInput
               value={settings.windowHeight}
-              onChange={(e) => onChange({ windowHeight: Number(e.target.value) })}
-              onBlur={() =>
-                api.invoke("resize_main_window", {
-                  width: settings.windowWidth,
-                  height: settings.windowHeight,
-                })
-              }
+              min={MIN_WINDOW_HEIGHT}
+              max={MAX_WINDOW_HEIGHT}
+              deferChangeUntilCommit
+              onChange={(windowHeight) => {
+                const { width: w, height: h } = clampWindowSize(
+                  settings.windowWidth,
+                  windowHeight
+                );
+                onChange({ windowWidth: w, windowHeight: h });
+              }}
+              onCommit={(height) => {
+                const { width: w, height: h } = clampWindowSize(
+                  settings.windowWidth,
+                  height
+                );
+                api.invoke("resize_main_window", { width: w, height: h });
+              }}
             />
           </div>
         </div>

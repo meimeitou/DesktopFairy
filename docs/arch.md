@@ -14,7 +14,8 @@
 | 模块 | 状态 | 说明 |
 |------|------|------|
 | 透明悬浮主窗 | ✓ | Live2D 渲染、自定义拖动、跨 Space 置顶 |
-| 聊天窗口 | ✓ | 流式对话、Markdown、附件、清除上下文 |
+| 聊天窗口 | ✓ | 流式对话、Markdown、附件、清除上下文；Tab keep-alive |
+| 会话持久化 | ✓ | 单会话 `da_chat.json`；展示全量、API 发送前裁剪 |
 | 统一设置壳 | ✓ | 对话 / 设置 Tab，隐藏系统标题栏 |
 | AI 服务商配置 | ✓ | OpenAI 兼容 + Ollama，多 Provider、检测连接 |
 | 划词助手 | ✓ | 快捷键 / 自动弹出、工具栏动作、跳转聊天 |
@@ -105,7 +106,9 @@
 - 自定义拖动（`MainView.tsx` + `windowSetPosition`），支持跨 Space
 - `floatWindowOnAllSpaces()`：`screen-saver` 级别置顶
 
-**聊天窗**（`createChatWindow`）：普通不透明窗，可缩放，760×680 默认。
+**聊天窗**（`createChatWindow`）：普通不透明窗，可缩放，760×680 默认；**关闭 = 隐藏**（与主窗一致）。
+
+**ChatApp Tab**：`ChatPage` 与 `SettingsPage` 同时挂载，CSS 切换可见性，避免切换 Tab 丢失对话 state。
 
 **托盘**：设置、显示/隐藏模型、退出（Live2D 相关项已移至设置页）。
 
@@ -189,6 +192,8 @@ interface LlmProvider {
 - 流式 SSE，可中断（`chat:abort`）
 - System Prompt 来自 `settings.systemPrompt`（人设页）
 - **上下文清除**：插入 `type: 'clear'` 标记，发送时过滤历史
+- **会话持久化**：`chat:session:load/save` 读写 `userData/da_chat.json`；debounce 保存 messages / draft；存储上限 500 条或 2MB
+- **API 上下文裁剪**：`trimMessagesForApi` 在 `filterForApi` 之后，默认最近 40 条 / 24k 字符
 - **附件**：文本嵌入消息 / 图片 multimodal（`fileService` + `chatMessages.buildApiMessages`）
 
 **ChatInputBar**（`src/components/chat/ChatInputBar.tsx`）：
@@ -236,6 +241,7 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 |------|------|------|
 | localStorage | `da_settings` | Renderer 读写（聊天、设置 UI） |
 | 磁盘 JSON | `userData/da_settings.json` | `settings:sync` 写入；启动时划词读盘 |
+| 磁盘 JSON | `userData/da_chat.json` | `chat:session:save` 写入；ChatPage mount 加载 |
 
 设置变更时：`saveSettings` → `settings:sync` → 主进程写盘 + `settings:updated` 推送到主窗/聊天窗。
 
@@ -260,6 +266,8 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | **聊天** | |
 | `chat:send` | `{ requestId, messages, chatUrl, apiKey, model, temperature? }` |
 | `chat:abort` | `{ requestId }` |
+| `chat:session:load` | 读取单会话 JSON，无文件则空 session |
+| `chat:session:save` | 写入单会话 JSON |
 | `chat:list_models` | `{ apiHost, apiKey, providerType }` |
 | `chat:check` | 连通性检测，返回 `{ ok, latencyMs, model }` |
 | **设置** | |
@@ -304,6 +312,7 @@ electron/
   selectionPosition.cjs # Tip 窗定位
   tipWindow.cjs         # Tip BrowserWindow
   selectionConfig.cjs   # 黑名单/微调列表
+  chatSessionService.cjs # 单会话 da_chat.json 读写
   fileService.cjs       # 文件选择与读取
   screenshotService.cjs # macOS 区域截图
   live2dService.cjs     # Live2D 模型扫描、dfmodel 协议、目录选择
@@ -331,7 +340,8 @@ src/
     providers.ts        # LlmProvider、URL 工具、Hermes 系统预设
     live2dReactions.ts  # 聊天→Live2D 反应映射与 notifyLive2D
     live2dPaths.ts      # bundled/local 路径判定与 dfmodel URL 转换
-    chatMessages.ts     # 上下文过滤、API 消息构建
+    chatMessages.ts     # 上下文过滤、API 消息构建、trimMessagesForApi
+    chatSession.ts      # ChatSession 类型、normalize、存储上限裁剪
     chatAttachments.ts
     selectionActions.ts
   electron.d.ts
@@ -403,8 +413,9 @@ interface AppSettings {
 | 四 | 多 Provider（OpenAI + Ollama）、管理模型、检测 | ✓ |
 | 五 | 划词助手、聊天输入栏、附件、人设 | ✓ |
 | 六 | TTS 播放与嘴型同步 | 待做 |
-| 七 | ASR、会话持久化 | 待做 |
+| 七 | ASR | 待做 |
 | 七（部分） | 区域截图 → 聊天附件 | ✓ |
+| 七（部分） | 单会话持久化 + API 上下文裁剪 | ✓ |
 
 ---
 

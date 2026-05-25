@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'set_shortcut',
       'chat:send',
       'chat:abort',
+      'chat:session:load',
+      'chat:session:save',
       'chat:list_models',
       'chat:check',
       'settings:sync',

@@ -9,6 +9,7 @@ const {
   registerLive2DProtocol,
   registerLive2DHandlers,
 } = require('./live2dService.cjs');
+const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
 
 registerLive2DSchemes();
 
@@ -39,6 +40,7 @@ const PUBLIC_ROOT = isDev
 let mainWindow = null;
 let chatWindow = null;
 let tray = null;
+let isQuitting = false;
 let currentShortcut = 'Command+Shift+C'; // mirrored for get_shortcut IPC
 
 const selectionDeps = () => ({
@@ -55,6 +57,7 @@ const applySelectionSettings = (settings) => {
 };
 
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'da_settings.json');
+const CHAT_SESSION_PATH = () => path.join(app.getPath('userData'), 'da_chat.json');
 
 const loadSettingsFromDisk = () => {
   try {
@@ -161,8 +164,8 @@ const createChatWindow = (options = {}) => {
 
   chatWindow = new BrowserWindow({
     title: ' ',
-    width: 760,
-    height: 680,
+    width: 640,
+    height: 520,
     minWidth: 640,
     minHeight: 520,
     resizable: true,
@@ -190,6 +193,14 @@ const createChatWindow = (options = {}) => {
 
   const query = view === 'settings' ? '?window=chat&view=settings' : '?window=chat';
   loadURL(chatWindow, query);
+
+  chatWindow.on('close', (e) => {
+    if (!isQuitting) {
+      e.preventDefault();
+      chatWindow.hide();
+    }
+  });
+
   chatWindow.on('closed', () => {
     chatWindow = null;
   });
@@ -344,6 +355,11 @@ const setupIPC = () => {
     modelsDir: MODELS_DIR,
     publicRoot: PUBLIC_ROOT,
     settingsPath: SETTINGS_PATH,
+  });
+
+  registerChatSessionHandlers({
+    ipcMain,
+    sessionPath: CHAT_SESSION_PATH,
   });
 
   ipcMain.handle('selection:copy', async (_event, text) => {
@@ -742,11 +758,20 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  isQuitting = true;
   selectionService.stopAll();
   globalShortcut.unregisterAll();
+  for (const controller of inflightChats.values()) {
+    controller.abort();
+  }
+  inflightChats.clear();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.removeAllListeners('close');
     mainWindow.close();
+  }
+  if (chatWindow && !chatWindow.isDestroyed()) {
+    chatWindow.removeAllListeners('close');
+    chatWindow.close();
   }
   if (tray) {
     destroyTray();

@@ -116,6 +116,18 @@ html.chat-window-shell body {
   overflow: hidden;
 }
 
+.chat-app-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-app-panel-hidden {
+  display: none;
+}
+
 .chat-app .chat-header-model {
   flex: 1;
   min-width: 0;
