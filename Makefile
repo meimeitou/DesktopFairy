@@ -1,22 +1,40 @@
-.PHONY: dev build build-dir lint preview clean install
+.DEFAULT_GOAL := help
 
-dev:
-	npm run dev
+# make dev: open Electron DevTools in a separate window by default
+DEVTOOLS ?= 1
+DEVTOOLS_MODE ?= detach
 
-build:
+.PHONY: help dev dev-quiet build build-dir lint preview clean install
+
+help: ## Show available targets
+	@echo "DesktopFairy — available targets:"
+	@echo ""
+	@grep -E '^[a-zA-Z0-9_-]+:.*?(## .*$$)?$$' $(MAKEFILE_LIST) | grep -v '^help:' | awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z0-9_-]+:/{ if (NF==2) printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2; else printf "  \033[36m%-12s\033[0m\n", $$1 }'
+	@echo ""
+	@echo "Dev options (make dev):"
+	@echo "  DEVTOOLS=1|0          Open DevTools (default: $(DEVTOOLS))"
+	@echo "  DEVTOOLS_MODE=detach  detach | right | bottom | undocked (default: $(DEVTOOLS_MODE))"
+
+install: ## Install npm dependencies
+	npm install
+
+dev: ## Start dev (Vite + Electron); DevTools detached by default
+	ELECTRON_OPEN_DEVTOOLS=$(DEVTOOLS) ELECTRON_DEVTOOLS_MODE=$(DEVTOOLS_MODE) npm run dev
+
+dev-quiet: ## Start dev without opening DevTools
+	$(MAKE) dev DEVTOOLS=0
+
+build: ## Production build (dmg installer)
 	npm run build
 
-build-dir:
+build-dir: ## Build app directory only (faster, for testing)
 	npm run build:dir
 
-lint:
+lint: ## Run ESLint
 	npm run lint
 
-preview:
+preview: ## Preview production build
 	npm run preview
 
-clean:
+clean: ## Remove dist/ and release/
 	rm -rf dist release
-
-install:
-	npm install

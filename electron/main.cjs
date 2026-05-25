@@ -19,6 +19,14 @@ const PROD_INDEX_PATH = path.join(__dirname, '../dist/index.html');
 
 const isDev = !app.isPackaged;
 
+const shouldOpenDevTools = () =>
+  isDev && process.env.ELECTRON_OPEN_DEVTOOLS === '1';
+
+const getDevToolsMode = () => {
+  const mode = process.env.ELECTRON_DEVTOOLS_MODE || 'detach';
+  return ['detach', 'right', 'bottom', 'undocked'].includes(mode) ? mode : 'detach';
+};
+
 // Scan public/models for model subdirectories
 const MODELS_DIR = isDev
   ? path.join(__dirname, '../public/models')
@@ -236,8 +244,8 @@ const createMainWindow = () => {
 
   loadURL(mainWindow);
 
-  if (isDev) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  if (shouldOpenDevTools()) {
+    mainWindow.webContents.openDevTools({ mode: getDevToolsMode() });
   }
 
   mainWindow.once('ready-to-show', () => {

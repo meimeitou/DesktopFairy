@@ -29,6 +29,11 @@ export default function ModelSelector({
 
   const showSearch = models.length > 8;
 
+  const effectiveValue =
+    !allowCustom && value && !models.includes(value)
+      ? models[0] ?? ""
+      : value;
+
   if (allowCustom && (useCustom || models.length === 0)) {
     return (
       <div className="model-selector">
@@ -77,11 +82,11 @@ export default function ModelSelector({
       <div className="model-selector-row">
         <select
           className="model-selector-select"
-          value={value}
+          value={effectiveValue}
           onChange={(e) => onChange(e.target.value)}
         >
-          {!models.includes(value) && value && (
-            <option value={value}>{value}</option>
+          {allowCustom && !models.includes(effectiveValue) && effectiveValue && (
+            <option value={effectiveValue}>{effectiveValue}</option>
           )}
           {filtered.length === 0 ? (
             <option value="">{placeholder}</option>

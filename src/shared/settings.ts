@@ -125,6 +125,11 @@ function finalizeSettings(settings: AppSettings): AppSettings {
         ? settings.live2dReactive
         : DEFAULT_SETTINGS.live2dReactive,
     customModels: normalizeCustomModels(settings.customModels),
+    modelName: (() => {
+      const provider = getActiveProvider(settings);
+      if (provider.models.length === 0) return settings.modelName;
+      return resolveModelNameForProvider(settings, provider);
+    })(),
   };
 }
 
@@ -188,11 +193,31 @@ export function getActiveProvider(settings: AppSettings): LlmProvider {
   return found;
 }
 
-export function getSelectableModels(settings: AppSettings): string[] {
+/** Model name from the active provider's curated list (empty if none configured). */
+export function resolveModelNameForProvider(
+  settings: AppSettings,
+  provider?: LlmProvider
+): string {
+  const p = provider ?? getActiveProvider(settings);
+  const models = p.models;
+  if (models.length === 0) return "";
+  if (settings.modelName && models.includes(settings.modelName)) {
+    return settings.modelName;
+  }
+  return models[0] ?? "";
+}
+
+/** Model used for chat API calls and the chat model selector. */
+export function getActiveModelName(settings: AppSettings): string {
   const provider = getActiveProvider(settings);
-  if (provider.models.length > 0) return provider.models;
-  if (settings.modelName) return [settings.modelName];
-  return [];
+  if (provider.models.length > 0) {
+    return resolveModelNameForProvider(settings, provider);
+  }
+  return settings.modelName;
+}
+
+export function getSelectableModels(settings: AppSettings): string[] {
+  return getActiveProvider(settings).models;
 }
 
 export function getActiveApiConfig(settings: AppSettings): {
@@ -207,7 +232,7 @@ export function getActiveApiConfig(settings: AppSettings): {
     apiHost: provider.apiHost,
     apiKey: provider.apiKey,
     providerType: provider.type,
-    modelName: settings.modelName,
+    modelName: getActiveModelName(settings),
     providerId: provider.id,
   };
 }

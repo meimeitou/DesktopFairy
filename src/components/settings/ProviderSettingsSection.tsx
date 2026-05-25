@@ -15,6 +15,7 @@ import type { AppSettings } from "../../shared/settings";
 import {
   getActiveProvider,
   getSelectableModels,
+  resolveModelNameForProvider,
   updateProviderInSettings,
 } from "../../shared/settings";
 import "./ProviderSettingsSection.css";
@@ -119,16 +120,12 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
   };
 
   const modelToCheck = useMemo(() => {
-    if (!selected) return settings.modelName || "";
-    if (
-      settings.activeProviderId === selected.id &&
-      settings.modelName &&
-      (selected.models.length === 0 || selected.models.includes(settings.modelName))
-    ) {
-      return settings.modelName;
-    }
-    return selected.models[0] || settings.modelName || "";
-  }, [selected, settings.activeProviderId, settings.modelName]);
+    if (!selected) return "";
+    return resolveModelNameForProvider(
+      { ...settings, activeProviderId: selected.id },
+      selected
+    );
+  }, [selected, settings]);
 
   useEffect(() => {
     setCheckStatus("idle");
@@ -345,11 +342,10 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             <label>默认模型</label>
             <ModelSelector
               models={selectable}
-              value={
-                selected.models.includes(settings.modelName)
-                  ? settings.modelName
-                  : selected.models[0] || settings.modelName
-              }
+              value={resolveModelNameForProvider(
+                { ...settings, activeProviderId: selected.id },
+                selected
+              )}
               onChange={(modelName) =>
                 onChange({ ...settings, modelName, activeProviderId: selected.id })
               }

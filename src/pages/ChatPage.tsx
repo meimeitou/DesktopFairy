@@ -12,6 +12,8 @@ import {
   saveSettings,
   getSelectableModels,
   getActiveApiConfig,
+  resolveModelNameForProvider,
+  getActiveModelName,
   type AppSettings,
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
@@ -125,6 +127,7 @@ export default function ChatPage({
   const handleSendRef = useRef<(text?: string) => void>(() => {});
 
   const selectableModels = getSelectableModels(chatSettings);
+  const activeModelName = getActiveModelName(chatSettings);
 
   useEffect(() => {
     chatMessagesRef.current = messages;
@@ -382,11 +385,8 @@ export default function ChatPage({
       <div className="chat-messages" ref={messagesContainerRef}>
         {messages.length === 0 ? (
           <div className="chat-empty">
-            <span className="chat-empty-icon">💬</span>
-            <p>开始对话</p>
-            <small>
-              支持 Markdown 渲染、文件上传、清除上下文与模型切换
-            </small>
+            <span className="chat-empty-icon">🧚‍♀️</span>
+            <p>开始聊天</p>
           </div>
         ) : (
           messages.map((m, i) =>
@@ -412,7 +412,7 @@ export default function ChatPage({
         streaming={streaming}
         hasMessages={messages.length > 0}
         models={selectableModels}
-        modelName={chatSettings.modelName}
+        modelName={activeModelName}
         onModelChange={handleModelChange}
         onSend={() => void handleSend()}
         onStop={handleStop}
