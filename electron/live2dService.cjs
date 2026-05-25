@@ -79,11 +79,12 @@ function loadCustomModelsFromDisk(settingsPath) {
     const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const custom = Array.isArray(data.customModels) ? data.customModels : [];
     return custom
-      .filter((m) => m && typeof m.path === 'string' && fs.existsSync(m.path))
+      .filter((m) => m && typeof m.path === 'string' && m.path.trim())
       .map((m) => ({
         name: String(m.name || path.basename(path.dirname(m.path))),
-        path: m.path,
+        path: m.path.trim(),
         source: 'local',
+        missing: !fs.existsSync(m.path.trim()),
       }));
   } catch {
     return [];

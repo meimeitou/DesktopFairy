@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings, CustomLive2DModel } from "../../shared/settings";
+import { DEFAULT_SETTINGS } from "../../shared/settings";
 import { isLocalModelPath, modelDisplayName } from "../../shared/live2dPaths";
 
 const api = window.electronAPI;
@@ -8,6 +9,7 @@ interface Live2DModelOption {
   name: string;
   path: string;
   source?: "bundled" | "local";
+  missing?: boolean;
 }
 
 interface ModelCapabilities {
@@ -96,6 +98,28 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     refreshModels();
   }, [refreshModels, settings.customModels]);
 
+  const displayModels = useMemo(() => {
+    const byPath = new Map<string, Live2DModelOption>();
+    for (const model of models) {
+      byPath.set(model.path, model);
+    }
+    for (const entry of settings.customModels) {
+      if (!byPath.has(entry.path)) {
+        byPath.set(entry.path, {
+          name: entry.name || modelDisplayName(entry.path),
+          path: entry.path,
+          source: "local",
+          missing: true,
+        });
+      }
+    }
+    const all = Array.from(byPath.values());
+    return [
+      ...all.filter((m) => m.source !== "local"),
+      ...all.filter((m) => m.source === "local"),
+    ];
+  }, [models, settings.customModels]);
+
   const appendCustomModel = (
     customModels: CustomLive2DModel[],
     entry: CustomLive2DModel
@@ -157,9 +181,28 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
       .catch(() => setCaps(EMPTY_CAPS));
   }, [settings.modelPath]);
 
-  const selectModel = (modelPath: string) => {
-    onChange({ modelPath });
-    api.invoke("live2d:switch_model", modelPath).catch(() => {});
+  const selectModel = (model: Live2DModelOption) => {
+    if (model.missing) {
+      setPickError("该模型文件已失效，请重新选择目录或从列表中移除");
+      return;
+    }
+    setPickError(null);
+    onChange({ modelPath: model.path });
+    api.invoke("live2d:switch_model", model.path).catch(() => {});
+  };
+
+  const removeLocalModel = (model: Live2DModelOption) => {
+    const label = model.name || modelDisplayName(model.path);
+    if (!window.confirm(`确定从列表中移除本地模型「${label}」吗？`)) return;
+    setPickError(null);
+    const nextCustom = settings.customModels.filter((m) => m.path !== model.path);
+    const patch: Partial<AppSettings> = { customModels: nextCustom };
+    if (settings.modelPath === model.path) {
+      patch.modelPath = DEFAULT_SETTINGS.modelPath;
+      api.invoke("live2d:switch_model", DEFAULT_SETTINGS.modelPath).catch(() => {});
+    }
+    onChange(patch);
+    refreshModels();
   };
 
   const sendCommand = (cmd: string) => {
@@ -188,21 +231,41 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
         {pickWarning && (
           <p className="about-text secondary">{pickWarning}</p>
         )}
-        {models.length > 0 ? (
+        {displayModels.length > 0 ? (
           <div className="model-picker">
-            {models.map((model) => (
-              <button
-                key={model.path}
-                type="button"
-                className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}`}
-                onClick={() => selectModel(model.path)}
-                title={model.path}
-              >
-                {model.name}
-                <span className="model-picker-source">
-                  {model.source === "local" ? "本地" : "内置"}
-                </span>
-              </button>
+            {displayModels.map((model) => (
+              <div key={model.path} className="model-picker-item">
+                <button
+                  type="button"
+                  className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}${model.missing ? " missing" : ""}`}
+                  onClick={() => selectModel(model)}
+                  title={model.path}
+                  disabled={model.missing}
+                >
+                  {model.name}
+                  <span className="model-picker-source">
+                    {model.missing
+                      ? "失效"
+                      : model.source === "local"
+                        ? "本地"
+                        : "内置"}
+                  </span>
+                </button>
+                {model.source === "local" && (
+                  <button
+                    type="button"
+                    className="model-picker-remove-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeLocalModel(model);
+                    }}
+                    title="从列表中移除"
+                    aria-label={`移除 ${model.name}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         ) : (

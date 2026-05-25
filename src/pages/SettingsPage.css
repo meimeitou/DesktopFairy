@@ -447,6 +447,43 @@
   gap: 8px;
 }
 
+.model-picker-item {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-picker-remove-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(220, 80, 80, 0.45);
+  border-radius: 50%;
+  background: rgb(42, 28, 32);
+  color: rgba(255, 154, 154, 0.95);
+  font-size: 13px;
+  line-height: 1;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.15s;
+}
+
+.model-picker-remove-btn:hover {
+  background: rgba(220, 80, 80, 0.85);
+  border-color: rgba(255, 120, 120, 0.9);
+  color: rgba(255, 255, 255, 0.98);
+  transform: scale(1.05);
+}
+
 .model-picker-btn {
   padding: 8px 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -471,6 +508,18 @@
   border-color: rgba(120, 100, 255, 0.6);
   background: rgba(120, 100, 255, 0.15);
   color: rgba(255, 255, 255, 0.95);
+}
+
+.model-picker-btn.missing {
+  border-color: rgba(220, 80, 80, 0.35);
+  background: rgba(220, 80, 80, 0.08);
+  color: rgba(255, 255, 255, 0.45);
+  cursor: not-allowed;
+}
+
+.model-picker-btn.missing .model-picker-source {
+  background: rgba(220, 80, 80, 0.2);
+  color: rgba(255, 154, 154, 0.95);
 }
 
 .live2d-model-toolbar {
