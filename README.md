@@ -2,6 +2,8 @@
 
 常驻桌面的 Live2D 看板娘应用，支持 AI 对话。
 
+![DesktopFairy](./docs/desktopfairy.png)
+
 ## 功能
 
 - 透明悬浮窗，Live2D 角色始终显示在桌面最前方
