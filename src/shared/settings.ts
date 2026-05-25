@@ -41,7 +41,7 @@ export interface AppSettings {
   modelOffsetY: number;
   /** Chat-driven expressions instead of random idle expressions */
   live2dReactive: boolean;
-  /** User-picked local Live2D models (absolute paths to *.model3.json) */
+  /** User-picked local Live2D models (absolute paths; soft-unlist only, never deletes files) */
   customModels: CustomLive2DModel[];
 }
 

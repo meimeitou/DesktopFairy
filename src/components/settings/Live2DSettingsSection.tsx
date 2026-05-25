@@ -99,25 +99,17 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
   }, [refreshModels, settings.customModels]);
 
   const displayModels = useMemo(() => {
-    const byPath = new Map<string, Live2DModelOption>();
-    for (const model of models) {
-      byPath.set(model.path, model);
-    }
-    for (const entry of settings.customModels) {
-      if (!byPath.has(entry.path)) {
-        byPath.set(entry.path, {
-          name: entry.name || modelDisplayName(entry.path),
-          path: entry.path,
-          source: "local",
-          missing: true,
-        });
-      }
-    }
-    const all = Array.from(byPath.values());
-    return [
-      ...all.filter((m) => m.source !== "local"),
-      ...all.filter((m) => m.source === "local"),
-    ];
+    const bundled = models.filter((m) => m.source !== "local");
+    const local = settings.customModels.map((entry) => {
+      const listed = models.find((m) => m.path === entry.path);
+      return {
+        name: entry.name || modelDisplayName(entry.path),
+        path: entry.path,
+        source: "local" as const,
+        missing: listed ? !!listed.missing : false,
+      };
+    });
+    return [...bundled, ...local];
   }, [models, settings.customModels]);
 
   const appendCustomModel = (
@@ -191,9 +183,16 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     api.invoke("live2d:switch_model", model.path).catch(() => {});
   };
 
-  const removeLocalModel = (model: Live2DModelOption) => {
+  /** Remove from app settings only; model files on disk are never deleted. */
+  const unlistLocalModel = (model: Live2DModelOption) => {
     const label = model.name || modelDisplayName(model.path);
-    if (!window.confirm(`确定从列表中移除本地模型「${label}」吗？`)) return;
+    if (
+      !window.confirm(
+        `确定从应用列表中移除「${label}」吗？\n\n仅从 DesktopFairy 配置中取消引用，不会删除磁盘上的模型文件。`
+      )
+    ) {
+      return;
+    }
     setPickError(null);
     const nextCustom = settings.customModels.filter((m) => m.path !== model.path);
     const patch: Partial<AppSettings> = { customModels: nextCustom };
@@ -202,7 +201,6 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
       api.invoke("live2d:switch_model", DEFAULT_SETTINGS.modelPath).catch(() => {});
     }
     onChange(patch);
-    refreshModels();
   };
 
   const sendCommand = (cmd: string) => {
@@ -255,12 +253,16 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
                   <button
                     type="button"
                     className="model-picker-remove-btn"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeLocalModel(model);
+                      unlistLocalModel(model);
                     }}
-                    title="从列表中移除"
-                    aria-label={`移除 ${model.name}`}
+                    title="从应用列表移除（不删除源文件）"
+                    aria-label={`从应用列表移除 ${model.name}`}
                   >
                     ×
                   </button>
@@ -459,7 +461,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
 
       <p className="about-text secondary">
         内置模型放在 public/models/；本地下载的模型可通过「浏览本地目录」选择，将自动使用该目录下的
-        .model3.json 配置文件。
+        .model3.json 配置文件。列表右上角的 × 仅从应用配置中移除引用，不会删除磁盘上的模型文件；需要时可再次浏览同一目录重新添加。
       </p>
     </section>
   );
