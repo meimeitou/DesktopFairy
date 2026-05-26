@@ -112,6 +112,16 @@ const hideMacDock = () => {
   if (app.dock?.hide) app.dock.hide();
 };
 
+const presentChatWindowOnMac = (...args) => {
+  presentChatWindow(...args);
+  hideMacDock();
+};
+
+const dismissChatWindow = (win) => {
+  hideChatWindow(win);
+  hideMacDock();
+};
+
 const destroyTray = () => {
   if (tray && !tray.isDestroyed()) {
     tray.removeAllListeners();
@@ -161,7 +171,7 @@ const createChatWindow = (options = {}) => {
   const { view = 'chat', refPoint = screen.getCursorScreenPoint() } = options;
 
   if (chatWindow && !chatWindow.isDestroyed()) {
-    presentChatWindow(screen, mainWindow, chatWindow, refPoint);
+    presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint);
     navigateChatWindow(chatWindow, view);
     return chatWindow;
   }
@@ -179,10 +189,12 @@ const createChatWindow = (options = {}) => {
     resizable: true,
     center: false,
     show: false,
+    skipTaskbar: true,
     autoHideMenuBar: true,
     backgroundColor: '#0f0f19',
     ...(process.platform === 'darwin'
       ? {
+          type: 'panel',
           titleBarStyle: 'hidden',
           titleBarOverlay: {
             color: '#0f0f19',
@@ -204,14 +216,18 @@ const createChatWindow = (options = {}) => {
 
   chatWindow.once('ready-to-show', () => {
     if (!chatWindow || chatWindow.isDestroyed()) return;
-    presentChatWindow(screen, mainWindow, chatWindow, refPoint);
+    presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint);
   });
 
   chatWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
-      hideChatWindow(chatWindow);
+      dismissChatWindow(chatWindow);
     }
+  });
+
+  chatWindow.on('hide', () => {
+    hideMacDock();
   });
 
   chatWindow.on('closed', () => {
@@ -237,7 +253,7 @@ const sendChatPrefill = (payload) => {
 async function screenshotToChat() {
   const attachment = await captureRegion(getScreenshotWindows);
   if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
-    presentChatWindow(screen, mainWindow, chatWindow, screen.getCursorScreenPoint());
+    presentChatWindowOnMac(screen, mainWindow, chatWindow, screen.getCursorScreenPoint());
   }
   if (!attachment) return null;
   sendChatPrefill({ attachments: [attachment] });
@@ -294,7 +310,10 @@ const createMainWindow = () => {
     if (process.platform === 'darwin') floatWindowOnAllSpaces(mainWindow);
   });
   mainWindow.on('focus', () => {
-    if (process.platform === 'darwin') floatWindowOnAllSpaces(mainWindow);
+    if (process.platform === 'darwin') {
+      floatWindowOnAllSpaces(mainWindow);
+      hideMacDock();
+    }
   });
 
   mainWindow.on('closed', () => {
@@ -755,8 +774,9 @@ app.whenReady().then(() => {
     currentShortcut = diskSettings.selectionShortcut || currentShortcut;
   }
 
-  // Dock icon click → re-show main window
+  // Dock icon click → re-show main window (keep accessory / no Dock icon)
   app.on('activate', () => {
+    hideMacDock();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
