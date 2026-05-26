@@ -10,6 +10,11 @@ const {
   registerLive2DHandlers,
 } = require('./live2dService.cjs');
 const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
+const {
+  resolveChatWindowPosition,
+  presentChatWindow,
+  hideChatWindow,
+} = require('./chatWindowPosition.cjs');
 
 registerLive2DSchemes();
 
@@ -153,14 +158,15 @@ const navigateChatWindow = (win, view = 'chat') => {
 };
 
 const createChatWindow = (options = {}) => {
-  const { view = 'chat' } = options;
+  const { view = 'chat', refPoint = screen.getCursorScreenPoint() } = options;
 
   if (chatWindow && !chatWindow.isDestroyed()) {
-    chatWindow.show();
-    chatWindow.focus();
+    presentChatWindow(screen, mainWindow, chatWindow, refPoint);
     navigateChatWindow(chatWindow, view);
     return chatWindow;
   }
+
+  const initialPos = resolveChatWindowPosition(screen, mainWindow, null, refPoint);
 
   chatWindow = new BrowserWindow({
     title: ' ',
@@ -168,9 +174,11 @@ const createChatWindow = (options = {}) => {
     height: 520,
     minWidth: 640,
     minHeight: 520,
+    x: initialPos.x,
+    y: initialPos.y,
     resizable: true,
-    center: true,
-    show: true,
+    center: false,
+    show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0f0f19',
     ...(process.platform === 'darwin'
@@ -194,10 +202,15 @@ const createChatWindow = (options = {}) => {
   const query = view === 'settings' ? '?window=chat&view=settings' : '?window=chat';
   loadURL(chatWindow, query);
 
+  chatWindow.once('ready-to-show', () => {
+    if (!chatWindow || chatWindow.isDestroyed()) return;
+    presentChatWindow(screen, mainWindow, chatWindow, refPoint);
+  });
+
   chatWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
-      chatWindow.hide();
+      hideChatWindow(chatWindow);
     }
   });
 
@@ -223,6 +236,9 @@ const sendChatPrefill = (payload) => {
 
 async function screenshotToChat() {
   const attachment = await captureRegion(getScreenshotWindows);
+  if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
+    presentChatWindow(screen, mainWindow, chatWindow, screen.getCursorScreenPoint());
+  }
   if (!attachment) return null;
   sendChatPrefill({ attachments: [attachment] });
   return attachment;
