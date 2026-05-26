@@ -1,3 +1,5 @@
+import { publicUrl } from "./publicUrl";
+
 const BUNDLED_PREFIX = "/models/";
 const DFMODEL_PREFIX = "dfmodel://local";
 
@@ -15,7 +17,7 @@ export function isLocalModelPath(modelPath: string): boolean {
 export function toLoadableModelUrl(modelPath: string): string {
   const trimmed = modelPath.trim();
   if (!trimmed) return trimmed;
-  if (isBundledModelPath(trimmed)) return trimmed;
+  if (isBundledModelPath(trimmed)) return publicUrl(trimmed);
   if (trimmed.startsWith("dfmodel://")) {
     // Migrate legacy URLs that lost the leading path slash (dfmodel://users/...).
     if (/^dfmodel:\/\/[^/]+(?:\/|$)/i.test(trimmed) && !trimmed.startsWith(DFMODEL_PREFIX)) {

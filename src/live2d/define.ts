@@ -1,5 +1,7 @@
 // Path where GLSL shaders are served from (public/shaders/).
-export const ShaderPath = '/shaders/';
+import { publicUrl } from "../shared/publicUrl";
+
+export const ShaderPath = publicUrl("shaders/");
 
 // Motion group names — must match model3.json keys.
 export const MotionGroupIdle = 'Idle';

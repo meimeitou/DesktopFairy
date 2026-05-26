@@ -52,6 +52,11 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "asarUnpack": [
+      "dist/models/**",
+      "dist/shaders/**",
+      "dist/live2dcubismcore.min.js"
+    ],
     "npmRebuild": true,
     "buildDependenciesFromSource": false,
     "mac": {
