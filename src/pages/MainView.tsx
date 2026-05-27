@@ -1,23 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Live2DCanvas from "../components/Live2DCanvas";
+import { loadSettings, normalizeSpeechBubbleMaxChars, type AppSettings } from "../shared/settings";
 import "./MainView.css";
 
 const DEFAULT_MODEL = "/models/Hiyori/Hiyori.model3.json";
-
-function readSettings() {
-  try {
-    const raw = localStorage.getItem("da_settings");
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
 
 // Electron IPC bridge (exposed via preload.js contextBridge)
 const api = window.electronAPI;
 
 export default function MainView() {
-  const initial = readSettings();
+  const initial = loadSettings();
   const [modelPath, setModelPath] = useState<string>(
     initial.modelPath || DEFAULT_MODEL,
   );
@@ -33,9 +25,16 @@ export default function MainView() {
   const [live2dReactive, setLive2dReactive] = useState<boolean>(
     initial.live2dReactive !== false,
   );
+  const [live2dSpeechBubble, setLive2dSpeechBubble] = useState<boolean>(
+    initial.live2dSpeechBubble !== false,
+  );
+  const [live2dSpeechBubbleMaxChars, setLive2dSpeechBubbleMaxChars] =
+    useState<number>(
+      normalizeSpeechBubbleMaxChars(initial.live2dSpeechBubbleMaxChars)
+    );
   const [isHovered, setIsHovered] = useState(false);
 
-  const applySettings = useCallback((s: Record<string, unknown>) => {
+  const applySettings = useCallback((s: Partial<AppSettings>) => {
     if (typeof s.modelPath === "string") {
       setModelPath(s.modelPath || DEFAULT_MODEL);
     }
@@ -51,11 +50,19 @@ export default function MainView() {
     if (typeof s.live2dReactive === "boolean") {
       setLive2dReactive(s.live2dReactive);
     }
+    if (typeof s.live2dSpeechBubble === "boolean") {
+      setLive2dSpeechBubble(s.live2dSpeechBubble);
+    }
+    if (typeof s.live2dSpeechBubbleMaxChars === "number") {
+      setLive2dSpeechBubbleMaxChars(
+        normalizeSpeechBubbleMaxChars(s.live2dSpeechBubbleMaxChars)
+      );
+    }
   }, []);
 
   // Resize window on mount + re-assert float behavior + sync settings to main
   useEffect(() => {
-    const s = readSettings();
+    const s = loadSettings();
     const w = s.windowWidth ?? 200;
     const h = s.windowHeight ?? 400;
     api.windowSetSize(w, h);
@@ -66,14 +73,14 @@ export default function MainView() {
   // Apply settings pushed from the chat/settings window immediately
   useEffect(() => {
     const off = api.onSettingsUpdated?.((settings) => {
-      applySettings(settings);
+      applySettings(settings as Partial<AppSettings>);
     });
     return () => off?.();
   }, [applySettings]);
 
   // Fallback when user focuses the model window directly
   useEffect(() => {
-    const onFocus = () => applySettings(readSettings());
+    const onFocus = () => applySettings(loadSettings());
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [applySettings]);
@@ -82,7 +89,7 @@ export default function MainView() {
   useEffect(() => {
     const unsubscribe = api.onSwitchModel((newPath: string) => {
       setModelPath(newPath);
-      const s = readSettings();
+      const s = loadSettings();
       localStorage.setItem(
         "da_settings",
         JSON.stringify({ ...s, modelPath: newPath }),
@@ -162,6 +169,8 @@ export default function MainView() {
             modelOffsetX={modelOffsetX}
             modelOffsetY={modelOffsetY}
             live2dReactive={live2dReactive}
+            live2dSpeechBubble={live2dSpeechBubble}
+            live2dSpeechBubbleMaxChars={live2dSpeechBubbleMaxChars}
           />
         ) : (
           <div className="char-default">

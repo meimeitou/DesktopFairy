@@ -2,7 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { app } = require('electron');
+const { app, clipboard } = require('electron');
+const { isOcrAvailable, recognizeImagePath } = require('./ocrService.cjs');
 
 const execFileAsync = promisify(execFile);
 
@@ -77,8 +78,39 @@ async function captureRegion(getWindows) {
   }
 }
 
+function removeTempFile(filePath) {
+  if (!filePath) return;
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function screenshotCopyText(getWindows) {
+  if (process.platform !== 'darwin') {
+    throw new Error('截图复制当前仅支持 macOS');
+  }
+  if (!isOcrAvailable()) {
+    throw new Error('macOS OCR 模块不可用');
+  }
+
+  const attachment = await captureRegion(getWindows);
+  if (!attachment?.path) return null;
+
+  try {
+    const { text } = await recognizeImagePath(attachment.path);
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return null;
+    clipboard.writeText(trimmed);
+    return trimmed;
+  } finally {
+    removeTempFile(attachment.path);
+  }
+}
+
 function registerScreenshotHandlers(ipcMain, deps) {
-  const { getWindows, captureToChat } = deps;
+  const { getWindows, captureToChat, onScreenshotCopyText } = deps;
 
   ipcMain.handle('screenshot:capture', async () => {
     return captureRegion(getWindows);
@@ -90,6 +122,23 @@ function registerScreenshotHandlers(ipcMain, deps) {
     captureToChat({ attachments: [attachment] });
     return attachment;
   });
+
+  ipcMain.handle('screenshot:copy_text', async () => {
+    try {
+      const text = await screenshotCopyText(getWindows);
+      onScreenshotCopyText?.(!!text);
+      return text;
+    } catch (err) {
+      onScreenshotCopyText?.(false);
+      throw err;
+    }
+  });
 }
 
-module.exports = { registerScreenshotHandlers, captureRegion, getScreenshotDir };
+module.exports = {
+  registerScreenshotHandlers,
+  captureRegion,
+  screenshotCopyText,
+  getScreenshotDir,
+  isOcrAvailable,
+};

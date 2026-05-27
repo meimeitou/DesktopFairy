@@ -27,8 +27,34 @@ function resolveRefPoint(screen, mainWindow, refPoint) {
   return screen.getCursorScreenPoint();
 }
 
+/** Place chat window to the left or right of a screen point (e.g. selection toolbar / cursor). */
+function resolveChatWindowPositionNearPoint(screen, chatWindow, refPoint) {
+  const { width: chatW, height: chatH } = getChatWindowSize(chatWindow);
+  const ref = resolveRefPoint(screen, null, refPoint);
+  const display = screen.getDisplayNearestPoint(ref);
+  const { workArea } = display;
+
+  let x = ref.x + CHAT_GAP;
+  let y = ref.y - Math.round(chatH / 2);
+
+  if (x + chatW > workArea.x + workArea.width) {
+    x = ref.x - chatW - CHAT_GAP;
+  }
+  if (x < workArea.x) {
+    x = ref.x - Math.round(chatW / 2);
+  }
+
+  return clampToWorkArea(x, y, chatW, chatH, workArea);
+}
+
 /** Place chat window beside the Live2D main window on the display the user is on. */
-function resolveChatWindowPosition(screen, mainWindow, chatWindow, refPoint) {
+function resolveChatWindowPosition(screen, mainWindow, chatWindow, refPoint, options = {}) {
+  const { anchor = 'main' } = options;
+
+  if (anchor === 'cursor') {
+    return resolveChatWindowPositionNearPoint(screen, chatWindow, refPoint);
+  }
+
   const { width: chatW, height: chatH } = getChatWindowSize(chatWindow);
   const ref = resolveRefPoint(screen, mainWindow, refPoint);
   const display = screen.getDisplayNearestPoint(ref);
@@ -64,9 +90,9 @@ function resolveChatWindowPosition(screen, mainWindow, chatWindow, refPoint) {
   return clampToWorkArea(x, y, chatW, chatH, workArea);
 }
 
-function positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint) {
+function positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options = {}) {
   if (!chatWindow || chatWindow.isDestroyed()) return;
-  const pos = resolveChatWindowPosition(screen, mainWindow, chatWindow, refPoint);
+  const pos = resolveChatWindowPosition(screen, mainWindow, chatWindow, refPoint, options);
   chatWindow.setPosition(pos.x, pos.y);
 }
 
@@ -83,19 +109,21 @@ function detachChatFromAllSpaces(chatWindow) {
   chatWindow.setVisibleOnAllWorkspaces(false);
 }
 
-function presentChatWindow(screen, mainWindow, chatWindow, refPoint) {
+function presentChatWindow(screen, mainWindow, chatWindow, refPoint, options = {}) {
   if (!chatWindow || chatWindow.isDestroyed()) return;
 
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  const { anchor = 'main' } = options;
+
+  if (anchor === 'main' && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
   }
 
   attachChatToAllSpaces(chatWindow);
-  positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint);
+  positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options);
   chatWindow.show();
   chatWindow.focus();
-  positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint);
+  positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options);
 }
 
 function hideChatWindow(chatWindow) {
@@ -106,6 +134,7 @@ function hideChatWindow(chatWindow) {
 
 module.exports = {
   resolveChatWindowPosition,
+  resolveChatWindowPositionNearPoint,
   positionChatWindowNearMain,
   attachChatToAllSpaces,
   detachChatFromAllSpaces,

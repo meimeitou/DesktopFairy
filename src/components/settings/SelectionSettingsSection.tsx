@@ -39,7 +39,7 @@ export default function SelectionSettingsSection({
 
   useEffect(() => {
     refreshAccessibility();
-  }, [settings.selectionTriggerMode]);
+  }, [settings.selectionTriggerMode, settings.selectionEnabled]);
 
   const updateAction = (id: string, patch: Partial<SelectionActionItem>) => {
     const next = settings.selectionActions.map((a) =>
@@ -57,7 +57,13 @@ export default function SelectionSettingsSection({
   const enabledCount = settings.selectionActions.filter((a) => a.enabled).length;
   const isAutoMode = settings.selectionTriggerMode === "auto";
   const needsAccessibility =
-    isAutoMode && accessibility?.supported && !accessibility?.trusted;
+    settings.selectionEnabled &&
+    accessibility?.supported &&
+    !accessibility?.trusted;
+  const hookMissing =
+    settings.selectionEnabled &&
+    accessibility?.supported &&
+    accessibility?.hookAvailable === false;
 
   const setTriggerMode = (mode: SelectionTriggerMode) => {
     onChange({ selectionTriggerMode: mode });
@@ -100,13 +106,16 @@ export default function SelectionSettingsSection({
         </div>
         <p className="about-text secondary">
           {isAutoMode
-            ? "选中文字后自动显示工具栏（macOS 需开启辅助功能权限）"
+            ? "选中文字后自动显示工具栏"
             : "选中文字后按快捷键显示工具栏"}
         </p>
         {needsAccessibility && (
           <div className="selection-accessibility-hint">
             <p className="about-text secondary">
-              自动弹出模式需要「辅助功能」权限才能监听选词。
+              macOS 需要「辅助功能」权限才能读取选中文本
+              {isAutoMode ? "并监听选词" : ""}。请将 DesktopFairy
+              拖入「应用程序」文件夹后从该处启动（不要直接从 DMG
+              运行）；每次重新 build 安装后，可能需要在系统设置中重新勾选授权。
             </p>
             <button
               type="button"
@@ -119,6 +128,13 @@ export default function SelectionSettingsSection({
             >
               打开系统设置授权
             </button>
+          </div>
+        )}
+        {hookMissing && (
+          <div className="selection-accessibility-hint">
+            <p className="about-text secondary">
+              划词原生模块未加载，请重新安装应用或联系开发者。
+            </p>
           </div>
         )}
       </div>

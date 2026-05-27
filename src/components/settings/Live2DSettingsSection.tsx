@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings, CustomLive2DModel } from "../../shared/settings";
-import { DEFAULT_SETTINGS } from "../../shared/settings";
+import { DEFAULT_SETTINGS, normalizeSpeechBubbleMaxChars } from "../../shared/settings";
+import { notifyLive2DSpeechBubble } from "../../shared/speechBubble";
 import { isLocalModelPath, modelDisplayName } from "../../shared/live2dPaths";
 
 const api = window.electronAPI;
@@ -103,6 +104,8 @@ function SizeNumberInput({
 
 const EMPTY_CAPS: ModelCapabilities = { expressions: [], motionGroups: [] };
 
+const DEFAULT_SPEECH_BUBBLE_TEST_TEXT = "你好呀(｡･∀･)ﾉﾞ";
+
 const OFFSET_INPUT_PATTERN = /^-?\d*$/;
 
 function formatOffsetDisplay(value: number): string {
@@ -158,6 +161,9 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
   const [caps, setCaps] = useState<ModelCapabilities>(EMPTY_CAPS);
   const [pickError, setPickError] = useState<string | null>(null);
   const [pickWarning, setPickWarning] = useState<string | null>(null);
+  const [bubbleTestText, setBubbleTestText] = useState(
+    DEFAULT_SPEECH_BUBBLE_TEST_TEXT
+  );
 
   const refreshModels = useCallback(() => {
     api
@@ -279,6 +285,11 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     api.invoke("live2d:command", cmd).catch(() => {});
   };
 
+  const testSpeechBubble = () => {
+    const text = bubbleTestText.trim() || DEFAULT_SPEECH_BUBBLE_TEST_TEXT;
+    notifyLive2DSpeechBubble(text, "manual");
+  };
+
   const hasMotions = caps.motionGroups.length > 0;
   const hasExpressions = caps.expressions.length > 0;
 
@@ -384,6 +395,65 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
           拟人化反应（随聊天切换表情，关闭后恢复随机表情）
         </label>
       </div>
+
+      <div className="field">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={settings.live2dSpeechBubble}
+            onChange={(e) => onChange({ live2dSpeechBubble: e.target.checked })}
+          />
+          头顶对话框（显示 AI 回复摘要等简短文字）
+        </label>
+      </div>
+
+      {settings.live2dSpeechBubble && (
+        <div className="field">
+          <label>对话框最大字数</label>
+          <input
+            type="number"
+            min={20}
+            max={120}
+            value={settings.live2dSpeechBubbleMaxChars}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") return;
+              onChange({
+                live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
+                  Number(raw)
+                ),
+              });
+            }}
+            onBlur={(e) => {
+              onChange({
+                live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
+                  Number(e.target.value)
+                ),
+              });
+            }}
+          />
+          <div className="live2d-action-row" style={{ marginTop: 8 }}>
+            <input
+              type="text"
+              value={bubbleTestText}
+              onChange={(e) => setBubbleTestText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") testSpeechBubble();
+              }}
+              placeholder={DEFAULT_SPEECH_BUBBLE_TEST_TEXT}
+              aria-label="对话框测试文字"
+              style={{ flex: "1 1 140px", minWidth: 0 }}
+            />
+            <button
+              type="button"
+              className="settings-action-btn"
+              onClick={testSpeechBubble}
+            >
+              测试对话框
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="field">
         <label>动作与表情</label>

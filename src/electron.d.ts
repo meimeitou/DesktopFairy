@@ -1,6 +1,7 @@
 export {};
 
 import type { ChatAttachment } from "./shared/chatAttachments";
+import type { SpeechBubblePayload } from "./shared/speechBubble";
 
 declare global {
   interface Window {
@@ -28,6 +29,9 @@ declare global {
       getShortcut: () => Promise<string>;
       setShortcut: (shortcut: string) => Promise<boolean>;
       onLive2DCommand: (callback: (cmd: string) => void) => () => void;
+      onLive2DBubble: (
+        callback: (payload: SpeechBubblePayload | string) => void
+      ) => () => void;
       onSwitchModel: (callback: (modelPath: string) => void) => () => void;
       onChatStreamChunk: (
         callback: (payload: { requestId: string; delta: string }) => void

@@ -41,6 +41,10 @@ export interface AppSettings {
   modelOffsetY: number;
   /** Chat-driven expressions instead of random idle expressions */
   live2dReactive: boolean;
+  /** Show speech bubble above the model */
+  live2dSpeechBubble: boolean;
+  /** Max characters shown in the speech bubble */
+  live2dSpeechBubbleMaxChars: number;
   /** User-picked local Live2D models (absolute paths; soft-unlist only, never deletes files) */
   customModels: CustomLive2DModel[];
 }
@@ -66,6 +70,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modelOffsetX: 0,
   modelOffsetY: 0,
   live2dReactive: true,
+  live2dSpeechBubble: true,
+  live2dSpeechBubbleMaxChars: 50,
   customModels: [],
 };
 
@@ -73,6 +79,8 @@ const STORAGE_KEY = "da_settings";
 
 const MIN_SELECTION_MAX_LENGTH = 50;
 const MAX_SELECTION_MAX_LENGTH = 5000;
+const MIN_SPEECH_BUBBLE_MAX_CHARS = 20;
+const MAX_SPEECH_BUBBLE_MAX_CHARS = 120;
 
 export function normalizeSelectionMaxLength(value: unknown): number {
   const n = Number(value);
@@ -80,6 +88,15 @@ export function normalizeSelectionMaxLength(value: unknown): number {
   return Math.min(
     MAX_SELECTION_MAX_LENGTH,
     Math.max(MIN_SELECTION_MAX_LENGTH, Math.round(n))
+  );
+}
+
+export function normalizeSpeechBubbleMaxChars(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_SETTINGS.live2dSpeechBubbleMaxChars;
+  return Math.min(
+    MAX_SPEECH_BUBBLE_MAX_CHARS,
+    Math.max(MIN_SPEECH_BUBBLE_MAX_CHARS, Math.round(n))
   );
 }
 
@@ -124,6 +141,13 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       typeof settings.live2dReactive === "boolean"
         ? settings.live2dReactive
         : DEFAULT_SETTINGS.live2dReactive,
+    live2dSpeechBubble:
+      typeof settings.live2dSpeechBubble === "boolean"
+        ? settings.live2dSpeechBubble
+        : DEFAULT_SETTINGS.live2dSpeechBubble,
+    live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
+      settings.live2dSpeechBubbleMaxChars
+    ),
     customModels: normalizeCustomModels(settings.customModels),
     modelName: (() => {
       const provider = getActiveProvider(settings);

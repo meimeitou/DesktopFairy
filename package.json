@@ -14,6 +14,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@cherrystudio/mac-system-ocr": "^0.2.7",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
@@ -64,7 +65,8 @@
       "target": "dmg",
       "icon": "build/icon.png",
       "extendInfo": {
-        "LSUIElement": true
+        "LSUIElement": true,
+        "NSAccessibilityUsageDescription": "DesktopFairy 需要辅助功能权限以读取您选中的文字，用于划词助手。"
       }
     }
   }

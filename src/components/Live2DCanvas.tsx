@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Live2DController } from "../live2d/Live2DController";
-import { parseReactionCommand } from "../shared/live2dReactions";
+import Live2DSpeechBubble from "./Live2DSpeechBubble";
+import {
+  parseBubbleCommand,
+  parseReactionCommand,
+} from "../shared/live2dReactions";
+import {
+  normalizeSpeechBubblePayload,
+  truncateBubbleText,
+  type SpeechBubblePayload,
+} from "../shared/speechBubble";
+import { normalizeSpeechBubbleMaxChars } from "../shared/settings";
 
 interface Props {
   modelPath: string;
@@ -8,6 +18,8 @@ interface Props {
   modelOffsetX?: number;
   modelOffsetY?: number;
   live2dReactive?: boolean;
+  live2dSpeechBubble?: boolean;
+  live2dSpeechBubbleMaxChars?: number;
 }
 
 type Status = "loading" | "ready" | "error";
@@ -20,35 +32,90 @@ export default function Live2DCanvas({
   modelOffsetX = 0,
   modelOffsetY = 0,
   live2dReactive = true,
+  live2dSpeechBubble = true,
+  live2dSpeechBubbleMaxChars = 50,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<Live2DController | null>(null);
   const layoutRef = useRef({ modelScale, modelOffsetX, modelOffsetY });
+  const bubbleSettingsRef = useRef({
+    live2dSpeechBubble,
+    live2dSpeechBubbleMaxChars,
+  });
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
+  const [bubbleState, setBubbleState] = useState<{
+    text: string;
+    key: number;
+  } | null>(null);
+  const bubbleSeqRef = useRef(0);
 
   layoutRef.current = { modelScale, modelOffsetX, modelOffsetY };
+  bubbleSettingsRef.current = {
+    live2dSpeechBubble,
+    live2dSpeechBubbleMaxChars,
+  };
 
   const refreshCanvasLayout = useCallback(() => {
     requestAnimationFrame(() => controllerRef.current?.resize());
   }, []);
 
-  const handleLive2DCommand = useCallback((cmd: string) => {
-    const controller = controllerRef.current;
-    if (!controller) return;
-    if (cmd === "random_motion") {
-      controller.triggerRandomMotion();
-      return;
-    }
-    if (cmd === "next_expression") {
-      controller.nextExpression();
-      return;
-    }
-    const parsed = parseReactionCommand(cmd);
-    if (parsed) {
-      controller.applyReaction(parsed.reaction, parsed.assistantText);
-    }
+  const showSpeechBubble = useCallback(
+    (input: string | SpeechBubblePayload): boolean => {
+      const { live2dSpeechBubble: enabled, live2dSpeechBubbleMaxChars: maxCharsSetting } =
+        bubbleSettingsRef.current;
+      if (!enabled) return false;
+
+      const payload = normalizeSpeechBubblePayload(input);
+      if (!payload.text.trim()) return false;
+
+      const maxChars = normalizeSpeechBubbleMaxChars(maxCharsSetting);
+      const truncated = truncateBubbleText(payload.text, maxChars);
+      if (!truncated) return false;
+
+      bubbleSeqRef.current += 1;
+      setBubbleState({ text: truncated, key: bubbleSeqRef.current });
+      return true;
+    },
+    []
+  );
+
+  const handleBubbleHidden = useCallback(() => {
+    setBubbleState(null);
   }, []);
+
+  const handleLive2DCommand = useCallback(
+    (cmd: string) => {
+      const manualBubble = parseBubbleCommand(cmd);
+      if (manualBubble !== null) {
+        showSpeechBubble({ text: manualBubble, source: "manual" });
+        return;
+      }
+
+      const controller = controllerRef.current;
+      if (cmd === "random_motion") {
+        controller?.triggerRandomMotion();
+        return;
+      }
+      if (cmd === "next_expression") {
+        controller?.nextExpression();
+        return;
+      }
+
+      const parsed = parseReactionCommand(cmd);
+      if (!parsed) return;
+
+      controller?.applyReaction(parsed.reaction, parsed.assistantText);
+    },
+    [showSpeechBubble]
+  );
+
+  const handleLive2DBubble = useCallback(
+    (payload: string | SpeechBubblePayload) => {
+      showSpeechBubble(payload);
+    },
+    [showSpeechBubble]
+  );
 
   useEffect(() => {
     controllerRef.current?.setScale(modelScale);
@@ -64,6 +131,11 @@ export default function Live2DCanvas({
     const unsubscribe = api.onLive2DCommand(handleLive2DCommand);
     return unsubscribe;
   }, [handleLive2DCommand]);
+
+  useEffect(() => {
+    const unsubscribe = api.onLive2DBubble?.(handleLive2DBubble);
+    return () => unsubscribe?.();
+  }, [handleLive2DBubble]);
 
   useEffect(() => {
     window.addEventListener("resize", refreshCanvasLayout);
@@ -154,11 +226,20 @@ export default function Live2DCanvas({
     return () => clearInterval(expressionTimer);
   }, [live2dReactive, status, modelPath]);
 
+  const bubbleDisplay = bubbleState?.text ?? null;
+
   return (
     <div style={{ position: "absolute", inset: 0 }}>
       <canvas
         ref={canvasRef}
         style={{ display: "block", width: "100%", height: "100%" }}
+      />
+      <Live2DSpeechBubble
+        key={bubbleState?.key ?? "idle"}
+        text={bubbleDisplay}
+        offsetX={modelOffsetX}
+        offsetY={modelOffsetY}
+        onHidden={handleBubbleHidden}
       />
       {status === "loading" && (
         <div className="live2d-status">

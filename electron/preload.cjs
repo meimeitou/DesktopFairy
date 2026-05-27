@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'live2d:list_models',
       'live2d:switch_model',
       'live2d:command',
+      'live2d:bubble',
       'live2d:inspect_model',
       'live2d:select_model_dir',
       'selection:check_accessibility',
@@ -38,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'file:stat_path',
       'screenshot:capture',
       'screenshot:capture_to_chat',
+      'screenshot:copy_text',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -85,6 +87,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, cmd) => callback(cmd);
     ipcRenderer.on('live2d:command', listener);
     return () => ipcRenderer.removeListener('live2d:command', listener);
+  },
+
+  onLive2DBubble: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('live2d:bubble', listener);
+    return () => ipcRenderer.removeListener('live2d:bubble', listener);
   },
 
   // Model switch pushed from main process (tray menu)

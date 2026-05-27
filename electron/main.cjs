@@ -2,12 +2,14 @@ const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, globalShor
 const path = require('path');
 const fs = require('fs');
 const selectionService = require('./selectionService.cjs');
+const tipWindow = require('./tipWindow.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
-const { registerScreenshotHandlers, captureRegion } = require('./screenshotService.cjs');
+const { registerScreenshotHandlers, captureRegion, screenshotCopyText, isOcrAvailable } = require('./screenshotService.cjs');
 const {
   registerLive2DSchemes,
   registerLive2DProtocol,
   registerLive2DHandlers,
+  pushLive2DBubble,
 } = require('./live2dService.cjs');
 const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
 const {
@@ -71,6 +73,19 @@ const loadSettingsFromDisk = () => {
     return null;
   }
 };
+
+/** Selection defaults — keep in sync with src/shared/settings.ts DEFAULT_SETTINGS */
+const DEFAULT_SELECTION_SETTINGS = {
+  selectionEnabled: true,
+  selectionTriggerMode: 'shortcut',
+  selectionShortcut: 'Command+Shift+C',
+  selectionMaxLength: 500,
+};
+
+const resolveStartupSettings = () => ({
+  ...DEFAULT_SELECTION_SETTINGS,
+  ...(loadSettingsFromDisk() || {}),
+});
 
 
 // In-flight chat completion requests, keyed by requestId
@@ -167,16 +182,48 @@ const navigateChatWindow = (win, view = 'chat') => {
   }
 };
 
+const getSelectionChatAnchor = () => {
+  const bounds = tipWindow.getBounds();
+  if (bounds) {
+    return {
+      x: bounds.x + bounds.width / 2,
+      y: bounds.y + bounds.height / 2,
+    };
+  }
+  return screen.getCursorScreenPoint();
+};
+
+const isTipWebContents = (webContents) => {
+  if (!webContents || webContents.isDestroyed()) return false;
+  try {
+    const url = new URL(webContents.getURL());
+    return url.searchParams.get('window') === 'tip';
+  } catch {
+    return false;
+  }
+};
+
 const createChatWindow = (options = {}) => {
-  const { view = 'chat', refPoint = screen.getCursorScreenPoint() } = options;
+  const {
+    view = 'chat',
+    refPoint = screen.getCursorScreenPoint(),
+    anchor = 'main',
+  } = options;
+  const positionOptions = { anchor };
 
   if (chatWindow && !chatWindow.isDestroyed()) {
-    presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint);
+    presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint, positionOptions);
     navigateChatWindow(chatWindow, view);
     return chatWindow;
   }
 
-  const initialPos = resolveChatWindowPosition(screen, mainWindow, null, refPoint);
+  const initialPos = resolveChatWindowPosition(
+    screen,
+    mainWindow,
+    null,
+    refPoint,
+    positionOptions
+  );
 
   chatWindow = new BrowserWindow({
     title: ' ',
@@ -216,7 +263,7 @@ const createChatWindow = (options = {}) => {
 
   chatWindow.once('ready-to-show', () => {
     if (!chatWindow || chatWindow.isDestroyed()) return;
-    presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint);
+    presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint, positionOptions);
   });
 
   chatWindow.on('close', (e) => {
@@ -239,8 +286,28 @@ const createChatWindow = (options = {}) => {
 
 const getScreenshotWindows = () => [mainWindow, chatWindow];
 
-const sendChatPrefill = (payload) => {
-  const win = createChatWindow({ view: 'chat' });
+const SPEECH_BUBBLE_COPY_OK = '已帮主人复制~';
+const SPEECH_BUBBLE_COPY_FAIL = '没有可以复制的东西呢～';
+
+function deliverLive2DBubble(text) {
+  pushLive2DBubble(
+    () => mainWindow,
+    { text: String(text || ''), source: 'system' },
+    { showWindow: true, delayMs: 300 }
+  );
+}
+
+function notifyScreenshotCopyBubble(success) {
+  deliverLive2DBubble(success ? SPEECH_BUBBLE_COPY_OK : SPEECH_BUBBLE_COPY_FAIL);
+}
+
+const sendChatPrefill = (payload, options = {}) => {
+  const fromSelection = options.fromSelection === true;
+  const win = createChatWindow({
+    view: 'chat',
+    anchor: fromSelection ? 'cursor' : 'main',
+    refPoint: fromSelection ? getSelectionChatAnchor() : screen.getCursorScreenPoint(),
+  });
   const data = payload || { text: '', autoSend: false };
   const send = () => win.webContents.send('chat:prefill', data);
   if (win.webContents.isLoading()) {
@@ -260,6 +327,30 @@ async function screenshotToChat() {
   return attachment;
 }
 
+async function screenshotCopyTextHandler() {
+  try {
+    const text = await screenshotCopyText(getScreenshotWindows);
+    notifyScreenshotCopyBubble(!!text);
+  } catch (e) {
+    console.error('[screenshot:copy_text]', e);
+    notifyScreenshotCopyBubble(false);
+  }
+}
+
+const screenshotMenuItems = () => {
+  const items = [];
+  if (process.platform === 'darwin' && isOcrAvailable()) {
+    items.push({ label: '截图复制', click: screenshotCopyTextHandler });
+  }
+  items.push({
+    label: '截图询问',
+    click: () => {
+      screenshotToChat().catch((e) => console.error('[screenshot]', e));
+    },
+  });
+  return items;
+};
+
 const createMainWindow = () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow;
@@ -278,6 +369,7 @@ const createMainWindow = () => {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
     },
   });
 
@@ -366,8 +458,10 @@ const setupIPC = () => {
     sendChatPrefill({ text, autoSend: false });
   });
 
-  ipcMain.handle('open_chat_with_payload', async (_event, payload) => {
-    sendChatPrefill(payload);
+  ipcMain.handle('open_chat_with_payload', async (event, payload) => {
+    sendChatPrefill(payload, {
+      fromSelection: isTipWebContents(event.sender),
+    });
   });
 
   ipcMain.handle('settings:sync', async (_event, settings) => {
@@ -657,6 +751,7 @@ const setupIPC = () => {
   registerScreenshotHandlers(ipcMain, {
     getWindows: getScreenshotWindows,
     captureToChat: sendChatPrefill,
+    onScreenshotCopyText: notifyScreenshotCopyBubble,
   });
 };
 
@@ -681,7 +776,7 @@ const refreshMenus = () => {
       label: app.name,
       submenu: [
         { label: '设置', click: () => createChatWindow({ view: 'settings' }) },
-        { label: '截图', click: () => { screenshotToChat().catch((e) => console.error('[screenshot]', e)); } },
+        ...screenshotMenuItems(),
         { type: 'separator' },
         { label: toggleLabel, click: toggleMainWindow },
         { type: 'separator' },
@@ -707,7 +802,7 @@ const refreshMenus = () => {
   if (tray && !tray.isDestroyed()) {
     const contextMenu = Menu.buildFromTemplate([
       { label: '设置', click: () => createChatWindow({ view: 'settings' }) },
-      { label: '截图', click: () => { screenshotToChat().catch((e) => console.error('[screenshot]', e)); } },
+      ...screenshotMenuItems(),
       { label: toggleLabel, click: toggleMainWindow },
       { type: 'separator' },
       { label: '退出', click: () => app.quit() },
@@ -768,10 +863,17 @@ app.whenReady().then(() => {
   setupIPC();
   refreshMenus();
 
-  const diskSettings = loadSettingsFromDisk();
-  if (diskSettings) {
-    applySelectionSettings(diskSettings);
-    currentShortcut = diskSettings.selectionShortcut || currentShortcut;
+  const startupSettings = resolveStartupSettings();
+  applySelectionSettings(startupSettings);
+  currentShortcut = startupSettings.selectionShortcut || currentShortcut;
+
+  if (process.platform === 'darwin') {
+    app.on('did-become-active', () => {
+      applySelectionSettings(resolveStartupSettings());
+    });
+    app.on('accessibility-support-changed', (_event, enabled) => {
+      if (enabled) applySelectionSettings(resolveStartupSettings());
+    });
   }
 
   // Dock icon click → re-show main window (keep accessory / no Dock icon)
@@ -783,6 +885,8 @@ app.whenReady().then(() => {
     } else {
       createMainWindow();
     }
+    // User may have just granted Accessibility in System Settings — re-init hook.
+    applySelectionSettings(resolveStartupSettings());
   });
 });
 

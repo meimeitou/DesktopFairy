@@ -1,3 +1,6 @@
+import { loadSettings, type AppSettings } from "./settings";
+import { notifyLive2DSpeechBubble } from "./speechBubble";
+
 export type Live2DReaction =
   | "userSend"
   | "thinking"
@@ -19,6 +22,33 @@ const REPLY_DONE_KEYWORD_EXPRESSIONS: { pattern: RegExp; names: string[] }[] = [
   { pattern: /抱歉|对不起|遗憾|可惜/, names: ["哭哭", "问号"] },
   { pattern: /\?|？/, names: ["问号", "呆呆"] },
 ];
+
+/** Fixed bubble copy for reactions without assistant text. */
+export const REACTION_BUBBLE_TEXT: Partial<Record<Live2DReaction, string>> = {
+  thinking: "思考中…",
+  replyError: "出错了",
+};
+
+export function parseBubbleCommand(cmd: string): string | null {
+  if (!cmd.startsWith("bubble:")) return null;
+  const payload = cmd.slice("bubble:".length);
+  if (!payload) return "";
+  try {
+    return decodeURIComponent(payload);
+  } catch {
+    return payload;
+  }
+}
+
+export function getBubbleTextForReaction(
+  reaction: Live2DReaction,
+  assistantText?: string
+): string | null {
+  if (reaction === "replyDone" && assistantText?.trim()) {
+    return assistantText.trim();
+  }
+  return REACTION_BUBBLE_TEXT[reaction] ?? null;
+}
 
 export function parseReactionCommand(
   cmd: string
@@ -72,6 +102,7 @@ export function notifyLive2D(
   window.electronAPI.invoke("live2d:command", cmd).catch(() => {});
 }
 
+/** @deprecated Use notifyLive2DScene — reactive only, no bubble. */
 export function notifyLive2DIfReactive(
   reactive: boolean,
   reaction: Live2DReaction,
@@ -79,4 +110,18 @@ export function notifyLive2DIfReactive(
 ): void {
   if (!reactive) return;
   notifyLive2D(reaction, assistantText);
+}
+
+export function notifyLive2DScene(
+  reaction: Live2DReaction,
+  assistantText?: string,
+  settings: Pick<AppSettings, "live2dReactive" | "live2dSpeechBubble"> = loadSettings()
+): void {
+  if (settings.live2dReactive !== false) {
+    notifyLive2D(reaction, assistantText);
+  }
+  if (settings.live2dSpeechBubble !== false) {
+    const text = getBubbleTextForReaction(reaction, assistantText);
+    if (text) notifyLive2DSpeechBubble(text, "ai");
+  }
 }

@@ -23,7 +23,7 @@ import {
   type AppSettings,
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
-import { notifyLive2DIfReactive } from "../shared/live2dReactions";
+import { notifyLive2DScene } from "../shared/live2dReactions";
 import "./ChatPage.css";
 
 const api = window.electronAPI;
@@ -262,7 +262,7 @@ export default function ChatPage({
   }, [flushSessionSave]);
 
   useEffect(() => {
-    notifyLive2DIfReactive(loadSettings().live2dReactive, "chatOpen");
+    notifyLive2DScene("chatOpen");
   }, []);
 
   useEffect(() => {
@@ -307,11 +307,7 @@ export default function ChatPage({
       const last = list[list.length - 1];
       const assistantText =
         last?.role === "assistant" && !last.error ? last.content : undefined;
-      notifyLive2DIfReactive(
-        loadSettings().live2dReactive,
-        "replyDone",
-        assistantText
-      );
+      notifyLive2DScene("replyDone", assistantText);
       flushSessionSave();
     });
 
@@ -319,7 +315,7 @@ export default function ChatPage({
       if (requestId !== requestIdRef.current) return;
       requestIdRef.current = "";
       setStreaming(false);
-      notifyLive2DIfReactive(loadSettings().live2dReactive, "replyError");
+      notifyLive2DScene("replyError");
       setMessages((prev) => {
         if (prev.length === 0) return prev;
         const next = prev.slice();
@@ -427,9 +423,8 @@ export default function ChatPage({
       setAttachments([]);
       setStreaming(true);
 
-      const reactive = loadSettings().live2dReactive;
-      notifyLive2DIfReactive(reactive, "userSend");
-      notifyLive2DIfReactive(reactive, "thinking");
+      notifyLive2DScene("userSend");
+      notifyLive2DScene("thinking");
 
       api
         .invoke("chat:send", {
@@ -444,7 +439,7 @@ export default function ChatPage({
           if (requestIdRef.current !== requestId) return;
           requestIdRef.current = "";
           setStreaming(false);
-          notifyLive2DIfReactive(loadSettings().live2dReactive, "replyError");
+          notifyLive2DScene("replyError");
           setMessages((prev) => {
             const next = prev.slice();
             const last = next[next.length - 1];

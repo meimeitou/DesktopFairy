@@ -213,10 +213,11 @@ function registerLive2DHandlers({
   });
 
   ipcMain.handle('live2d:command', async (_event, cmd) => {
-    const mainWindow = getMainWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('live2d:command', cmd);
-    }
+    pushLive2DCommand(getMainWindow, cmd);
+  });
+
+  ipcMain.handle('live2d:bubble', async (_event, payload) => {
+    pushLive2DBubble(getMainWindow, payload);
   });
 
   ipcMain.handle('live2d:inspect_model', async (_event, modelPath) => {
@@ -246,10 +247,81 @@ function registerLive2DHandlers({
   });
 }
 
+function pushLive2DCommand(getMainWindow, cmd, options = {}) {
+  const { showWindow = false, delayMs = 0 } = options;
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+
+  const deliver = () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('live2d:command', cmd);
+  };
+
+  const schedule = () => {
+    if (delayMs > 0) setTimeout(deliver, delayMs);
+    else deliver();
+  };
+
+  if (showWindow) {
+    if (!win.isVisible()) win.show();
+    win.focus();
+  }
+
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', schedule);
+  } else {
+    schedule();
+  }
+}
+
+function normalizeBubblePayload(payload) {
+  if (typeof payload === 'string') {
+    return { text: payload, source: 'manual' };
+  }
+  if (payload && typeof payload === 'object') {
+    return {
+      text: String(payload.text || ''),
+      source: payload.source || 'manual',
+    };
+  }
+  return { text: '', source: 'manual' };
+}
+
+function pushLive2DBubble(getMainWindow, payload, options = {}) {
+  const { delayMs = 0, showWindow = false } = options;
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+
+  const normalized = normalizeBubblePayload(payload);
+  if (!normalized.text.trim()) return;
+
+  const deliver = () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('live2d:bubble', normalized);
+  };
+
+  const schedule = () => {
+    if (delayMs > 0) setTimeout(deliver, delayMs);
+    else deliver();
+  };
+
+  if (showWindow && !win.isVisible()) {
+    win.show();
+  }
+
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', schedule);
+  } else {
+    schedule();
+  }
+}
+
 module.exports = {
   registerLive2DSchemes,
   registerLive2DProtocol,
   registerLive2DHandlers,
+  pushLive2DCommand,
+  pushLive2DBubble,
   findModel3Json,
   resolveModelFsPath,
   scanBundledModels,

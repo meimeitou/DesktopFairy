@@ -1,4 +1,4 @@
-const { screen, systemPreferences, globalShortcut, clipboard } = require('electron');
+const { screen, systemPreferences, globalShortcut, clipboard, shell } = require('electron');
 const { exec } = require('child_process');
 const tipWindow = require('./tipWindow.cjs');
 const {
@@ -20,6 +20,32 @@ let selectionEnabled = false;
 let selectionMaxLength = 500;
 let selectionTriggerMode = 'shortcut';
 let currentShortcut = 'Command+Shift+C';
+let trustProbe = null;
+let accessibilityPromptedThisSession = false;
+
+const ACCESSIBILITY_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
+
+const getTrustProbe = () => {
+  if (!SelectionHook) return null;
+  if (hook) return hook;
+  if (!trustProbe) trustProbe = new SelectionHook();
+  return trustProbe;
+};
+
+/** Prefer selection-hook native AX check — Electron's API is unreliable for ad-hoc signed apps. */
+const isAccessibilityTrusted = () => {
+  if (process.platform !== 'darwin') return true;
+  const probe = getTrustProbe();
+  if (probe?.macIsProcessTrusted) {
+    try {
+      return probe.macIsProcessTrusted();
+    } catch (error) {
+      console.warn('[selection] macIsProcessTrusted failed:', error);
+    }
+  }
+  return systemPreferences.isTrustedAccessibilityClient(false);
+};
 
 const stopHook = () => {
   stopHideListeners();
@@ -36,6 +62,8 @@ const stopHook = () => {
 
 const initHookConfig = () => {
   if (!hook || !SelectionHook) return;
+
+  hook.enableClipboard();
 
   if (selectionTriggerMode === 'auto') {
     hook.setGlobalFilterMode(
@@ -133,11 +161,6 @@ const stopHideListeners = () => {
 const ensureHook = (isDev) => {
   if (process.platform !== 'darwin' || !SelectionHook) return false;
 
-  if (!systemPreferences.isTrustedAccessibilityClient(false)) {
-    console.warn('[selection] Accessibility permission required');
-    return false;
-  }
-
   if (!hook) {
     hook = new SelectionHook();
     hook.on('error', (error) => {
@@ -146,6 +169,7 @@ const ensureHook = (isDev) => {
   }
 
   if (!hookStarted) {
+    // Hook can start without Accessibility; events work once permission is granted.
     if (!hook.start({ debug: !!isDev })) {
       console.warn('[selection] failed to start selection-hook');
       return false;
@@ -187,19 +211,26 @@ const triggerByShortcut = () => {
   }
 
   copySelectionViaAppleScript((text) => {
-    if (!text?.trim()) return;
-    const cursor = screen.getCursorScreenPoint();
-    processTextSelection({
-      text,
-      programName: '',
-      posLevel: SelectionHook?.PositionLevel?.NONE,
-      mousePosStart: cursor,
-      mousePosEnd: cursor,
-      startTop: cursor,
-      startBottom: cursor,
-      endTop: cursor,
-      endBottom: cursor,
-    });
+    if (text?.trim()) {
+      const cursor = screen.getCursorScreenPoint();
+      processTextSelection({
+        text,
+        programName: '',
+        posLevel: SelectionHook?.PositionLevel?.NONE,
+        mousePosStart: cursor,
+        mousePosEnd: cursor,
+        startTop: cursor,
+        startBottom: cursor,
+        endTop: cursor,
+        endBottom: cursor,
+      });
+      return;
+    }
+
+    if (!isAccessibilityTrusted() && !accessibilityPromptedThisSession) {
+      accessibilityPromptedThisSession = true;
+      promptAccessibility();
+    }
   });
 };
 
@@ -244,14 +275,9 @@ const applySelectionSettings = (settings, deps) => {
   }
 
   const hookReady = ensureHook(deps.isDev);
-
-  if (selectionTriggerMode === 'shortcut' && !hookReady) {
-    stopHook();
-  }
-
   const shortcutRegistered = registerShortcut(nextShortcut);
 
-  return { hookReady, shortcutRegistered };
+  return { hookReady, shortcutRegistered, accessibilityTrusted: isAccessibilityTrusted() };
 };
 
 const stopAll = () => {
@@ -269,13 +295,29 @@ const getAccessibilityStatus = () => {
   return {
     supported: true,
     hookAvailable: !!SelectionHook,
-    trusted: systemPreferences.isTrustedAccessibilityClient(false),
+    trusted: isAccessibilityTrusted(),
   };
 };
 
 const promptAccessibility = () => {
   if (process.platform !== 'darwin') return false;
-  return systemPreferences.isTrustedAccessibilityClient(true);
+
+  let trusted = false;
+  const probe = getTrustProbe();
+  if (probe?.macRequestProcessTrust) {
+    try {
+      trusted = probe.macRequestProcessTrust();
+    } catch (error) {
+      console.warn('[selection] macRequestProcessTrust failed:', error);
+    }
+  }
+
+  if (!trusted) {
+    shell.openExternal(ACCESSIBILITY_SETTINGS_URL).catch((error) => {
+      console.warn('[selection] failed to open Accessibility settings:', error);
+    });
+  }
+  return trusted;
 };
 
 module.exports = {
