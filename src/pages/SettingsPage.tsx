@@ -134,7 +134,7 @@ export default function SettingsPage({
         return (
           <section className="settings-section">
             <h3>关于</h3>
-            <p className="about-text">DesktopFairy v0.1.0</p>
+            <p className="about-text">DesktopFairy v0.2.0</p>
             <p className="about-text secondary">阶段一：桌面壳与基础 UI ✓</p>
             <p className="about-text secondary">阶段二：Live2D SDK 接入 ✓</p>
             <p className="about-text secondary">阶段三：OpenAI 兼容流式对话 ✓</p>
