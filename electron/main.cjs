@@ -1,8 +1,14 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, globalShortcut, clipboard, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+
+/** Dev + DMG share one settings dir (matches package.json name). Must run before app.ready. */
+const USER_DATA_DIR = path.join(app.getPath('appData'), 'desktop-fairy');
+app.setPath('userData', USER_DATA_DIR);
+
 const selectionService = require('./selectionService.cjs');
 const tipWindow = require('./tipWindow.cjs');
+const { isOverlayElevated } = require('./tipWindowMacPolicy.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
 const { registerScreenshotHandlers, captureRegion, screenshotCopyText, isOcrAvailable } = require('./screenshotService.cjs');
 const {
@@ -123,6 +129,8 @@ const getTrayIcon = () => {
 /** Hide Dock after Tray is registered (menu-bar-only app). */
 const hideMacDock = () => {
   if (process.platform !== 'darwin') return;
+  // Keep regular activation while selection tip floats over external apps.
+  if (isOverlayElevated() || tipWindow.isVisible()) return;
   app.setActivationPolicy('accessory');
   if (app.dock?.hide) app.dock.hide();
 };
@@ -165,10 +173,17 @@ const floatWindowOnAllSpaces = (win) => {
 };
 
 const loadURL = (win, queryString = '') => {
+  const query = queryString
+    ? queryString.startsWith('?')
+      ? queryString
+      : `?${queryString}`
+    : '';
   if (isDev) {
-    win.loadURL(`${DEV_SERVER_URL}/index.html${queryString}`);
+    win.loadURL(`${DEV_SERVER_URL}/index.html${query}`);
   } else {
-    win.loadFile(PROD_INDEX_PATH, { query: queryString ? Object.fromEntries(new URLSearchParams(queryString)) : {} });
+    win.loadFile(PROD_INDEX_PATH, {
+      query: queryString ? Object.fromEntries(new URLSearchParams(queryString)) : {},
+    });
   }
 };
 
@@ -420,6 +435,15 @@ const createMainWindow = () => {
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 const setupIPC = () => {
+  // Synchronous settings load — used by renderer as localStorage fallback
+  ipcMain.on('settings:load:sync', (event) => {
+    try {
+      event.returnValue = fs.readFileSync(SETTINGS_PATH(), 'utf8');
+    } catch {
+      event.returnValue = null;
+    }
+  });
+
   ipcMain.handle('reapply_window_float', async () => {
     if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'darwin') {
       floatWindowOnAllSpaces(mainWindow);
@@ -502,11 +526,14 @@ const setupIPC = () => {
   ipcMain.handle('selection:resize_tip', async (event, { width, height }) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win && !win.isDestroyed()) {
-      const w = Math.max(1, Math.ceil(width));
-      const h = Math.max(1, Math.ceil(height));
+      const w = Math.max(80, Math.ceil(width));
+      const h = Math.max(36, Math.ceil(height));
       win.setSize(w, h, true);
-      if (!win.isVisible()) win.showInactive();
     }
+  });
+
+  ipcMain.handle('selection:hide_tip', async () => {
+    selectionService.hideTip();
   });
 
   ipcMain.handle('resize_main_window', async (_event, { width, height }) => {
@@ -553,8 +580,13 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('set_shortcut', async (_event, shortcut) => {
-    const disk = loadSettingsFromDisk() || {};
-    const settings = { ...disk, selectionShortcut: shortcut };
+    const settings = resolveStartupSettings();
+    settings.selectionShortcut = shortcut;
+    try {
+      fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2));
+    } catch (e) {
+      console.warn('Failed to persist shortcut:', e);
+    }
     const result = selectionService.applySelectionSettings(settings, selectionDeps());
     if (result.shortcutRegistered) {
       currentShortcut = shortcut;
@@ -562,13 +594,34 @@ const setupIPC = () => {
     return result.shortcutRegistered;
   });
 
-  ipcMain.handle('selection:check_accessibility', async () =>
-    selectionService.getAccessibilityStatus()
-  );
+  ipcMain.handle('selection:check_accessibility', async () => ({
+    ...selectionService.getAccessibilityStatus(),
+    userDataPath: app.getPath('userData'),
+    settingsPath: SETTINGS_PATH(),
+  }));
 
-  ipcMain.handle('selection:prompt_accessibility', async () =>
-    selectionService.promptAccessibility()
-  );
+  ipcMain.handle('selection:prompt_accessibility', async () => {
+    const granted = selectionService.promptAccessibility();
+    if (granted) {
+      selectionService.reinitAfterAccessibilityGrant(
+        resolveStartupSettings(),
+        selectionDeps()
+      );
+    }
+    return granted;
+  });
+
+  ipcMain.handle('selection:retry_hook', async () => {
+    const status = selectionService.getAccessibilityStatus();
+    if (!status.trusted) {
+      return { ...status, restarted: false, reason: 'not_trusted' };
+    }
+    const result = selectionService.reinitAfterAccessibilityGrant(
+      resolveStartupSettings(),
+      selectionDeps()
+    );
+    return { ...result, restarted: true };
+  });
 
   // ── Chat completion (OpenAI-compatible, streaming) ──────────────────────────
 
@@ -867,13 +920,43 @@ app.whenReady().then(() => {
   applySelectionSettings(startupSettings);
   currentShortcut = startupSettings.selectionShortcut || currentShortcut;
 
+  // After the renderer finishes loading, do a full cleanup restart so the hook
+  // gets a brand-new native instance (same as toggle OFF→ON). This fixes the
+  // "need to toggle once for selection to work" issue on first launch.
+  mainWindow.webContents.once('did-finish-load', () => {
+    selectionService.reinitAfterAccessibilityGrant(resolveStartupSettings(), selectionDeps());
+  });
+
+  // Packaged apps may grant Accessibility shortly after first launch — retry.
+  if (!isDev) {
+    setTimeout(() => {
+      selectionService.reinitAfterAccessibilityGrant(resolveStartupSettings(), selectionDeps());
+    }, 1500);
+  }
+
   if (process.platform === 'darwin') {
-    app.on('did-become-active', () => {
-      applySelectionSettings(resolveStartupSettings());
-    });
+    const maybeRestartSelection = () => {
+      const settings = resolveStartupSettings();
+      if (!settings.selectionEnabled) return;
+      const status = selectionService.getAccessibilityStatus();
+      if (!status.trusted || status.hookStarted) return;
+      selectionService.reinitAfterAccessibilityGrant(settings, selectionDeps());
+    };
+
     app.on('accessibility-support-changed', (_event, enabled) => {
-      if (enabled) applySelectionSettings(resolveStartupSettings());
+      if (enabled) maybeRestartSelection();
     });
+
+    app.on('did-become-active', () => {
+      maybeRestartSelection();
+    });
+
+    // Accessory (LSUIElement) apps may not receive did-become-active reliably.
+    if (app.isPackaged) {
+      setInterval(() => {
+        maybeRestartSelection();
+      }, 4000);
+    }
   }
 
   // Dock icon click → re-show main window (keep accessory / no Dock icon)
@@ -885,8 +968,6 @@ app.whenReady().then(() => {
     } else {
       createMainWindow();
     }
-    // User may have just granted Accessibility in System Settings — re-init hook.
-    applySelectionSettings(resolveStartupSettings());
   });
 });
 

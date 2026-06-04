@@ -51,12 +51,16 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "package.json",
+      "!node_modules/selection-hook/prebuilds/**/*",
+      "!node_modules/selection-hook/src/**/*"
     ],
     "asarUnpack": [
       "dist/models/**",
       "dist/shaders/**",
-      "dist/live2dcubismcore.min.js"
+      "dist/live2dcubismcore.min.js",
+      "**/*.node"
     ],
     "npmRebuild": true,
     "buildDependenciesFromSource": false,
@@ -64,6 +68,8 @@
       "category": "public.app-category.entertainment",
       "target": "dmg",
       "icon": "build/icon.png",
+      "identity": null,
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "LSUIElement": true,
         "NSAccessibilityUsageDescription": "DesktopFairy 需要辅助功能权限以读取您选中的文字，用于划词助手。"

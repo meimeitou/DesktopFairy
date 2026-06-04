@@ -30,6 +30,13 @@ build: ## Production build (dmg installer)
 build-dir: ## Build app directory only (faster, for testing)
 	npm run build:dir
 
+build-adhoc: ## Build ad-hoc signed DMG (no Apple Developer account needed)
+	CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:dir
+	codesign --deep --force --sign - --entitlements build/entitlements.mac.plist release/mac-arm64/DesktopFairy.app
+	hdiutil create -volname DesktopFairy -srcfolder release/mac-arm64/DesktopFairy.app \
+		-ov -format UDZO release/DesktopFairy-adhoc.dmg
+	@echo "DMG: release/DesktopFairy-adhoc.dmg"
+
 lint: ## Run ESLint
 	npm run lint
 

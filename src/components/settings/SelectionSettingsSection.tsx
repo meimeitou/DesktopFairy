@@ -15,6 +15,22 @@ interface AccessibilityStatus {
   supported: boolean;
   trusted: boolean;
   hookAvailable: boolean;
+  hookLoadError?: string | null;
+  hookStarted?: boolean;
+  selectionTriggerMode?: string;
+  tipVisible?: boolean;
+  tipLoaded?: boolean;
+  lastSkipReason?: string | null;
+  lastProgramName?: string | null;
+  lastSelectionFiredAt?: number | null;
+  lastMouseEventAt?: number | null;
+  lastTipError?: string | null;
+  nativeMacTrusted?: boolean | null;
+  execPath?: string;
+  packaged?: boolean;
+  grantTargetHint?: string;
+  userDataPath?: string;
+  settingsPath?: string;
 }
 
 interface Props {
@@ -26,24 +42,34 @@ export default function SelectionSettingsSection({
   settings,
   onChange,
 }: Props) {
-  const [accessibility, setAccessibility] = useState<AccessibilityStatus | null>(
-    null
-  );
+  const [accessibility, setAccessibility] =
+    useState<AccessibilityStatus | null>(null);
 
-  const refreshAccessibility = () => {
+  const refreshAccessibility = () =>
     api
       .invoke("selection:check_accessibility")
       .then((status) => setAccessibility(status as AccessibilityStatus))
       .catch(() => setAccessibility(null));
-  };
 
   useEffect(() => {
     refreshAccessibility();
   }, [settings.selectionTriggerMode, settings.selectionEnabled]);
 
+  useEffect(() => {
+    if (!settings.selectionEnabled || accessibility?.trusted !== false)
+      return undefined;
+    const timer = window.setInterval(() => {
+      api
+        .invoke("selection:retry_hook")
+        .then(() => refreshAccessibility())
+        .catch(() => {});
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [settings.selectionEnabled, accessibility?.trusted]);
+
   const updateAction = (id: string, patch: Partial<SelectionActionItem>) => {
     const next = settings.selectionActions.map((a) =>
-      a.id === id ? { ...a, ...patch } : a
+      a.id === id ? { ...a, ...patch } : a,
     );
     onChange({ selectionActions: next });
   };
@@ -54,16 +80,29 @@ export default function SelectionSettingsSection({
     });
   };
 
-  const enabledCount = settings.selectionActions.filter((a) => a.enabled).length;
+  const enabledCount = settings.selectionActions.filter(
+    (a) => a.enabled,
+  ).length;
   const isAutoMode = settings.selectionTriggerMode === "auto";
   const needsAccessibility =
     settings.selectionEnabled &&
     accessibility?.supported &&
     !accessibility?.trusted;
+  const hookNotRunning =
+    settings.selectionEnabled &&
+    accessibility?.supported &&
+    accessibility?.trusted &&
+    accessibility?.hookAvailable &&
+    accessibility?.hookStarted === false;
   const hookMissing =
     settings.selectionEnabled &&
     accessibility?.supported &&
     accessibility?.hookAvailable === false;
+  const hookLoadFailed =
+    settings.selectionEnabled &&
+    accessibility?.supported &&
+    accessibility?.hookAvailable === false &&
+    accessibility?.hookLoadError;
 
   const setTriggerMode = (mode: SelectionTriggerMode) => {
     onChange({ selectionTriggerMode: mode });
@@ -106,16 +145,69 @@ export default function SelectionSettingsSection({
         </div>
         <p className="about-text secondary">
           {isAutoMode
-            ? "选中文字后自动显示工具栏"
+            ? "选中文字后自动显示工具栏（本应用对话窗口内划词不会触发）"
             : "选中文字后按快捷键显示工具栏"}
         </p>
+        {settings.selectionEnabled && accessibility?.supported && (
+          <p className="about-text secondary selection-diagnostics">
+            辅助功能：{accessibility.trusted ? "已授权" : "未授权"}
+            {accessibility.nativeMacTrusted != null && (
+              <> (native:{accessibility.nativeMacTrusted ? "✓" : "✗"})</>
+            )}
+            {" · "}
+            划词模块：{accessibility.hookStarted ? "运行中" : "未启动"}
+            {" · "}
+            模式：
+            {accessibility.selectionTriggerMode ||
+              settings.selectionTriggerMode}
+            {accessibility.packaged ? " · 安装版" : " · 开发模式"}
+            {" · 鼠标："}
+            {accessibility.lastMouseEventAt == null
+              ? "无"
+              : `${Math.round((Date.now() - accessibility.lastMouseEventAt) / 1000)}s前`}
+            {" · 事件："}
+            {accessibility.lastSelectionFiredAt == null
+              ? "从未触发"
+              : `${Math.round((Date.now() - accessibility.lastSelectionFiredAt) / 1000)}秒前`}
+            {accessibility.lastSkipReason != null && (
+              <>
+                {" · 上次跳过："}
+                <code style={{ fontSize: "0.85em" }}>
+                  {accessibility.lastSkipReason}
+                </code>
+              </>
+            )}
+            {accessibility.lastTipError != null && (
+              <>
+                {" · tip错误："}
+                <code style={{ fontSize: "0.85em" }}>
+                  {accessibility.lastTipError}
+                </code>
+              </>
+            )}
+          </p>
+        )}
+
         {needsAccessibility && (
           <div className="selection-accessibility-hint">
             <p className="about-text secondary">
               macOS 需要「辅助功能」权限才能读取选中文本
-              {isAutoMode ? "并监听选词" : ""}。请将 DesktopFairy
-              拖入「应用程序」文件夹后从该处启动（不要直接从 DMG
-              运行）；每次重新 build 安装后，可能需要在系统设置中重新勾选授权。
+              {isAutoMode ? "（自动模式）" : "（快捷键模式同样必需）"}。
+              {accessibility?.packaged ? (
+                <>
+                  {" "}
+                  安装版与 make dev 是不同进程：开发模式授权的是
+                  Electron，不会自动作用于 DMG 安装版。
+                </>
+              ) : null}
+              若系统设置里已显示开启但仍提示未授权，请删除列表中所有
+              DesktopFairy / Electron 条目后重新勾选{" "}
+              <code>
+                {accessibility?.grantTargetHint ||
+                  "/Applications/DesktopFairy.app"}
+              </code>
+              （不要勾选 Application Support
+              下的条目）；授权后完全退出并重新打开应用。
             </p>
             <button
               type="button"
@@ -126,17 +218,54 @@ export default function SelectionSettingsSection({
                 });
               }}
             >
-              打开系统设置授权
+              打开辅助功能设置
             </button>
           </div>
         )}
         {hookMissing && (
           <div className="selection-accessibility-hint">
             <p className="about-text secondary">
-              划词原生模块未加载，请重新安装应用或联系开发者。
+              划词原生模块未加载
+              {hookLoadFailed ? `（${accessibility?.hookLoadError}）` : ""}
+              ，请重新安装应用或联系开发者。
             </p>
           </div>
         )}
+        {isAutoMode &&
+          accessibility?.trusted &&
+          accessibility?.hookStarted &&
+          accessibility?.lastSelectionFiredAt == null && (
+            <div className="selection-accessibility-hint">
+              <p className="about-text secondary">
+                {accessibility.lastMouseEventAt == null ? (
+                  <>
+                    <strong>CGEventTap 未收到鼠标事件。</strong>
+                    这通常是辅助功能授权失效导致的。请前往「系统设置 →
+                    隐私与安全性 → 辅助功能」，将 DesktopFairy
+                    的开关关闭后重新打开，然后完全退出并重启应用。
+                  </>
+                ) : (
+                  <>
+                    <strong>鼠标事件正常，但未识别到划词手势。</strong>
+                    可能是光标类型检测失败（macOS
+                    版本兼容问题）。请尝试：在文本框内缓慢拖动选择文字（确保光标为
+                    I 形），或双击选词。
+                  </>
+                )}
+              </p>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  api.invoke("selection:prompt_accessibility").then(() => {
+                    setTimeout(refreshAccessibility, 500);
+                  });
+                }}
+              >
+                打开辅助功能设置
+              </button>
+            </div>
+          )}
       </div>
 
       {!isAutoMode && (

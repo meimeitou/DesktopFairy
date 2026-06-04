@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Live2DCanvas from "../components/Live2DCanvas";
-import { loadSettings, normalizeSpeechBubbleMaxChars, type AppSettings } from "../shared/settings";
+import {
+  loadSettings,
+  normalizeSpeechBubbleMaxChars,
+  type AppSettings,
+} from "../shared/settings";
 import "./MainView.css";
 
 const DEFAULT_MODEL = "/models/Hiyori/Hiyori.model3.json";
@@ -30,7 +34,7 @@ export default function MainView() {
   );
   const [live2dSpeechBubbleMaxChars, setLive2dSpeechBubbleMaxChars] =
     useState<number>(
-      normalizeSpeechBubbleMaxChars(initial.live2dSpeechBubbleMaxChars)
+      normalizeSpeechBubbleMaxChars(initial.live2dSpeechBubbleMaxChars),
     );
   const [isHovered, setIsHovered] = useState(false);
 
@@ -55,7 +59,7 @@ export default function MainView() {
     }
     if (typeof s.live2dSpeechBubbleMaxChars === "number") {
       setLive2dSpeechBubbleMaxChars(
-        normalizeSpeechBubbleMaxChars(s.live2dSpeechBubbleMaxChars)
+        normalizeSpeechBubbleMaxChars(s.live2dSpeechBubbleMaxChars),
       );
     }
   }, []);
@@ -80,7 +84,11 @@ export default function MainView() {
 
   // Fallback when user focuses the model window directly
   useEffect(() => {
-    const onFocus = () => applySettings(loadSettings());
+    const onFocus = () => {
+      const s = loadSettings();
+      applySettings(s);
+      api.invoke("settings:sync", s).catch(() => {});
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [applySettings]);
@@ -90,10 +98,9 @@ export default function MainView() {
     const unsubscribe = api.onSwitchModel((newPath: string) => {
       setModelPath(newPath);
       const s = loadSettings();
-      localStorage.setItem(
-        "da_settings",
-        JSON.stringify({ ...s, modelPath: newPath }),
-      );
+      const updated = { ...s, modelPath: newPath };
+      localStorage.setItem("da_settings", JSON.stringify(updated));
+      api.invoke("settings:sync", updated).catch(() => {});
     });
     return unsubscribe;
   }, []);

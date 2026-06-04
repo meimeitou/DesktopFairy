@@ -19,7 +19,7 @@ export const SYSTEM_PROVIDERS: LlmProvider[] = [
     type: "openai",
     apiHost: "https://api.openai.com/v1",
     apiKey: "",
-    enabled: true,
+    enabled: false,
     isSystem: true,
     models: ["gpt-4o-mini"],
   },
@@ -119,18 +119,27 @@ export function cloneProviders(providers: LlmProvider[]): LlmProvider[] {
   return providers.map((p) => ({ ...p, models: [...p.models] }));
 }
 
-export function mergeSystemProviders(providers: LlmProvider[]): LlmProvider[] {
+export function mergeSystemProviders(
+  providers: LlmProvider[],
+  deletedIds?: string[]
+): LlmProvider[] {
+  const deleted = new Set(deletedIds ?? []);
   const byId = new Map(providers.map((p) => [p.id, p]));
-  const merged = SYSTEM_PROVIDERS.map((sys) => {
+  const merged: LlmProvider[] = [];
+  for (const sys of SYSTEM_PROVIDERS) {
+    if (deleted.has(sys.id)) continue;
     const existing = byId.get(sys.id);
-    if (!existing) return { ...sys, models: [...sys.models] };
-    return {
-      ...sys,
-      ...existing,
-      isSystem: true,
-      models: existing.models.length > 0 ? existing.models : [...sys.models],
-    };
-  });
+    if (!existing) {
+      merged.push({ ...sys, models: [...sys.models] });
+    } else {
+      merged.push({
+        ...sys,
+        ...existing,
+        isSystem: true,
+        models: existing.models.length > 0 ? existing.models : [...sys.models],
+      });
+    }
+  }
   for (const p of providers) {
     if (!p.isSystem && !merged.some((m) => m.id === p.id)) {
       merged.push({ ...p, models: [...p.models] });

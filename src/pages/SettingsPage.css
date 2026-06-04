@@ -638,6 +638,10 @@
   margin-top: 4px;
 }
 
+.selection-diagnostics code {
+  font-size: 11px;
+}
+
 .selection-actions-header {
   display: flex;
   align-items: center;

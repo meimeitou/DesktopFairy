@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import {
   buildSearchUrl,
   formatActionPrompt,
@@ -14,7 +14,8 @@ interface Props {
 
 const api = window.electronAPI;
 
-export default function TipView({ text }: Props) {
+export default function TipView({ text: initialText }: Props) {
+  const [text, setText] = useState(initialText);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const settings = loadSettings();
   const enabledActions = settings.selectionActions.filter((a) => a.enabled);
@@ -25,8 +26,15 @@ export default function TipView({ text }: Props) {
   }, []);
 
   useEffect(() => {
+    const unsubscribe = api.onSelectionTipText?.((payload: { text?: string }) => {
+      if (payload?.text) setText(payload.text);
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
     const el = toolbarRef.current;
-    if (!el) return;
+    if (!el || !text.trim()) return;
     const resize = () => {
       const { width, height } = el.getBoundingClientRect();
       api.invoke("selection:resize_tip", { width, height });
@@ -35,9 +43,11 @@ export default function TipView({ text }: Props) {
     const ro = new ResizeObserver(resize);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [enabledActions.length]);
+  }, [enabledActions.length, text]);
 
-  const closeTip = () => window.close();
+  const closeTip = () => {
+    api.invoke("selection:hide_tip").catch(() => {});
+  };
 
   const openChat = useCallback(
     async (prefill: string, autoSend?: boolean) => {
@@ -78,6 +88,10 @@ export default function TipView({ text }: Props) {
         break;
     }
   };
+
+  if (!text.trim()) {
+    return null;
+  }
 
   if (enabledActions.length === 0) {
     return (

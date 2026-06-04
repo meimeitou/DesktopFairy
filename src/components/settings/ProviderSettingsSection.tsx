@@ -31,7 +31,7 @@ interface Props {
 
 export default function ProviderSettingsSection({ settings, onChange }: Props) {
   const [selectedId, setSelectedId] = useState(
-    () => settings.activeProviderId || settings.providers[0]?.id
+    () => settings.activeProviderId || settings.providers[0]?.id,
   );
   const [search, setSearch] = useState("");
   const [showAddProvider, setShowAddProvider] = useState(false);
@@ -40,8 +40,10 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
   const [checkMessage, setCheckMessage] = useState("");
 
   const selected = useMemo(
-    () => settings.providers.find((p) => p.id === selectedId) ?? settings.providers[0],
-    [settings.providers, selectedId]
+    () =>
+      settings.providers.find((p) => p.id === selectedId) ??
+      settings.providers[0],
+    [settings.providers, selectedId],
   );
 
   const filteredProviders = useMemo(() => {
@@ -51,7 +53,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.type.toLowerCase().includes(q) ||
-        p.apiHost.toLowerCase().includes(q)
+        p.apiHost.toLowerCase().includes(q),
     );
   }, [settings.providers, search]);
 
@@ -83,17 +85,29 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
   };
 
   const handleRemoveProvider = (provider: LlmProvider) => {
-    if (provider.isSystem) return;
     if (!window.confirm(`确定删除服务商「${provider.name}」吗？`)) return;
-    const nextProviders = settings.providers.filter((p) => p.id !== provider.id);
+    const nextProviders = settings.providers.filter(
+      (p) => p.id !== provider.id,
+    );
     const nextActive =
       settings.activeProviderId === provider.id
-        ? nextProviders.find((p) => p.enabled)?.id || nextProviders[0]?.id || "openai"
+        ? nextProviders.find((p) => p.enabled)?.id ||
+          nextProviders[0]?.id ||
+          "openai"
         : settings.activeProviderId;
+    const nextDeletedIds = provider.isSystem
+      ? [
+          ...new Set([
+            ...(settings.deletedSystemProviderIds ?? []),
+            provider.id,
+          ]),
+        ]
+      : (settings.deletedSystemProviderIds ?? []);
     onChange({
       ...settings,
       providers: nextProviders,
       activeProviderId: nextActive,
+      deletedSystemProviderIds: nextDeletedIds,
     });
     if (selectedId === provider.id) {
       setSelectedId(nextActive);
@@ -123,14 +137,20 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     if (!selected) return "";
     return resolveModelNameForProvider(
       { ...settings, activeProviderId: selected.id },
-      selected
+      selected,
     );
   }, [selected, settings]);
 
   useEffect(() => {
     setCheckStatus("idle");
     setCheckMessage("");
-  }, [selected?.id, selected?.apiHost, selected?.apiKey, selected?.type, modelToCheck]);
+  }, [
+    selected?.id,
+    selected?.apiHost,
+    selected?.apiKey,
+    selected?.type,
+    modelToCheck,
+  ]);
 
   const handleCheckConnection = async () => {
     if (!selected) return;
@@ -161,7 +181,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
       })) as { ok: boolean; latencyMs: number; model: string };
       setCheckStatus("success");
       setCheckMessage(
-        `连接成功 · 模型 ${result.model} · ${result.latencyMs}ms`
+        `连接成功 · 模型 ${result.model} · ${result.latencyMs}ms`,
       );
     } catch (e) {
       setCheckStatus("failed");
@@ -247,15 +267,13 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                 />
                 <span>启用</span>
               </label>
-              {!selected.isSystem && (
-                <button
-                  type="button"
-                  className="provider-delete-btn"
-                  onClick={() => handleRemoveProvider(selected)}
-                >
-                  删除
-                </button>
-              )}
+              <button
+                type="button"
+                className="provider-delete-btn"
+                onClick={() => handleRemoveProvider(selected)}
+              >
+                删除
+              </button>
             </div>
           </div>
 
@@ -328,14 +346,18 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                   {checkStatus === "checking" ? "检测中…" : "检测连接"}
                 </button>
                 {modelToCheck && (
-                  <span className="provider-check-model">模型：{modelToCheck}</span>
+                  <span className="provider-check-model">
+                    模型：{modelToCheck}
+                  </span>
                 )}
               </div>
             </div>
           )}
 
           {checkMessage && (
-            <p className={`provider-check-status ${checkStatus}`}>{checkMessage}</p>
+            <p className={`provider-check-status ${checkStatus}`}>
+              {checkMessage}
+            </p>
           )}
 
           <div className="field">
@@ -344,10 +366,14 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
               models={selectable}
               value={resolveModelNameForProvider(
                 { ...settings, activeProviderId: selected.id },
-                selected
+                selected,
               )}
               onChange={(modelName) =>
-                onChange({ ...settings, modelName, activeProviderId: selected.id })
+                onChange({
+                  ...settings,
+                  modelName,
+                  activeProviderId: selected.id,
+                })
               }
             />
             <div className="provider-model-actions">

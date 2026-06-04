@@ -28,9 +28,13 @@ declare global {
       onMainWindowLayoutChanged: (callback: () => void) => () => void;
       getShortcut: () => Promise<string>;
       setShortcut: (shortcut: string) => Promise<boolean>;
+      loadSettingsFromDisk: () => string | null;
       onLive2DCommand: (callback: (cmd: string) => void) => () => void;
       onLive2DBubble: (
         callback: (payload: SpeechBubblePayload | string) => void
+      ) => () => void;
+      onSelectionTipText: (
+        callback: (payload: { text?: string }) => void
       ) => () => void;
       onSwitchModel: (callback: (modelPath: string) => void) => () => void;
       onChatStreamChunk: (

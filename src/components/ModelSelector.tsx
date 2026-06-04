@@ -7,6 +7,8 @@ interface Props {
   onChange: (modelId: string) => void;
   placeholder?: string;
   allowCustom?: boolean;
+  /** Optional display labels keyed by model value. Falls back to the value itself. */
+  modelLabels?: Record<string, string>;
 }
 
 export default function ModelSelector({
@@ -15,10 +17,11 @@ export default function ModelSelector({
   onChange,
   placeholder = "选择模型…",
   allowCustom = true,
+  modelLabels,
 }: Props) {
   const [query, setQuery] = useState("");
   const [useCustom, setUseCustom] = useState(
-    () => value.length > 0 && !models.includes(value)
+    () => value.length > 0 && !models.includes(value),
   );
 
   const filtered = useMemo(() => {
@@ -31,7 +34,7 @@ export default function ModelSelector({
 
   const effectiveValue =
     !allowCustom && value && !models.includes(value)
-      ? models[0] ?? ""
+      ? (models[0] ?? "")
       : value;
 
   if (allowCustom && (useCustom || models.length === 0)) {
@@ -85,15 +88,17 @@ export default function ModelSelector({
           value={effectiveValue}
           onChange={(e) => onChange(e.target.value)}
         >
-          {allowCustom && !models.includes(effectiveValue) && effectiveValue && (
-            <option value={effectiveValue}>{effectiveValue}</option>
-          )}
+          {allowCustom &&
+            !models.includes(effectiveValue) &&
+            effectiveValue && (
+              <option value={effectiveValue}>{effectiveValue}</option>
+            )}
           {filtered.length === 0 ? (
             <option value="">{placeholder}</option>
           ) : (
             filtered.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {modelLabels?.[m] ?? m}
               </option>
             ))
           )}

@@ -1,79 +1,133 @@
-const { screen, systemPreferences, globalShortcut, clipboard, shell } = require('electron');
+const { app, screen, systemPreferences, globalShortcut, clipboard, shell } = require('electron');
 const { exec } = require('child_process');
 const tipWindow = require('./tipWindow.cjs');
 const {
   SELECTION_PREDEFINED_BLACKLIST,
+  SELECTION_SELF_APP_MAC,
   SELECTION_FINETUNED_LIST,
 } = require('./selectionConfig.cjs');
 
 let SelectionHook = null;
-try {
-  SelectionHook = require('selection-hook');
-} catch (error) {
-  console.warn('[selection] selection-hook not available:', error.message);
-}
+let selectionHookLoadError = null;
+let lastTipError = null;
+let lastSkipReason = null;
+let lastProgramName = null;
+let lastSelectionFiredAt = null;
+let lastMouseEventAt = null;
+
+const skipReasonForSelection = (selectionData) => {
+  if (!selectionEnabled) return 'selection_disabled';
+  if (!selectionData?.text?.trim()) return 'empty_text';
+  if (isSelfAppProgram(selectionData?.programName)) return 'self_app';
+  if (!shouldProcessTextSelection(selectionData)) return 'filtered_app';
+  const text = selectionData.text.trim();
+  if (text.length > selectionMaxLength) return 'too_long';
+  if (tipWindow.isVisible() && isSelfAppProgram(selectionData?.programName)) {
+    return 'tip_already_visible';
+  }
+  return null;
+};
+
+const loadSelectionHookModule = () => {
+  if (SelectionHook) return SelectionHook;
+
+  try {
+    SelectionHook = require('selection-hook');
+    selectionHookLoadError = null;
+    return SelectionHook;
+  } catch (error) {
+    selectionHookLoadError = error.message || String(error);
+    console.warn('[selection] failed to load selection-hook:', selectionHookLoadError);
+  }
+
+  return null;
+};
 
 let hook = null;
 let hookStarted = false;
 let hideListenersActive = false;
+let suppressHideUntil = 0;
 let selectionEnabled = false;
 let selectionMaxLength = 500;
 let selectionTriggerMode = 'shortcut';
 let currentShortcut = 'Command+Shift+C';
-let trustProbe = null;
-let accessibilityPromptedThisSession = false;
 
 const ACCESSIBILITY_SETTINGS_URL =
   'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
 
-const getTrustProbe = () => {
-  if (!SelectionHook) return null;
-  if (hook) return hook;
-  if (!trustProbe) trustProbe = new SelectionHook();
-  return trustProbe;
-};
-
-/** Prefer selection-hook native AX check — Electron's API is unreliable for ad-hoc signed apps. */
 const isAccessibilityTrusted = () => {
   if (process.platform !== 'darwin') return true;
-  const probe = getTrustProbe();
-  if (probe?.macIsProcessTrusted) {
-    try {
-      return probe.macIsProcessTrusted();
-    } catch (error) {
-      console.warn('[selection] macIsProcessTrusted failed:', error);
-    }
-  }
   return systemPreferences.isTrustedAccessibilityClient(false);
 };
 
-const stopHook = () => {
-  stopHideListeners();
-  if (!hook || !hookStarted) return;
-  try {
-    hook.stop();
-    hook.removeAllListeners('text-selection');
-    hook.removeAllListeners('error');
-  } catch (error) {
-    console.warn('[selection] stop hook failed:', error);
+const getAccessibilityDiagnostics = () => {
+  loadSelectionHookModule();
+  const trusted = isAccessibilityTrusted();
+  return {
+    supported: process.platform === 'darwin',
+    trusted,
+    hookAvailable: !!SelectionHook,
+    hookLoadError: selectionHookLoadError,
+    hookStarted,
+    selectionEnabled,
+    selectionTriggerMode,
+    tipVisible: tipWindow.isVisible(),
+    tipLoaded: tipWindow.isContentLoaded?.() ?? false,
+    lastSkipReason,
+    lastProgramName,
+    lastSelectionFiredAt,
+    lastMouseEventAt,
+    lastTipError,
+    nativeMacTrusted: (() => {
+      try {
+        return hook?.macIsProcessTrusted?.() ?? null;
+      } catch {
+        return null;
+      }
+    })(),
+    execPath: process.execPath,
+    packaged: app.isPackaged,
+    grantTargetHint: app.isPackaged
+      ? '/Applications/DesktopFairy.app'
+      : process.execPath,
+  };
+};
+
+const isSelfAppProgram = (programName) => {
+  const name = String(programName || '');
+  if (!name) return false;
+  return SELECTION_SELF_APP_MAC.some((token) =>
+    token.endsWith('.') ? name.startsWith(token) : name === token || name.includes(token)
+  );
+};
+
+const applyTriggerMode = () => {
+  if (!hook || !SelectionHook) return;
+  // cherry SelectionTriggerMode.Selected: passive false — rely on text-selection events only.
+  hook.setSelectionPassiveMode(selectionTriggerMode === 'shortcut');
+};
+
+const setHookGlobalFilterMode = () => {
+  if (!hook || !SelectionHook) return;
+
+  if (selectionTriggerMode === 'auto') {
+    // Only exclude at the native level what can't be caught by JS-level isSelfAppProgram.
+    // Do NOT include SELECTION_SELF_APP_MAC here: in packaged builds the app's own
+    // bundle ID (com.desktop.fairy) is in that list, and some native module versions
+    // may mis-apply the exclude filter and suppress ALL events when the observer
+    // process's bundle ID appears in the list. JS-level filtering handles self-app.
+    hook.setGlobalFilterMode(SelectionHook.FilterMode.EXCLUDE_LIST, [
+      ...SELECTION_PREDEFINED_BLACKLIST.MAC,
+    ]);
+  } else {
+    hook.setGlobalFilterMode(SelectionHook.FilterMode.DEFAULT, []);
   }
-  hookStarted = false;
 };
 
 const initHookConfig = () => {
   if (!hook || !SelectionHook) return;
 
   hook.enableClipboard();
-
-  if (selectionTriggerMode === 'auto') {
-    hook.setGlobalFilterMode(
-      SelectionHook.FilterMode.EXCLUDE_LIST,
-      [...SELECTION_PREDEFINED_BLACKLIST.MAC]
-    );
-  } else {
-    hook.setGlobalFilterMode(SelectionHook.FilterMode.DEFAULT, []);
-  }
-
   hook.setFineTunedList(
     SelectionHook.FineTunedListType.EXCLUDE_CLIPBOARD_CURSOR_DETECT,
     SELECTION_FINETUNED_LIST.EXCLUDE_CLIPBOARD_CURSOR_DETECT.MAC
@@ -82,9 +136,13 @@ const initHookConfig = () => {
     SelectionHook.FineTunedListType.INCLUDE_CLIPBOARD_DELAY_READ,
     SELECTION_FINETUNED_LIST.INCLUDE_CLIPBOARD_DELAY_READ.MAC
   );
+  setHookGlobalFilterMode();
+  applyTriggerMode();
 };
 
 const shouldProcessTextSelection = (selectionData) => {
+  if (isSelfAppProgram(selectionData?.programName)) return false;
+
   if (selectionTriggerMode !== 'auto') return true;
   const programName = String(selectionData?.programName || '').toLowerCase();
   if (!programName) return true;
@@ -93,60 +151,12 @@ const shouldProcessTextSelection = (selectionData) => {
   );
 };
 
-const processTextSelection = (selectionData) => {
-  try {
-    if (!selectionEnabled || !selectionData?.text?.trim()) return;
-    if (!shouldProcessTextSelection(selectionData)) return;
-
-    const text = selectionData.text.trim();
-    if (text.length > selectionMaxLength) return;
-
-    if (tipWindow.isVisible()) {
-      tipWindow.hideTip();
-    }
-
-    tipWindow.showTip(text, selectionData);
-    startHideListeners();
-  } catch (error) {
-    console.warn('[selection] processTextSelection failed:', error);
-  }
-};
-
-const onTextSelection = (selectionData) => {
-  if (!selectionEnabled || selectionTriggerMode !== 'auto') return;
-  setImmediate(() => {
-    try {
-      processTextSelection(selectionData);
-    } catch (error) {
-      console.warn('[selection] text-selection handler failed:', error);
-    }
-  });
-};
-
-const onMouseDownHide = (data) => {
-  if (!tipWindow.isVisible()) return;
-  const bounds = tipWindow.getBounds();
-  if (!bounds) return;
-  const x = Math.round(Number(data?.x));
-  const y = Math.round(Number(data?.y));
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-  const inside =
-    x >= bounds.x &&
-    x <= bounds.x + bounds.width &&
-    y >= bounds.y &&
-    y <= bounds.y + bounds.height;
-  if (!inside) tipWindow.hideTip();
-};
-
-const onHideInteraction = () => {
-  tipWindow.hideTip();
-};
-
 const startHideListeners = () => {
   if (!hook || hideListenersActive) return;
+  suppressHideUntil = Date.now() + 450;
   hook.on('mouse-down', onMouseDownHide);
   hook.on('mouse-wheel', onHideInteraction);
-  hook.on('key-down', onHideInteraction);
+  hook.on('key-down', onKeyDownHide);
   hideListenersActive = true;
 };
 
@@ -154,12 +164,92 @@ const stopHideListeners = () => {
   if (!hook || !hideListenersActive) return;
   hook.off('mouse-down', onMouseDownHide);
   hook.off('mouse-wheel', onHideInteraction);
-  hook.off('key-down', onHideInteraction);
+  hook.off('key-down', onKeyDownHide);
   hideListenersActive = false;
 };
 
-const ensureHook = (isDev) => {
-  if (process.platform !== 'darwin' || !SelectionHook) return false;
+const hideTip = () => {
+  tipWindow.hideTip();
+};
+
+const processTextSelection = (selectionData) => {
+  try {
+    const cursor = screen.getCursorScreenPoint();
+    if (tipWindow.isPointInAppUi(cursor)) {
+      if (tipWindow.isVisible()) hideTip();
+      return;
+    }
+
+    const skipReason = skipReasonForSelection(selectionData);
+    if (skipReason) return;
+
+    const text = selectionData.text.trim();
+    suppressHideUntil = Date.now() + 450;
+
+    void tipWindow.showTip(text, selectionData).catch((error) => {
+      lastTipError = error?.message || String(error);
+      console.warn('[selection] show tip failed:', error);
+    });
+  } catch (error) {
+    lastTipError = error?.message || String(error);
+    console.warn('[selection] processTextSelection failed:', error);
+  }
+};
+
+const onTextSelection = (selectionData) => {
+  lastSelectionFiredAt = Date.now();
+  lastProgramName = selectionData?.programName || null;
+  const skipReason = skipReasonForSelection(selectionData);
+  if (skipReason) {
+    lastSkipReason = `${skipReason} (program=${lastProgramName})`;
+  } else {
+    lastSkipReason = null;
+  }
+  processTextSelection(selectionData);
+};
+
+const onMouseDownHide = (data) => {
+  if (Date.now() < suppressHideUntil) return;
+
+  const mousePoint = { x: Math.round(Number(data?.x)), y: Math.round(Number(data?.y)) };
+  if (!Number.isFinite(mousePoint.x) || !Number.isFinite(mousePoint.y)) return;
+
+  if (tipWindow.isPointInAppUi(mousePoint)) {
+    if (tipWindow.isVisible()) hideTip();
+    return;
+  }
+
+  if (!tipWindow.isVisible()) return;
+  const bounds = tipWindow.getBounds();
+  if (!bounds) return;
+
+  const inside =
+    mousePoint.x >= bounds.x &&
+    mousePoint.x <= bounds.x + bounds.width &&
+    mousePoint.y >= bounds.y &&
+    mousePoint.y <= bounds.y + bounds.height;
+
+  if (!inside) hideTip();
+};
+
+const onHideInteraction = () => {
+  if (tipWindow.isVisible()) hideTip();
+};
+
+const isShiftKey = (vkCode) => vkCode === 56 || vkCode === 60;
+const isAltKey = (vkCode) => vkCode === 58 || vkCode === 61;
+
+const onKeyDownHide = (data) => {
+  if (!tipWindow.isVisible()) return;
+  if (isShiftKey(data?.vkCode) || isAltKey(data?.vkCode)) return;
+  hideTip();
+};
+
+const ensureHookInstance = () => {
+  if (!SelectionHook) {
+    loadSelectionHookModule();
+  }
+  if (!SelectionHook) return false;
 
   if (!hook) {
     hook = new SelectionHook();
@@ -167,23 +257,74 @@ const ensureHook = (isDev) => {
       console.warn('[selection] hook error:', error?.message || error);
     });
   }
+  return true;
+};
 
-  if (!hookStarted) {
-    // Hook can start without Accessibility; events work once permission is granted.
-    if (!hook.start({ debug: !!isDev })) {
-      console.warn('[selection] failed to start selection-hook');
-      return false;
+const stopHook = ({ cleanup = false } = {}) => {
+  stopHideListeners();
+  if (!hook || !hookStarted) return;
+  try {
+    hook.stop();
+    hook.removeAllListeners('text-selection');
+    if (cleanup) {
+      hook.cleanup();
+      hook = null;
+    } else {
+      hook.removeAllListeners('error');
+      hook.on('error', (error) => {
+        console.warn('[selection] hook error:', error?.message || error);
+      });
     }
-    hookStarted = true;
-    initHookConfig();
+  } catch (error) {
+    console.warn('[selection] stop hook failed:', error);
+  }
+  hookStarted = false;
+};
+
+const startHook = (isDev) => {
+  if (process.platform !== 'darwin') return false;
+
+  if (!isAccessibilityTrusted()) {
+    console.warn('[selection] Accessibility not granted — hook not started');
+    return false;
   }
 
+  if (!ensureHookInstance()) return false;
+
+  const win = tipWindow.ensureTipWindow();
+  void tipWindow.loadTipContent(win).catch((error) => {
+    console.warn('[selection] tip window preload failed:', error);
+  });
+
   hook.removeAllListeners('text-selection');
+  hook.removeAllListeners('mouse-down');
   hook.on('text-selection', onTextSelection);
-  hook.setSelectionPassiveMode(selectionTriggerMode === 'shortcut');
+  hook.on('mouse-down', () => { lastMouseEventAt = Date.now(); });
+
+  if (!hook.start({ debug: !!isDev })) {
+    console.warn('[selection] failed to start selection-hook');
+    return false;
+  }
+
+  hookStarted = true;
   initHookConfig();
   return true;
 };
+
+const restartSelectionHook = (isDev) => {
+  stopHook();
+  return startHook(isDev);
+};
+
+let lastAppliedSelectionKey = '';
+
+const selectionSettingsKey = (settings) =>
+  JSON.stringify({
+    enabled: settings?.selectionEnabled !== false,
+    mode: settings?.selectionTriggerMode === 'auto' ? 'auto' : 'shortcut',
+    shortcut: settings?.selectionShortcut || currentShortcut,
+    maxLen: Number(settings?.selectionMaxLength) || 500,
+  });
 
 const copySelectionViaAppleScript = (callback) => {
   exec(
@@ -204,8 +345,9 @@ const triggerByShortcut = () => {
 
   if (hook && hookStarted) {
     const data = hook.getCurrentSelection();
-    if (data?.text?.trim()) {
-      setImmediate(() => processTextSelection(data));
+    if (data?.text?.trim() && !isSelfAppProgram(data.programName)) {
+      processTextSelection(data);
+      setTimeout(() => tipWindow.focusTip(), 200);
       return;
     }
   }
@@ -224,12 +366,7 @@ const triggerByShortcut = () => {
         endTop: cursor,
         endBottom: cursor,
       });
-      return;
-    }
-
-    if (!isAccessibilityTrusted() && !accessibilityPromptedThisSession) {
-      accessibilityPromptedThisSession = true;
-      promptAccessibility();
+      setTimeout(() => tipWindow.focusTip(), 200);
     }
   });
 };
@@ -259,70 +396,113 @@ const applySelectionSettings = (settings, deps) => {
     loadURL: deps.loadURL,
     SelectionHook,
   });
+  tipWindow.setOnShow(() => {
+    suppressHideUntil = Date.now() + 500;
+    setTimeout(startHideListeners, 480);
+  });
+  tipWindow.setOnHide(stopHideListeners);
 
   selectionEnabled = settings?.selectionEnabled !== false;
   selectionMaxLength = Number(settings?.selectionMaxLength) || 500;
+  const prevMode = selectionTriggerMode;
   selectionTriggerMode =
     settings?.selectionTriggerMode === 'auto' ? 'auto' : 'shortcut';
 
   const nextShortcut = settings?.selectionShortcut || currentShortcut;
 
   if (!selectionEnabled || process.platform !== 'darwin') {
-    stopHook();
+    stopHook({ cleanup: true });
     tipWindow.destroyTipWindow();
     globalShortcut.unregister(currentShortcut);
-    return { hookReady: false, shortcutRegistered: false };
+    lastAppliedSelectionKey = '';
+    return {
+      hookReady: false,
+      shortcutRegistered: false,
+      hookAvailable: !!SelectionHook,
+      ...getAccessibilityDiagnostics(),
+    };
   }
 
-  const hookReady = ensureHook(deps.isDev);
-  const shortcutRegistered = registerShortcut(nextShortcut);
+  const key = selectionSettingsKey(settings);
+  const configChanged = key !== lastAppliedSelectionKey;
+  lastAppliedSelectionKey = key;
 
-  return { hookReady, shortcutRegistered, accessibilityTrusted: isAccessibilityTrusted() };
+  let hookReady = false;
+
+  if (configChanged || !hookStarted) {
+    hookReady = restartSelectionHook(deps.isDev);
+  } else if (prevMode !== selectionTriggerMode) {
+    initHookConfig();
+    hookReady = hookStarted;
+  } else {
+    hookReady = hookStarted;
+  }
+
+  const shortcutRegistered = registerShortcut(nextShortcut);
+  if (!shortcutRegistered && selectionTriggerMode === 'shortcut') {
+    setTimeout(() => registerShortcut(nextShortcut), 1500);
+  }
+
+  const diagnostics = getAccessibilityDiagnostics();
+  if (!diagnostics.trusted) {
+    console.warn('[selection] accessibility not trusted for', process.execPath);
+  } else if (!hookReady) {
+    console.warn('[selection] accessibility trusted but hook failed to start');
+  }
+
+  return {
+    hookReady,
+    shortcutRegistered,
+    accessibilityTrusted: diagnostics.trusted,
+    hookAvailable: !!SelectionHook,
+    ...diagnostics,
+  };
+};
+
+const reinitAfterAccessibilityGrant = (settings, deps) => {
+  if (!isAccessibilityTrusted()) return applySelectionSettings(settings, deps);
+  // Clean up the existing hook instance so startHook() creates a fresh one.
+  // This is equivalent to toggle OFF→ON and reliably clears any native state.
+  stopHook({ cleanup: true });
+  lastAppliedSelectionKey = '';
+  return applySelectionSettings(settings, deps);
 };
 
 const stopAll = () => {
-  stopHook();
+  stopHook({ cleanup: true });
   tipWindow.destroyTipWindow();
   if (currentShortcut) {
     globalShortcut.unregister(currentShortcut);
   }
 };
 
-const getAccessibilityStatus = () => {
-  if (process.platform !== 'darwin') {
-    return { supported: false, trusted: false, hookAvailable: !!SelectionHook };
-  }
-  return {
-    supported: true,
-    hookAvailable: !!SelectionHook,
-    trusted: isAccessibilityTrusted(),
-  };
+const getAccessibilityStatus = () => getAccessibilityDiagnostics();
+
+const openAccessibilitySettings = () => {
+  if (process.platform !== 'darwin') return false;
+  shell.openExternal(ACCESSIBILITY_SETTINGS_URL).catch((error) => {
+    console.warn('[selection] failed to open Accessibility settings:', error);
+  });
+  return true;
 };
 
 const promptAccessibility = () => {
   if (process.platform !== 'darwin') return false;
 
-  let trusted = false;
-  const probe = getTrustProbe();
-  if (probe?.macRequestProcessTrust) {
-    try {
-      trusted = probe.macRequestProcessTrust();
-    } catch (error) {
-      console.warn('[selection] macRequestProcessTrust failed:', error);
-    }
+  if (!isAccessibilityTrusted()) {
+    systemPreferences.isTrustedAccessibilityClient(true);
   }
 
-  if (!trusted) {
-    shell.openExternal(ACCESSIBILITY_SETTINGS_URL).catch((error) => {
-      console.warn('[selection] failed to open Accessibility settings:', error);
-    });
-  }
-  return trusted;
+  openAccessibilitySettings();
+  return isAccessibilityTrusted();
 };
 
 module.exports = {
   applySelectionSettings,
+  reinitAfterAccessibilityGrant,
   stopAll,
   getAccessibilityStatus,
+  openAccessibilitySettings,
   promptAccessibility,
+  hideTip,
 };

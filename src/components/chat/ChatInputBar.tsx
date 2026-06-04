@@ -23,7 +23,14 @@ const MAX_INPUT_HEIGHT = 160;
 
 function CameraIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
       <circle cx="12" cy="13" r="4" />
     </svg>
@@ -32,7 +39,14 @@ function CameraIcon() {
 
 function PaperclipIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
     </svg>
   );
@@ -40,7 +54,14 @@ function PaperclipIcon() {
 
 function EraserIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.6 1.6c.8-.8 2-.8 2.8 0l5 5c.8.8.8 2 0 2.8L11 20" />
       <path d="M6 11l7 7" />
     </svg>
@@ -49,7 +70,14 @@ function EraserIcon() {
 
 function ClearIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M3 6h18" />
       <path d="M8 6V4h8v2" />
       <path d="M19 6l-1 14H6L5 6" />
@@ -67,6 +95,7 @@ interface Props {
   models: string[];
   modelName: string;
   onModelChange: (model: string) => void;
+  modelLabels?: Record<string, string>;
   onSend: () => void;
   onStop: () => void;
   onClearContext: () => void;
@@ -83,6 +112,7 @@ export default function ChatInputBar({
   models,
   modelName,
   onModelChange,
+  modelLabels,
   onSend,
   onStop,
   onClearContext,
@@ -118,14 +148,16 @@ export default function ChatInputBar({
       }
       onAttachmentsChange(next);
     },
-    [attachments, onAttachmentsChange]
+    [attachments, onAttachmentsChange],
   );
 
   const handleSelectFiles = useCallback(async () => {
     if (selectingRef.current || streaming) return;
     selectingRef.current = true;
     try {
-      const picked = (await api.invoke("file:select")) as ChatAttachment[] | null;
+      const picked = (await api.invoke("file:select")) as
+        | ChatAttachment[]
+        | null;
       if (picked?.length) addAttachments(picked);
     } catch (e) {
       console.error(e);
@@ -181,16 +213,22 @@ export default function ChatInputBar({
       try {
         const loaded = await Promise.all(
           filePaths.map(async (filePath) => {
-            const meta = (await api.invoke("file:stat_path", filePath)) as ChatAttachment;
-            return { ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
-          })
+            const meta = (await api.invoke(
+              "file:stat_path",
+              filePath,
+            )) as ChatAttachment;
+            return {
+              ...meta,
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            };
+          }),
         );
         addAttachments(loaded);
       } catch (err) {
         alert(err instanceof Error ? err.message : "无法读取粘贴的文件");
       }
     },
-    [addAttachments]
+    [addAttachments],
   );
 
   const handleDrop = useCallback(
@@ -214,16 +252,22 @@ export default function ChatInputBar({
       try {
         const loaded = await Promise.all(
           paths.map(async (filePath) => {
-            const meta = (await api.invoke("file:stat_path", filePath)) as ChatAttachment;
-            return { ...meta, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}` };
-          })
+            const meta = (await api.invoke(
+              "file:stat_path",
+              filePath,
+            )) as ChatAttachment;
+            return {
+              ...meta,
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            };
+          }),
         );
         addAttachments(loaded);
       } catch (err) {
         alert(err instanceof Error ? err.message : "无法读取拖拽的文件");
       }
     },
-    [addAttachments, streaming]
+    [addAttachments, streaming],
   );
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -238,7 +282,8 @@ export default function ChatInputBar({
     }
   };
 
-  const canSend = !streaming && (input.trim().length > 0 || attachments.length > 0);
+  const canSend =
+    !streaming && (input.trim().length > 0 || attachments.length > 0);
 
   return (
     <div
@@ -303,6 +348,7 @@ export default function ChatInputBar({
             value={modelName}
             onChange={onModelChange}
             allowCustom={false}
+            modelLabels={modelLabels}
           />
         </div>
       </div>
@@ -321,7 +367,11 @@ export default function ChatInputBar({
         />
         {streaming ? (
           <Tooltip tip="停止生成" placement="bottom">
-            <button type="button" className="chat-send-btn chat-stop-btn" onClick={onStop}>
+            <button
+              type="button"
+              className="chat-send-btn chat-stop-btn"
+              onClick={onStop}
+            >
               停止
             </button>
           </Tooltip>
@@ -341,7 +391,8 @@ export default function ChatInputBar({
 
       <p className="chat-input-hint">
         Enter 发送 · Shift+Enter 换行 · ⌘A 全选 · 支持拖拽/粘贴文件
-        {attachments.length > 0 && ` · 已附加 ${attachments.length} 个文件 (${formatFileSize(attachments.reduce((s, f) => s + f.size, 0))})`}
+        {attachments.length > 0 &&
+          ` · 已附加 ${attachments.length} 个文件 (${formatFileSize(attachments.reduce((s, f) => s + f.size, 0))})`}
       </p>
     </div>
   );

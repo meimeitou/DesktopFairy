@@ -47,6 +47,8 @@ export interface AppSettings {
   live2dSpeechBubbleMaxChars: number;
   /** User-picked local Live2D models (absolute paths; soft-unlist only, never deletes files) */
   customModels: CustomLive2DModel[];
+  /** IDs of system providers the user has deliberately deleted */
+  deletedSystemProviderIds: string[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -73,6 +75,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   live2dSpeechBubble: true,
   live2dSpeechBubbleMaxChars: 50,
   customModels: [],
+  deletedSystemProviderIds: [],
 };
 
 const STORAGE_KEY = "da_settings";
@@ -162,7 +165,7 @@ function migrateFromLegacy(parsed: Partial<AppSettings> & LegacySettings): AppSe
   if (Array.isArray(parsed.providers) && parsed.providers.length > 0) {
     return finalizeSettings({
       ...base,
-      providers: mergeSystemProviders(parsed.providers),
+      providers: mergeSystemProviders(parsed.providers, parsed.deletedSystemProviderIds),
       activeProviderId:
         parsed.activeProviderId ||
         parsed.providers.find((p) => p.enabled)?.id ||
@@ -186,25 +189,53 @@ function migrateFromLegacy(parsed: Partial<AppSettings> & LegacySettings): AppSe
 
   return finalizeSettings({
     ...base,
-    providers: mergeSystemProviders(providers),
+    providers: mergeSystemProviders(providers, parsed.deletedSystemProviderIds),
     activeProviderId: target.id,
     modelName: parsed.modelName || target.models[0] || DEFAULT_SETTINGS.modelName,
   });
 }
 
 export function loadSettings(): AppSettings {
+  // Prefer the disk file (da_settings.json) over localStorage.
+  // settings:sync writes to disk synchronously on every change, so disk is
+  // always up-to-date. localStorage can be stale when the process is
+  // force-killed (e.g. concurrently --kill-others in make dev) before
+  // Chromium's LevelDB has a chance to flush.
+  try {
+    const api = (window as Window & typeof globalThis).electronAPI;
+    const diskRaw = api?.loadSettingsFromDisk?.();
+    if (diskRaw) {
+      const parsed = JSON.parse(diskRaw) as Partial<AppSettings> & LegacySettings;
+      const settings = migrateFromLegacy(parsed);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      return settings;
+    }
+  } catch {
+    // No Electron API or file unreadable — fall through to localStorage
+  }
+
+  // Fallback: localStorage (browser / web context, or disk unavailable).
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS, providers: cloneProviders(SYSTEM_PROVIDERS) };
-    const parsed = JSON.parse(raw) as Partial<AppSettings> & LegacySettings;
-    return migrateFromLegacy(parsed);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AppSettings> & LegacySettings;
+      return migrateFromLegacy(parsed);
+    }
   } catch {
-    return { ...DEFAULT_SETTINGS, providers: cloneProviders(SYSTEM_PROVIDERS) };
+    // localStorage also unreadable
   }
+
+  return { ...DEFAULT_SETTINGS, providers: cloneProviders(SYSTEM_PROVIDERS) };
 }
 
 export function saveSettings(settings: AppSettings): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  try {
+    const api = (window as Window & typeof globalThis).electronAPI;
+    api?.invoke?.("settings:sync", settings)?.catch?.(() => {});
+  } catch {
+    // no-op in non-Electron context
+  }
 }
 
 export function getActiveProvider(settings: AppSettings): LlmProvider {
@@ -272,6 +303,51 @@ export function updateProviderInSettings(
       p.id === providerId ? { ...p, ...patch } : p
     ),
   };
+}
+
+/** A selectable model item combining provider and model, for the chat model picker. */
+export interface ModelItem {
+  /** Stable compound key: `${providerId}::${modelName}` */
+  value: string;
+  /** Display label: `${providerName}/${modelName}` */
+  label: string;
+  providerId: string;
+  modelName: string;
+}
+
+/** Returns all models from enabled providers, labeled as "服务商/模型名". */
+export function getSelectableModelItems(settings: AppSettings): ModelItem[] {
+  const items: ModelItem[] = [];
+  for (const provider of settings.providers) {
+    if (!provider.enabled) continue;
+    for (const modelName of provider.models) {
+      items.push({
+        value: `${provider.id}::${modelName}`,
+        label: `${provider.name}/${modelName}`,
+        providerId: provider.id,
+        modelName,
+      });
+    }
+  }
+  return items;
+}
+
+/** Returns the compound key `${providerId}::${modelName}` for the current selection. */
+export function getActiveModelCompound(settings: AppSettings): string {
+  const provider = getActiveProvider(settings);
+  const modelName = getActiveModelName(settings);
+  if (!modelName) return "";
+  return `${provider.id}::${modelName}`;
+}
+
+/** Parses a compound key back to { providerId, modelName }. */
+export function parseModelCompound(
+  compound: string,
+  fallbackProviderId: string
+): { providerId: string; modelName: string } {
+  const sep = compound.indexOf("::");
+  if (sep === -1) return { providerId: fallbackProviderId, modelName: compound };
+  return { providerId: compound.slice(0, sep), modelName: compound.slice(sep + 2) };
 }
 
 export type { SelectionActionItem, LlmProvider };

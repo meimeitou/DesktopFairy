@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef, useCallback, type MutableRefObject } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type MutableRefObject,
+} from "react";
 import ChatMarkdown from "../components/chat/ChatMarkdown";
 import ChatInputBar from "../components/chat/ChatInputBar";
 import type { ChatAttachment } from "../shared/chatAttachments";
@@ -17,9 +23,10 @@ import {
 import {
   loadSettings,
   saveSettings,
-  getSelectableModels,
+  getSelectableModelItems,
+  getActiveModelCompound,
+  parseModelCompound,
   getActiveApiConfig,
-  getActiveModelName,
   type AppSettings,
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
@@ -70,8 +77,7 @@ function MessageBubble({
     }
   };
 
-  const showTyping =
-    isStreamingAssistant && !msg.content && !msg.error;
+  const showTyping = isStreamingAssistant && !msg.content && !msg.error;
 
   return (
     <div className={`msg msg-${msg.role}${msg.error ? " msg-error" : ""}`}>
@@ -121,7 +127,7 @@ function MessageBubble({
 }
 
 async function collectInvalidAttachmentPaths(
-  messages: ChatMsg[]
+  messages: ChatMsg[],
 ): Promise<Set<string>> {
   const paths = new Set<string>();
   for (const msg of messages) {
@@ -140,7 +146,7 @@ async function collectInvalidAttachmentPaths(
       } catch {
         invalid.add(filePath);
       }
-    })
+    }),
   );
   return invalid;
 }
@@ -160,7 +166,7 @@ export default function ChatPage({
   const [streaming, setStreaming] = useState(false);
   const [chatSettings, setChatSettings] = useState<AppSettings>(loadSettings);
   const [invalidAttachmentPaths, setInvalidAttachmentPaths] = useState(
-    () => new Set<string>()
+    () => new Set<string>(),
   );
   const [sessionReady, setSessionReady] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -172,8 +178,12 @@ export default function ChatPage({
   const sessionLoadedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const selectableModels = getSelectableModels(chatSettings);
-  const activeModelName = getActiveModelName(chatSettings);
+  const modelItems = getSelectableModelItems(chatSettings);
+  const selectableModels = modelItems.map((i) => i.value);
+  const modelLabels = Object.fromEntries(
+    modelItems.map((i) => [i.value, i.label]),
+  );
+  const activeModelCompound = getActiveModelCompound(chatSettings);
 
   useEffect(() => {
     chatMessagesRef.current = messages;
@@ -193,8 +203,8 @@ export default function ChatPage({
       buildChatSession(
         chatMessagesRef.current,
         inputRef.current,
-        attachmentsRef.current
-      )
+        attachmentsRef.current,
+      ),
     );
     await api.invoke("chat:session:save", session);
   }, []);
@@ -344,34 +354,44 @@ export default function ChatPage({
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const handleModelChange = useCallback((modelName: string) => {
-    const next = { ...loadSettings(), modelName };
-    saveSettings(next);
-    setChatSettings(next);
-  }, []);
+  const handleModelChange = useCallback(
+    (compound: string) => {
+      const { providerId, modelName } = parseModelCompound(
+        compound,
+        chatSettings.activeProviderId,
+      );
+      const next = { ...chatSettings, activeProviderId: providerId, modelName };
+      saveSettings(next);
+      setChatSettings(next);
+    },
+    [chatSettings],
+  );
 
-  const loadAttachmentPayloads = useCallback(async (files: ChatAttachment[]) => {
-    const textFiles: { name: string; text: string }[] = [];
-    const images: { name: string; dataUrl: string }[] = [];
+  const loadAttachmentPayloads = useCallback(
+    async (files: ChatAttachment[]) => {
+      const textFiles: { name: string; text: string }[] = [];
+      const images: { name: string; dataUrl: string }[] = [];
 
-    for (const file of files) {
-      const data = (await api.invoke("file:read", file)) as {
-        kind: string;
-        text?: string;
-        dataUrl?: string;
-        name: string;
-      };
-      if (data.kind === "image" && data.dataUrl) {
-        images.push({ name: data.name, dataUrl: data.dataUrl });
-      } else if (data.kind === "text" && data.text != null) {
-        textFiles.push({ name: data.name, text: data.text });
-      } else {
-        throw new Error(`不支持的文件类型：${file.name}`);
+      for (const file of files) {
+        const data = (await api.invoke("file:read", file)) as {
+          kind: string;
+          text?: string;
+          dataUrl?: string;
+          name: string;
+        };
+        if (data.kind === "image" && data.dataUrl) {
+          images.push({ name: data.name, dataUrl: data.dataUrl });
+        } else if (data.kind === "text" && data.text != null) {
+          textFiles.push({ name: data.name, text: data.text });
+        } else {
+          throw new Error(`不支持的文件类型：${file.name}`);
+        }
       }
-    }
 
-    return { textFiles, images };
-  }, []);
+      return { textFiles, images };
+    },
+    [],
+  );
 
   const handleSend = useCallback(
     async (overrideText?: string) => {
@@ -379,15 +399,17 @@ export default function ChatPage({
       const text = (overrideText ?? input).trim();
       if (!text && attachments.length === 0) return;
 
-      const settings = loadSettings();
-      setChatSettings(settings);
+      const settings = chatSettings;
       const apiConfig = getActiveApiConfig(settings);
       if (!apiConfig.apiHost || !apiConfig.modelName) {
         alert("请先在设置中配置服务商 API Host 和模型。");
         return;
       }
 
-      let attachmentPayloads = { textFiles: [] as { name: string; text: string }[], images: [] as { name: string; dataUrl: string }[] };
+      let attachmentPayloads = {
+        textFiles: [] as { name: string; text: string }[],
+        images: [] as { name: string; dataUrl: string }[],
+      };
       try {
         if (attachments.length > 0) {
           attachmentPayloads = await loadAttachmentPayloads(attachments);
@@ -402,7 +424,7 @@ export default function ChatPage({
         history,
         text,
         attachmentPayloads,
-        settings.systemPrompt
+        settings.systemPrompt,
       );
 
       const userMsg: ChatMsg = {
@@ -430,7 +452,10 @@ export default function ChatPage({
         .invoke("chat:send", {
           requestId,
           messages: payloadMessages,
-          chatUrl: getChatCompletionsUrl(apiConfig.apiHost, apiConfig.providerType),
+          chatUrl: getChatCompletionsUrl(
+            apiConfig.apiHost,
+            apiConfig.providerType,
+          ),
           apiKey: apiConfig.apiKey,
           model: apiConfig.modelName,
           temperature: settings.temperature,
@@ -454,7 +479,15 @@ export default function ChatPage({
           flushSessionSave();
         });
     },
-    [input, streaming, messages, attachments, loadAttachmentPayloads, flushSessionSave]
+    [
+      input,
+      streaming,
+      messages,
+      attachments,
+      chatSettings,
+      loadAttachmentPayloads,
+      flushSessionSave,
+    ],
   );
 
   useEffect(() => {
@@ -495,7 +528,7 @@ export default function ChatPage({
     setInvalidAttachmentPaths(new Set());
     void api.invoke(
       "chat:session:save",
-      trimSessionForStorage(buildChatSession([], "", []))
+      trimSessionForStorage(buildChatSession([], "", [])),
     );
   }, [streaming, messages.length]);
 
@@ -531,7 +564,7 @@ export default function ChatPage({
                 isLast={i === messages.length - 1}
                 invalidAttachmentPaths={invalidAttachmentPaths}
               />
-            )
+            ),
           )
         )}
       </div>
@@ -544,7 +577,8 @@ export default function ChatPage({
         streaming={streaming}
         hasMessages={messages.length > 0}
         models={selectableModels}
-        modelName={activeModelName}
+        modelName={activeModelCompound}
+        modelLabels={modelLabels}
         onModelChange={handleModelChange}
         onSend={() => void handleSend()}
         onStop={handleStop}

@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'selection:copy',
       'selection:open_url',
       'selection:resize_tip',
+      'selection:hide_tip',
       'live2d:list_models',
       'live2d:switch_model',
       'live2d:command',
@@ -34,6 +35,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'live2d:select_model_dir',
       'selection:check_accessibility',
       'selection:prompt_accessibility',
+      'selection:retry_hook',
       'file:select',
       'file:read',
       'file:stat_path',
@@ -78,6 +80,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('main-window:layout-changed', listener);
   },
 
+  // Load settings from disk synchronously (used as localStorage fallback on startup)
+  loadSettingsFromDisk: () => ipcRenderer.sendSync('settings:load:sync'),
+
   // Shortcut management
   getShortcut: () => ipcRenderer.invoke('get_shortcut'),
   setShortcut: (shortcut) => ipcRenderer.invoke('set_shortcut', shortcut),
@@ -93,6 +98,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('live2d:bubble', listener);
     return () => ipcRenderer.removeListener('live2d:bubble', listener);
+  },
+
+  onSelectionTipText: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('selection:tip_text', listener);
+    return () => ipcRenderer.removeListener('selection:tip_text', listener);
   },
 
   // Model switch pushed from main process (tray menu)
