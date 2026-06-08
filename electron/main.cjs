@@ -294,7 +294,11 @@ const createChatWindow = (options = {}) => {
   });
 
   chatWindow.on('closed', () => {
-    killSessionsForSender(chatWindow.webContents);
+    // It's possible for the 'closed' event to fire after the reference has been nulled
+    // out by another part of the shutdown sequence.
+    if (chatWindow && !chatWindow.isDestroyed()) {
+      killSessionsForSender(chatWindow.webContents);
+    }
     chatWindow = null;
   });
 
