@@ -15,6 +15,9 @@
   },
   "dependencies": {
     "@cherrystudio/mac-system-ocr": "^0.2.7",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
@@ -25,6 +28,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
@@ -75,5 +79,8 @@
         "NSAccessibilityUsageDescription": "DesktopFairy 需要辅助功能权限以读取您选中的文字，用于划词助手。"
       }
     }
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
   }
 }

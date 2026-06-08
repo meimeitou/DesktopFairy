@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'screenshot:capture',
       'screenshot:capture_to_chat',
       'screenshot:copy_text',
+      'pty:create',
+      'pty:input',
+      'pty:resize',
+      'pty:kill',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -128,5 +132,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('chat:stream:error', listener);
     return () => ipcRenderer.removeListener('chat:stream:error', listener);
+  },
+
+  // PTY events from main process
+  onPtyOutput: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('pty:output', listener);
+    return () => ipcRenderer.removeListener('pty:output', listener);
+  },
+  onPtyExit: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('pty:exit', listener);
+    return () => ipcRenderer.removeListener('pty:exit', listener);
   },
 });

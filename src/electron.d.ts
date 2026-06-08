@@ -46,6 +46,12 @@ declare global {
       onChatStreamError: (
         callback: (payload: { requestId: string; message: string }) => void
       ) => () => void;
+      onPtyOutput: (
+        callback: (payload: { sessionId: string; data: string }) => void
+      ) => () => void;
+      onPtyExit: (
+        callback: (payload: { sessionId: string; exitCode: number }) => void
+      ) => () => void;
     };
   }
 }

@@ -18,6 +18,7 @@ const {
   pushLive2DBubble,
 } = require('./live2dService.cjs');
 const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
+const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require('./ptyService.cjs');
 const {
   resolveChatWindowPosition,
   presentChatWindow,
@@ -293,6 +294,7 @@ const createChatWindow = (options = {}) => {
   });
 
   chatWindow.on('closed', () => {
+    killSessionsForSender(chatWindow.webContents);
     chatWindow = null;
   });
 
@@ -514,6 +516,8 @@ const setupIPC = () => {
     ipcMain,
     sessionPath: CHAT_SESSION_PATH,
   });
+
+  registerPtyHandlers({ ipcMain });
 
   ipcMain.handle('selection:copy', async (_event, text) => {
     clipboard.writeText(String(text || ''));
@@ -980,6 +984,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  killAllSessions();
   selectionService.stopAll();
   globalShortcut.unregisterAll();
   for (const controller of inflightChats.values()) {

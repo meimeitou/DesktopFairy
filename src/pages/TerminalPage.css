@@ -1,0 +1,116 @@
+.terminal-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 4px 0 0 0;
+}
+
+.terminal-instances-wrapper {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.terminal-instance {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+}
+
+.terminal-instance.active {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+  opacity: 1;
+}
+
+.terminal-instance .xterm {
+  height: 100%;
+}
+
+.terminal-instance .xterm-viewport {
+  padding: 0 !important;
+}
+
+.terminal-tabs-bottom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+}
+
+.terminal-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+}
+
+.terminal-tab-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.terminal-tab-item.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.terminal-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.terminal-tab-close:hover {
+  background: rgba(255, 100, 100, 0.3);
+  color: #ff8a8a;
+  opacity: 1;
+}
+
+.terminal-tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border: none;
+  cursor: pointer;
+}
+
+.terminal-tab-add:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.95);
+}

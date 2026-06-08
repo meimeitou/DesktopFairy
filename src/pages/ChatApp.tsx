@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import ChatPage from "./ChatPage";
 import SettingsPage from "./SettingsPage";
+import TerminalPage from "./TerminalPage";
 import "./ChatApp.css";
 
-type AppView = "chat" | "settings";
+type AppView = "chat" | "terminal" | "settings";
 
 const api = window.electronAPI;
 const isMac =
@@ -18,6 +19,15 @@ function ChatIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
     </svg>
   );
 }
@@ -54,7 +64,9 @@ export default function ChatApp() {
 
   useEffect(() => {
     const off = api.onChatNavigate?.((nextView) => {
-      setView(nextView === "settings" ? "settings" : "chat");
+      if (nextView === "terminal") setView("terminal");
+      else if (nextView === "settings") setView("settings");
+      else setView("chat");
     });
     return () => off?.();
   }, []);
@@ -70,6 +82,14 @@ export default function ChatApp() {
           >
             <ChatIcon />
             <span>对话</span>
+          </button>
+          <button
+            type="button"
+            className={`chat-tab${view === "terminal" ? " active" : ""}`}
+            onClick={() => setView("terminal")}
+          >
+            <TerminalIcon />
+            <span>终端</span>
           </button>
           <button
             type="button"
@@ -101,6 +121,12 @@ export default function ChatApp() {
           aria-hidden={view !== "chat"}
         >
           <ChatPage embedded />
+        </div>
+        <div
+          className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}
+          aria-hidden={view !== "terminal"}
+        >
+          <TerminalPage isActive={view === "terminal"} />
         </div>
         <div
           className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}
