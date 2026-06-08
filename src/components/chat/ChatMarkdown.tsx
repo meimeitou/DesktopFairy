@@ -18,13 +18,11 @@ const components: Components = {
     return <>{children}</>;
   },
   code({ className, children, ...props }) {
-    const isBlock = Boolean(className);
+    const isBlock =
+      Boolean(className) ||
+      (typeof children === "string" && children.includes("\n"));
     if (isBlock) {
-      return (
-        <CodeBlock className={className}>
-          {children}
-        </CodeBlock>
-      );
+      return <CodeBlock className={className}>{children}</CodeBlock>;
     }
     return (
       <code className="md-inline-code" {...props}>
@@ -55,7 +53,9 @@ function ChatMarkdown({ content, streaming }: Props) {
   if (!content && streaming) return null;
 
   return (
-    <div className={`chat-markdown${streaming ? " chat-markdown-streaming" : ""}`}>
+    <div
+      className={`chat-markdown${streaming ? " chat-markdown-streaming" : ""}`}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkCjkFriendly]}
         rehypePlugins={[rehypeHighlight]}
