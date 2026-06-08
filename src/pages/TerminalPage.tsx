@@ -39,19 +39,22 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
     // Create PTY session
     const { cols, rows } = xterm;
     let isMounted = true;
-    api.invoke("pty:create", { cols, rows }).then((result) => {
-      if (!isMounted) {
+    api
+      .invoke("pty:create", { cols, rows })
+      .then((result) => {
+        if (!isMounted) {
+          const { sessionId } = result as { sessionId: string };
+          api.invoke("pty:kill", { sessionId });
+          return;
+        }
         const { sessionId } = result as { sessionId: string };
-        api.invoke("pty:kill", { sessionId });
-        return;
-      }
-      const { sessionId } = result as { sessionId: string };
-      sessionIdRef.current = sessionId;
-    }).catch(err => {
-      if (isMounted) {
-        xterm.write(`\r\n[创建进程失败: ${err.message || String(err)}]\r\n`);
-      }
-    });
+        sessionIdRef.current = sessionId;
+      })
+      .catch((err) => {
+        if (isMounted) {
+          xterm.write(`\r\n[创建进程失败: ${err.message || String(err)}]\r\n`);
+        }
+      });
 
     // Terminal input → PTY
     const inputData = xterm.onData((data) => {
@@ -85,14 +88,6 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
             return false;
           }
         }
-        if (event.key === "v") {
-          navigator.clipboard.readText().then((text) => {
-            if (sessionIdRef.current && text) {
-              api.invoke("pty:input", { sessionId: sessionIdRef.current, data: text });
-            }
-          });
-          return false;
-        }
       }
       return true;
     });
@@ -112,7 +107,11 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
 
     xterm.onResize(({ cols, rows }) => {
       if (sessionIdRef.current) {
-        api.invoke("pty:resize", { sessionId: sessionIdRef.current, cols, rows });
+        api.invoke("pty:resize", {
+          sessionId: sessionIdRef.current,
+          cols,
+          rows,
+        });
       }
     });
 
@@ -151,7 +150,11 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
   );
 }
 
-export default function TerminalPage({ isActive = false }: { isActive?: boolean }) {
+export default function TerminalPage({
+  isActive = false,
+}: {
+  isActive?: boolean;
+}) {
   const [tabs, setTabs] = useState<{ id: string; title: string }[]>(() => [
     { id: `tab_${Date.now()}`, title: "终端 1" },
   ]);
@@ -161,29 +164,32 @@ export default function TerminalPage({ isActive = false }: { isActive?: boolean 
   const handleAddTab = useCallback(() => {
     const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const newTitle = `终端 ${nextTabIndex.current++}`;
-    setTabs(prev => [...prev, { id: newId, title: newTitle }]);
+    setTabs((prev) => [...prev, { id: newId, title: newTitle }]);
     setActiveTabId(newId);
   }, []);
 
-  const handleCloseTab = useCallback((id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setTabs(prev => {
-      if (prev.length <= 1) return prev; // Keep at least one tab
-      const idx = prev.findIndex(t => t.id === id);
-      const nextTabs = prev.filter(t => t.id !== id);
-      if (activeTabId === id) {
-        const nextActive = nextTabs[Math.max(0, idx - 1)].id;
-        setActiveTabId(nextActive);
-      }
-      return nextTabs;
-    });
-  }, [activeTabId]);
+  const handleCloseTab = useCallback(
+    (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setTabs((prev) => {
+        if (prev.length <= 1) return prev; // Keep at least one tab
+        const idx = prev.findIndex((t) => t.id === id);
+        const nextTabs = prev.filter((t) => t.id !== id);
+        if (activeTabId === id) {
+          const nextActive = nextTabs[Math.max(0, idx - 1)].id;
+          setActiveTabId(nextActive);
+        }
+        return nextTabs;
+      });
+    },
+    [activeTabId],
+  );
 
   const handleCloseActiveTab = useCallback(() => {
-    setTabs(prev => {
+    setTabs((prev) => {
       if (prev.length <= 1) return prev;
-      const idx = prev.findIndex(t => t.id === activeTabId);
-      const nextTabs = prev.filter(t => t.id !== activeTabId);
+      const idx = prev.findIndex((t) => t.id === activeTabId);
+      const nextTabs = prev.filter((t) => t.id !== activeTabId);
       const nextActive = nextTabs[Math.max(0, idx - 1)].id;
       setActiveTabId(nextActive);
       return nextTabs;
@@ -194,16 +200,16 @@ export default function TerminalPage({ isActive = false }: { isActive?: boolean 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isActive) return;
-      
-      if (e.metaKey && e.key === 't') {
+
+      if (e.metaKey && e.key === "t") {
         e.preventDefault();
         handleAddTab();
-      } else if (e.metaKey && e.key === 'w') {
+      } else if (e.metaKey && e.key === "w") {
         e.preventDefault();
         handleCloseActiveTab();
       }
     };
-    
+
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isActive, handleAddTab, handleCloseActiveTab]);
@@ -212,13 +218,10 @@ export default function TerminalPage({ isActive = false }: { isActive?: boolean 
     <div className="terminal-page">
       <div className="terminal-instances-wrapper">
         {tabs.map((tab) => (
-          <TerminalInstance
-            key={tab.id}
-            isActive={tab.id === activeTabId}
-          />
+          <TerminalInstance key={tab.id} isActive={tab.id === activeTabId} />
         ))}
       </div>
-      
+
       <div className="terminal-tabs-bottom">
         {tabs.map((tab) => (
           <button
@@ -233,7 +236,14 @@ export default function TerminalPage({ isActive = false }: { isActive?: boolean 
                 className="terminal-tab-close"
                 onClick={(e) => handleCloseTab(tab.id, e)}
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -247,7 +257,14 @@ export default function TerminalPage({ isActive = false }: { isActive?: boolean 
           onClick={handleAddTab}
           title="新建终端 (Cmd+T)"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
