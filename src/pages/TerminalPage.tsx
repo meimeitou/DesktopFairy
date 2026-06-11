@@ -134,12 +134,43 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
 
   // Fit again when becoming active
   useEffect(() => {
-    if (isActive && fitAddonRef.current) {
-      setTimeout(() => {
-        fitAddonRef.current?.fit();
-        xtermRef.current?.focus();
-      }, 50);
+    if (!isActive || !terminalRef.current || !fitAddonRef.current) return;
+
+    const el = terminalRef.current;
+
+    const doFit = () => {
+      fitAddonRef.current?.fit();
+      // Wait two animation frames for layout + renderer to fully settle
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const xterm = xtermRef.current;
+          if (xterm) {
+            xterm.scrollToBottom();
+            xterm.refresh(0, xterm.rows - 1);
+            xterm.focus();
+          }
+        });
+      });
+    };
+
+    // If already rendered, fit immediately
+    if (el.clientWidth > 0 && el.clientHeight > 0) {
+      doFit();
+      return;
     }
+
+    // Wait for container to recover from display:none before fitting
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          doFit();
+          ro.disconnect();
+          break;
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [isActive]);
 
   return (
@@ -218,7 +249,10 @@ export default function TerminalPage({
     <div className="terminal-page">
       <div className="terminal-instances-wrapper">
         {tabs.map((tab) => (
-          <TerminalInstance key={tab.id} isActive={tab.id === activeTabId} />
+          <TerminalInstance
+            key={tab.id}
+            isActive={tab.id === activeTabId && isActive}
+          />
         ))}
       </div>
 

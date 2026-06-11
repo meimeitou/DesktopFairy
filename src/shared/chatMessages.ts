@@ -10,6 +10,7 @@ export interface ChatMsg {
   type?: "clear";
   error?: boolean;
   attachments?: ChatAttachment[];
+  timestamp?: number;
 }
 
 export type ApiContentPart =
