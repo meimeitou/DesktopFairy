@@ -21,7 +21,7 @@
 
 .settings-sidebar {
   flex-shrink: 0;
-  width: 168px;
+  width: 200px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -30,37 +30,37 @@
 }
 
 .settings-sidebar-title {
-  padding: 14px 14px 10px;
-  font-size: 13px;
+  padding: 16px 16px 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.6);
   letter-spacing: 0.3px;
 }
 
 .settings-menu {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 4px 8px 12px;
+  gap: 2px;
+  padding: 8px 10px 12px;
   overflow-y: auto;
 }
 
 .settings-menu-divider {
   height: 1px;
-  margin: 6px 4px;
+  margin: 8px 6px;
   background: rgba(255, 255, 255, 0.06);
 }
 
 .settings-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 12px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(255, 255, 255, 0.65);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
@@ -81,14 +81,34 @@
   background: rgba(120, 100, 255, 0.12);
   border-color: rgba(120, 100, 255, 0.35);
   color: rgba(255, 255, 255, 0.95);
+  position: relative;
+}
+.settings-menu-item.active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: rgba(140, 120, 255, 0.9);
 }
 
 .settings-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 15px;
   line-height: 1;
-  width: 18px;
+  width: 20px;
+  height: 20px;
   text-align: center;
   flex-shrink: 0;
+  color: currentColor;
+}
+.settings-menu-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 .settings-menu-label {
@@ -110,7 +130,12 @@
 .settings-content-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0 16px;
+  padding: 24px 32px 32px;
+}
+
+.settings-content-inner {
+  max-width: 768px;
+  margin: 0 auto;
 }
 
 .settings-frame {
@@ -131,27 +156,28 @@
 }
 
 .settings-section {
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 18px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
-.settings-section:last-child {
-  border-bottom: none;
+.settings-section:first-child {
+  border-top: none;
 }
 
 .settings-section h3 {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.35);
-  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 14px;
+  letter-spacing: 0.2px;
 }
 
 .persona-desc {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
   color: rgba(255, 255, 255, 0.45);
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .persona-textarea {
@@ -161,7 +187,7 @@
 }
 
 .field {
-  margin-bottom: 10px;
+  margin-bottom: 14px;
 }
 .field:last-child {
   margin-bottom: 0;
@@ -170,8 +196,9 @@
 .field label {
   display: block;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
-  margin-bottom: 5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 6px;
 }
 
 .field input[type="text"],
@@ -277,12 +304,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0;
+  gap: 16px;
+  padding: 6px 0;
 }
 .field-row label {
   margin-bottom: 0;
   font-size: 13px;
   color: rgba(255, 255, 255, 0.75);
+  flex: 1;
+  min-width: 0;
+}
+.field-row .toggle {
+  flex: none;
 }
 
 /* Window size presets + manual inputs */
@@ -368,8 +401,8 @@
 .toggle {
   position: relative;
   display: inline-block;
-  width: 36px;
-  height: 20px;
+  width: 32px;
+  height: 18px;
   flex-shrink: 0;
 }
 .toggle input {
@@ -381,7 +414,7 @@
 .toggle-track {
   position: absolute;
   inset: 0;
-  border-radius: 10px;
+  border-radius: 9px;
   background: rgba(255, 255, 255, 0.12);
   transition: background 0.2s;
   cursor: pointer;
@@ -389,8 +422,8 @@
 .toggle-track::after {
   content: "";
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -403,7 +436,7 @@
   background: rgba(120, 100, 255, 0.7);
 }
 .toggle input:checked + .toggle-track::after {
-  transform: translateX(16px);
+  transform: translateX(14px);
   background: #fff;
 }
 
@@ -430,7 +463,9 @@
   font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 .provider-preset-btn:hover {
   background: rgba(255, 255, 255, 0.1);

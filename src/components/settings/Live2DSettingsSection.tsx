@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings, CustomLive2DModel } from "../../shared/settings";
-import { DEFAULT_SETTINGS, normalizeSpeechBubbleMaxChars } from "../../shared/settings";
+import {
+  DEFAULT_SETTINGS,
+  normalizeSpeechBubbleMaxChars,
+} from "../../shared/settings";
 import { notifyLive2DSpeechBubble } from "../../shared/speechBubble";
 import { isLocalModelPath, modelDisplayName } from "../../shared/live2dPaths";
 
@@ -36,15 +39,18 @@ const MAX_WINDOW_HEIGHT = 1200;
 
 const SIZE_INPUT_PATTERN = /^\d*$/;
 
-function clampWindowSize(width: number, height: number): { width: number; height: number } {
+function clampWindowSize(
+  width: number,
+  height: number,
+): { width: number; height: number } {
   return {
     width: Math.min(
       MAX_WINDOW_WIDTH,
-      Math.max(MIN_WINDOW_WIDTH, Math.round(width) || MIN_WINDOW_WIDTH)
+      Math.max(MIN_WINDOW_WIDTH, Math.round(width) || MIN_WINDOW_WIDTH),
     ),
     height: Math.min(
       MAX_WINDOW_HEIGHT,
-      Math.max(MIN_WINDOW_HEIGHT, Math.round(height) || MIN_WINDOW_HEIGHT)
+      Math.max(MIN_WINDOW_HEIGHT, Math.round(height) || MIN_WINDOW_HEIGHT),
     ),
   };
 }
@@ -72,7 +78,9 @@ function SizeNumberInput({
 
   const commit = (raw: string) => {
     const parsed =
-      raw === "" ? min : Math.min(max, Math.max(min, Math.round(Number(raw)) || min));
+      raw === ""
+        ? min
+        : Math.min(max, Math.max(min, Math.round(Number(raw)) || min));
     onChange(parsed);
     onCommit?.(parsed);
     setDraft(String(parsed));
@@ -162,7 +170,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
   const [pickError, setPickError] = useState<string | null>(null);
   const [pickWarning, setPickWarning] = useState<string | null>(null);
   const [bubbleTestText, setBubbleTestText] = useState(
-    DEFAULT_SPEECH_BUBBLE_TEST_TEXT
+    DEFAULT_SPEECH_BUBBLE_TEST_TEXT,
   );
 
   const refreshModels = useCallback(() => {
@@ -192,7 +200,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
 
   const appendCustomModel = (
     customModels: CustomLive2DModel[],
-    entry: CustomLive2DModel
+    entry: CustomLive2DModel,
   ): CustomLive2DModel[] => {
     if (customModels.some((m) => m.path === entry.path)) return customModels;
     return [...customModels, entry];
@@ -245,7 +253,9 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
         const data = result as ModelCapabilities;
         setCaps({
           expressions: Array.isArray(data?.expressions) ? data.expressions : [],
-          motionGroups: Array.isArray(data?.motionGroups) ? data.motionGroups : [],
+          motionGroups: Array.isArray(data?.motionGroups)
+            ? data.motionGroups
+            : [],
         });
       })
       .catch(() => setCaps(EMPTY_CAPS));
@@ -266,17 +276,21 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     const label = model.name || modelDisplayName(model.path);
     if (
       !window.confirm(
-        `确定从应用列表中移除「${label}」吗？\n\n仅从 DesktopFairy 配置中取消引用，不会删除磁盘上的模型文件。`
+        `确定从应用列表中移除「${label}」吗？\n\n仅从 DesktopFairy 配置中取消引用，不会删除磁盘上的模型文件。`,
       )
     ) {
       return;
     }
     setPickError(null);
-    const nextCustom = settings.customModels.filter((m) => m.path !== model.path);
+    const nextCustom = settings.customModels.filter(
+      (m) => m.path !== model.path,
+    );
     const patch: Partial<AppSettings> = { customModels: nextCustom };
     if (settings.modelPath === model.path) {
       patch.modelPath = DEFAULT_SETTINGS.modelPath;
-      api.invoke("live2d:switch_model", DEFAULT_SETTINGS.modelPath).catch(() => {});
+      api
+        .invoke("live2d:switch_model", DEFAULT_SETTINGS.modelPath)
+        .catch(() => {});
     }
     onChange(patch);
   };
@@ -309,9 +323,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
           </button>
         </div>
         {pickError && <p className="about-text error-text">{pickError}</p>}
-        {pickWarning && (
-          <p className="about-text secondary">{pickWarning}</p>
-        )}
+        {pickWarning && <p className="about-text secondary">{pickWarning}</p>}
         {displayModels.length > 0 ? (
           <div className="model-picker">
             {displayModels.map((model) => (
@@ -355,7 +367,8 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
           </div>
         ) : (
           <p className="about-text secondary">
-            未找到模型。内置模型请放入 public/models/，或使用「浏览本地目录」选择已下载的模型文件夹。
+            未找到模型。内置模型请放入
+            public/models/，或使用「浏览本地目录」选择已下载的模型文件夹。
           </p>
         )}
       </div>
@@ -420,14 +433,14 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               if (raw === "") return;
               onChange({
                 live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
-                  Number(raw)
+                  Number(raw),
                 ),
               });
             }}
             onBlur={(e) => {
               onChange({
                 live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
-                  Number(e.target.value)
+                  Number(e.target.value),
                 ),
               });
             }}
@@ -530,14 +543,14 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               onChange={(windowWidth) => {
                 const { width: w, height: h } = clampWindowSize(
                   windowWidth,
-                  settings.windowHeight
+                  settings.windowHeight,
                 );
                 onChange({ windowWidth: w, windowHeight: h });
               }}
               onCommit={(width) => {
                 const { width: w, height: h } = clampWindowSize(
                   width,
-                  settings.windowHeight
+                  settings.windowHeight,
                 );
                 api.invoke("resize_main_window", { width: w, height: h });
               }}
@@ -554,14 +567,14 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               onChange={(windowHeight) => {
                 const { width: w, height: h } = clampWindowSize(
                   settings.windowWidth,
-                  windowHeight
+                  windowHeight,
                 );
                 onChange({ windowWidth: w, windowHeight: h });
               }}
               onCommit={(height) => {
                 const { width: w, height: h } = clampWindowSize(
                   settings.windowWidth,
-                  height
+                  height,
                 );
                 api.invoke("resize_main_window", { width: w, height: h });
               }}
@@ -614,11 +627,6 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
           重置偏移
         </button>
       </div>
-
-      <p className="about-text secondary">
-        内置模型放在 public/models/；本地下载的模型可通过「浏览本地目录」选择，将自动使用该目录下的
-        .model3.json 配置文件。列表右上角的 × 仅从应用配置中移除引用，不会删除磁盘上的模型文件；需要时可再次浏览同一目录重新添加。
-      </p>
     </section>
   );
 }
