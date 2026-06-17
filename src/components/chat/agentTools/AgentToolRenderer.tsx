@@ -1,0 +1,233 @@
+import { useEffect, useRef, useState } from "react";
+import type { ChatMsg } from "../../../shared/chatMessages";
+import {
+  extractFilePath,
+  extractStdout,
+  getToolCommandLine,
+  getToolInput,
+  parseToolOutput,
+} from "./toolUtils";
+import TerminalOutput from "./TerminalOutput";
+import ToolHeader from "./ToolHeader";
+
+function StatusBadge({
+  status,
+  label,
+}: {
+  status: string;
+  label: string;
+}) {
+  return (
+    <span className={`agent-tool-status-badge agent-tool-status-${status}`}>
+      {(status === "running" || status === "streaming") && (
+        <span className="msg-tool-spinner" aria-hidden />
+      )}
+      {label}
+    </span>
+  );
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  streaming: "准备中",
+  running: "执行中",
+  done: "完成",
+  error: "失败",
+  denied: "已拒绝",
+};
+
+function BashToolBody({ msg }: { msg: ChatMsg }) {
+  const command = getToolCommandLine(msg.toolName || "Bash", msg.toolArgs);
+  const output = parseToolOutput(msg.toolResultPreview);
+  const stdout = extractStdout(output);
+  const stderr =
+    output && typeof output === "object" && typeof (output as Record<string, unknown>).stderr === "string"
+      ? String((output as Record<string, unknown>).stderr)
+      : "";
+
+  return (
+    <div className="agent-tool-body">
+      <div className="agent-tool-section-label">命令</div>
+      {command ? (
+        <TerminalOutput content={command} commandMode />
+      ) : (
+        <p className="agent-tool-permission-empty">（无命令参数）</p>
+      )}
+      {(stdout || stderr || msg.toolStatus === "running") && (
+        <>
+          <div className="agent-tool-section-label">输出</div>
+          <TerminalOutput content={stdout || stderr || "…"} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReadToolBody({ msg }: { msg: ChatMsg }) {
+  const input = getToolInput(msg.toolName || "", msg.toolArgs);
+  const path = extractFilePath(input);
+  const output = parseToolOutput(msg.toolResultPreview);
+  const text = extractStdout(output) || (typeof output === "string" ? output : "");
+
+  return (
+    <div className="agent-tool-body">
+      {path && (
+        <>
+          <div className="agent-tool-section-label">文件</div>
+          <div className="agent-tool-file-path">{path}</div>
+        </>
+      )}
+      {text && (
+        <>
+          <div className="agent-tool-section-label">内容</div>
+          <TerminalOutput content={text} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function GenericToolBody({ msg }: { msg: ChatMsg }) {
+  const input = getToolInput(msg.toolName || "", msg.toolArgs);
+  const output = parseToolOutput(msg.toolResultPreview);
+  const hasInput = Object.keys(input).length > 0;
+  const outputText =
+    typeof output === "string"
+      ? output
+      : output
+        ? JSON.stringify(output, null, 2)
+        : msg.toolMessage || "";
+
+  return (
+    <div className="agent-tool-body">
+      {hasInput && (
+        <>
+          <div className="agent-tool-section-label">参数</div>
+          <TerminalOutput content={JSON.stringify(input, null, 2)} />
+        </>
+      )}
+      {outputText && msg.toolStatus !== "running" && msg.toolStatus !== "streaming" && (
+        <>
+          <div className="agent-tool-section-label">结果</div>
+          <TerminalOutput content={outputText} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function SkillToolBody({ msg }: { msg: ChatMsg }) {
+  const input = getToolInput(msg.toolName || "", msg.toolArgs);
+  const output = parseToolOutput(msg.toolResultPreview);
+  const content =
+    output && typeof output === "object" && typeof (output as Record<string, unknown>).content === "string"
+      ? String((output as Record<string, unknown>).content)
+      : extractStdout(output) || (typeof output === "string" ? output : "");
+
+  return (
+    <div className="agent-tool-body">
+      {typeof input.skill === "string" && input.skill && (
+        <>
+          <div className="agent-tool-section-label">技能</div>
+          <div className="agent-tool-file-path">{String(input.skill)}</div>
+        </>
+      )}
+      {content && (
+        <>
+          <div className="agent-tool-section-label">说明</div>
+          <TerminalOutput content={content} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function SkillsToolBody({ msg }: { msg: ChatMsg }) {
+  const input = getToolInput(msg.toolName || "", msg.toolArgs);
+  const output = parseToolOutput(msg.toolResultPreview);
+  const outputText =
+    typeof output === "string"
+      ? output
+      : output
+        ? JSON.stringify(output, null, 2)
+        : msg.toolMessage || "";
+
+  return (
+    <div className="agent-tool-body">
+      {typeof input.action === "string" && input.action && (
+        <>
+          <div className="agent-tool-section-label">操作</div>
+          <div className="agent-tool-file-path">{String(input.action)}</div>
+        </>
+      )}
+      {outputText && msg.toolStatus !== "running" && msg.toolStatus !== "streaming" && (
+        <>
+          <div className="agent-tool-section-label">结果</div>
+          <TerminalOutput content={outputText} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function renderToolBody(msg: ChatMsg) {
+  const name = msg.toolName || "";
+  if (name === "Bash") return <BashToolBody msg={msg} />;
+  if (name === "Skill") return <SkillToolBody msg={msg} />;
+  if (name === "Skills") return <SkillsToolBody msg={msg} />;
+  if (name === "Read" || name === "Write" || name === "Edit") {
+    return name === "Read" ? <ReadToolBody msg={msg} /> : <GenericToolBody msg={msg} />;
+  }
+  if (name.startsWith("mcp__")) return <GenericToolBody msg={msg} />;
+  return <GenericToolBody msg={msg} />;
+}
+
+export default function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
+  const status = msg.toolStatus || "streaming";
+  const label = STATUS_LABEL[status] || status;
+  const isCollapsible = status === "done";
+  const [expanded, setExpanded] = useState(status !== "done");
+  const prevStatus = useRef(status);
+
+  useEffect(() => {
+    if (prevStatus.current !== "done" && status === "done") {
+      setExpanded(false);
+    }
+    if (status === "running" || status === "streaming") {
+      setExpanded(true);
+    }
+    prevStatus.current = status;
+  }, [status]);
+
+  const input = getToolInput(msg.toolName || "", msg.toolArgs);
+  const summary =
+    getToolCommandLine(msg.toolName || "", msg.toolArgs) ||
+    extractFilePath(input) ||
+    (typeof input.query === "string" ? input.query : "") ||
+    (typeof input.url === "string" ? input.url : "") ||
+    (typeof input.pattern === "string" ? input.pattern : "");
+
+  const showBody = !isCollapsible || expanded;
+
+  return (
+    <div
+      className={`agent-tool-card agent-tool-card-${status}${
+        isCollapsible && !expanded ? " agent-tool-card-collapsed" : ""
+      }`}
+    >
+      <ToolHeader
+        toolName={msg.toolName || "工具"}
+        params={
+          summary ? <span className="agent-tool-inline-param">{summary}</span> : undefined
+        }
+        status={<StatusBadge status={status} label={label} />}
+        collapsible={isCollapsible}
+        expanded={expanded}
+        onToggle={() => setExpanded((v) => !v)}
+      />
+      {showBody && renderToolBody(msg)}
+      {msg.toolMessage && (status === "error" || status === "denied") && (
+        <p className="agent-tool-error-text">{msg.toolMessage}</p>
+      )}
+    </div>
+  );
+}

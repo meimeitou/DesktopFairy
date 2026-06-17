@@ -4,14 +4,17 @@ import {
   useRef,
   useCallback,
   type MutableRefObject,
+  type ReactNode,
 } from "react";
 import ChatMarkdown from "../components/chat/ChatMarkdown";
 import ChatInputBar from "../components/chat/ChatInputBar";
+import ToolCallBubble, { ToolCallGroup } from "../components/chat/ToolCallBubble";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import {
   type ChatMsg,
   buildApiMessages,
   filterForApi,
+  findLastAssistantReplyIndex,
   trimMessagesForApi,
 } from "../shared/chatMessages";
 import {
@@ -22,9 +25,10 @@ import {
 import {
   loadSettings,
   saveSettings,
-  getSelectableModelItems,
-  getActiveModelCompound,
-  parseModelCompound,
+  getChatBackendItems,
+  getActiveChatBackend,
+  isAgentBackend,
+  getChatApiConfig,
   getActiveApiConfig,
   type AppSettings,
 } from "../shared/settings";
@@ -123,7 +127,11 @@ function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const isStreamingAssistant =
-    streaming && isLast && msg.role === "assistant" && !msg.error;
+    streaming &&
+    isLast &&
+    msg.role === "assistant" &&
+    msg.type !== "tool" &&
+    !msg.error;
   const isUser = msg.role === "user";
   const isError = msg.error;
 
@@ -319,6 +327,9 @@ export default function ChatPage({
     () => new Set<string>(),
   );
   const [sessionReady, setSessionReady] = useState(false);
+  const [submittingApprovalId, setSubmittingApprovalId] = useState<string | null>(
+    null,
+  );
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const inputRef = useRef("");
@@ -328,12 +339,39 @@ export default function ChatPage({
   const sessionLoadedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const modelItems = getSelectableModelItems(chatSettings);
-  const selectableModels = modelItems.map((i) => i.value);
+  const backendItems = getChatBackendItems(chatSettings);
+  const selectableModels = backendItems.map((i) => i.value);
   const modelLabels = Object.fromEntries(
-    modelItems.map((i) => [i.value, i.label]),
+    backendItems.map((i) => [i.value, i.label]),
   );
-  const activeModelCompound = getActiveModelCompound(chatSettings);
+  const activeBackend = getActiveChatBackend(chatSettings);
+  const usingAgent = isAgentBackend(activeBackend);
+
+  const respondToolApproval = useCallback(
+    async (approvalId: string, approved: boolean) => {
+      setSubmittingApprovalId(approvalId);
+      try {
+        await api.invoke("agent:tool:approve", { approvalId, approved });
+      } finally {
+        setSubmittingApprovalId(null);
+      }
+    },
+    [],
+  );
+
+  const handleApproveTool = useCallback(
+    (approvalId: string) => {
+      void respondToolApproval(approvalId, true);
+    },
+    [respondToolApproval],
+  );
+
+  const handleDenyTool = useCallback(
+    (approvalId: string) => {
+      void respondToolApproval(approvalId, false);
+    },
+    [respondToolApproval],
+  );
 
   useEffect(() => {
     chatMessagesRef.current = messages;
@@ -450,11 +488,11 @@ export default function ChatPage({
     const offChunk = api.onChatStreamChunk(({ requestId, delta }) => {
       if (requestId !== requestIdRef.current) return;
       setMessages((prev) => {
-        if (prev.length === 0) return prev;
+        const idx = findLastAssistantReplyIndex(prev);
+        if (idx < 0) return prev;
         const next = prev.slice();
-        const last = next[next.length - 1];
-        if (last.role !== "assistant") return prev;
-        next[next.length - 1] = { ...last, content: last.content + delta };
+        const target = next[idx];
+        next[idx] = { ...target, content: target.content + delta };
         return next;
       });
     });
@@ -464,9 +502,11 @@ export default function ChatPage({
       requestIdRef.current = "";
       setStreaming(false);
       const list = chatMessagesRef.current;
-      const last = list[list.length - 1];
+      const assistantIdx = findLastAssistantReplyIndex(list);
       const assistantText =
-        last?.role === "assistant" && !last.error ? last.content : undefined;
+        assistantIdx >= 0 && !list[assistantIdx].error
+          ? list[assistantIdx].content
+          : undefined;
       notifyLive2DScene("replyDone", assistantText);
       flushSessionSave();
     });
@@ -477,13 +517,13 @@ export default function ChatPage({
       setStreaming(false);
       notifyLive2DScene("replyError");
       setMessages((prev) => {
-        if (prev.length === 0) return prev;
+        const idx = findLastAssistantReplyIndex(prev);
+        if (idx < 0) return prev;
         const next = prev.slice();
-        const last = next[next.length - 1];
-        if (last.role !== "assistant") return prev;
-        next[next.length - 1] = {
-          ...last,
-          content: last.content || `请求失败：${message}`,
+        const target = next[idx];
+        next[idx] = {
+          ...target,
+          content: target.content || `请求失败：${message}`,
           error: true,
         };
         return next;
@@ -491,10 +531,76 @@ export default function ChatPage({
       flushSessionSave();
     });
 
+    const offTool = api.onAgentStreamTool?.(
+      ({
+        requestId,
+        toolCallId,
+        toolName,
+        toolArgs,
+        approvalId,
+        status,
+        message,
+        resultPreview,
+      }) => {
+        if (requestId !== requestIdRef.current) return;
+        setMessages((prev) => {
+          const existingIdx = toolCallId
+            ? prev.findIndex(
+                (m) => m.type === "tool" && m.toolCallId === toolCallId,
+              )
+            : prev.findIndex(
+                (m) =>
+                  m.type === "tool" &&
+                  m.toolName === toolName &&
+                  m.toolStatus === "running",
+              );
+          const prevTool = existingIdx >= 0 ? prev[existingIdx] : null;
+          const toolMsg: ChatMsg = {
+            id: prevTool?.id || genId(),
+            role: "assistant",
+            type: "tool",
+            content: "",
+            toolCallId: toolCallId || prevTool?.toolCallId,
+            toolName,
+            toolArgs: toolArgs ?? prevTool?.toolArgs,
+            toolApprovalId: approvalId ?? prevTool?.toolApprovalId,
+            toolStatus: status,
+            toolMessage: message ?? prevTool?.toolMessage,
+            toolResultPreview: resultPreview ?? prevTool?.toolResultPreview,
+            timestamp: prevTool?.timestamp || Date.now(),
+          };
+          if (existingIdx >= 0) {
+            const next = prev.slice();
+            next[existingIdx] = toolMsg;
+            return next;
+          }
+          const assistantIdx = findLastAssistantReplyIndex(prev);
+          if (assistantIdx < 0) return [...prev, toolMsg];
+
+          const assistant = prev[assistantIdx];
+          const next = prev.slice();
+          if (assistant.content && !assistant.error) {
+            next.splice(assistantIdx + 1, 0, toolMsg);
+            next.push({
+              id: genId(),
+              role: "assistant",
+              content: "",
+              timestamp: Date.now(),
+            });
+            return next;
+          }
+          next.splice(assistantIdx, 0, toolMsg);
+          return next;
+        });
+        if (status === "running") notifyLive2DScene("toolRunning");
+      },
+    );
+
     return () => {
       offChunk?.();
       offDone?.();
       offError?.();
+      offTool?.();
     };
   }, [flushSessionSave]);
 
@@ -504,13 +610,9 @@ export default function ChatPage({
     el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const handleModelChange = useCallback(
-    (compound: string) => {
-      const { providerId, modelName } = parseModelCompound(
-        compound,
-        chatSettings.activeProviderId,
-      );
-      const next = { ...chatSettings, activeProviderId: providerId, modelName };
+  const handleBackendChange = useCallback(
+    (backend: string) => {
+      const next = { ...chatSettings, chatBackend: backend };
       saveSettings(next);
       setChatSettings(next);
     },
@@ -550,11 +652,19 @@ export default function ChatPage({
       if (!text && attachments.length === 0) return;
 
       const settings = chatSettings;
-      const apiConfig = getActiveApiConfig(settings);
-      if (!apiConfig.apiHost || !apiConfig.modelName) {
-        alert("请先在设置中配置服务商 API Host 和模型。");
+      const agentMode = isAgentBackend(getActiveChatBackend(settings));
+      const apiConfig = getChatApiConfig(settings);
+
+      if (!apiConfig?.apiHost || !apiConfig.modelName) {
+        alert(
+          agentMode
+            ? "请先在智能体设置中配置后端 Provider 与模型。"
+            : "请先在设置中配置服务商 API Host 和模型。",
+        );
         return;
       }
+
+      const agent = settings.agent;
 
       let attachmentPayloads = {
         textFiles: [] as { name: string; text: string }[],
@@ -570,11 +680,12 @@ export default function ChatPage({
       }
 
       const history = trimMessagesForApi(filterForApi(messages));
+      const systemPrompt = agentMode ? agent.instructions : undefined;
       const payloadMessages = buildApiMessages(
         history,
         text,
         attachmentPayloads,
-        settings.systemPrompt,
+        systemPrompt,
       );
 
       const now = Date.now();
@@ -600,29 +711,47 @@ export default function ChatPage({
       notifyLive2DScene("userSend");
       notifyLive2DScene("thinking");
 
-      api
-        .invoke("chat:send", {
-          requestId,
-          messages: payloadMessages,
-          chatUrl: getChatCompletionsUrl(
-            apiConfig.apiHost,
-            apiConfig.providerType,
-          ),
-          apiKey: apiConfig.apiKey,
-          model: apiConfig.modelName,
-          temperature: settings.temperature,
-        })
+      const chatUrl = getChatCompletionsUrl(
+        apiConfig.apiHost,
+        apiConfig.providerType,
+      );
+
+      const invokePromise = agentMode
+        ? api.invoke("agent:run", {
+            requestId,
+            messages: payloadMessages,
+            chatUrl,
+            apiKey: apiConfig.apiKey,
+            apiConfig: {
+              apiHost: apiConfig.apiHost,
+              apiKey: apiConfig.apiKey,
+              providerType: apiConfig.providerType,
+              modelName: apiConfig.modelName,
+            },
+            agentConfig: agent,
+            temperature: settings.temperature,
+          })
+        : api.invoke("chat:send", {
+            requestId,
+            messages: payloadMessages,
+            chatUrl,
+            apiKey: apiConfig.apiKey,
+            model: apiConfig.modelName,
+            temperature: settings.temperature,
+          });
+
+      invokePromise
         .catch((e: Error) => {
           if (requestIdRef.current !== requestId) return;
           requestIdRef.current = "";
           setStreaming(false);
           notifyLive2DScene("replyError");
           setMessages((prev) => {
+            const idx = findLastAssistantReplyIndex(prev);
+            if (idx < 0) return prev;
             const next = prev.slice();
-            const last = next[next.length - 1];
-            if (!last || last.role !== "assistant") return prev;
-            next[next.length - 1] = {
-              ...last,
+            next[idx] = {
+              ...next[idx],
               content: `请求失败：${e.message || e}`,
               error: true,
             };
@@ -651,8 +780,12 @@ export default function ChatPage({
   const handleStop = useCallback(() => {
     const id = requestIdRef.current;
     if (!id) return;
-    api.invoke("chat:abort", { requestId: id });
-  }, []);
+    if (usingAgent) {
+      api.invoke("agent:abort", { requestId: id });
+    } else {
+      api.invoke("chat:abort", { requestId: id });
+    }
+  }, [usingAgent]);
 
   const handleClearContext = useCallback(() => {
     if (streaming) return;
@@ -760,22 +893,59 @@ export default function ChatPage({
             <p>开始聊天</p>
           </div>
         ) : (
-          messages.map((m, i) =>
-            m.type === "clear" ? (
-              <ContextClearDivider key={m.id} />
-            ) : (
-              <MessageBubble
-                key={m.id}
-                msg={m}
-                streaming={streaming}
-                isLast={i === messages.length - 1}
-                invalidAttachmentPaths={invalidAttachmentPaths}
-                onRetry={m.role === "user" ? handleRetry : undefined}
-                onDelete={handleDeleteMessage}
-                onEditResend={m.role === "user" ? handleEditResend : undefined}
-              />
-            ),
-          )
+          (() => {
+            const nodes: ReactNode[] = [];
+            let i = 0;
+            while (i < messages.length) {
+              const m = messages[i];
+              if (m.type === "clear") {
+                nodes.push(<ContextClearDivider key={m.id} />);
+                i += 1;
+                continue;
+              }
+              if (m.type === "tool") {
+                const batch: ChatMsg[] = [];
+                while (i < messages.length && messages[i].type === "tool") {
+                  batch.push(messages[i]);
+                  i += 1;
+                }
+                nodes.push(
+                  batch.length > 1 ? (
+                    <ToolCallGroup
+                      key={batch[0].id}
+                      tools={batch}
+                      onApprove={handleApproveTool}
+                      onDeny={handleDenyTool}
+                      submittingApprovalId={submittingApprovalId}
+                    />
+                  ) : (
+                    <ToolCallBubble
+                      key={batch[0].id}
+                      msg={batch[0]}
+                      onApprove={handleApproveTool}
+                      onDeny={handleDenyTool}
+                      submittingApprovalId={submittingApprovalId}
+                    />
+                  ),
+                );
+                continue;
+              }
+              nodes.push(
+                <MessageBubble
+                  key={m.id}
+                  msg={m}
+                  streaming={streaming}
+                  isLast={i === messages.length - 1}
+                  invalidAttachmentPaths={invalidAttachmentPaths}
+                  onRetry={m.role === "user" ? handleRetry : undefined}
+                  onDelete={handleDeleteMessage}
+                  onEditResend={m.role === "user" ? handleEditResend : undefined}
+                />,
+              );
+              i += 1;
+            }
+            return nodes;
+          })()
         )}
       </div>
 
@@ -787,9 +957,9 @@ export default function ChatPage({
         streaming={streaming}
         hasMessages={messages.length > 0}
         models={selectableModels}
-        modelName={activeModelCompound}
+        modelName={activeBackend}
         modelLabels={modelLabels}
-        onModelChange={handleModelChange}
+        onModelChange={handleBackendChange}
         onSend={() => void handleSend()}
         onStop={handleStop}
         onClearContext={handleClearContext}

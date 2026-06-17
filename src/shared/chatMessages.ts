@@ -7,10 +7,23 @@ export interface ChatMsg {
   id: string;
   role: ChatRole;
   content: string;
-  type?: "clear";
+  type?: "clear" | "tool";
   error?: boolean;
   attachments?: ChatAttachment[];
   timestamp?: number;
+  toolName?: string;
+  toolCallId?: string;
+  toolArgs?: string;
+  toolApprovalId?: string;
+  toolStatus?:
+    | "streaming"
+    | "awaiting_approval"
+    | "running"
+    | "done"
+    | "error"
+    | "denied";
+  toolMessage?: string;
+  toolResultPreview?: string;
 }
 
 export type ApiContentPart =
@@ -30,8 +43,24 @@ export function filterAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
 
 export function filterForApi(messages: ChatMsg[]): ChatMsg[] {
   return filterAfterContextClear(messages).filter(
-    (m) => m.type !== "clear" && !m.error
+    (m) => m.type !== "clear" && m.type !== "tool" && !m.error
   );
+}
+
+/** Last normal assistant bubble (excludes tool/clear/error messages). */
+export function findLastAssistantReplyIndex(messages: ChatMsg[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (
+      m.role === "assistant" &&
+      m.type !== "tool" &&
+      m.type !== "clear" &&
+      !m.error
+    ) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 export const DEFAULT_API_MAX_MESSAGES = 40;

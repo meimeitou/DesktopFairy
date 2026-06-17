@@ -425,6 +425,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
 
           <div className="field">
             <label>Temperature</label>
+            <p className="field-hint">Provider 直连模式使用；智能体模式请在「智能体 → 高级」中设置。</p>
             <div className="slider-row">
               <input
                 type="range"

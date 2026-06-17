@@ -5,6 +5,15 @@ import {
   type SelectionActionItem,
 } from "./selectionActions";
 import {
+  AGENT_BACKEND_KEY,
+  DEFAULT_AGENT_CONFIG,
+  getAgentBackendLabel,
+  isAgentBackend,
+  normalizeAgentConfig,
+  type AgentConfig,
+} from "./agent";
+import { type McpServer } from "./mcpServer";
+import {
   cloneProviders,
   mergeSystemProviders,
   SYSTEM_PROVIDERS,
@@ -49,6 +58,12 @@ export interface AppSettings {
   customModels: CustomLive2DModel[];
   /** IDs of system providers the user has deliberately deleted */
   deletedSystemProviderIds: string[];
+  /** Single desktop agent configuration */
+  agent: AgentConfig;
+  /** Chat backend: "agent" or `${providerId}::${modelName}` */
+  chatBackend: string;
+  /** Global MCP server registry (Cherry Studio style) */
+  mcpServers: McpServer[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -76,6 +91,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   live2dSpeechBubbleMaxChars: 50,
   customModels: [],
   deletedSystemProviderIds: [],
+  agent: { ...DEFAULT_AGENT_CONFIG },
+  chatBackend: AGENT_BACKEND_KEY,
+  mcpServers: [],
 };
 
 const STORAGE_KEY = "da_settings";
@@ -127,9 +145,91 @@ function normalizeCustomModels(value: unknown): CustomLive2DModel[] {
     }));
 }
 
+function normalizeMcpServers(value: unknown): McpServer[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (s): s is McpServer =>
+        !!s &&
+        typeof s === "object" &&
+        typeof (s as McpServer).id === "string" &&
+        typeof (s as McpServer).name === "string"
+    )
+    .map((s) => ({
+      id: s.id,
+      name: s.name.trim(),
+      type:
+        s.type === "sse" || s.type === "streamableHttp" ? s.type : "stdio",
+      description: typeof s.description === "string" ? s.description : undefined,
+      baseUrl: typeof s.baseUrl === "string" ? s.baseUrl : undefined,
+      command: typeof s.command === "string" ? s.command : undefined,
+      args: Array.isArray(s.args)
+        ? s.args.filter((a): a is string => typeof a === "string")
+        : undefined,
+      env:
+        s.env && typeof s.env === "object" && !Array.isArray(s.env)
+          ? Object.fromEntries(
+              Object.entries(s.env).filter(
+                ([k, v]) => typeof k === "string" && typeof v === "string"
+              )
+            )
+          : undefined,
+      headers:
+        s.headers && typeof s.headers === "object" && !Array.isArray(s.headers)
+          ? Object.fromEntries(
+              Object.entries(s.headers).filter(
+                ([k, v]) => typeof k === "string" && typeof v === "string"
+              )
+            )
+          : undefined,
+      isActive: s.isActive !== false,
+      installSource:
+        s.installSource === "builtin" || s.installSource === "manual"
+          ? s.installSource
+          : "manual",
+      shouldConfig: !!s.shouldConfig,
+    }));
+}
+
+function migrateLegacyAgentMcp(
+  settings: AppSettings
+): Pick<AppSettings, "mcpServers" | "agent"> {
+  const agent = settings.agent;
+  const legacy = (agent as AgentConfig & { mcpServers?: { id: string; name: string; command: string; enabled?: boolean }[] }).mcpServers;
+  if (!Array.isArray(legacy) || legacy.length === 0) {
+    return { mcpServers: settings.mcpServers, agent };
+  }
+  const existing = new Map(settings.mcpServers.map((s) => [s.id, s]));
+  const ids: string[] = [...agent.mcpServerIds];
+  for (const item of legacy) {
+    if (!item?.id || !item.name) continue;
+    if (!existing.has(item.id)) {
+      existing.set(item.id, {
+        id: item.id,
+        name: item.name,
+        type: "stdio",
+        command: item.command?.split(/\s+/)[0] || "npx",
+        args: item.command?.split(/\s+/).slice(1) || [],
+        isActive: item.enabled !== false,
+        installSource: "manual",
+      });
+    }
+    if (item.enabled !== false && !ids.includes(item.id)) ids.push(item.id);
+  }
+  return {
+    mcpServers: [...existing.values()],
+    agent: { ...agent, mcpServerIds: ids },
+  };
+}
+
 function finalizeSettings(settings: AppSettings): AppSettings {
+  const migratedMcp = migrateLegacyAgentMcp({
+    ...settings,
+    mcpServers: normalizeMcpServers(settings.mcpServers),
+  });
   return {
     ...settings,
+    ...migratedMcp,
     selectionMaxLength: normalizeSelectionMaxLength(settings.selectionMaxLength),
     selectionTriggerMode:
       settings.selectionTriggerMode === "auto" ? "auto" : "shortcut",
@@ -152,6 +252,19 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       settings.live2dSpeechBubbleMaxChars
     ),
     customModels: normalizeCustomModels(settings.customModels),
+    agent: normalizeAgentConfig(migratedMcp.agent, {
+      instructions:
+        typeof settings.systemPrompt === "string" && settings.systemPrompt.trim()
+          ? settings.systemPrompt
+          : DEFAULT_AGENT_CONFIG.instructions,
+      providerId: settings.activeProviderId || DEFAULT_AGENT_CONFIG.providerId,
+      modelName: settings.modelName || DEFAULT_AGENT_CONFIG.modelName,
+    }),
+    chatBackend:
+      typeof settings.chatBackend === "string" && settings.chatBackend.trim()
+        ? settings.chatBackend.trim()
+        : AGENT_BACKEND_KEY,
+    mcpServers: migratedMcp.mcpServers,
     modelName: (() => {
       const provider = getActiveProvider(settings);
       if (provider.models.length === 0) return settings.modelName;
@@ -315,6 +428,70 @@ export interface ModelItem {
   modelName: string;
 }
 
+export function getAgentProvider(settings: AppSettings): LlmProvider | undefined {
+  const agent = settings.agent;
+  return (
+    settings.providers.find((p) => p.id === agent.providerId && p.enabled) ||
+    settings.providers.find((p) => p.enabled)
+  );
+}
+
+export function resolveAgentModelName(settings: AppSettings): string {
+  const provider = getAgentProvider(settings);
+  const agent = settings.agent;
+  if (!provider) return agent.modelName;
+  if (provider.models.length === 0) return agent.modelName;
+  if (agent.modelName && provider.models.includes(agent.modelName)) {
+    return agent.modelName;
+  }
+  return provider.models[0] ?? agent.modelName;
+}
+
+export function getAgentApiConfig(settings: AppSettings): {
+  apiHost: string;
+  apiKey: string;
+  providerType: LlmProvider["type"];
+  modelName: string;
+  providerId: string;
+} | null {
+  const provider = getAgentProvider(settings);
+  if (!provider) return null;
+  return {
+    apiHost: provider.apiHost,
+    apiKey: provider.apiKey,
+    providerType: provider.type,
+    modelName: resolveAgentModelName(settings),
+    providerId: provider.id,
+  };
+}
+
+export function getChatApiConfig(settings: AppSettings): {
+  apiHost: string;
+  apiKey: string;
+  providerType: LlmProvider["type"];
+  modelName: string;
+  providerId: string;
+} | null {
+  const backend = getActiveChatBackend(settings);
+  if (isAgentBackend(backend)) {
+    const cfg = getAgentApiConfig(settings);
+    return cfg;
+  }
+  const { providerId, modelName } = parseModelCompound(
+    backend,
+    settings.activeProviderId
+  );
+  const provider = settings.providers.find((p) => p.id === providerId && p.enabled);
+  if (!provider || !modelName) return null;
+  return {
+    apiHost: provider.apiHost,
+    apiKey: provider.apiKey,
+    providerType: provider.type,
+    modelName,
+    providerId,
+  };
+}
+
 /** Returns all models from enabled providers, labeled as "服务商/模型名". */
 export function getSelectableModelItems(settings: AppSettings): ModelItem[] {
   const items: ModelItem[] = [];
@@ -330,6 +507,36 @@ export function getSelectableModelItems(settings: AppSettings): ModelItem[] {
     }
   }
   return items;
+}
+
+export interface ChatBackendItem {
+  value: string;
+  label: string;
+  isAgent?: boolean;
+}
+
+/** Agent entry + all enabled provider models for the chat picker. */
+export function getChatBackendItems(settings: AppSettings): ChatBackendItem[] {
+  const items: ChatBackendItem[] = [];
+  if (settings.agent.enabled !== false) {
+    items.push({
+      value: AGENT_BACKEND_KEY,
+      label: getAgentBackendLabel(settings.agent),
+      isAgent: true,
+    });
+  }
+  for (const model of getSelectableModelItems(settings)) {
+    items.push({ value: model.value, label: model.label });
+  }
+  return items;
+}
+
+export function getActiveChatBackend(settings: AppSettings): string {
+  const items = getChatBackendItems(settings);
+  if (items.some((item) => item.value === settings.chatBackend)) {
+    return settings.chatBackend;
+  }
+  return items[0]?.value ?? AGENT_BACKEND_KEY;
 }
 
 /** Returns the compound key `${providerId}::${modelName}` for the current selection. */
@@ -350,4 +557,5 @@ export function parseModelCompound(
   return { providerId: compound.slice(0, sep), modelName: compound.slice(sep + 2) };
 }
 
-export type { SelectionActionItem, LlmProvider };
+export { isAgentBackend, AGENT_BACKEND_KEY };
+export type { SelectionActionItem, LlmProvider, AgentConfig, McpServer };

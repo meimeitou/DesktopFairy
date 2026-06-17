@@ -66,6 +66,12 @@
       "dist/live2dcubismcore.min.js",
       "**/*.node"
     ],
+    "extraResources": [
+      {
+        "from": "resources/agent-skills",
+        "to": "agent-skills"
+      }
+    ],
     "npmRebuild": true,
     "buildDependenciesFromSource": false,
     "mac": {

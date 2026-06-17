@@ -19,6 +19,12 @@ const {
 } = require('./live2dService.cjs');
 const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
 const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require('./ptyService.cjs');
+const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
+const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
+const { registerToolApprovalHandlers } = require('./agentToolApproval.cjs');
+const { registerMcpServerHandlers } = require('./mcpServerService.cjs');
+const { registerAgentAvatarHandlers } = require('./agentAvatarService.cjs');
+const { installBuiltinSkills } = require('./builtinSkills.cjs');
 const {
   resolveChatWindowPosition,
   presentChatWindow,
@@ -523,6 +529,31 @@ const setupIPC = () => {
 
   registerPtyHandlers({ ipcMain });
 
+  function getChatCompletionsUrl(apiHost, providerType) {
+    const trimmed = String(apiHost || '').replace(/\/$/, '');
+    if (!trimmed) return '';
+    if (providerType === 'ollama') {
+      const base = trimmed.replace(/\/v1$/, '').replace(/\/api$/, '');
+      return `${base}/v1/chat/completions`;
+    }
+    const base = trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+    return `${base}/chat/completions`;
+  }
+
+  registerAgentSkillHandlers(ipcMain);
+  registerMcpServerHandlers(ipcMain);
+  registerAgentAvatarHandlers(ipcMain);
+  registerToolApprovalHandlers(ipcMain);
+  registerAgentHandlers(ipcMain, {
+    getChatCompletionsUrl,
+    getWindows: getScreenshotWindows,
+    getParentWindow: () => {
+      if (chatWindow && !chatWindow.isDestroyed()) return chatWindow;
+      if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+      return null;
+    },
+  });
+
   ipcMain.handle('selection:copy', async (_event, text) => {
     clipboard.writeText(String(text || ''));
   });
@@ -632,17 +663,6 @@ const setupIPC = () => {
   });
 
   // ── Chat completion (OpenAI-compatible, streaming) ──────────────────────────
-
-  const getChatCompletionsUrl = (apiHost, providerType) => {
-    const trimmed = String(apiHost || '').replace(/\/$/, '');
-    if (!trimmed) return '';
-    if (providerType === 'ollama') {
-      const base = trimmed.replace(/\/v1$/, '').replace(/\/api$/, '');
-      return `${base}/v1/chat/completions`;
-    }
-    const base = trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
-    return `${base}/chat/completions`;
-  };
 
   ipcMain.handle('chat:check', async (_event, payload) => {
     const { apiHost, apiKey, providerType, model, timeoutMs } = payload || {};
@@ -922,6 +942,9 @@ app.whenReady().then(() => {
   }
   createMainWindow();
   setupIPC();
+  void installBuiltinSkills().catch((err) => {
+    console.error('[builtin-skills] install failed:', err);
+  });
   refreshMenus();
 
   const startupSettings = resolveStartupSettings();
@@ -989,6 +1012,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   killAllSessions();
+  abortAllAgentRuns();
   selectionService.stopAll();
   globalShortcut.unregisterAll();
   for (const controller of inflightChats.values()) {

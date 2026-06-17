@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import ProviderSettingsSection from "../components/settings/ProviderSettingsSection";
-import PersonaSettingsSection from "../components/settings/PersonaSettingsSection";
+import AgentSettingsSection from "../components/settings/agent/AgentSettingsSection";
 import SelectionSettingsSection from "../components/settings/SelectionSettingsSection";
 import Live2DSettingsSection from "../components/settings/Live2DSettingsSection";
 import {
@@ -12,7 +12,7 @@ import "./SettingsPage.css";
 
 const api = window.electronAPI;
 
-type SettingsTab = "model" | "persona" | "selection" | "character" | "about";
+type SettingsTab = "model" | "agent" | "selection" | "character" | "about";
 
 interface MenuItem {
   id: SettingsTab;
@@ -115,7 +115,7 @@ function InfoIcon() {
 
 const MENU_PRIMARY: MenuItem[] = [
   { id: "model", label: "AI 模型", icon: <CloudIcon /> },
-  { id: "persona", label: "人设", icon: <SparkleIcon /> },
+  { id: "agent", label: "智能体", icon: <SparkleIcon /> },
   { id: "selection", label: "划词助手", icon: <ScissorsIcon /> },
 ];
 
@@ -210,8 +210,8 @@ export default function SettingsPage({
             </section>
           </>
         );
-      case "persona":
-        return <PersonaSettingsSection settings={settings} onChange={update} />;
+      case "agent":
+        return <AgentSettingsSection settings={settings} onChange={update} />;
       case "selection":
         return (
           <SelectionSettingsSection settings={settings} onChange={update} />

@@ -6,7 +6,8 @@ export type Live2DReaction =
   | "thinking"
   | "replyDone"
   | "replyError"
-  | "chatOpen";
+  | "chatOpen"
+  | "toolRunning";
 
 /** Preferred expression names per reaction (first match on current model wins). */
 export const REACTION_EXPRESSIONS: Record<Live2DReaction, string[]> = {
@@ -15,6 +16,7 @@ export const REACTION_EXPRESSIONS: Record<Live2DReaction, string[]> = {
   replyDone: ["星星", "爱心", "脸红"],
   replyError: ["哭哭", "问号"],
   chatOpen: ["星星"],
+  toolRunning: ["麦克风", "麦克风小熊"],
 };
 
 const REPLY_DONE_KEYWORD_EXPRESSIONS: { pattern: RegExp; names: string[] }[] = [
@@ -27,6 +29,7 @@ const REPLY_DONE_KEYWORD_EXPRESSIONS: { pattern: RegExp; names: string[] }[] = [
 export const REACTION_BUBBLE_TEXT: Partial<Record<Live2DReaction, string>> = {
   thinking: "思考中…",
   replyError: "出错了",
+  toolRunning: "帮忙中…",
 };
 
 export function parseBubbleCommand(cmd: string): string | null {

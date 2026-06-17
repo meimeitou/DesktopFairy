@@ -46,6 +46,24 @@ declare global {
       onChatStreamError: (
         callback: (payload: { requestId: string; message: string }) => void
       ) => () => void;
+      onAgentStreamTool: (
+        callback: (payload: {
+          requestId: string;
+          toolCallId?: string;
+          toolName: string;
+          toolArgs?: string;
+          approvalId?: string;
+          status:
+            | "streaming"
+            | "awaiting_approval"
+            | "running"
+            | "done"
+            | "error"
+            | "denied";
+          message?: string;
+          resultPreview?: string;
+        }) => void
+      ) => () => void;
       onPtyOutput: (
         callback: (payload: { sessionId: string; data: string }) => void
       ) => () => void;

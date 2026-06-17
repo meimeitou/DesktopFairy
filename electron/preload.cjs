@@ -46,6 +46,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'pty:input',
       'pty:resize',
       'pty:kill',
+      'agent:run',
+      'agent:abort',
+      'agent:tool:approve',
+      'agent:skills:scan',
+      'agent:skills:open_dir',
+      'mcp:servers:list',
+      'mcp:servers:save',
+      'mcp:servers:delete',
+      'mcp:servers:install_builtin',
+      'mcp:servers:builtin_presets',
+      'mcp:servers:pick_directory',
+      'mcp:servers:test',
+      'agent:avatar:select',
+      'agent:avatar:resolve',
+      'agent:avatar:clear_image',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -132,6 +147,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('chat:stream:error', listener);
     return () => ipcRenderer.removeListener('chat:stream:error', listener);
+  },
+
+  onAgentStreamTool: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('agent:stream:tool', listener);
+    return () => ipcRenderer.removeListener('agent:stream:tool', listener);
   },
 
   // PTY events from main process
