@@ -28,3 +28,4 @@ dist-electron
 # Tauri
 src-tauri/target
 
+.trae/
