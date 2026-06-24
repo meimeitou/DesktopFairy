@@ -200,18 +200,15 @@ export default function SettingsPage({
     api.invoke("settings:sync", settings).catch(() => {});
   }, [settings]);
 
-  // Sync agent config when another source (e.g. UpdateProfile tool) writes to disk
+  // Sync when another source (e.g. ChatPage mode switch, UpdateProfile tool) writes to disk
   useEffect(() => {
     const off = api.onSettingsUpdated?.((incoming) => {
-      const agent = incoming?.agent;
-      if (agent && typeof agent === "object" && !Array.isArray(agent)) {
-        setSettings((prev) => {
-          // Only update if agent fields actually differ (avoid infinite re-render loop)
-          const nextAgent = { ...prev.agent, ...agent };
-          if (JSON.stringify(nextAgent) === JSON.stringify(prev.agent)) return prev;
-          return { ...prev, agent: nextAgent };
-        });
-      }
+      if (!incoming || typeof incoming !== "object") return;
+      setSettings((prev) => {
+        const next = { ...prev, ...incoming } as typeof prev;
+        if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
+        return next;
+      });
     });
     return () => off?.();
   }, []);

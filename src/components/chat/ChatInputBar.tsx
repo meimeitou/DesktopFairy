@@ -10,8 +10,10 @@ import ModelSelector from "../ModelSelector";
 import Tooltip from "../Tooltip";
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
+import SlashCommandMenu from "./SlashCommandMenu";
 import type { ChatAttachment } from "../../shared/chatAttachments";
 import type { ChatMode } from "../../shared/chatMode";
+import type { SlashCommand } from "../../shared/slashCommands";
 import {
   fileExtFromName,
   formatFileSize,
@@ -87,6 +89,26 @@ function ClearIcon() {
   );
 }
 
+function CompactIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <line x1="4" y1="4" x2="20" y2="4" />
+      <line x1="4" y1="20" x2="20" y2="20" />
+      <polyline points="9 9 12 12 15 9" />
+      <polyline points="9 15 12 12 15 15" />
+    </svg>
+  );
+}
+
 interface Props {
   input: string;
   onInputChange: (value: string) => void;
@@ -105,6 +127,9 @@ interface Props {
   onStop: () => void;
   onClearContext: () => void;
   onClearMessages: () => void;
+  onCompact: () => void;
+  slashCommands?: SlashCommand[];
+  onSlashCommand?: (cmd: SlashCommand) => void;
 }
 
 export default function ChatInputBar({
@@ -125,10 +150,33 @@ export default function ChatInputBar({
   onStop,
   onClearContext,
   onClearMessages,
+  onCompact,
+  slashCommands,
+  onSlashCommand,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectingRef = useRef(false);
   const capturingRef = useRef(false);
+  const slashHostRef = useRef<HTMLDivElement>(null);
+
+  const showSlashMenu =
+    !streaming &&
+    input.trimStart().startsWith("/") &&
+    !input.includes("\n") &&
+    !!slashCommands?.length;
+
+  const slashQuery = showSlashMenu ? input.trimStart().slice(1) : "";
+
+  useEffect(() => {
+    if (!showSlashMenu) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (slashHostRef.current && !slashHostRef.current.contains(e.target as Node)) {
+        onSlashCommand?.(null as unknown as SlashCommand);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showSlashMenu, onSlashCommand]);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -284,6 +332,12 @@ export default function ChatInputBar({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSlashMenu) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape" || e.key === "Tab") {
+        e.preventDefault();
+      }
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (!streaming) onSend();
@@ -338,6 +392,16 @@ export default function ChatInputBar({
               <EraserIcon />
             </button>
           </Tooltip>
+          <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
+            <button
+              type="button"
+              className="chat-tool-btn"
+              onClick={onCompact}
+              disabled={streaming || !hasMessages}
+            >
+              <CompactIcon />
+            </button>
+          </Tooltip>
           <Tooltip tip={"清空消息\n删除当前会话全部消息"}>
             <button
               type="button"
@@ -369,7 +433,15 @@ export default function ChatInputBar({
         </div>
       </div>
 
-      <div className="chat-input-row">
+      <div className="chat-input-row" ref={slashHostRef} style={{ position: "relative" }}>
+        {showSlashMenu && slashCommands && onSlashCommand && (
+          <SlashCommandMenu
+            commands={slashCommands}
+            query={slashQuery}
+            onSelect={onSlashCommand}
+            onClose={() => onSlashCommand(null as unknown as SlashCommand)}
+          />
+        )}
         <textarea
           ref={textareaRef}
           rows={1}
@@ -406,7 +478,7 @@ export default function ChatInputBar({
       </div>
 
       <p className="chat-input-hint">
-        Enter 发送 · Shift+Enter 换行 · ⌘A 全选 · 支持拖拽/粘贴文件
+        Enter 发送 · Shift+Enter 换行 · 输入 / 唤出快捷指令 · 支持拖拽/粘贴文件
         {attachments.length > 0 &&
           ` · 已附加 ${attachments.length} 个文件 (${formatFileSize(attachments.reduce((s, f) => s + f.size, 0))})`}
       </p>

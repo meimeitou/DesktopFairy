@@ -880,6 +880,13 @@ const refreshMenus = () => {
         { role: 'selectAll', label: '全选' },
       ],
     },
+    {
+      label: '窗口',
+      submenu: [
+        { role: 'close', label: '关闭窗口' },
+        { role: 'minimize', label: '最小化' },
+      ],
+    },
   ]);
   Menu.setApplicationMenu(appMenu);
 

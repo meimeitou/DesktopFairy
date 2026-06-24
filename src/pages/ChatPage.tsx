@@ -3,6 +3,7 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
   type MutableRefObject,
   type ReactNode,
 } from "react";
@@ -39,8 +40,16 @@ import {
   type AppSettings,
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
-import { notifyLive2DScene } from "../shared/live2dReactions";
+import { notifyLive2DScene } from "../shared/live2DReactions";
 import type { ChatMode } from "../shared/chatMode";
+import type { AgentSkillDescriptor } from "../shared/agent";
+import {
+  type SlashCommand,
+  getBuiltinCommands,
+  buildSkillCommands,
+  parseSlashCommand,
+  COMPACT_PROMPT,
+} from "../shared/slashCommands";
 import "./ChatPage.css";
 
 const api = window.electronAPI;
@@ -109,6 +118,7 @@ export default function ChatPage({
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [topicsLoaded, setTopicsLoaded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
@@ -121,6 +131,7 @@ export default function ChatPage({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTopicIdRef = useRef<string | null>(null);
   const initializedTopicIdRef = useRef<string | null>(null);
+  const compactRequestIdRef = useRef<string | null>(null);
 
   activeTopicIdRef.current = activeTopicId;
 
@@ -350,6 +361,23 @@ export default function ChatPage({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = (await api.invoke(
+          "agent:skills:scan",
+        )) as AgentSkillDescriptor[];
+        if (!cancelled) setSkills(list);
+      } catch {
+        /* no skills */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     const offChunk = api.onChatStreamChunk(({ requestId, delta }) => {
       if (requestId !== requestIdRef.current) return;
       setMessages((prev) => {
@@ -368,6 +396,7 @@ export default function ChatPage({
       activeRequestBackendRef.current = null;
       setStreaming(false);
       if (aborted) {
+        compactRequestIdRef.current = null;
         setMessages((prev) =>
           prev.map((m) =>
             m.type === "tool" &&
@@ -382,6 +411,40 @@ export default function ChatPage({
         flushSessionSave();
         return;
       }
+
+      const isCompact = compactRequestIdRef.current === requestId;
+      compactRequestIdRef.current = null;
+
+      if (isCompact) {
+        setMessages((prev) => {
+          const assistantIdx = findLastAssistantReplyIndex(prev);
+          const summary =
+            assistantIdx >= 0 && !prev[assistantIdx].error
+              ? prev[assistantIdx].content
+              : "";
+          if (!summary.trim()) return prev;
+          return [
+            ...prev,
+            {
+              id: genId(),
+              role: "user" as const,
+              type: "clear" as const,
+              content: "",
+              timestamp: Date.now(),
+            },
+            {
+              id: genId(),
+              role: "user" as const,
+              content: `[上下文摘要]\n\n${summary.trim()}`,
+              timestamp: Date.now(),
+            },
+          ];
+        });
+        notifyLive2DScene("replyDone");
+        flushSessionSave();
+        return;
+      }
+
       const list = chatMessagesRef.current;
       const assistantIdx = findLastAssistantReplyIndex(list);
       const assistantText =
@@ -521,6 +584,11 @@ export default function ChatPage({
     handleAlwaysAllowTool,
   } = useToolApproval(chatMessagesRef, handleChatModeChange);
 
+  const slashCommands = useMemo(
+    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
+    [skills],
+  );
+
   const loadAttachmentPayloads = useCallback(
     async (files: ChatAttachment[]) => {
       const textFiles: { name: string; text: string }[] = [];
@@ -552,6 +620,20 @@ export default function ChatPage({
       if (streaming) return;
       const text = (overrideText ?? input).trim();
       if (!text && attachments.length === 0) return;
+
+      const isCompactRequest = overrideText === COMPACT_PROMPT;
+
+      let finalText = text;
+      if (!isCompactRequest && !overrideText) {
+        const parsed = parseSlashCommand(text);
+        if (parsed && skills.some((s) => s.id === parsed.command)) {
+          const skillId = parsed.command;
+          const userMsg = parsed.rest;
+          finalText = userMsg
+            ? `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据以下要求完成任务：\n\n${userMsg}`
+            : `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据用户的后续要求完成任务。`;
+        }
+      }
 
       const settings = chatSettings;
       const agentMode = isAgentBackend(getActiveChatBackend(settings));
@@ -593,14 +675,14 @@ export default function ChatPage({
       const history = trimMessagesForApi(filterForApi(messages));
       const systemPrompt = agentMode ? agent.soul : undefined;
       const payloadMessages = agentMode
-        ? buildAgentApiMessages(agentHistory, text, attachmentPayloads, systemPrompt)
-        : buildApiMessages(history, text, attachmentPayloads, systemPrompt);
+        ? buildAgentApiMessages(agentHistory, finalText, attachmentPayloads, systemPrompt)
+        : buildApiMessages(history, finalText, attachmentPayloads, systemPrompt);
 
       const now = Date.now();
       const userMsg: ChatMsg = {
         id: genId(),
         role: "user",
-        content: text,
+        content: finalText,
         attachments: attachments.length > 0 ? [...attachments] : undefined,
         timestamp: now,
       };
@@ -608,6 +690,9 @@ export default function ChatPage({
       const requestId = genId();
       requestIdRef.current = requestId;
       activeRequestBackendRef.current = getActiveChatBackend(settings);
+      if (isCompactRequest) {
+        compactRequestIdRef.current = requestId;
+      }
       setMessages([
         ...messages,
         userMsg,
@@ -694,6 +779,7 @@ export default function ChatPage({
       messages,
       attachments,
       chatSettings,
+      skills,
       loadAttachmentPayloads,
       flushSessionSave,
     ],
@@ -730,6 +816,25 @@ export default function ChatPage({
       },
     ]);
   }, [streaming, messages]);
+
+  const handleSlashCommand = useCallback(
+    (cmd: SlashCommand | null) => {
+      if (!cmd) {
+        setInput("");
+        return;
+      }
+      if (cmd.group === "skill" && cmd.insertText) {
+        setInput(cmd.insertText);
+        return;
+      }
+      if (cmd.group === "builtin" && cmd.id === "compact") {
+        setInput("");
+        void handleSend(COMPACT_PROMPT);
+        return;
+      }
+    },
+    [handleSend],
+  );
 
   const handleClearMessages = useCallback(() => {
     if (streaming) return;
@@ -882,7 +987,6 @@ export default function ChatPage({
                   invalidAttachmentPaths={invalidAttachmentPaths}
                   onRetry={m.role === "user" ? handleRetry : undefined}
                   onDelete={handleDeleteMessage}
-                  onEditResend={m.role === "user" ? handleEditResend : undefined}
                 />,
               );
               i += 1;
@@ -910,6 +1014,9 @@ export default function ChatPage({
         onStop={handleStop}
         onClearContext={handleClearContext}
         onClearMessages={handleClearMessages}
+        onCompact={() => void handleSend(COMPACT_PROMPT)}
+        slashCommands={slashCommands}
+        onSlashCommand={handleSlashCommand}
       />
       </div>
     </div>
