@@ -1,0 +1,388 @@
+.topic-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+  user-select: none;
+  position: relative;
+}
+
+.topic-sidebar-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.topic-new-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: rgba(120, 100, 255, 0.15);
+  border: 1px solid rgba(120, 100, 255, 0.35);
+  border-radius: 8px;
+  color: rgba(200, 190, 255, 0.95);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.topic-new-btn:hover {
+  background: rgba(120, 100, 255, 0.25);
+  border-color: rgba(140, 120, 255, 0.6);
+  color: #fff;
+}
+
+.topic-new-btn svg {
+  flex-shrink: 0;
+}
+
+.topic-sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.topic-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topic-search svg {
+  color: rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+}
+
+.topic-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.topic-search input:focus {
+  border-color: rgba(120, 100, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.topic-search input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.topic-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.topic-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.25);
+  font-size: 12px;
+}
+
+.topic-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  border: 1px solid transparent;
+}
+
+.topic-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.topic-item.active {
+  background: rgba(120, 100, 255, 0.1);
+  border-color: rgba(120, 100, 255, 0.3);
+}
+
+.topic-item.active::before {
+  content: "";
+  position: absolute;
+  left: -2px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: rgba(140, 120, 255, 0.9);
+}
+
+.topic-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.topic-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.topic-item:hover .topic-item-actions {
+  display: flex;
+}
+
+.topic-item-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.topic-item-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.topic-item-action-btn.danger:hover {
+  background: rgba(220, 60, 60, 0.2);
+  color: rgba(255, 150, 150, 1);
+}
+
+.topic-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.topic-item.active .topic-item-icon {
+  color: rgba(180, 165, 255, 0.9);
+}
+
+.topic-item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topic-item.active .topic-item-name {
+  color: #fff;
+  font-weight: 500;
+}
+
+.topic-item-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  padding-left: 26px;
+}
+
+.topic-item.active .topic-item-time {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.topic-rename-input {
+  width: 100%;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(120, 100, 255, 0.5);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.topic-context-menu {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(30, 25, 50, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.topic-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.topic-context-menu button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.topic-context-menu button.danger {
+  color: rgba(255, 150, 150, 0.9);
+}
+
+.topic-context-menu button.danger:hover {
+  background: rgba(255, 80, 80, 0.15);
+}
+
+.topic-context-menu button svg {
+  flex-shrink: 0;
+}
+
+.topic-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+}
+
+.topic-confirm-delete {
+  position: absolute;
+  right: 4px;
+  top: calc(100% + 4px);
+  background: rgba(30, 25, 50, 0.98);
+  border: 1px solid rgba(255, 120, 120, 0.4);
+  border-radius: 8px;
+  padding: 10px 12px;
+  z-index: 20;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  min-width: 160px;
+}
+
+.topic-confirm-delete > span {
+  display: block;
+  font-size: 12px;
+  color: rgba(255, 200, 200, 0.9);
+  margin-bottom: 8px;
+}
+
+.topic-confirm-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.topic-cancel-btn,
+.topic-delete-btn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.topic-cancel-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.topic-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.topic-delete-btn {
+  background: rgba(220, 60, 60, 0.8);
+  border: 1px solid rgba(255, 100, 100, 0.6);
+  color: #fff;
+}
+
+.topic-delete-btn:hover {
+  background: rgba(220, 60, 60, 1);
+}
+
+.topic-sidebar.collapsed {
+  width: 44px;
+}
+
+.topic-sidebar.collapsed .topic-sidebar-header {
+  padding: 8px 6px;
+}
+
+.topic-sidebar.collapsed .topic-new-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 0;
+}
+
+.topic-sidebar.collapsed .topic-sidebar-toolbar {
+  justify-content: center;
+  padding: 6px 4px;
+}
+
+.topic-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.topic-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  border-color: rgba(255, 255, 255, 0.15);
+}

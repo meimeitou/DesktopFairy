@@ -9,7 +9,9 @@ import {
 import ModelSelector from "../ModelSelector";
 import Tooltip from "../Tooltip";
 import AttachmentPreview from "./AttachmentPreview";
+import ChatModeSelector from "./ChatModeSelector";
 import type { ChatAttachment } from "../../shared/chatAttachments";
+import type { ChatMode } from "../../shared/chatMode";
 import {
   fileExtFromName,
   formatFileSize,
@@ -96,6 +98,9 @@ interface Props {
   modelName: string;
   onModelChange: (model: string) => void;
   modelLabels?: Record<string, string>;
+  chatMode: ChatMode;
+  onChatModeChange: (mode: ChatMode) => void;
+  showModeSelector?: boolean;
   onSend: () => void;
   onStop: () => void;
   onClearContext: () => void;
@@ -113,6 +118,9 @@ export default function ChatInputBar({
   modelName,
   onModelChange,
   modelLabels,
+  chatMode,
+  onChatModeChange,
+  showModeSelector = true,
   onSend,
   onStop,
   onClearContext,
@@ -340,6 +348,13 @@ export default function ChatInputBar({
               <ClearIcon />
             </button>
           </Tooltip>
+          {showModeSelector && (
+            <ChatModeSelector
+              mode={chatMode}
+              onChange={onChatModeChange}
+              disabled={streaming}
+            />
+          )}
         </div>
 
         <div className="chat-input-model">
@@ -349,6 +364,7 @@ export default function ChatInputBar({
             onChange={onModelChange}
             allowCustom={false}
             modelLabels={modelLabels}
+            disabled={streaming}
           />
         </div>
       </div>

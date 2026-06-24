@@ -75,6 +75,12 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "context",
     true
   ),
+  builtinTool(
+    "UpdateProfile",
+    "Updates the agent's SOUL.md or USER.md profile content (auto-approved)",
+    "context",
+    false
+  ),
 ];
 
 const DEFAULT_SAFE_TOOLS = new Set([
@@ -85,6 +91,7 @@ const DEFAULT_SAFE_TOOLS = new Set([
   "Task",
   "TodoWrite",
   "Skill",
+  "UpdateProfile",
 ]);
 
 const ACCEPT_EDITS_TOOLS = new Set(["Edit", "MultiEdit", "NotebookEdit", "Write"]);
@@ -313,6 +320,16 @@ function getOpenAiToolParameters(toolId: string) {
           name: { type: "string" },
         },
         required: ["action"],
+      };
+    case "UpdateProfile":
+      return {
+        type: "object",
+        properties: {
+          field: { type: "string", enum: ["soul", "user"] },
+          action: { type: "string", enum: ["replace", "append"] },
+          content: { type: "string" },
+        },
+        required: ["field", "action", "content"],
       };
     default:
       return { type: "object", properties: {}, required: [] as string[] };

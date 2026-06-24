@@ -16,21 +16,26 @@ interface Props {
   onChange: (patch: Partial<AgentConfig>) => void;
 }
 
-export default function AgentBasicSection({ settings, agent, onChange }: Props) {
+export default function AgentBasicSection({
+  settings,
+  agent,
+  onChange,
+}: Props) {
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const imageAvatar = isImageAvatar(agent.avatar);
   const providerItems = getSelectableModelItems(settings);
   const providerOptions = settings.providers.filter((p) => p.enabled);
   const selectedProvider =
-    providerOptions.find((p) => p.id === agent.providerId) || providerOptions[0];
+    providerOptions.find((p) => p.id === agent.providerId) ||
+    providerOptions[0];
   const modelsForProvider = selectedProvider?.models ?? [];
   const compound =
     selectedProvider && agent.modelName
       ? `${selectedProvider.id}::${agent.modelName}`
-      : providerItems[0]?.value ?? "";
+      : (providerItems[0]?.value ?? "");
 
   const providerLabels = Object.fromEntries(
-    providerOptions.map((p) => [p.id, p.name])
+    providerOptions.map((p) => [p.id, p.name]),
   );
 
   useEffect(() => {
@@ -40,7 +45,7 @@ export default function AgentBasicSection({ settings, agent, onChange }: Props) 
       try {
         const resolved = (await api.invoke(
           "agent:avatar:resolve",
-          agent.avatar
+          agent.avatar,
         )) as string | null;
         if (!cancelled) setAvatarSrc(resolved);
       } catch {
@@ -73,7 +78,9 @@ export default function AgentBasicSection({ settings, agent, onChange }: Props) 
   return (
     <section className="settings-section agent-subsection">
       <h4>基础设置</h4>
-      <p className="field-hint">名称、头像与后端模型。智能体模式使用此处配置的 Provider。</p>
+      <p className="field-hint">
+        名称、头像与后端模型。智能体模式使用此处配置的 Provider。
+      </p>
 
       <div className="field field-row">
         <label>启用智能体</label>
@@ -113,7 +120,7 @@ export default function AgentBasicSection({ settings, agent, onChange }: Props) 
           type="text"
           value={agent.name}
           onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="桌面伙伴"
+          placeholder="个人助手"
         />
       </div>
 
@@ -129,9 +136,13 @@ export default function AgentBasicSection({ settings, agent, onChange }: Props) 
 
       <div className="field">
         <label>后端模型</label>
-        <p className="field-hint">智能体对话与工具循环使用的模型（需在 AI 模型页配置 Provider）。</p>
+        <p className="field-hint">
+          智能体对话与工具循环使用的模型（需在 AI 模型页配置 Provider）。
+        </p>
         {providerItems.length === 0 ? (
-          <p className="field-hint warn">请先在「AI 模型」中启用并配置 Provider。</p>
+          <p className="field-hint warn">
+            请先在「AI 模型」中启用并配置 Provider。
+          </p>
         ) : (
           <ModelSelector
             models={providerItems.map((i) => i.value)}
@@ -139,7 +150,7 @@ export default function AgentBasicSection({ settings, agent, onChange }: Props) 
             onChange={handleModelCompound}
             allowCustom={false}
             modelLabels={Object.fromEntries(
-              providerItems.map((i) => [i.value, i.label])
+              providerItems.map((i) => [i.value, i.label]),
             )}
           />
         )}

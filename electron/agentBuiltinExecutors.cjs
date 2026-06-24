@@ -4,12 +4,13 @@ const os = require('os');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { glob } = require('fs/promises');
+const { app } = require('electron');
 
 const execFileAsync = promisify(execFile);
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_FETCH_BYTES = 512 * 1024;
-const sessionTodos = [];
+const todosByRequest = new Map();
 
 function ok(data) {
   return JSON.stringify({ ok: true, ...data });
@@ -196,34 +197,179 @@ async function toolWebFetch(args) {
   }
 }
 
-async function toolWebSearch(args) {
-  const query = String(args?.query || '').trim();
-  if (!query) return fail('query required');
-  try {
-    const res = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1`,
-      { signal: AbortSignal.timeout(15_000) }
-    );
-    const data = await res.json();
-    const results = [];
-    if (data?.AbstractText) {
-      results.push({
-        title: data.Heading || query,
-        url: data.AbstractURL || '',
-        content: data.AbstractText,
-      });
-    }
-    for (const topic of data?.RelatedTopics || []) {
-      if (topic?.Text && topic?.FirstURL) {
-        results.push({ title: topic.Text, url: topic.FirstURL, content: topic.Text });
-      } else if (Array.isArray(topic?.Topics)) {
-        for (const sub of topic.Topics) {
-          if (sub?.Text && sub?.FirstURL) {
-            results.push({ title: sub.Text, url: sub.FirstURL, content: sub.Text });
-          }
+async function webSearchDuckDuckGo(query, config) {
+  const base = String(config?.duckduckgoApiUrl || "https://api.duckduckgo.com").replace(/\/$/, "");
+  const res = await fetch(
+    `${base}/?q=${encodeURIComponent(query)}&format=json&no_redirect=1`,
+    { signal: AbortSignal.timeout(15_000) }
+  );
+  if (!res.ok) throw new Error(`DuckDuckGo HTTP ${res.status}`);
+  const data = await res.json();
+  const results = [];
+  if (data?.AbstractText) {
+    results.push({
+      title: data.Heading || query,
+      url: data.AbstractURL || '',
+      content: data.AbstractText,
+    });
+  }
+  for (const topic of data?.RelatedTopics || []) {
+    if (topic?.Text && topic?.FirstURL) {
+      results.push({ title: topic.Text, url: topic.FirstURL, content: topic.Text });
+    } else if (Array.isArray(topic?.Topics)) {
+      for (const sub of topic.Topics) {
+        if (sub?.Text && sub?.FirstURL) {
+          results.push({ title: sub.Text, url: sub.FirstURL, content: sub.Text });
         }
       }
-      if (results.length >= 8) break;
+    }
+    if (results.length >= 8) break;
+  }
+  return results;
+}
+
+async function webSearchTavily(query, config) {
+  if (!config?.tavilyApiKey) throw new Error("Tavily API Key not configured");
+  const base = String(config?.tavilyApiUrl || "https://api.tavily.com").replace(/\/$/, "");
+  const res = await fetch(`${base}/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.tavilyApiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      max_results: 8,
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Tavily HTTP ${res.status}: ${await res.text().catch(() => "")}`);
+  const data = await res.json();
+  return (data?.results || [])
+    .slice(0, 8)
+    .map((item) => ({
+      title: String(item?.title || "").trim(),
+      url: String(item?.url || ""),
+      content: String(item?.content || "").trim(),
+    }));
+}
+
+async function webSearchSerpAPI(query, config) {
+  if (!config?.serpapiApiKey) throw new Error("SerpAPI Key not configured");
+  const base = String(config?.serpapiApiUrl || "https://serpapi.com").replace(/\/$/, "");
+  const params = new URLSearchParams({
+    api_key: String(config.serpapiApiKey),
+    engine: "google",
+    q: query,
+    location: "China",
+    google_domain: "google.com",
+    gl: "cn",
+    hl: "zh-cn",
+    num: "8",
+  });
+  const url = `${base}/search?${params.toString()}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`SerpAPI HTTP ${res.status}: ${await res.text().catch(() => "")}`);
+  const data = await res.json();
+  const organic = data?.organic_results || [];
+  return organic.slice(0, 8).map((item) => ({
+    title: String(item?.title || ""),
+    url: String(item?.link || ""),
+    content: String(item?.snippet || ""),
+  }));
+}
+
+async function webSearchBrave(query, config) {
+  if (!config?.braveApiKey) throw new Error("Brave Search API Key not configured");
+  const base = String(config?.braveApiUrl || "https://api.search.brave.com").replace(/\/$/, "");
+  const url =
+    `${base}/res/v1/web/search?q=${encodeURIComponent(query)}&count=8`;
+  const res = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+      "Accept-Encoding": "gzip",
+      "X-Subscription-Token": config.braveApiKey,
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Brave HTTP ${res.status}`);
+  const data = await res.json();
+  const web = data?.web?.results || [];
+  return web.slice(0, 8).map((item) => ({
+    title: String(item?.title || ""),
+    url: String(item?.url || ""),
+    content: String(item?.description || ""),
+  }));
+}
+
+async function webSearchSearXNG(query, config) {
+  const base = String(config?.searxngUrl || "https://searx.be").replace(/\/$/, "");
+  const url = `${base}/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`SearXNG HTTP ${res.status}`);
+  const data = await res.json();
+  return (data?.results || []).slice(0, 8).map((item) => ({
+    title: String(item?.title || ""),
+    url: String(item?.url || ""),
+    content: String(item?.content || ""),
+  }));
+}
+
+async function webSearchZhipu(query, config) {
+  if (!config?.zhipuApiKey) throw new Error("Zhipu API Key not configured");
+  const base = String(config?.zhipuApiUrl || "https://open.bigmodel.cn").replace(/\/$/, "");
+  const url = `${base}/api/paas/v4/web_search`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.zhipuApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      search_query: query,
+      search_engine: "search_std",
+      search_intent: false,
+      count: 10,
+      search_recency_filter: "noLimit",
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`Zhipu HTTP ${res.status}: ${await res.text().catch(() => "")}`);
+  const data = await res.json();
+  const results = data?.search_result || [];
+  return results.slice(0, 8).map((item) => ({
+    title: String(item?.title || "").trim(),
+    url: String(item?.link || ""),
+    content: String(item?.content || "").trim(),
+  }));
+}
+
+async function toolWebSearch(args, config) {
+  const query = String(args?.query || "").trim();
+  if (!query) return fail("query required");
+  const cfg = config || { provider: "duckduckgo" };
+  try {
+    let results = [];
+    switch (cfg.provider) {
+      case "tavily":
+        results = await webSearchTavily(query, cfg);
+        break;
+      case "serpapi":
+        results = await webSearchSerpAPI(query, cfg);
+        break;
+      case "brave":
+        results = await webSearchBrave(query, cfg);
+        break;
+      case "searxng":
+        results = await webSearchSearXNG(query, cfg);
+        break;
+      case "zhipu":
+        results = await webSearchZhipu(query, cfg);
+        break;
+      case "duckduckgo":
+      default:
+        results = await webSearchDuckDuckGo(query, cfg);
+        break;
     }
     return ok({ query, results });
   } catch (e) {
@@ -231,17 +377,69 @@ async function toolWebSearch(args) {
   }
 }
 
-function toolTodoWrite(args) {
+function toolTodoWrite(args, requestId) {
   const todos = Array.isArray(args?.todos) ? args.todos : [];
-  sessionTodos.length = 0;
-  sessionTodos.push(...todos);
-  return ok({ todos: sessionTodos });
+  if (requestId) {
+    todosByRequest.set(requestId, todos);
+  }
+  return ok({ todos });
+}
+
+function clearRequestTodos(requestId) {
+  if (requestId) todosByRequest.delete(requestId);
 }
 
 function toolTask(args) {
   return fail(
     `Task/subagent is not supported in DesktopFairy. Request: ${String(args?.description || '')}`
   );
+}
+
+function toolUpdateProfile(args, deps) {
+  const field = args?.field;
+  const action = args?.action;
+  const content = String(args?.content ?? '').trim();
+
+  if (field !== 'soul' && field !== 'user') return fail('field must be "soul" or "user"');
+  if (action !== 'replace' && action !== 'append') return fail('action must be "replace" or "append"');
+  if (!content) return fail('content must not be empty');
+
+  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch {
+    return fail('Could not read settings');
+  }
+
+  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
+  if (action === 'replace') {
+    agent[field] = content;
+  } else {
+    const existing = typeof agent[field] === 'string' ? agent[field] : '';
+    agent[field] = existing ? existing.trimEnd() + '\n\n' + content : content;
+  }
+  settings.agent = agent;
+
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  } catch {
+    return fail('Could not write settings');
+  }
+
+  for (const win of deps.getWindows?.() || []) {
+    try {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('settings:updated', settings);
+      }
+    } catch {
+      /* window gone */
+    }
+  }
+
+  const label = field === 'soul' ? 'SOUL.md' : 'USER.md';
+  const verb = action === 'replace' ? '已替换' : '已追加到';
+  return ok({ message: `${verb} ${label}`, field, action });
 }
 
 async function toolNotebookRead(args) {
@@ -313,18 +511,75 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
     case 'WebFetch':
       return toolWebFetch(args);
     case 'WebSearch':
-      return toolWebSearch(args);
+      return toolWebSearch(args, deps.webSearchConfig);
     case 'TodoWrite':
-      return toolTodoWrite(args);
+      return toolTodoWrite(args, deps.requestId);
     case 'Task':
       return toolTask(args);
     case 'NotebookRead':
       return toolNotebookRead(args);
     case 'NotebookEdit':
       return toolNotebookEdit(args);
+    case 'UpdateProfile':
+      return toolUpdateProfile(args, deps);
     default:
       return fail(`Unknown builtin tool: ${toolName}`);
   }
 }
 
-module.exports = { executeBuiltinTool };
+async function testWebSearchConfig(config) {
+  const cfg = config || { provider: "duckduckgo" };
+  const sampleQueries = {
+    duckduckgo: "hello world",
+    tavily: "hello world",
+    serpapi: "Coffee",
+    brave: "hello world",
+    searxng: "hello",
+    zhipu: "人工智能",
+  };
+  const query = sampleQueries[cfg.provider] || "hello";
+  try {
+    let results = [];
+    switch (cfg.provider) {
+      case "tavily":
+        results = await webSearchTavily(query, cfg);
+        break;
+      case "serpapi":
+        results = await webSearchSerpAPI(query, cfg);
+        break;
+      case "brave":
+        results = await webSearchBrave(query, cfg);
+        break;
+      case "searxng":
+        results = await webSearchSearXNG(query, cfg);
+        break;
+      case "zhipu":
+        results = await webSearchZhipu(query, cfg);
+        break;
+      case "duckduckgo":
+      default:
+        results = await webSearchDuckDuckGo(query, cfg);
+        break;
+    }
+    return {
+      ok: true,
+      provider: cfg.provider,
+      query,
+      count: Array.isArray(results) ? results.length : 0,
+      sample: Array.isArray(results) && results[0]
+        ? {
+            title: String(results[0].title || "").slice(0, 80),
+            url: String(results[0].url || "").slice(0, 120),
+          }
+        : null,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      provider: cfg.provider,
+      error: String(e?.message || e),
+    };
+  }
+}
+
+module.exports = { executeBuiltinTool, testWebSearchConfig, clearRequestTodos };

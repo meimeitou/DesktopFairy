@@ -6,7 +6,17 @@ import "./TerminalPage.css";
 
 const api = window.electronAPI;
 
-function TerminalInstance({ isActive }: { isActive: boolean }) {
+function TerminalInstance({
+  isActive,
+  tabId,
+  onSessionReady,
+  onSessionEnd,
+}: {
+  isActive: boolean;
+  tabId: string;
+  onSessionReady?: (tabId: string, sessionId: string) => void;
+  onSessionEnd?: (tabId: string) => void;
+}) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -49,6 +59,7 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
         }
         const { sessionId } = result as { sessionId: string };
         sessionIdRef.current = sessionId;
+        onSessionReady?.(tabId, sessionId);
       })
       .catch((err) => {
         if (isMounted) {
@@ -125,12 +136,13 @@ function TerminalInstance({ isActive }: { isActive: boolean }) {
       if (sessionIdRef.current) {
         api.invoke("pty:kill", { sessionId: sessionIdRef.current });
       }
+      onSessionEnd?.(tabId);
       xterm.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
       sessionIdRef.current = "";
     };
-  }, []);
+  }, [onSessionEnd, onSessionReady, tabId]);
 
   // Fit again when becoming active
   useEffect(() => {
@@ -191,6 +203,54 @@ export default function TerminalPage({
   ]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
   const nextTabIndex = useRef(2);
+  const sessionMapRef = useRef<Map<string, string>>(new Map());
+  const pendingCommandMapRef = useRef<Map<string, string[]>>(new Map());
+
+  const pasteCommandToTab = useCallback((tabId: string, command: string) => {
+    const sessionId = sessionMapRef.current.get(tabId);
+    if (!sessionId) {
+      const queue = pendingCommandMapRef.current.get(tabId) ?? [];
+      queue.push(command);
+      pendingCommandMapRef.current.set(tabId, queue);
+      return false;
+    }
+
+    api.invoke("pty:input", { sessionId, data: command });
+    return true;
+  }, []);
+
+  const flushPendingCommands = useCallback((tabId: string) => {
+    const sessionId = sessionMapRef.current.get(tabId);
+    if (!sessionId) return;
+
+    const queue = pendingCommandMapRef.current.get(tabId);
+    if (!queue?.length) return;
+
+    pendingCommandMapRef.current.delete(tabId);
+    for (const command of queue) {
+      api.invoke("pty:input", { sessionId, data: command });
+    }
+  }, []);
+
+  const handleSessionReady = useCallback((tabId: string, sessionId: string) => {
+    sessionMapRef.current.set(tabId, sessionId);
+    flushPendingCommands(tabId);
+  }, [flushPendingCommands]);
+
+  const handleSessionEnd = useCallback((tabId: string) => {
+    sessionMapRef.current.delete(tabId);
+    pendingCommandMapRef.current.delete(tabId);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { command } = (e as CustomEvent<{ command?: string }>).detail ?? {};
+      if (!command) return;
+      pasteCommandToTab(activeTabId, command);
+    };
+    window.addEventListener("terminal:run-command", handler);
+    return () => window.removeEventListener("terminal:run-command", handler);
+  }, [activeTabId, pasteCommandToTab]);
 
   const handleAddTab = useCallback(() => {
     const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -251,7 +311,10 @@ export default function TerminalPage({
         {tabs.map((tab) => (
           <TerminalInstance
             key={tab.id}
+            tabId={tab.id}
             isActive={tab.id === activeTabId && isActive}
+            onSessionReady={handleSessionReady}
+            onSessionEnd={handleSessionEnd}
           />
         ))}
       </div>

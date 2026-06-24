@@ -13,6 +13,78 @@ export interface ChatSession {
   draftAttachments?: ChatAttachment[];
 }
 
+export const CHAT_TOPICS_VERSION = 1 as const;
+
+export interface ChatTopic {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  orderKey: number;
+}
+
+export interface ChatTopicsStore {
+  version: typeof CHAT_TOPICS_VERSION;
+  activeId: string | null;
+  topics: ChatTopic[];
+}
+
+export function emptyChatTopicsStore(): ChatTopicsStore {
+  return {
+    version: CHAT_TOPICS_VERSION,
+    activeId: null,
+    topics: [],
+  };
+}
+
+export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
+  if (!raw || typeof raw !== "object") return emptyChatTopicsStore();
+  const data = raw as Partial<ChatTopicsStore>;
+  const topics = Array.isArray(data.topics)
+    ? data.topics.filter(
+        (t): t is ChatTopic =>
+          !!t &&
+          typeof (t as ChatTopic).id === "string" &&
+          typeof (t as ChatTopic).createdAt === "number",
+      )
+    : [];
+  return {
+    version: CHAT_TOPICS_VERSION,
+    activeId:
+      typeof data.activeId === "string" ? data.activeId : topics[0]?.id ?? null,
+    topics,
+  };
+}
+
+export function createChatTopic(id?: string, name?: string): ChatTopic {
+  const now = Date.now();
+  return {
+    id: id ?? (typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `topic-${now}-${Math.random().toString(36).slice(2, 10)}`),
+    name: name ?? "",
+    createdAt: now,
+    updatedAt: now,
+    orderKey: now,
+  };
+}
+
+export function generateTopicTitle(firstUserMessage: string): string {
+  const trimmed = firstUserMessage.trim();
+  if (!trimmed) return "新对话";
+  return trimmed.length > 25 ? trimmed.slice(0, 25) + "..." : trimmed;
+}
+
+export function createEmptyChatSession(): ChatSession {
+  return {
+    version: CHAT_SESSION_VERSION,
+    updatedAt: Date.now(),
+    messages: [],
+    draftInput: "",
+    draftAttachments: [],
+  };
+}
+
 export function emptyChatSession(): ChatSession {
   return {
     version: CHAT_SESSION_VERSION,

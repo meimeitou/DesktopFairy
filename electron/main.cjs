@@ -78,6 +78,8 @@ const applySelectionSettings = (settings) => {
 
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'da_settings.json');
 const CHAT_SESSION_PATH = () => path.join(app.getPath('userData'), 'da_chat.json');
+const CHAT_TOPICS_INDEX_PATH = () => path.join(app.getPath('userData'), 'da_chat_topics.json');
+const CHAT_SESSIONS_DIR = () => path.join(app.getPath('userData'), 'chat_sessions');
 
 const loadSettingsFromDisk = () => {
   try {
@@ -249,7 +251,7 @@ const createChatWindow = (options = {}) => {
 
   chatWindow = new BrowserWindow({
     title: ' ',
-    width: 640,
+    width: 853,
     height: 520,
     minWidth: 640,
     minHeight: 520,
@@ -525,6 +527,8 @@ const setupIPC = () => {
   registerChatSessionHandlers({
     ipcMain,
     sessionPath: CHAT_SESSION_PATH,
+    topicsIndexPath: CHAT_TOPICS_INDEX_PATH,
+    sessionsDir: CHAT_SESSIONS_DIR,
   });
 
   registerPtyHandlers({ ipcMain });

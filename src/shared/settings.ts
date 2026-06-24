@@ -19,6 +19,16 @@ import {
   SYSTEM_PROVIDERS,
   type LlmProvider,
 } from "./providers";
+import {
+  DEFAULT_CHAT_MODE,
+  normalizeChatMode,
+  type ChatMode,
+} from "./chatMode";
+import {
+  DEFAULT_WEB_SEARCH_CONFIG,
+  normalizeWebSearchConfig,
+  type WebSearchConfig,
+} from "./webSearch";
 
 export type SelectionTriggerMode = "shortcut" | "auto";
 
@@ -62,8 +72,12 @@ export interface AppSettings {
   agent: AgentConfig;
   /** Chat backend: "agent" or `${providerId}::${modelName}` */
   chatBackend: string;
+  /** Active conversation mode. Mirrors agent.chatMode but stored at app level for quick UI access. */
+  chatMode: ChatMode;
   /** Global MCP server registry (Cherry Studio style) */
   mcpServers: McpServer[];
+  /** WebSearch tool provider configuration */
+  webSearch: WebSearchConfig;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -93,7 +107,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   deletedSystemProviderIds: [],
   agent: { ...DEFAULT_AGENT_CONFIG },
   chatBackend: AGENT_BACKEND_KEY,
+  chatMode: DEFAULT_CHAT_MODE,
   mcpServers: [],
+  webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
 };
 
 const STORAGE_KEY = "da_settings";
@@ -253,18 +269,21 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     ),
     customModels: normalizeCustomModels(settings.customModels),
     agent: normalizeAgentConfig(migratedMcp.agent, {
-      instructions:
+      soul:
         typeof settings.systemPrompt === "string" && settings.systemPrompt.trim()
           ? settings.systemPrompt
-          : DEFAULT_AGENT_CONFIG.instructions,
+          : DEFAULT_AGENT_CONFIG.soul,
       providerId: settings.activeProviderId || DEFAULT_AGENT_CONFIG.providerId,
       modelName: settings.modelName || DEFAULT_AGENT_CONFIG.modelName,
+      chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
     }),
     chatBackend:
       typeof settings.chatBackend === "string" && settings.chatBackend.trim()
         ? settings.chatBackend.trim()
         : AGENT_BACKEND_KEY,
+    chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
     mcpServers: migratedMcp.mcpServers,
+    webSearch: normalizeWebSearchConfig(settings.webSearch),
     modelName: (() => {
       const provider = getActiveProvider(settings);
       if (provider.models.length === 0) return settings.modelName;

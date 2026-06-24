@@ -19,6 +19,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'chat:abort',
       'chat:session:load',
       'chat:session:save',
+      'chat:topics:list',
+      'chat:topics:create',
+      'chat:topics:delete',
+      'chat:topics:rename',
+      'chat:topics:setActive',
+      'chat:topics:updateOrder',
       'chat:list_models',
       'chat:check',
       'settings:sync',
@@ -61,6 +67,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'agent:avatar:select',
       'agent:avatar:resolve',
       'agent:avatar:clear_image',
+      'websearch:test',
     ];
 
     if (allowedChannels.includes(channel)) {

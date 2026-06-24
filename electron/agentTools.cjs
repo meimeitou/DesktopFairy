@@ -1,4 +1,4 @@
-const { shouldPromptForTool } = require('./agentBuiltinCatalog.cjs');
+const { shouldPromptForTool, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
 const { executeBuiltinTool } = require('./agentBuiltinExecutors.cjs');
 const { executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs');
 const { parseToolArguments } = require('./toolCallDisplay.cjs');
@@ -33,12 +33,24 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
     status: 'awaiting_approval',
   });
 
-  const approved = await waitForToolApproval({
+  const approvalResult = await waitForToolApproval({
     approvalId,
     signal: deps.signal,
   });
 
-  if (!approved) {
+  if (approvalResult === 'aborted') {
+    emitToolEvent(deps, {
+      toolCallId,
+      toolName,
+      toolArgs: rawArgs,
+      approvalId,
+      status: 'error',
+      message: '已取消',
+    });
+    return 'aborted';
+  }
+
+  if (approvalResult === 'denied') {
     emitToolEvent(deps, {
       toolCallId,
       toolName,
@@ -47,7 +59,7 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
       status: 'denied',
       message: '用户拒绝执行',
     });
-    return false;
+    return 'denied';
   }
 
   emitToolEvent(deps, {
@@ -57,7 +69,7 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
     approvalId,
     status: 'running',
   });
-  return true;
+  return 'approved';
 }
 
 async function executeAgentTool(toolCall, deps) {
@@ -66,9 +78,20 @@ async function executeAgentTool(toolCall, deps) {
   const toolCallId = toolCall?.id || deps.toolCallId;
   const { args } = parseToolArguments(rawArgs);
 
-  if (shouldPromptForTool(name, deps.toolApprovalMode || 'confirm', args)) {
-    const approved = await requestInlineToolApproval(toolCall, deps, args, rawArgs);
-    if (!approved) {
+  if (!name) {
+    return {
+      resultText: JSON.stringify({ ok: false, error: 'Missing tool name' }),
+      denied: false,
+    };
+  }
+
+  const approvalMode = resolveToolApprovalMode(deps.agentConfig);
+  if (shouldPromptForTool(name, approvalMode, args)) {
+    const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs);
+    if (approvalResult === 'aborted') {
+      return { resultText: '', aborted: true };
+    }
+    if (approvalResult === 'denied') {
       return {
         resultText: JSON.stringify({ ok: false, error: 'User denied tool execution' }),
         denied: true,

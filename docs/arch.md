@@ -443,7 +443,7 @@ await api.invoke('chat:send', {
   apiKey: 'sk-...',
   model: 'gpt-4o-mini',
   messages: [
-    { role: 'system', content: '你是桌面伙伴…' },
+    { role: 'system', content: '你是个人助手，能帮忙干活的…' },
     { role: 'user', content: '你好' },
   ],
   temperature: 0.7,

@@ -6,6 +6,7 @@ interface ToolStepProps {
   msg: ChatMsg;
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
+  onAlwaysAllow?: (approvalId: string) => void;
   submittingApprovalId?: string | null;
 }
 
@@ -13,6 +14,7 @@ function AgentToolStep({
   msg,
   onApprove,
   onDeny,
+  onAlwaysAllow,
   submittingApprovalId,
 }: ToolStepProps) {
   const status = msg.toolStatus || "streaming";
@@ -25,6 +27,7 @@ function AgentToolStep({
           msg={msg}
           onApprove={onApprove}
           onDeny={onDeny}
+          onAlwaysAllow={onAlwaysAllow}
           submitting={submitting}
         />
       </li>
@@ -42,6 +45,7 @@ interface GroupProps {
   tools: ChatMsg[];
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
+  onAlwaysAllow?: (approvalId: string) => void;
   submittingApprovalId?: string | null;
 }
 
@@ -49,6 +53,7 @@ export function ToolCallGroup({
   tools,
   onApprove,
   onDeny,
+  onAlwaysAllow,
   submittingApprovalId,
 }: GroupProps) {
   const waiting = tools.filter((t) => t.toolStatus === "awaiting_approval").length;
@@ -80,6 +85,7 @@ export function ToolCallGroup({
               msg={tool}
               onApprove={onApprove}
               onDeny={onDeny}
+              onAlwaysAllow={onAlwaysAllow}
               submittingApprovalId={submittingApprovalId}
             />
           ))}
@@ -93,6 +99,7 @@ interface BubbleProps {
   msg: ChatMsg;
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
+  onAlwaysAllow?: (approvalId: string) => void;
   submittingApprovalId?: string | null;
 }
 
@@ -100,6 +107,7 @@ export default function ToolCallBubble({
   msg,
   onApprove,
   onDeny,
+  onAlwaysAllow,
   submittingApprovalId,
 }: BubbleProps) {
   return (
@@ -107,6 +115,7 @@ export default function ToolCallBubble({
       tools={[msg]}
       onApprove={onApprove}
       onDeny={onDeny}
+      onAlwaysAllow={onAlwaysAllow}
       submittingApprovalId={submittingApprovalId}
     />
   );

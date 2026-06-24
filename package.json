@@ -11,6 +11,9 @@
     "build": "tsc -b && vite build && electron-builder",
     "build:dir": "tsc -b && vite build && electron-builder --dir",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,8 +27,7 @@
     "rehype-highlight": "^7.0.2",
     "remark-cjk-friendly": "^2.0.1",
     "remark-gfm": "^4.0.1",
-    "selection-hook": "^2.0.1",
-    "zustand": "^5.0.13"
+    "selection-hook": "^2.0.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
@@ -34,6 +36,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/ui": "^4.1.9",
     "concurrently": "^9.1.2",
     "electron": "^35.4.0",
     "electron-builder": "^26.0.12",
@@ -45,6 +48,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
+    "vitest": "^4.1.9",
     "wait-on": "^8.0.3"
   },
   "build": {

@@ -6,13 +6,17 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
-import ChatMarkdown from "../components/chat/ChatMarkdown";
 import ChatInputBar from "../components/chat/ChatInputBar";
+import TopicSidebar from "../components/chat/TopicSidebar";
 import ToolCallBubble, { ToolCallGroup } from "../components/chat/ToolCallBubble";
+import MessageBubble from "../components/chat/MessageBubble";
+import { useToolApproval } from "../hooks/useToolApproval";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import {
   type ChatMsg,
   buildApiMessages,
+  buildAgentApiMessages,
+  filterAfterContextClear,
   filterForApi,
   findLastAssistantReplyIndex,
   trimMessagesForApi,
@@ -21,6 +25,8 @@ import {
   buildChatSession,
   normalizeChatSession,
   trimSessionForStorage,
+  generateTopicTitle,
+  type ChatTopic,
 } from "../shared/chatSession";
 import {
   loadSettings,
@@ -34,6 +40,7 @@ import {
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
 import { notifyLive2DScene } from "../shared/live2dReactions";
+import type { ChatMode } from "../shared/chatMode";
 import "./ChatPage.css";
 
 const api = window.electronAPI;
@@ -50,236 +57,6 @@ function ContextClearDivider() {
   return (
     <div className="msg-context-clear" role="separator">
       <span>上下文已清除</span>
-    </div>
-  );
-}
-
-function formatMsgTime(ts?: number): string {
-  if (!ts) return "";
-  const d = new Date(ts);
-  const h = d.getHours().toString().padStart(2, "0");
-  const m = d.getMinutes().toString().padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-function CopyIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
-
-function RetryIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="1 4 1 10 7 10" />
-      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-    </svg>
-  );
-}
-
-function EditIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  );
-}
-
-function DeleteIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </svg>
-  );
-}
-
-function CheckIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
-
-function MessageBubble({
-  msg,
-  streaming,
-  isLast,
-  invalidAttachmentPaths,
-  onRetry,
-  onDelete,
-  onEditResend,
-}: {
-  msg: ChatMsg;
-  streaming: boolean;
-  isLast: boolean;
-  invalidAttachmentPaths: Set<string>;
-  onRetry?: (msgId: string) => void;
-  onDelete?: (msgId: string) => void;
-  onEditResend?: (msgId: string, newContent: string) => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState("");
-  const isStreamingAssistant =
-    streaming &&
-    isLast &&
-    msg.role === "assistant" &&
-    msg.type !== "tool" &&
-    !msg.error;
-  const isUser = msg.role === "user";
-  const isError = msg.error;
-
-  const handleCopy = async () => {
-    if (!msg.content) return;
-    try {
-      await navigator.clipboard.writeText(msg.content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard unavailable */
-    }
-  };
-
-  const startEdit = () => {
-    setEditText(msg.content);
-    setEditing(true);
-  };
-
-  const cancelEdit = () => {
-    setEditing(false);
-    setEditText("");
-  };
-
-  const confirmEdit = () => {
-    const trimmed = editText.trim();
-    if (!trimmed) return;
-    if (trimmed === msg.content) {
-      cancelEdit();
-      return;
-    }
-    onEditResend?.(msg.id, trimmed);
-    setEditing(false);
-    setEditText("");
-  };
-
-  const showTyping = isStreamingAssistant && !msg.content && !msg.error;
-
-  return (
-    <div className={`msg msg-${msg.role}${isError ? " msg-error" : ""}`}>
-      <div className="msg-bubble">
-        <div className="msg-header">
-          <span className="msg-header-time">{formatMsgTime(msg.timestamp)}</span>
-        </div>
-        {msg.attachments && msg.attachments.length > 0 && (
-          <div className="msg-attachments">
-            {msg.attachments.map((a) => (
-              <span
-                key={a.id}
-                className={`msg-attachment-tag${invalidAttachmentPaths.has(a.path) ? " msg-attachment-missing" : ""}`}
-              >
-                {invalidAttachmentPaths.has(a.path) ? "⚠" : "📎"} {a.name}
-                {invalidAttachmentPaths.has(a.path) ? "（附件已失效）" : ""}
-              </span>
-            ))}
-          </div>
-        )}
-        {editing ? (
-          <div className="msg-edit-area">
-            <textarea
-              className="msg-edit-textarea"
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  confirmEdit();
-                }
-                if (e.key === "Escape") {
-                  cancelEdit();
-                }
-              }}
-              autoFocus
-            />
-            <div className="msg-edit-actions">
-              <button
-                type="button"
-                className="msg-edit-btn msg-edit-cancel"
-                onClick={cancelEdit}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="msg-edit-btn msg-edit-save"
-                onClick={confirmEdit}
-              >
-                保存并发送
-              </button>
-            </div>
-          </div>
-        ) : isError ? (
-          <span className="msg-plain">{msg.content}</span>
-        ) : showTyping ? (
-          <span className="msg-typing">
-            <span />
-            <span />
-            <span />
-          </span>
-        ) : (
-          <ChatMarkdown
-            content={msg.content}
-            streaming={isStreamingAssistant}
-          />
-        )}
-        {!showTyping && msg.content && !isError && !editing && (
-          <div className="msg-actions">
-            <button
-              type="button"
-              className="msg-action-btn"
-              onClick={handleCopy}
-              title="复制"
-            >
-              {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
-            </button>
-            {isUser && onRetry && (
-              <button
-                type="button"
-                className="msg-action-btn"
-                onClick={() => onRetry(msg.id)}
-                title="重试"
-              >
-                <RetryIcon size={13} />
-              </button>
-            )}
-            {isUser && onEditResend && (
-              <button
-                type="button"
-                className="msg-action-btn"
-                onClick={startEdit}
-                title="编辑"
-              >
-                <EditIcon size={13} />
-              </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                className="msg-action-btn msg-action-delete"
-                onClick={() => onDelete(msg.id)}
-                title="删除"
-              >
-                <DeleteIcon size={13} />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -327,17 +104,25 @@ export default function ChatPage({
     () => new Set<string>(),
   );
   const [sessionReady, setSessionReady] = useState(false);
-  const [submittingApprovalId, setSubmittingApprovalId] = useState<string | null>(
-    null,
-  );
+
+  const [topics, setTopics] = useState<ChatTopic[]>([]);
+  const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
+  const [topicsLoaded, setTopicsLoaded] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const inputRef = useRef("");
   const attachmentsRef = useRef<ChatAttachment[]>([]);
   const requestIdRef = useRef<string>("");
+  const activeRequestBackendRef = useRef<string | null>(null);
   const handleSendRef = useRef<(text?: string) => void>(() => {});
   const sessionLoadedRef = useRef(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTopicIdRef = useRef<string | null>(null);
+  const initializedTopicIdRef = useRef<string | null>(null);
+
+  activeTopicIdRef.current = activeTopicId;
 
   const backendItems = getChatBackendItems(chatSettings);
   const selectableModels = backendItems.map((i) => i.value);
@@ -347,31 +132,16 @@ export default function ChatPage({
   const activeBackend = getActiveChatBackend(chatSettings);
   const usingAgent = isAgentBackend(activeBackend);
 
-  const respondToolApproval = useCallback(
-    async (approvalId: string, approved: boolean) => {
-      setSubmittingApprovalId(approvalId);
-      try {
-        await api.invoke("agent:tool:approve", { approvalId, approved });
-      } finally {
-        setSubmittingApprovalId(null);
-      }
-    },
-    [],
-  );
-
-  const handleApproveTool = useCallback(
-    (approvalId: string) => {
-      void respondToolApproval(approvalId, true);
-    },
-    [respondToolApproval],
-  );
-
-  const handleDenyTool = useCallback(
-    (approvalId: string) => {
-      void respondToolApproval(approvalId, false);
-    },
-    [respondToolApproval],
-  );
+  const abortActiveRun = useCallback(() => {
+    const id = requestIdRef.current;
+    if (!id) return;
+    const backend = activeRequestBackendRef.current;
+    if (isAgentBackend(backend ?? "")) {
+      void api.invoke("agent:abort", { requestId: id });
+    } else {
+      void api.invoke("chat:abort", { requestId: id });
+    }
+  }, []);
 
   useEffect(() => {
     chatMessagesRef.current = messages;
@@ -385,8 +155,9 @@ export default function ChatPage({
     attachmentsRef.current = attachments;
   }, [attachments]);
 
-  const persistSession = useCallback(async () => {
-    if (!sessionLoadedRef.current) return;
+  const persistSession = useCallback(async (topicIdOverride?: string) => {
+    const tid = topicIdOverride ?? activeTopicIdRef.current;
+    if (!tid) return;
     const session = trimSessionForStorage(
       buildChatSession(
         chatMessagesRef.current,
@@ -394,7 +165,7 @@ export default function ChatPage({
         attachmentsRef.current,
       ),
     );
-    await api.invoke("chat:session:save", session);
+    await api.invoke("chat:session:save", { topicId: tid, session });
   }, []);
 
   const scheduleSessionSave = useCallback(() => {
@@ -415,33 +186,127 @@ export default function ChatPage({
     void persistSession();
   }, [persistSession]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const raw = (await api.invoke("chat:session:load")) as unknown;
-        if (cancelled) return;
-        const session = normalizeChatSession(raw);
-        setMessages(session.messages);
-        setInput(session.draftInput ?? "");
-        setAttachments(session.draftAttachments ?? []);
-        const invalid = await collectInvalidAttachmentPaths(session.messages);
-        if (!cancelled) setInvalidAttachmentPaths(invalid);
-      } catch {
-        if (!cancelled) setMessages([]);
-      } finally {
-        if (!cancelled) {
-          sessionLoadedRef.current = true;
-          setSessionReady(true);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+  const loadSessionForTopic = useCallback(async (topicId: string) => {
+    sessionLoadedRef.current = false;
+    setSessionReady(false);
+    try {
+      const raw = (await api.invoke("chat:session:load", topicId)) as unknown;
+      const session = normalizeChatSession(raw);
+      setMessages(session.messages);
+      setInput(session.draftInput ?? "");
+      setAttachments(session.draftAttachments ?? []);
+      const invalid = await collectInvalidAttachmentPaths(session.messages);
+      setInvalidAttachmentPaths(invalid);
+      requestIdRef.current = "";
+      setStreaming(false);
+    } catch {
+      setMessages([]);
+      setInput("");
+      setAttachments([]);
+    } finally {
+      sessionLoadedRef.current = true;
+      initializedTopicIdRef.current = topicId;
+      setSessionReady(true);
+    }
   }, []);
+
+  const loadTopics = useCallback(async () => {
+    try {
+      const store = (await api.invoke("chat:topics:list")) as {
+        activeId: string | null;
+        topics: ChatTopic[];
+      };
+      const sorted = [...(store.topics || [])].sort(
+        (a, b) => b.orderKey - a.orderKey,
+      );
+      setTopics(sorted);
+      const activeId = store.activeId || sorted[0]?.id || null;
+      if (activeId) {
+        setActiveTopicId(activeId);
+        await loadSessionForTopic(activeId);
+      } else {
+        setActiveTopicId(null);
+        setMessages([]);
+        setInput("");
+        setAttachments([]);
+        setSessionReady(true);
+      }
+      setTopicsLoaded(true);
+    } catch {
+      setTopicsLoaded(true);
+    }
+  }, [loadSessionForTopic]);
+
+  useEffect(() => {
+    void loadTopics();
+  }, [loadTopics]);
+
+  const handleSelectTopic = useCallback(
+    (topicId: string) => {
+      if (topicId === activeTopicId) return;
+      if (streaming) abortActiveRun();
+      void persistSession();
+      setActiveTopicId(topicId);
+      void loadSessionForTopic(topicId);
+    },
+    [activeTopicId, persistSession, loadSessionForTopic, streaming, abortActiveRun],
+  );
+
+  const handleCreateTopic = useCallback(async () => {
+    try {
+      await persistSession();
+      const topic = (await api.invoke("chat:topics:create", { name: "" })) as ChatTopic;
+      setTopics((prev) => [...prev, topic]);
+      setActiveTopicId(topic.id);
+      await loadSessionForTopic(topic.id);
+    } catch (e) {
+      console.warn("Failed to create topic:", e);
+    }
+  }, [persistSession, loadSessionForTopic]);
+
+  const handleDeleteTopic = useCallback(
+    async (topicId: string) => {
+      const result = (await api.invoke("chat:topics:delete", topicId)) as {
+        ok: boolean;
+        activeId: string | null;
+        autoCreated?: ChatTopic | null;
+      };
+      if (!result.ok) return;
+
+      const replacement = result.autoCreated;
+      setTopics((prev) => {
+        const filtered = prev.filter((t) => t.id !== topicId);
+        return replacement ? [...filtered, replacement] : filtered;
+      });
+
+      const nextActiveId = result.activeId;
+      if (nextActiveId) {
+        if (nextActiveId !== activeTopicId) {
+          setActiveTopicId(nextActiveId);
+          await loadSessionForTopic(nextActiveId);
+        }
+      } else {
+        setActiveTopicId(null);
+        setMessages([]);
+        setInput("");
+        setAttachments([]);
+        setSessionReady(true);
+      }
+    },
+    [activeTopicId, loadSessionForTopic],
+  );
+
+  const handleRenameTopic = useCallback(
+    async (topicId: string, name: string) => {
+      await api.invoke("chat:topics:rename", { topicId, name });
+      setTopics((prev) =>
+        prev.map((t) =>
+          t.id === topicId ? { ...t, name, updatedAt: Date.now() } : t,
+        ),
+      );
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!sessionReady) return;
@@ -497,10 +362,26 @@ export default function ChatPage({
       });
     });
 
-    const offDone = api.onChatStreamDone(({ requestId }) => {
+    const offDone = api.onChatStreamDone(({ requestId, aborted }) => {
       if (requestId !== requestIdRef.current) return;
       requestIdRef.current = "";
+      activeRequestBackendRef.current = null;
       setStreaming(false);
+      if (aborted) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.type === "tool" &&
+            (m.toolStatus === "streaming" ||
+              m.toolStatus === "running" ||
+              m.toolStatus === "awaiting_approval")
+              ? { ...m, toolStatus: "error" as const, toolMessage: "已取消" }
+              : m,
+          ),
+        );
+        notifyLive2DScene("replyError");
+        flushSessionSave();
+        return;
+      }
       const list = chatMessagesRef.current;
       const assistantIdx = findLastAssistantReplyIndex(list);
       const assistantText =
@@ -514,6 +395,7 @@ export default function ChatPage({
     const offError = api.onChatStreamError(({ requestId, message }) => {
       if (requestId !== requestIdRef.current) return;
       requestIdRef.current = "";
+      activeRequestBackendRef.current = null;
       setStreaming(false);
       notifyLive2DScene("replyError");
       setMessages((prev) => {
@@ -552,7 +434,7 @@ export default function ChatPage({
                 (m) =>
                   m.type === "tool" &&
                   m.toolName === toolName &&
-                  m.toolStatus === "running",
+                  (m.toolStatus === "running" || m.toolStatus === "streaming"),
               );
           const prevTool = existingIdx >= 0 ? prev[existingIdx] : null;
           const toolMsg: ChatMsg = {
@@ -587,9 +469,9 @@ export default function ChatPage({
               content: "",
               timestamp: Date.now(),
             });
-            return next;
+          } else {
+            next.splice(assistantIdx, 0, toolMsg);
           }
-          next.splice(assistantIdx, 0, toolMsg);
           return next;
         });
         if (status === "running") notifyLive2DScene("toolRunning");
@@ -618,6 +500,26 @@ export default function ChatPage({
     },
     [chatSettings],
   );
+
+  const handleChatModeChange = useCallback(
+    (mode: ChatMode) => {
+      const next = {
+        ...chatSettings,
+        chatMode: mode,
+        agent: { ...chatSettings.agent, chatMode: mode },
+      };
+      saveSettings(next);
+      setChatSettings(next);
+    },
+    [chatSettings],
+  );
+
+  const {
+    submittingApprovalId,
+    handleApproveTool,
+    handleDenyTool,
+    handleAlwaysAllowTool,
+  } = useToolApproval(chatMessagesRef, handleChatModeChange);
 
   const loadAttachmentPayloads = useCallback(
     async (files: ChatAttachment[]) => {
@@ -679,14 +581,20 @@ export default function ChatPage({
         return;
       }
 
-      const history = trimMessagesForApi(filterForApi(messages));
-      const systemPrompt = agentMode ? agent.instructions : undefined;
-      const payloadMessages = buildApiMessages(
-        history,
-        text,
-        attachmentPayloads,
-        systemPrompt,
+      const agentHistory = trimMessagesForApi(
+        filterAfterContextClear(messages).filter(
+          (m) =>
+            m.type !== "clear" &&
+            !m.error &&
+            (m.type === "tool" ||
+              !(m.role === "assistant" && !m.content?.trim())),
+        ),
       );
+      const history = trimMessagesForApi(filterForApi(messages));
+      const systemPrompt = agentMode ? agent.soul : undefined;
+      const payloadMessages = agentMode
+        ? buildAgentApiMessages(agentHistory, text, attachmentPayloads, systemPrompt)
+        : buildApiMessages(history, text, attachmentPayloads, systemPrompt);
 
       const now = Date.now();
       const userMsg: ChatMsg = {
@@ -699,11 +607,30 @@ export default function ChatPage({
 
       const requestId = genId();
       requestIdRef.current = requestId;
+      activeRequestBackendRef.current = getActiveChatBackend(settings);
       setMessages([
         ...messages,
         userMsg,
         { id: genId(), role: "assistant", content: "", timestamp: now },
       ]);
+
+      if (activeTopicId && messages.length === 0) {
+        const autoTitle = generateTopicTitle(text);
+        void api
+          .invoke("chat:topics:rename", {
+            topicId: activeTopicId,
+            name: autoTitle,
+          })
+          .then(() => {
+            setTopics((prev) =>
+              prev.map((t) =>
+                t.id === activeTopicId
+                  ? { ...t, name: autoTitle, updatedAt: Date.now() }
+                  : t,
+              ),
+            );
+          });
+      }
       setInput("");
       setAttachments([]);
       setStreaming(true);
@@ -744,6 +671,7 @@ export default function ChatPage({
         .catch((e: Error) => {
           if (requestIdRef.current !== requestId) return;
           requestIdRef.current = "";
+          activeRequestBackendRef.current = null;
           setStreaming(false);
           notifyLive2DScene("replyError");
           setMessages((prev) => {
@@ -778,14 +706,8 @@ export default function ChatPage({
   }, [handleSend]);
 
   const handleStop = useCallback(() => {
-    const id = requestIdRef.current;
-    if (!id) return;
-    if (usingAgent) {
-      api.invoke("agent:abort", { requestId: id });
-    } else {
-      api.invoke("chat:abort", { requestId: id });
-    }
-  }, [usingAgent]);
+    abortActiveRun();
+  }, [abortActiveRun]);
 
   const handleClearContext = useCallback(() => {
     if (streaming) return;
@@ -817,11 +739,8 @@ export default function ChatPage({
     setInput("");
     setAttachments([]);
     setInvalidAttachmentPaths(new Set());
-    void api.invoke(
-      "chat:session:save",
-      trimSessionForStorage(buildChatSession([], "", [])),
-    );
-  }, [streaming, messages.length]);
+    void persistSession();
+  }, [streaming, messages.length, persistSession]);
 
   // 重试用户消息：删除该消息及其后所有消息，用原始文本重新发送
   const handleRetry = useCallback(
@@ -849,8 +768,11 @@ export default function ChatPage({
       const target = messages[idx];
       let end = idx + 1;
       if (target.role === "user") {
-        // 同时删除紧跟其后的助手回复
-        if (end < messages.length && messages[end].role === "assistant") {
+        while (end < messages.length && messages[end].role !== "user") {
+          end++;
+        }
+      } else if (target.role === "assistant") {
+        while (end < messages.length && messages[end].type === "tool") {
           end++;
         }
       }
@@ -886,16 +808,35 @@ export default function ChatPage({
 
   return (
     <div className={`chat-page${embedded ? " chat-page-embedded" : ""}`}>
-      <div className="chat-messages" ref={messagesContainerRef}>
-        {messages.length === 0 ? (
-          <div className="chat-empty">
-            <span className="chat-empty-icon">🧚‍♀️</span>
-            <p>开始聊天</p>
-          </div>
-        ) : (
+      {topicsLoaded && (
+        <TopicSidebar
+          topics={topics}
+          activeId={activeTopicId}
+          onSelect={handleSelectTopic}
+          onCreate={handleCreateTopic}
+          onDelete={handleDeleteTopic}
+          onRename={handleRenameTopic}
+          onRefresh={() => {}}
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        />
+      )}
+      <div className="chat-main-area">
+        <div className="chat-messages" ref={messagesContainerRef}>
+          {messages.length === 0 ? (
+            <div className="chat-empty">
+              <span className="chat-empty-icon">🧚‍♀️</span>
+              <p>开始聊天</p>
+            </div>
+          ) : (
           (() => {
             const nodes: ReactNode[] = [];
             let i = 0;
+            const streamingAssistantIdx = streaming
+              ? findLastAssistantReplyIndex(messages)
+              : -1;
+            const streamingAssistantId =
+              streamingAssistantIdx >= 0 ? messages[streamingAssistantIdx].id : null;
             while (i < messages.length) {
               const m = messages[i];
               if (m.type === "clear") {
@@ -916,6 +857,7 @@ export default function ChatPage({
                       tools={batch}
                       onApprove={handleApproveTool}
                       onDeny={handleDenyTool}
+                      onAlwaysAllow={handleAlwaysAllowTool}
                       submittingApprovalId={submittingApprovalId}
                     />
                   ) : (
@@ -924,6 +866,7 @@ export default function ChatPage({
                       msg={batch[0]}
                       onApprove={handleApproveTool}
                       onDeny={handleDenyTool}
+                      onAlwaysAllow={handleAlwaysAllowTool}
                       submittingApprovalId={submittingApprovalId}
                     />
                   ),
@@ -935,7 +878,7 @@ export default function ChatPage({
                   key={m.id}
                   msg={m}
                   streaming={streaming}
-                  isLast={i === messages.length - 1}
+                  isStreamingTarget={m.id === streamingAssistantId}
                   invalidAttachmentPaths={invalidAttachmentPaths}
                   onRetry={m.role === "user" ? handleRetry : undefined}
                   onDelete={handleDeleteMessage}
@@ -960,11 +903,15 @@ export default function ChatPage({
         modelName={activeBackend}
         modelLabels={modelLabels}
         onModelChange={handleBackendChange}
+        chatMode={chatSettings.chatMode}
+        onChatModeChange={handleChatModeChange}
+        showModeSelector={usingAgent}
         onSend={() => void handleSend()}
         onStop={handleStop}
         onClearContext={handleClearContext}
         onClearMessages={handleClearMessages}
       />
+      </div>
     </div>
   );
 }

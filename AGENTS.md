@@ -20,6 +20,7 @@ No tests, no CI. `lint` is the only pre-commit check.
 - **Multi-window via query param**: Single `index.html`, `?window=` selects the page. Not React Router. `?window=chat` and `?window=settings` both route to `ChatApp` (settings is a tab inside it). `?window=tip&text=...` for selection popup.
 - **ChatApp tab keep-alive**: `ChatPage` and `SettingsPage` are both mounted simultaneously with CSS visibility toggle — not conditional rendering. Don't convert to conditional render or chat state will be lost on tab switch.
 - **Electron main process is CJS**: All `electron/*.cjs` files use `require()`. Renderer (`src/`) is ESM. Do not mix.
+- **Main process has no hot-reload**: In dev, `electron .` loads `electron/*.cjs` at startup. Vite HMR only applies to renderer (`src/`). Changing main process files requires restarting the app (quit + `make dev`).
 - **`src/live2d/framework/` is read-only**: Unmodified Cubism SDK. Import via `@framework` alias (configured in both `vite.config.ts` and `tsconfig.app.json`). Never edit framework files.
 - **Zustand is in package.json but unused**: State is React `useState` + `localStorage` + IPC. Do not introduce Zustand stores without explicit request.
 
@@ -45,6 +46,20 @@ Settings live in `localStorage` key `da_settings` in the renderer. Calling `sett
 
 Startup: disk file is read first (via `settings:load:sync`), falls back to localStorage.
 
+## Agent System Prompt
+
+Agent config lives at `settings.agent` (`AgentConfig` in `src/shared/agent.ts`). The system prompt is built in the **main process** by `buildAgentSystemPrompt()` in `electron/agentService.cjs`, NOT in the renderer. The renderer passes `agentConfig` via the `agent:run` IPC payload, but `mergeSystemMessage` strips any system message the renderer prepends and replaces it.
+
+Prompt assembly order: `soul` → `user` (wrapped under `# 用户档案` header) → skills block → hardcoded tool guidance → chat-mode suffix.
+
+- **`soul`** (SOUL.md): agent's purpose, personality, execution rules. Migrated from legacy `instructions` field by `normalizeAgentConfig`.
+- **`user`** (USER.md): user's profile, preferences, habits. Injected only when non-empty.
+- **Non-agent mode** (`chat:send`): no system prompt is injected at all. Messages forwarded verbatim.
+
+## Chat Context
+
+`trimMessagesForApi` caps at 40 messages / 24k chars. `filterForApi` strips `type: 'clear'` markers. These run before every API call.
+
 ## Live2D
 
 - **Custom protocol**: Models loaded via `dfmodel://local/...` registered in `electron/live2dService.cjs`. Resources stream from user's chosen directory — never copied.
@@ -53,7 +68,3 @@ Startup: disk file is read first (via `settings:load:sync`), falls back to local
 ## TypeScript Config
 
 `strict: false` in `tsconfig.app.json`. `noUnusedLocals` and `noUnusedParameters` are both `false`. Don't assume strict type checking is enforced — lint is the only active check.
-
-## Chat Context
-
-`trimMessagesForApi` caps at 40 messages / 24k chars. `filterForApi` strips `type: 'clear'` markers. These run before every API call.

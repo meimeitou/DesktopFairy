@@ -71,6 +71,12 @@ export default function ChatApp() {
     return () => off?.();
   }, []);
 
+  useEffect(() => {
+    const handler = () => setView("terminal");
+    window.addEventListener("terminal:run-command", handler);
+    return () => window.removeEventListener("terminal:run-command", handler);
+  }, []);
+
   return (
     <div className={`chat-app${isMac ? " chat-app-mac" : " chat-app-frameless"}`}>
       <header className="chat-app-topbar">

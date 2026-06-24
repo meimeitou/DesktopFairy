@@ -12,17 +12,18 @@ function registerToolApprovalHandlers(ipcMain) {
   });
 }
 
+/** @returns {'approved' | 'denied' | 'aborted'} */
 function waitForToolApproval({ approvalId, signal }) {
   return new Promise((resolve) => {
     if (signal?.aborted) {
-      resolve(false);
+      resolve('aborted');
       return;
     }
 
     const entry = {
-      resolve: (approved) => {
+      resolve: (result) => {
         pending.delete(approvalId);
-        resolve(approved);
+        resolve(result);
       },
     };
 
@@ -32,7 +33,7 @@ function waitForToolApproval({ approvalId, signal }) {
       const onAbort = () => {
         if (pending.has(approvalId)) {
           pending.delete(approvalId);
-          resolve(false);
+          resolve('aborted');
         }
       };
       signal.addEventListener('abort', onAbort, { once: true });
@@ -43,7 +44,7 @@ function waitForToolApproval({ approvalId, signal }) {
 function dispatchToolApproval(approvalId, approved) {
   const entry = pending.get(approvalId);
   if (!entry) return false;
-  entry.resolve(!!approved);
+  entry.resolve(approved ? 'approved' : 'denied');
   return true;
 }
 
@@ -53,7 +54,7 @@ function abortRequestApprovals(requestId) {
   for (const [id, entry] of pending.entries()) {
     if (!id.startsWith(prefix)) continue;
     pending.delete(id);
-    entry.resolve(false);
+    entry.resolve('aborted');
     count += 1;
   }
   return count;
@@ -61,7 +62,7 @@ function abortRequestApprovals(requestId) {
 
 function clearAllToolApprovals() {
   for (const [, entry] of pending.entries()) {
-    entry.resolve(false);
+    entry.resolve('aborted');
   }
   pending.clear();
 }

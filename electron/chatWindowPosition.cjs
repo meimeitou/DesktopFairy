@@ -7,7 +7,7 @@ function clampToWorkArea(x, y, width, height, workArea) {
   };
 }
 
-function getChatWindowSize(chatWindow, fallback = { width: 640, height: 520 }) {
+function getChatWindowSize(chatWindow, fallback = { width: 853, height: 520 }) {
   if (chatWindow && !chatWindow.isDestroyed()) {
     const [width, height] = chatWindow.getSize();
     return { width, height };

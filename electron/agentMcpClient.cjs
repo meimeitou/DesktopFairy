@@ -32,9 +32,13 @@ class McpSession {
       this.flushBuffer();
     });
 
-    this.proc.stderr.on('data', () => {});
+    this.proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString().trim();
+      if (text) console.warn(`[MCP:${this.serverConfig.name}]`, text.slice(0, 500));
+    });
 
     this.proc.on('exit', () => {
+      this.rejectAllPending(new Error('MCP process exited'));
       this.proc = null;
     });
   }
@@ -60,6 +64,19 @@ class McpSession {
     }
   }
 
+  rejectAllPending(err) {
+    for (const [, entry] of this.pending.entries()) {
+      entry.reject(err);
+    }
+    this.pending.clear();
+  }
+
+  notify(method, params = {}) {
+    if (!this.proc || !this.proc.stdin.writable) return;
+    const payload = JSON.stringify({ jsonrpc: '2.0', method, params });
+    this.proc.stdin.write(`${payload}\n`);
+  }
+
   send(method, params = {}) {
     return new Promise((resolve, reject) => {
       if (!this.proc || !this.proc.stdin.writable) {
@@ -67,15 +84,24 @@ class McpSession {
         return;
       }
       const id = nextJsonRpcId();
-      this.pending.set(id, { resolve, reject });
-      const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
-      this.proc.stdin.write(`${payload}\n`);
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
           reject(new Error(`MCP timeout: ${method}`));
         }
       }, 20_000);
+      this.pending.set(id, {
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      });
+      const payload = JSON.stringify({ jsonrpc: '2.0', id, method, params });
+      this.proc.stdin.write(`${payload}\n`);
     });
   }
 
@@ -86,7 +112,7 @@ class McpSession {
       capabilities: {},
       clientInfo: { name: 'DesktopFairy', version: '0.2.0' },
     });
-    await this.send('notifications/initialized', {});
+    this.notify('notifications/initialized', {});
   }
 
   async listTools() {
@@ -114,6 +140,7 @@ class McpSession {
   }
 
   dispose() {
+    this.rejectAllPending(new Error('MCP session disposed'));
     if (this.proc) {
       try {
         this.proc.kill();

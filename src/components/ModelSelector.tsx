@@ -7,6 +7,7 @@ interface Props {
   onChange: (modelId: string) => void;
   placeholder?: string;
   allowCustom?: boolean;
+  disabled?: boolean;
   /** Optional display labels keyed by model value. Falls back to the value itself. */
   modelLabels?: Record<string, string>;
 }
@@ -17,6 +18,7 @@ export default function ModelSelector({
   onChange,
   placeholder = "选择模型…",
   allowCustom = true,
+  disabled = false,
   modelLabels,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -56,6 +58,7 @@ export default function ModelSelector({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
+            disabled={disabled}
           />
           {models.length > 0 && (
             <button
@@ -87,6 +90,7 @@ export default function ModelSelector({
           className="model-selector-select"
           value={effectiveValue}
           onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
         >
           {allowCustom &&
             !models.includes(effectiveValue) &&

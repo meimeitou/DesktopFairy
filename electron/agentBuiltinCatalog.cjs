@@ -8,7 +8,43 @@ const DEFAULT_SAFE_TOOLS = new Set([
   'Task',
   'TodoWrite',
   'Skill',
+  'UpdateProfile',
 ]);
+
+const READ_ONLY_TOOLS = new Set([
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'Bash',
+  'WebFetch',
+  'WebSearch',
+]);
+
+const CHAT_MODE_SUFFIXES = {
+  plan: '\n\n## 计划模式\n当前处于【计划模式】。你只能使用 Read / Glob / Grep / TodoWrite / Skill / Skills 等只读工具来理解现状并输出执行计划。严禁调用 Write / Edit / MultiEdit / NotebookEdit / Bash / WebFetch / WebSearch / Task 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。',
+  'auto-edit': '\n\n## 自动编辑模式\n当前处于【自动编辑模式】。为了推进任务，你可以直接读写文件，无需再为 Edit / Write / MultiEdit 等编辑类操作请求用户确认；但 Bash / WebFetch / WebSearch / 网络请求或可能破坏环境的操作仍需先征得用户同意。',
+  'full-auto': '\n\n## 全自动模式\n当前处于【全自动模式】。为了高效推进任务，你可以自主决定使用任何已提供的工具，无需再向用户请求确认，包括文件编辑、Bash 命令、网络请求、子 Agent 调度等。请保持操作的正确性与安全，在任务完成后再向用户汇报结果。',
+};
+
+function getChatModeSuffix(chatMode) {
+  if (!chatMode) return '';
+  return CHAT_MODE_SUFFIXES[chatMode] || '';
+}
+
+function isReadOnlyMode(chatMode) {
+  return chatMode === 'plan';
+}
+
+const ACCEPT_EDITS_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit', 'Write']);
+const ACCEPT_EDITS_BASH_COMMANDS = new Set(['mkdir', 'touch', 'mv', 'cp']);
+
+function resolveToolApprovalMode(agentConfig) {
+  const chatMode = agentConfig?.chatMode;
+  if (chatMode === 'full-auto') return 'bypass';
+  if (chatMode === 'auto-edit') return 'acceptEdits';
+  return 'confirm';
+}
 
 const CLAUDE_CODE_BUILTIN_TOOLS = [
   { id: 'Bash', name: 'Bash', description: 'Executes shell commands in your environment', category: 'shell', defaultPrompt: true },
@@ -26,6 +62,7 @@ const CLAUDE_CODE_BUILTIN_TOOLS = [
   { id: 'Write', name: 'Write', description: 'Creates or overwrites files', category: 'file', defaultPrompt: true },
   { id: 'Skill', name: 'Skill', description: 'Loads full instructions for an enabled skill', category: 'context', defaultPrompt: false },
   { id: 'Skills', name: 'Skills', description: 'Lists, searches, installs, initializes, and registers agent skills', category: 'context', defaultPrompt: true },
+  { id: 'UpdateProfile', name: 'UpdateProfile', description: "Updates the agent's SOUL.md or USER.md profile content (auto-approved)", category: 'context', defaultPrompt: false },
 ];
 
 const TOOL_LABELS = Object.fromEntries(
@@ -33,7 +70,8 @@ const TOOL_LABELS = Object.fromEntries(
 );
 
 function resolveBuiltinToolApproval(toolId, toolApprovalMode) {
-  if (toolApprovalMode === 'auto') return 'auto';
+  if (toolApprovalMode === 'bypass') return 'auto';
+  if (toolApprovalMode === 'acceptEdits' && ACCEPT_EDITS_TOOLS.has(toolId)) return 'auto';
   if (DEFAULT_SAFE_TOOLS.has(toolId)) return 'auto';
   return 'prompt';
 }
@@ -209,6 +247,16 @@ function getOpenAiToolParameters(toolId) {
         },
         required: ['action'],
       };
+    case 'UpdateProfile':
+      return {
+        type: 'object',
+        properties: {
+          field: { type: 'string', enum: ['soul', 'user'] },
+          action: { type: 'string', enum: ['replace', 'append'] },
+          content: { type: 'string' },
+        },
+        required: ['field', 'action', 'content'],
+      };
     default:
       return { type: 'object', properties: {}, required: [] };
   }
@@ -216,7 +264,11 @@ function getOpenAiToolParameters(toolId) {
 
 function getEnabledOpenAiToolDefinitions(agentConfig) {
   const disabled = new Set(agentConfig?.disabledToolIds || []);
-  const approvalMode = agentConfig?.toolApprovalMode || 'confirm';
+  const chatMode = agentConfig?.chatMode;
+  if (isReadOnlyMode(chatMode)) {
+    for (const id of READ_ONLY_TOOLS) disabled.add(id);
+  }
+  const approvalMode = resolveToolApprovalMode(agentConfig);
   const enabledSkillIds = agentConfig?.enabledSkillIds || [];
   return CLAUDE_CODE_BUILTIN_TOOLS.filter((t) => {
     if (disabled.has(t.id)) return false;
@@ -234,11 +286,19 @@ function getEnabledOpenAiToolDefinitions(agentConfig) {
 }
 
 function shouldPromptForTool(toolName, toolApprovalMode, invocationArgs) {
-  if (toolApprovalMode === 'auto') return false;
+  if (toolApprovalMode === 'bypass') return false;
   if (DEFAULT_SAFE_TOOLS.has(toolName)) return false;
   if (toolName === 'Skills') {
     const action = invocationArgs?.action;
     return action === 'install' || action === 'remove';
+  }
+  if (toolApprovalMode === 'acceptEdits') {
+    if (ACCEPT_EDITS_TOOLS.has(toolName)) return false;
+    if (toolName === 'Bash') {
+      const cmd = String(invocationArgs?.command || '').trim().split(/\s+/, 1)[0];
+      if (ACCEPT_EDITS_BASH_COMMANDS.has(cmd)) return false;
+    }
+    return true;
   }
   if (['Edit', 'MultiEdit', 'NotebookEdit', 'Write'].includes(toolName)) return true;
   if (toolName === 'Bash') return true;
@@ -252,4 +312,7 @@ module.exports = {
   getEnabledOpenAiToolDefinitions,
   shouldPromptForTool,
   resolveBuiltinToolApproval,
+  getChatModeSuffix,
+  isReadOnlyMode,
+  resolveToolApprovalMode,
 };

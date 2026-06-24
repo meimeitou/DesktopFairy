@@ -91,6 +91,29 @@
   text-transform: lowercase;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+.md-code-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.md-code-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.md-code-run:hover {
+  background: rgba(120, 200, 120, 0.12);
+  color: rgba(180, 255, 180, 0.9);
+  border-color: rgba(120, 200, 120, 0.25);
+}
 .md-code-copy {
   padding: 2px 8px;
   background: transparent;

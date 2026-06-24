@@ -3,6 +3,7 @@ import ProviderSettingsSection from "../components/settings/ProviderSettingsSect
 import AgentSettingsSection from "../components/settings/agent/AgentSettingsSection";
 import SelectionSettingsSection from "../components/settings/SelectionSettingsSection";
 import Live2DSettingsSection from "../components/settings/Live2DSettingsSection";
+import WebSearchSettingsSection from "../components/settings/WebSearchSettingsSection";
 import {
   loadSettings,
   saveSettings,
@@ -12,7 +13,13 @@ import "./SettingsPage.css";
 
 const api = window.electronAPI;
 
-type SettingsTab = "model" | "agent" | "selection" | "character" | "about";
+type SettingsTab =
+  | "model"
+  | "agent"
+  | "websearch"
+  | "selection"
+  | "character"
+  | "about";
 
 interface MenuItem {
   id: SettingsTab;
@@ -113,9 +120,29 @@ function InfoIcon() {
   );
 }
 
+function EarthIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  );
+}
+
 const MENU_PRIMARY: MenuItem[] = [
   { id: "model", label: "AI 模型", icon: <CloudIcon /> },
   { id: "agent", label: "智能体", icon: <SparkleIcon /> },
+  { id: "websearch", label: "网络搜索", icon: <EarthIcon /> },
   { id: "selection", label: "划词助手", icon: <ScissorsIcon /> },
 ];
 
@@ -173,6 +200,22 @@ export default function SettingsPage({
     api.invoke("settings:sync", settings).catch(() => {});
   }, [settings]);
 
+  // Sync agent config when another source (e.g. UpdateProfile tool) writes to disk
+  useEffect(() => {
+    const off = api.onSettingsUpdated?.((incoming) => {
+      const agent = incoming?.agent;
+      if (agent && typeof agent === "object" && !Array.isArray(agent)) {
+        setSettings((prev) => {
+          // Only update if agent fields actually differ (avoid infinite re-render loop)
+          const nextAgent = { ...prev.agent, ...agent };
+          if (JSON.stringify(nextAgent) === JSON.stringify(prev.agent)) return prev;
+          return { ...prev, agent: nextAgent };
+        });
+      }
+    });
+    return () => off?.();
+  }, []);
+
   useEffect(() => {
     (async () => {
       const shortcut = await api.getShortcut();
@@ -212,6 +255,10 @@ export default function SettingsPage({
         );
       case "agent":
         return <AgentSettingsSection settings={settings} onChange={update} />;
+      case "websearch":
+        return (
+          <WebSearchSettingsSection settings={settings} onChange={update} />
+        );
       case "selection":
         return (
           <SelectionSettingsSection settings={settings} onChange={update} />

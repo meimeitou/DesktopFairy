@@ -5,6 +5,7 @@ import {
   type AgentBuiltinTool,
 } from "./agentBuiltinTools";
 import { DEFAULT_AGENT_AVATAR, isImageAvatar, toAvatarDisplay } from "./agentAvatar";
+import { type ChatMode, DEFAULT_CHAT_MODE, getChatModeCard, normalizeChatMode } from "./chatMode";
 
 export type ToolApprovalMode = "auto" | "confirm";
 
@@ -16,7 +17,10 @@ export interface AgentConfig {
   enabled: boolean;
   providerId: string;
   modelName: string;
-  instructions: string;
+  /** SOUL.md — agent's purpose, personality and execution rules. */
+  soul: string;
+  /** USER.md — user's profile, preferences and habits. */
+  user: string;
   /** Opt-out: disabled builtin tool ids */
   disabledToolIds: string[];
   /** Bound global MCP server ids */
@@ -26,6 +30,8 @@ export interface AgentConfig {
   maxTurns: number;
   toolApprovalMode: ToolApprovalMode;
   envVars: Record<string, string>;
+  /** Active conversation mode — drives system prompt + tool behavior. */
+  chatMode: ChatMode;
 }
 
 export type AgentToolDescriptor = AgentBuiltinTool;
@@ -50,8 +56,55 @@ export const AGENT_BACKEND_KEY = "agent";
 
 export const BUILTIN_SKILL_IDS = ["find-skills", "skill-creator"] as const;
 
-export const DEFAULT_AGENT_INSTRUCTIONS =
-  "你是一位能帮忙干活的桌面伙伴，回答简洁、自然、有温度。可使用 Read/Write/Edit/Bash/Glob/Grep 等工具完成文件与系统任务。";
+export const DEFAULT_SOUL = `# Soul
+
+你叫小雅，一位住在用户桌面上、有 Live2D 形象的小伙伴。
+
+## 核心原则
+
+- 用行动解决问题，而不是描述你会怎么做。
+- 回答简洁自然、有温度，除非用户要求深入展开。
+- 知之为知之，不知为不知，绝不假装自信。
+- 珍惜用户的时间，把信任视作最珍贵的东西。
+
+## 执行规则
+
+- 单步任务立即执行，不要只给计划就结束一轮对话。
+- 多步任务先简述计划，等用户确认后再动手。
+- 写之前先读——不要假设文件存在或内容如你所想。
+- 工具调用失败时，先诊断错误、换一种方式重试，再向用户报告。
+- 缺少信息时先用工具查，只有工具答不上来才问用户。
+- 多步修改完成后，验证结果（重读文件、跑测试、看输出）。`;
+
+export const DEFAULT_USER_TEMPLATE = `# 用户档案
+
+## 基本信息
+
+- **称呼**：（你的名字）
+- **时区**：（例如 UTC+8）
+- **语言**：中文
+
+## 偏好
+
+### 沟通风格
+- [ ] 随意自然
+- [ ] 专业正式
+- [ ] 偏技术
+
+### 回复长度
+- [ ] 简洁扼要
+- [ ] 详细解释
+- [ ] 视问题而定
+
+## 工作背景
+
+- **主要角色**：（你的身份，如开发者、设计师）
+- **正在做的项目**：
+- **常用工具**：
+
+## 特别说明
+
+（任何希望智能体记住的习惯或要求）`;
 
 export const BUILTIN_AGENT_TOOLS = getBuiltinToolCatalog("confirm");
 
@@ -62,13 +115,15 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   enabled: true,
   providerId: "openai",
   modelName: "gpt-4o-mini",
-  instructions: DEFAULT_AGENT_INSTRUCTIONS,
+  soul: DEFAULT_SOUL,
+  user: "",
   disabledToolIds: [],
   mcpServerIds: [],
   enabledSkillIds: ["find-skills", "skill-creator"],
   maxTurns: 10,
   toolApprovalMode: "confirm",
   envVars: {},
+  chatMode: DEFAULT_CHAT_MODE,
 };
 
 export function isAgentBackend(backend: string): boolean {
@@ -89,6 +144,7 @@ export function normalizeAgentConfig(
   if (!value || typeof value !== "object") return { ...base };
 
   const raw = value as Partial<AgentConfig> & {
+    instructions?: string;
     mcpServers?: { id: string; enabled?: boolean }[];
     temperature?: number;
     maxContextMessages?: number;
@@ -133,8 +189,15 @@ export function normalizeAgentConfig(
       typeof raw.modelName === "string" && raw.modelName.trim()
         ? raw.modelName.trim()
         : base.modelName,
-    instructions:
-      typeof raw.instructions === "string" ? raw.instructions : base.instructions,
+    soul: (() => {
+      if (typeof raw.soul === "string" && raw.soul.trim()) return raw.soul;
+      // migrate legacy `instructions` field into soul
+      if (typeof raw.instructions === "string" && raw.instructions.trim()) {
+        return raw.instructions;
+      }
+      return base.soul;
+    })(),
+    user: typeof raw.user === "string" ? raw.user : base.user,
     disabledToolIds: normalizeDisabledToolIds(raw.disabledToolIds),
     mcpServerIds,
     enabledSkillIds: (() => {
@@ -155,9 +218,28 @@ export function normalizeAgentConfig(
         ? raw.toolApprovalMode
         : base.toolApprovalMode,
     envVars,
+    chatMode: normalizeChatMode(raw.chatMode),
   };
 }
 
+export function getEffectiveToolApprovalMode(
+  agent: AgentConfig
+): "auto" | "confirm" {
+  const card = getChatModeCard(agent.chatMode);
+  if (card.toolApprovalOverride === "auto" || card.toolApprovalOverride === "confirm") {
+    return card.toolApprovalOverride;
+  }
+  return "confirm";
+}
+
 export function getEnabledAgentBuiltinTools(agent: AgentConfig): AgentToolDescriptor[] {
-  return getEnabledBuiltinTools(agent.disabledToolIds, agent.toolApprovalMode);
+  const approval = getEffectiveToolApprovalMode(agent);
+  const card = getChatModeCard(agent.chatMode);
+  const disabled = new Set(agent.disabledToolIds);
+  if (card.readOnly) {
+    for (const id of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "WebFetch", "WebSearch", "Task"]) {
+      disabled.add(id);
+    }
+  }
+  return getBuiltinToolCatalog(approval).filter((t) => !disabled.has(t.id));
 }

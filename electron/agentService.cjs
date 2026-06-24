@@ -3,12 +3,25 @@ const path = require('path');
 const { app } = require('electron');
 const { buildSkillsPrompt, getSkillsDir, executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs');
 const { executeAgentTool } = require('./agentTools.cjs');
+const { testWebSearchConfig, clearRequestTodos } = require('./agentBuiltinExecutors.cjs');
 const { abortRequestApprovals } = require('./agentToolApproval.cjs');
 const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
 const { getServersByIds } = require('./mcpServerService.cjs');
-const { getEnabledOpenAiToolDefinitions } = require('./agentBuiltinCatalog.cjs');
+const { getEnabledOpenAiToolDefinitions, getChatModeSuffix, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
+const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
 
 const inflightAgents = new Map();
+
+function getCurrentWebSearchConfig() {
+  try {
+    const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+    const raw = fs.readFileSync(settingsPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return normalizeWebSearchConfig(parsed?.webSearch);
+  } catch {
+    return normalizeWebSearchConfig(null);
+  }
+}
 
 function persistEnabledSkillId(skillId, getWindows) {
   const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
@@ -48,14 +61,22 @@ function getBuiltinTools(agentConfig) {
 
 function buildAgentSystemPrompt(agentConfig) {
   const parts = [];
-  if (agentConfig?.instructions?.trim()) {
-    parts.push(agentConfig.instructions.trim());
+  if (agentConfig?.soul?.trim()) {
+    parts.push(agentConfig.soul.trim());
+  }
+  if (agentConfig?.user?.trim()) {
+    parts.push('# 用户档案\n\n' + agentConfig.user.trim());
   }
   const skillsBlock = buildSkillsPrompt(agentConfig?.enabledSkillIds);
   if (skillsBlock) parts.push(skillsBlock);
   parts.push(
     '你可以使用 Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skill/Skills 等工具完成任务。执行前先理解用户意图，工具失败时向用户说明原因。'
   );
+  parts.push(
+    '## 记忆持久化\n\n你可以使用 UpdateProfile 工具将用户偏好和习惯写入持久存储：\n- 用户透露偏好、习惯、身份信息时 → UpdateProfile(field="user", action="append", content="...")\n- 需要调整自己的人格或执行规则时 → UpdateProfile(field="soul", action="replace", content="...")\n- 追加内容应简短原子（一条信息一行），不要重复已有内容。替换时需提供完整的新内容。'
+  );
+  const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
+  if (modeSuffix) parts.push(modeSuffix.trim());
   return parts.join('\n\n');
 }
 
@@ -258,17 +279,21 @@ function registerAgentHandlers(ipcMain, deps) {
         if (!toolCalls || toolCalls.length === 0) break;
 
         for (const toolCall of toolCalls) {
+          if (controller.signal.aborted) break;
+
           const toolName = toolCall.function?.name || 'unknown';
           const toolCallId = toolCall.id || `call_${toolName}_${turn}`;
           const toolArgs = toolCall.function?.arguments || '';
 
           let resultText = '';
           let denied = false;
+          let toolAborted = false;
           try {
             const toolResult = await executeAgentTool(toolCall, {
               getWindows,
               parentWindow,
-              toolApprovalMode: agentConfig.toolApprovalMode || 'confirm',
+              agentConfig,
+              toolApprovalMode: resolveToolApprovalMode(agentConfig),
               envVars: skillEnvVars,
               enabledSkillIds: agentConfig.enabledSkillIds || [],
               sessionEnabledSkillIds,
@@ -277,18 +302,23 @@ function registerAgentHandlers(ipcMain, deps) {
               safeSend,
               requestId,
               signal: controller.signal,
+              webSearchConfig: getCurrentWebSearchConfig(),
             });
             resultText = toolResult.resultText;
-            denied = toolResult.denied === true;
-            if (!denied) {
-              safeSend('agent:stream:tool', {
-                requestId,
-                toolCallId,
-                toolName,
-                toolArgs,
-                status: 'done',
-                resultPreview: resultText.slice(0, 400),
-              });
+            if (toolResult.aborted) {
+              toolAborted = true;
+            } else {
+              denied = toolResult.denied === true;
+              if (!denied) {
+                safeSend('agent:stream:tool', {
+                  requestId,
+                  toolCallId,
+                  toolName,
+                  toolArgs,
+                  status: 'done',
+                  resultPreview: resultText,
+                });
+              }
             }
           } catch (err) {
             resultText = JSON.stringify({
@@ -302,19 +332,64 @@ function registerAgentHandlers(ipcMain, deps) {
               toolArgs,
               status: 'error',
               message: String(err?.message || err),
-              resultPreview: resultText.slice(0, 400),
+              resultPreview: resultText,
             });
           }
 
+          if (toolAborted) break;
+
           conversation.push({
             role: 'tool',
-            tool_call_id: toolCall.id,
+            tool_call_id: toolCallId,
             content: resultText,
           });
         }
+        if (controller.signal.aborted) break;
       }
 
-      safeSend('chat:stream:done', { requestId });
+      // Last turn may have executed tools without a follow-up LLM response.
+      const lastMsg = conversation[conversation.length - 1];
+      if (!controller.signal.aborted && lastMsg?.role === 'tool') {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiConfig.apiKey ? { Authorization: `Bearer ${apiConfig.apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model: apiConfig.modelName,
+            messages: conversation,
+            stream: true,
+            tools,
+            tool_choice: 'auto',
+            ...(typeof temperature === 'number' ? { temperature } : {}),
+          }),
+          signal: controller.signal,
+        });
+        if (res.ok) {
+          const assistantMessage = await readSseResponse(
+            res,
+            (delta) => safeSend('chat:stream:chunk', { requestId, delta }),
+            ({ name, id, arguments: toolArgs }) => {
+              if (name && id) {
+                safeSend('agent:stream:tool', {
+                  requestId,
+                  toolCallId: id,
+                  toolName: name,
+                  toolArgs: toolArgs || '',
+                  status: 'streaming',
+                });
+              }
+            }
+          );
+          conversation = conversation.concat(assistantMessage);
+        }
+      }
+
+      safeSend('chat:stream:done', {
+        requestId,
+        ...(controller.signal.aborted ? { aborted: true } : {}),
+      });
     } catch (e) {
       if (e && e.name === 'AbortError') {
         safeSend('chat:stream:done', { requestId, aborted: true });
@@ -327,6 +402,7 @@ function registerAgentHandlers(ipcMain, deps) {
     } finally {
       inflightAgents.delete(requestId);
       abortRequestApprovals(requestId);
+      clearRequestTodos(requestId);
       mcpRuntime?.dispose?.();
     }
   });
@@ -335,6 +411,11 @@ function registerAgentHandlers(ipcMain, deps) {
     const requestId = payload?.requestId;
     const controller = requestId ? inflightAgents.get(requestId) : null;
     if (controller) controller.abort();
+  });
+
+  ipcMain.handle('websearch:test', async (_event, config) => {
+    const cfg = normalizeWebSearchConfig(config);
+    return testWebSearchConfig(cfg);
   });
 }
 

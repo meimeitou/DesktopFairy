@@ -31,27 +31,6 @@ The Skills CLI (`npx skills`) is the package manager for the open agent skills e
 
 **Browse skills at:** https://skills.sh/
 
-## Runtime Detection
-
-DesktopFairy sets `DESKTOP_FAIRY_SKILLS_DIR` to the app's global skills directory
-(`~/Library/Application Support/DesktopFairy/agent-skills/` on macOS).
-
-**Prefer the `Skills` tool** for search/install/list — it installs into the correct directory automatically.
-
-For CLI fallback, check if `npx` is available:
-
-```bash
-which npx
-```
-
-If `npx` is available, run from the parent of `DESKTOP_FAIRY_SKILLS_DIR`:
-
-```bash
-cd "$(dirname "$DESKTOP_FAIRY_SKILLS_DIR")" && npx skills find [query]
-```
-
-Always try `Skills` search / `npx skills` first before inventing workflows from scratch.
-
 ## How to Help Users Find Skills
 
 ### Step 1: Understand What They Need
@@ -62,11 +41,17 @@ When a user asks for help with something, identify:
 2. The specific task (e.g., writing tests, creating animations, reviewing PRs)
 3. Whether this is a common enough task that a skill likely exists
 
-### Step 2: Search for Skills
+### Step 2: Check the Leaderboard First
 
-Prefer the **`Skills` tool** with `action: "search"` and a relevant `query`.
+Before running a CLI search, check the [skills.sh leaderboard](https://skills.sh/) to see if a well-known skill already exists for the domain. The leaderboard ranks skills by total installs, surfacing the most popular and battle-tested options.
 
-CLI fallback:
+For example, top skills for web development include:
+- `vercel-labs/agent-skills` — React, Next.js, web design (100K+ installs each)
+- `anthropics/skills` — Frontend design, document processing (100K+ installs)
+
+### Step 3: Search for Skills
+
+If the leaderboard doesn't cover the user's need, run the find command:
 
 ```bash
 npx skills find [query]
@@ -78,60 +63,45 @@ For example:
 - User asks "can you help me with PR reviews?" → `npx skills find pr review`
 - User asks "I need to create a changelog" → `npx skills find changelog`
 
-The command will return results like:
+### Step 4: Verify Quality Before Recommending
 
-```
-Install with npx skills add <owner/repo@skill>
+**Do not recommend a skill based solely on search results.** Always verify:
 
-vercel-labs/agent-skills@vercel-react-best-practices
-└ https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
-```
+1. **Install count** — Prefer skills with 1K+ installs. Be cautious with anything under 100.
+2. **Source reputation** — Official sources (`vercel-labs`, `anthropics`, `microsoft`) are more trustworthy than unknown authors.
+3. **GitHub stars** — Check the source repository. A skill from a repo with <100 stars should be treated with skepticism.
 
-### Step 3: Present Options to the User
+### Step 5: Present Options to the User
 
 When you find relevant skills, present them to the user with:
 
 1. The skill name and what it does
-2. The source repository link so the user can review the code
+2. The install count and source
 3. The install command they can run
+4. A link to learn more at skills.sh
 
 Example response:
 
 ```
-I found a skill that might help! The "vercel-react-best-practices" skill provides
+I found a skill that might help! The "react-best-practices" skill provides
 React and Next.js performance optimization guidelines from Vercel Engineering.
+(185K installs)
 
-Source: https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
+To install it:
+npx skills add vercel-labs/agent-skills@react-best-practices
 
-To install it (after you've reviewed the source):
-npx skills add vercel-labs/agent-skills@vercel-react-best-practices
+Learn more: https://skills.sh/vercel-labs/agent-skills/react-best-practices
 ```
 
-### Step 4: Install (Requires User Confirmation)
+### Step 6: Offer to Install
 
-**⚠️ Security:** Skills are third-party code that runs with full agent
-permissions. A malicious skill could read, modify, or delete files in your
-project.
-
-Before installing any skill you **MUST**:
-
-1. **Show a security warning** — tell the user that the skill is third-party
-   code and will have access to their project files.
-2. **Provide the source link** so the user can review the skill's SKILL.md and
-   any scripts it contains.
-3. **Ask the user for explicit confirmation** — do NOT run `npx skills add`
-   until the user says "yes" or equivalent. Never install silently.
-
-Only after the user confirms, install using the **`Skills` tool** with `action: "install"` and the marketplace `identifier` (format: `owner/repo/skill-name`).
-
-CLI fallback (requires user confirmation first):
+If the user wants to proceed, you can install the skill for them:
 
 ```bash
-cd "$(dirname "$DESKTOP_FAIRY_SKILLS_DIR")" && npx skills add <owner/repo@skill> -y
+npx skills add <owner/repo@skill> -g -y
 ```
 
-Skills are installed into DesktopFairy's global skills directory (`DESKTOP_FAIRY_SKILLS_DIR`).
-After install, remind the user to enable the skill in **设置 → 智能体 → 工具 → 技能** if it is not auto-enabled for the session.
+The `-g` flag installs globally (user-level) and `-y` skips confirmation prompts.
 
 ## Common Skill Categories
 

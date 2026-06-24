@@ -48,22 +48,6 @@ export default function AgentAdvancedSection({ agent, onChange }: Props) {
       </div>
 
       <div className="field">
-        <label>工具审批</label>
-        <select
-          value={agent.toolApprovalMode}
-          onChange={(e) =>
-            onChange({
-              toolApprovalMode:
-                e.target.value === "auto" ? "auto" : "confirm",
-            })
-          }
-        >
-          <option value="confirm">执行前确认</option>
-          <option value="auto">自动执行</option>
-        </select>
-      </div>
-
-      <div className="field">
         <label>环境变量</label>
         <textarea
           rows={5}

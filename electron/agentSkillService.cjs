@@ -7,6 +7,7 @@ const { app, shell, net } = require('electron');
 const execFileAsync = promisify(execFile);
 const VERSION_FILE = '.version';
 const PROTECTED_BUILTIN_SKILLS = new Set(['find-skills', 'skill-creator']);
+const SKILLS_SH_API = 'https://skills.sh';
 
 const SKILLS_GUIDANCE = `## 技能 (Skills)
 
@@ -163,12 +164,17 @@ function buildSkillIdentifier(skill) {
 }
 
 async function searchMarketplace(query) {
-  const url = new URL(`${CLAUDE_PLUGINS_API}/api/skills`);
+  const url = new URL(`${SKILLS_SH_API}/api/search`);
   url.searchParams.set('q', String(query).replace(/[-_]+/g, ' ').trim());
   url.searchParams.set('limit', '20');
-  url.searchParams.set('offset', '0');
 
-  const response = await net.fetch(url.toString(), { method: 'GET' });
+  let response;
+  try {
+    response = await net.fetch(url.toString(), { method: 'GET' });
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    throw new Error(`Skills marketplace unavailable: ${msg}`);
+  }
   if (!response.ok) {
     throw new Error(`Marketplace API returned ${response.status}`);
   }
@@ -179,10 +185,9 @@ async function searchMarketplace(query) {
   }
 
   const results = skills.map((s) => ({
-    name: s.name,
-    description: s.description ?? null,
-    author: s.author ?? null,
-    identifier: buildSkillIdentifier(s),
+    name: s.name ?? s.skillId ?? null,
+    identifier: s.id ?? (s.source && s.skillId ? `${s.source}/${s.skillId}` : null),
+    source: s.source ?? null,
     installs: s.installs ?? 0,
   }));
 

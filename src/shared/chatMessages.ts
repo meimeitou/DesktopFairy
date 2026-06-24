@@ -43,7 +43,11 @@ export function filterAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
 
 export function filterForApi(messages: ChatMsg[]): ChatMsg[] {
   return filterAfterContextClear(messages).filter(
-    (m) => m.type !== "clear" && m.type !== "tool" && !m.error
+    (m) =>
+      m.type !== "clear" &&
+      m.type !== "tool" &&
+      !m.error &&
+      !(m.role === "assistant" && !m.content?.trim()),
   );
 }
 
@@ -103,6 +107,88 @@ function appendTextFileBlocks(
     (f) => `\n\n---\n**${f.name}**\n\`\`\`\n${f.text}\n\`\`\``
   );
   return text + blocks.join("");
+}
+
+function formatToolHistoryBlock(tools: ChatMsg[]): string {
+  if (tools.length === 0) return "";
+  const lines = tools.map((t) => {
+    const name = t.toolName || "tool";
+    const status = t.toolStatus || "done";
+    const preview = t.toolResultPreview || t.toolMessage || "";
+    return `[${name}] (${status}) ${preview}`.trim();
+  });
+  return `<previous_tool_results>\n${lines.join("\n")}\n</previous_tool_results>`;
+}
+
+/** Agent history including prior tool turns as context blocks. */
+export function buildAgentHistoryMessages(messages: ChatMsg[]): ApiMessage[] {
+  const filtered = filterAfterContextClear(messages).filter(
+    (m) => m.type !== "clear" && !m.error,
+  );
+  const result: ApiMessage[] = [];
+  let i = 0;
+  while (i < filtered.length) {
+    const m = filtered[i];
+    if (m.type === "tool") {
+      const tools: ChatMsg[] = [];
+      while (i < filtered.length && filtered[i].type === "tool") {
+        tools.push(filtered[i]);
+        i++;
+      }
+      const block = formatToolHistoryBlock(tools);
+      if (block.trim()) {
+        result.push({ role: "user", content: block });
+      }
+      continue;
+    }
+    if (m.role === "assistant" && !m.content?.trim()) {
+      i++;
+      continue;
+    }
+    result.push({ role: m.role, content: m.content });
+    i++;
+  }
+  return result;
+}
+
+export function buildAgentApiMessages(
+  history: ChatMsg[],
+  userText: string,
+  attachmentPayloads: {
+    textFiles: { name: string; text: string }[];
+    images: { name: string; dataUrl: string }[];
+  },
+  systemPrompt?: string,
+): ApiMessage[] {
+  const result: ApiMessage[] = [];
+  if (systemPrompt?.trim()) {
+    result.push({ role: "system", content: systemPrompt.trim() });
+  }
+
+  result.push(...buildAgentHistoryMessages(history));
+
+  const textWithFiles = appendTextFileBlocks(
+    userText,
+    attachmentPayloads.textFiles,
+  );
+
+  if (attachmentPayloads.images.length === 0) {
+    result.push({ role: "user", content: textWithFiles });
+    return result;
+  }
+
+  const parts: ApiContentPart[] = [];
+  if (textWithFiles.trim()) {
+    parts.push({ type: "text", text: textWithFiles });
+  }
+  for (const img of attachmentPayloads.images) {
+    parts.push({
+      type: "image_url",
+      image_url: { url: img.dataUrl },
+    });
+  }
+  result.push({ role: "user", content: parts.length > 0 ? parts : textWithFiles });
+  return result;
 }
 
 export function buildApiMessages(
