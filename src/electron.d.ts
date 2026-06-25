@@ -2,6 +2,7 @@ export {};
 
 import type { ChatAttachment } from "./shared/chatAttachments";
 import type { SpeechBubblePayload } from "./shared/speechBubble";
+import type { McpRuntimeStatus, McpServerLogEntry } from "./shared/mcpServer";
 
 declare global {
   interface Window {
@@ -63,6 +64,16 @@ declare global {
           message?: string;
           resultPreview?: string;
         }) => void
+      ) => () => void;
+      onMcpStatusChanged: (
+        callback: (payload: { serverId: string } & McpRuntimeStatus) => void
+      ) => () => void;
+      onMcpLog: (
+        callback: (payload: { serverId: string } & McpServerLogEntry) => void
+      ) => () => void;
+      onMcpToolsChanged: (callback: (payload: { serverId: string }) => void) => () => void;
+      onMcpToolProgress: (
+        callback: (payload: { callId: string; progress: number }) => void
       ) => () => void;
       onPtyOutput: (
         callback: (payload: { sessionId: string; data: string }) => void

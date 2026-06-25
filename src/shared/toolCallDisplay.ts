@@ -14,6 +14,7 @@ const TOOL_LABELS: Record<string, string> = {
   TodoWrite: "任务列表",
   Skill: "加载技能",
   Skills: "管理技能",
+  McpManager: "管理 MCP",
 };
 
 const TOOL_ICONS: Record<string, string> = {
@@ -32,6 +33,7 @@ const TOOL_ICONS: Record<string, string> = {
   TodoWrite: "☑",
   Skill: "🎯",
   Skills: "📚",
+  McpManager: "🔌",
 };
 
 type ToolCategory = "shell" | "file" | "search" | "web" | "other";
@@ -203,6 +205,11 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
       return pickString(args, ["skill"]) || "";
     case "Skills":
       return pickString(args, ["action"]) || "";
+    case "McpManager": {
+      const act = pickString(args, ["action"]);
+      const srv = pickString(args, ["serverId", "name"]);
+      return srv ? truncate(`${act} · ${srv}`, 120) : act || "";
+    }
     default: {
       for (const value of Object.values(args)) {
         if (typeof value === "string" && value.trim()) {

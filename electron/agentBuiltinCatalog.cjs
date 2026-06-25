@@ -63,6 +63,7 @@ const CLAUDE_CODE_BUILTIN_TOOLS = [
   { id: 'Skill', name: 'Skill', description: 'Loads full instructions for an enabled skill', category: 'context', defaultPrompt: false },
   { id: 'Skills', name: 'Skills', description: 'Lists, searches, installs, initializes, and registers agent skills', category: 'context', defaultPrompt: true },
   { id: 'UpdateProfile', name: 'UpdateProfile', description: "Updates the agent's SOUL.md or USER.md profile content (auto-approved)", category: 'context', defaultPrompt: false },
+  { id: 'McpManager', name: 'McpManager', description: 'Lists, inspects, and manages MCP servers (enable/disable/restart/stop/add/edit/remove)', category: 'context', defaultPrompt: true },
 ];
 
 const TOOL_LABELS = Object.fromEntries(
@@ -257,6 +258,35 @@ function getOpenAiToolParameters(toolId) {
         },
         required: ['field', 'action', 'content'],
       };
+    case 'McpManager':
+      return {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['list', 'status', 'tools', 'enable', 'disable', 'restart', 'stop', 'add', 'edit', 'remove'],
+          },
+          serverId: { type: 'string' },
+          name: { type: 'string' },
+          server: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              type: { type: 'string', enum: ['stdio', 'sse', 'streamableHttp'] },
+              description: { type: 'string' },
+              reference: { type: 'string' },
+              baseUrl: { type: 'string' },
+              command: { type: 'string' },
+              args: { type: 'array', items: { type: 'string' } },
+              env: { type: 'object' },
+              headers: { type: 'object' },
+              isActive: { type: 'boolean' },
+            },
+          },
+        },
+        required: ['action'],
+      };
     default:
       return { type: 'object', properties: {}, required: [] };
   }
@@ -291,6 +321,10 @@ function shouldPromptForTool(toolName, toolApprovalMode, invocationArgs) {
   if (toolName === 'Skills') {
     const action = invocationArgs?.action;
     return action === 'install' || action === 'remove';
+  }
+  if (toolName === 'McpManager') {
+    const action = invocationArgs?.action;
+    return action !== 'list' && action !== 'status' && action !== 'tools';
   }
   if (toolApprovalMode === 'acceptEdits') {
     if (ACCEPT_EDITS_TOOLS.has(toolName)) return false;

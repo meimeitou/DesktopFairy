@@ -86,7 +86,7 @@ async function executeAgentTool(toolCall, deps) {
   }
 
   const approvalMode = resolveToolApprovalMode(deps.agentConfig);
-  if (shouldPromptForTool(name, approvalMode, args)) {
+  if (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args)) {
     const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs);
     if (approvalResult === 'aborted') {
       return { resultText: '', aborted: true };

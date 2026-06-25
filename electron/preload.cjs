@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'agent:run',
       'agent:abort',
       'agent:tool:approve',
+      'agent:tool:bypass_approval',
       'agent:skills:scan',
       'agent:skills:open_dir',
       'mcp:servers:list',
@@ -64,6 +65,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'mcp:servers:builtin_presets',
       'mcp:servers:pick_directory',
       'mcp:servers:test',
+      'mcp:servers:restart',
+      'mcp:servers:stop',
+      'mcp:servers:status',
+      'mcp:servers:logs',
+      'mcp:servers:abort_tool',
       'agent:avatar:select',
       'agent:avatar:resolve',
       'agent:avatar:clear_image',
@@ -172,5 +178,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('pty:exit', listener);
     return () => ipcRenderer.removeListener('pty:exit', listener);
+  },
+
+  // MCP runtime events from main process
+  onMcpStatusChanged: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('mcp:servers:status_changed', listener);
+    return () => ipcRenderer.removeListener('mcp:servers:status_changed', listener);
+  },
+  onMcpLog: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('mcp:servers:log', listener);
+    return () => ipcRenderer.removeListener('mcp:servers:log', listener);
+  },
+  onMcpToolsChanged: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('mcp:servers:tools_changed', listener);
+    return () => ipcRenderer.removeListener('mcp:servers:tools_changed', listener);
+  },
+  onMcpToolProgress: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('mcp:tool:progress', listener);
+    return () => ipcRenderer.removeListener('mcp:tool:progress', listener);
   },
 });

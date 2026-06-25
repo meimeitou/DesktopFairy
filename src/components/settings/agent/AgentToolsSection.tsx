@@ -4,7 +4,11 @@ import {
   type AgentConfig,
   type AgentSkillDescriptor,
 } from "../../../shared/agent";
-import type { McpServer } from "../../../shared/mcpServer";
+import type {
+  McpServer,
+  McpRuntimeState,
+  McpRuntimeStatus,
+} from "../../../shared/mcpServer";
 import { buildMcpCommandString } from "../../../shared/mcpServer";
 import AgentCatalogToggleList from "./AgentCatalogToggleList";
 import AgentMcpEditor from "./AgentMcpEditor";
@@ -30,6 +34,23 @@ function newMcpId() {
   return `mcp_${Date.now().toString(36)}`;
 }
 
+const MCP_STATUS_COLOR: Record<McpRuntimeState, string> = {
+  connected: "#4ade80",
+  connecting: "#facc15",
+  error: "#f87171",
+  disabled: "#6b7280",
+};
+
+function McpStatusDot({ state, title }: { state: McpRuntimeState; title?: string }) {
+  return (
+    <span
+      className={`mcp-status-dot mcp-status-${state}`}
+      title={title || state}
+      style={{ backgroundColor: MCP_STATUS_COLOR[state] || "#6b7280" }}
+    />
+  );
+}
+
 export default function AgentToolsSection({
   agent,
   onAgentChange,
@@ -43,6 +64,8 @@ export default function AgentToolsSection({
   const [loadingSkills, setLoadingSkills] = useState(true);
   const [addingMcp, setAddingMcp] = useState(false);
   const [editingMcp, setEditingMcp] = useState<McpServer | null>(null);
+  const [mcpStatuses, setMcpStatuses] = useState<Record<string, McpRuntimeStatus>>({});
+  const [loadingServerOps, setLoadingServerOps] = useState<Set<string>>(new Set());
 
   const catalog = useMemo(
     () => getBuiltinToolCatalog(agent.toolApprovalMode),
@@ -81,9 +104,17 @@ export default function AgentToolsSection({
       ]);
       setMcpServers(Array.isArray(servers) ? servers : []);
       setMcpPresets(Array.isArray(presets) ? presets : []);
+
+      try {
+        const statuses = (await api.invoke("mcp:servers:status", {})) as Record<string, McpRuntimeStatus>;
+        setMcpStatuses(typeof statuses === "object" && statuses ? statuses : {});
+      } catch {
+        setMcpStatuses({});
+      }
     } catch {
       setMcpServers([]);
       setMcpPresets([]);
+      setMcpStatuses({});
     } finally {
       setLoadingMcp(false);
     }
@@ -105,6 +136,20 @@ export default function AgentToolsSection({
     void loadMcp();
     void loadSkills();
   }, [loadMcp, loadSkills]);
+
+  useEffect(() => {
+    const off = api.onMcpStatusChanged?.((payload) => {
+      setMcpStatuses((prev) => ({
+        ...prev,
+        [payload.serverId]: {
+          state: payload.state,
+          lastError: payload.lastError,
+          checkedAt: payload.checkedAt,
+        },
+      }));
+    });
+    return () => off?.();
+  }, []);
 
   const toggleBuiltinTool = (id: string, enabled: boolean) => {
     if (enabled) {
@@ -139,8 +184,56 @@ export default function AgentToolsSection({
   };
 
   const toggleMcpActive = async (server: McpServer, active: boolean) => {
-    await api.invoke("mcp:servers:save", { ...server, isActive: active });
-    void loadMcp();
+    setLoadingServerOps((prev) => new Set(prev).add(server.id));
+    try {
+      await api.invoke("mcp:servers:save", { ...server, isActive: active });
+      // Fix: previously only saved config, leaving the child process alive after
+      // disabling and not preconnecting after enabling. Now reconcile runtime.
+      if (active) {
+        await api.invoke("mcp:servers:restart", { id: server.id });
+      } else {
+        await api.invoke("mcp:servers:stop", { id: server.id });
+      }
+      try {
+        const statuses = (await api.invoke("mcp:servers:status", {})) as Record<string, McpRuntimeStatus>;
+        setMcpStatuses(typeof statuses === "object" && statuses ? statuses : {});
+      } catch {
+        /* ignore */
+      }
+    } finally {
+      setLoadingServerOps((prev) => {
+        const next = new Set(prev);
+        next.delete(server.id);
+        return next;
+      });
+      void loadMcp();
+    }
+  };
+
+  const handleRestartServer = async (id: string) => {
+    setLoadingServerOps((prev) => new Set(prev).add(id));
+    try {
+      await api.invoke("mcp:servers:restart", { id });
+    } finally {
+      setLoadingServerOps((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleStopServer = async (id: string) => {
+    setLoadingServerOps((prev) => new Set(prev).add(id));
+    try {
+      await api.invoke("mcp:servers:stop", { id });
+    } finally {
+      setLoadingServerOps((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const installBuiltinMcp = async (id: string) => {
@@ -351,6 +444,10 @@ export default function AgentToolsSection({
                       <li key={server.id} className="agent-toggle-item">
                         <div className="agent-toggle-main">
                           <div className="agent-toggle-title-row">
+                            <McpStatusDot
+                              state={mcpStatuses[server.id]?.state || "disabled"}
+                              title={mcpStatuses[server.id]?.lastError}
+                            />
                             <strong>{server.name}</strong>
                             {server.installSource === "builtin" && (
                               <span className="agent-tool-auto-badge">内置</span>
@@ -368,6 +465,26 @@ export default function AgentToolsSection({
                           >
                             编辑
                           </button>
+                          {server.isActive !== false && (
+                            <>
+                              <button
+                                type="button"
+                                className="agent-mcp-action-btn"
+                                disabled={loadingServerOps.has(server.id)}
+                                onClick={() => void handleRestartServer(server.id)}
+                              >
+                                重启
+                              </button>
+                              <button
+                                type="button"
+                                className="agent-mcp-action-btn"
+                                disabled={loadingServerOps.has(server.id)}
+                                onClick={() => void handleStopServer(server.id)}
+                              >
+                                停止
+                              </button>
+                            </>
+                          )}
                           <label
                             className="toggle agent-toggle-switch"
                             title={server.isActive !== false ? "全局启用" : "全局禁用"}

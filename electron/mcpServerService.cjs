@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { app, dialog } = require('electron');
-const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
 
 const MCP_STORE = () => path.join(app.getPath('userData'), 'da_mcp_servers.json');
 
@@ -27,10 +26,10 @@ const BUILTIN_MCP_PRESETS = [
     id: 'builtin-mcp-fetch',
     name: 'Fetch',
     type: 'stdio',
-    description: '抓取网页内容（@modelcontextprotocol/server-fetch）',
+    description: '抓取网页内容（mcp-server-fetch，官方 Python 实现，需 uvx）',
     reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-fetch'],
+    command: 'uvx',
+    args: ['mcp-server-fetch'],
     isActive: true,
     installSource: 'builtin',
   },
@@ -78,7 +77,7 @@ function saveStore(data) {
 
 function mergePresetDefaults(server, preset) {
   if (!preset) return server;
-  return {
+  const merged = {
     ...preset,
     ...server,
     id: preset.id,
@@ -87,6 +86,17 @@ function mergePresetDefaults(server, preset) {
     description: server.description || preset.description,
     shouldConfig: preset.shouldConfig,
   };
+  // Builtin preset command is canonical (not user-editable); always take it
+  // from the preset so package renames/migrations propagate to existing installs.
+  merged.command = preset.command;
+  // For non-configurable builtins, args are also canonical. For shouldConfig
+  // builtins (e.g. filesystem path), preserve the user's customized args.
+  if (!preset.shouldConfig) {
+    merged.args = preset.args ? [...preset.args] : [];
+  }
+  // Env: preset provides defaults (e.g. MEMORY_FILE_PATH); user customizations win.
+  merged.env = { ...(preset.env || {}), ...(server.env || {}) };
+  return merged;
 }
 
 function listServers() {
@@ -125,6 +135,11 @@ function deleteServer(id) {
   saveStore({ servers });
 }
 
+function getServerById(id) {
+  if (!id) return undefined;
+  return listServers().find((s) => s.id === id);
+}
+
 function getServersByIds(ids) {
   const set = new Set(ids || []);
   return listServers().filter((s) => set.has(s.id) && s.isActive !== false);
@@ -134,33 +149,29 @@ async function testMcpServer(server) {
   if (!server || server.isActive === false) {
     return { ok: false, message: '请先启用该 MCP 服务器' };
   }
-  if (server.type && server.type !== 'stdio') {
-    return { ok: false, message: '当前仅支持测试 stdio 类型 MCP' };
-  }
-  if (!server.command?.trim()) {
-    return { ok: false, message: '未配置启动命令' };
+  if (!server.command?.trim() && !server.baseUrl?.trim()) {
+    return { ok: false, message: '未配置启动命令或远程地址' };
   }
 
-  let runtime = null;
+  const { getOrCreateClient } = require('./mcpRuntimeService.cjs');
   try {
-    runtime = await loadMcpToolDefinitions([server]);
-    const tools = (runtime.definitions || []).map((d) => d.function?.name).filter(Boolean);
-    if (tools.length === 0) {
+    const client = await getOrCreateClient(server);
+    const { tools } = await client.listTools();
+    const names = (tools || []).map((t) => t.name).filter(Boolean);
+    if (names.length === 0) {
       return { ok: false, message: '连接成功，但未发现可用工具' };
     }
     return {
       ok: true,
       message: '连接成功',
-      toolCount: tools.length,
-      tools,
+      toolCount: names.length,
+      tools: names,
     };
   } catch (err) {
     return {
       ok: false,
       message: String(err?.message || err),
     };
-  } finally {
-    runtime?.dispose?.();
   }
 }
 
@@ -204,7 +215,10 @@ function registerMcpServerHandlers(ipcMain) {
 module.exports = {
   registerMcpServerHandlers,
   listServers,
+  getServerById,
   getServersByIds,
   testMcpServer,
+  upsertServer,
+  deleteServer,
   BUILTIN_MCP_PRESETS,
 };

@@ -1138,6 +1138,50 @@
   flex-shrink: 0;
 }
 
+.mcp-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.2);
+}
+
+.mcp-status-connecting {
+  animation: mcp-status-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mcp-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.agent-mcp-action-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.agent-mcp-action-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.agent-mcp-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .agent-avatar-preview img {
   width: 100%;
   height: 100%;

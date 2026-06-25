@@ -75,6 +75,9 @@ function buildAgentSystemPrompt(agentConfig) {
   parts.push(
     '## 记忆持久化\n\n你可以使用 UpdateProfile 工具将用户偏好和习惯写入持久存储：\n- 用户透露偏好、习惯、身份信息时 → UpdateProfile(field="user", action="append", content="...")\n- 需要调整自己的人格或执行规则时 → UpdateProfile(field="soul", action="replace", content="...")\n- 追加内容应简短原子（一条信息一行），不要重复已有内容。替换时需提供完整的新内容。'
   );
+  parts.push(
+    '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
+  );
   const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
   if (modeSuffix) parts.push(modeSuffix.trim());
   return parts.join('\n\n');
@@ -200,7 +203,8 @@ function registerAgentHandlers(ipcMain, deps) {
     }
 
     const controller = new AbortController();
-    inflightAgents.set(requestId, controller);
+    const agentState = { controller, bypassApproval: false };
+    inflightAgents.set(requestId, agentState);
     const sender = event.sender;
     const parentWindow = getParentWindow?.() || null;
 
@@ -294,6 +298,7 @@ function registerAgentHandlers(ipcMain, deps) {
               parentWindow,
               agentConfig,
               toolApprovalMode: resolveToolApprovalMode(agentConfig),
+              bypassApproval: agentState.bypassApproval,
               envVars: skillEnvVars,
               enabledSkillIds: agentConfig.enabledSkillIds || [],
               sessionEnabledSkillIds,
@@ -409,8 +414,18 @@ function registerAgentHandlers(ipcMain, deps) {
 
   ipcMain.handle('agent:abort', async (_event, payload) => {
     const requestId = payload?.requestId;
-    const controller = requestId ? inflightAgents.get(requestId) : null;
-    if (controller) controller.abort();
+    const agentState = requestId ? inflightAgents.get(requestId) : null;
+    if (agentState) agentState.controller.abort();
+  });
+
+  ipcMain.handle('agent:tool:bypass_approval', async (_event, payload) => {
+    const requestId = payload?.requestId;
+    const agentState = requestId ? inflightAgents.get(requestId) : null;
+    if (agentState) {
+      agentState.bypassApproval = true;
+      return true;
+    }
+    return false;
   });
 
   ipcMain.handle('websearch:test', async (_event, config) => {
@@ -420,8 +435,8 @@ function registerAgentHandlers(ipcMain, deps) {
 }
 
 function abortAllAgentRuns() {
-  for (const controller of inflightAgents.values()) {
-    controller.abort();
+  for (const agentState of inflightAgents.values()) {
+    agentState.controller.abort();
   }
   inflightAgents.clear();
 }

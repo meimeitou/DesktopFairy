@@ -365,6 +365,29 @@
   padding: 6px 4px;
 }
 
+.topic-loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: rgba(180, 165, 255, 0.9);
+  flex-shrink: 0;
+}
+
+.topic-loading-icon {
+  animation: topic-spin 1s linear infinite;
+}
+
+@keyframes topic-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .topic-collapse-btn {
   display: flex;
   align-items: center;

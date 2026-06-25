@@ -492,6 +492,269 @@ async function toolNotebookEdit(args) {
   }
 }
 
+function unbindMcpServerFromAgent(serverId, deps) {
+  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch {
+    return;
+  }
+  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
+  const ids = Array.isArray(agent.mcpServerIds) ? agent.mcpServerIds : [];
+  agent.mcpServerIds = ids.filter((id) => id !== serverId);
+  settings.agent = agent;
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  } catch {
+    return;
+  }
+  for (const win of deps.getWindows?.() || []) {
+    try {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('settings:updated', settings);
+      }
+    } catch {
+      /* window gone */
+    }
+  }
+}
+
+function bindMcpServerToAgent(serverId, deps) {
+  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch {
+    return;
+  }
+  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
+  const ids = Array.isArray(agent.mcpServerIds) ? agent.mcpServerIds : [];
+  if (ids.includes(serverId)) return;
+  agent.mcpServerIds = [...ids, serverId];
+  settings.agent = agent;
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  } catch {
+    return;
+  }
+  for (const win of deps.getWindows?.() || []) {
+    try {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('settings:updated', settings);
+      }
+    } catch {
+      /* window gone */
+    }
+  }
+}
+
+async function toolMcpManager(args, deps = {}) {
+  const action = String(args?.action || '').trim();
+  if (!action) return fail('action required');
+
+  const { listServers, getServerById, upsertServer, deleteServer } = require('./mcpServerService.cjs');
+  const {
+    getOrCreateClient,
+    stopServer,
+    restartServer,
+    removeServer,
+    closeClientsForServerId,
+    checkConnectivity,
+    getStatus,
+    getServerLogs,
+  } = require('./mcpRuntimeService.cjs');
+
+  const agentConfig = deps.agentConfig || {};
+  const boundIds = new Set(agentConfig.mcpServerIds || []);
+
+  function summarize(server) {
+    if (!server) return null;
+    const status = getStatus(server.id) || { state: 'disabled' };
+    return {
+      id: server.id,
+      name: server.name,
+      type: server.type || (server.command ? 'stdio' : 'sse'),
+      isActive: server.isActive !== false,
+      installSource: server.installSource || 'manual',
+      command: server.command || '',
+      args: server.args || [],
+      baseUrl: server.baseUrl || '',
+      description: server.description || '',
+      reference: server.reference || '',
+      bound: boundIds.has(server.id),
+      status: status.state,
+      lastError: status.lastError || undefined,
+    };
+  }
+
+  if (action === 'list') {
+    const servers = listServers();
+    return ok({ servers: servers.map(summarize) });
+  }
+
+  if (action === 'status') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const server = getServerById(serverId);
+    if (!server) return fail(`MCP server ${serverId} not found`);
+    const status = getStatus(server.id) || { state: 'disabled' };
+    let logs = [];
+    try {
+      logs = (await getServerLogs(server.id)).slice(-10);
+    } catch {
+      /* ignore */
+    }
+    return ok({ server: summarize(server), status, logs });
+  }
+
+  if (action === 'tools') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const server = getServerById(serverId);
+    if (!server) return fail(`MCP server ${serverId} not found`);
+    if (server.isActive === false) return fail(`MCP server ${server.name} is disabled`);
+    try {
+      const client = await getOrCreateClient(server);
+      const { tools } = await client.listTools();
+      return ok({
+        serverId: server.id,
+        serverName: server.name,
+        tools: (tools || []).map((t) => ({
+          name: t.name,
+          description: t.description || '',
+          inputSchema: t.inputSchema || { type: 'object', properties: {} },
+        })),
+      });
+    } catch (e) {
+      return fail(`Failed to list tools: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (action === 'enable') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const server = getServerById(serverId);
+    if (!server) return fail(`MCP server ${serverId} not found`);
+    upsertServer({ ...server, isActive: true });
+    try {
+      await checkConnectivity(server.id);
+    } catch {
+      /* status reflects error */
+    }
+    return ok({ server: summarize(getServerById(server.id)), message: 'enabled' });
+  }
+
+  if (action === 'disable') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const server = getServerById(serverId);
+    if (!server) return fail(`MCP server ${serverId} not found`);
+    upsertServer({ ...server, isActive: false });
+    await stopServer(server.id);
+    return ok({ server: summarize(getServerById(server.id)), message: 'disabled' });
+  }
+
+  if (action === 'restart') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const server = getServerById(serverId);
+    if (!server) return fail(`MCP server ${serverId} not found`);
+    if (server.isActive === false) return fail(`MCP server ${server.name} is disabled; enable it first`);
+    try {
+      await restartServer(server.id);
+    } catch (e) {
+      return fail(`Restart failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return ok({ server: summarize(getServerById(server.id)), message: 'restarted' });
+  }
+
+  if (action === 'stop') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const server = getServerById(serverId);
+    if (!server) return fail(`MCP server ${serverId} not found`);
+    await stopServer(server.id);
+    return ok({ server: summarize(getServerById(server.id)), message: 'stopped' });
+  }
+
+  if (action === 'add') {
+    const server = args?.server && typeof args.server === 'object' ? args.server : null;
+    if (!server) return fail('server object required');
+    const name = String(server.name || args?.name || '').trim();
+    if (!name) return fail('server.name required');
+    if (!server.command?.trim() && !server.baseUrl?.trim()) {
+      return fail('server.command (stdio) or server.baseUrl (sse/streamableHttp) required');
+    }
+    const id = String(server.id || `mcp_${Date.now().toString(36)}`);
+    const next = {
+      ...server,
+      id,
+      name,
+      installSource: 'manual',
+      isActive: server.isActive !== false,
+    };
+    upsertServer(next);
+    if (next.isActive) {
+      try {
+        await checkConnectivity(id);
+      } catch {
+        /* status reflects error */
+      }
+    }
+    try {
+      bindMcpServerToAgent(id, deps);
+    } catch {
+      /* non-fatal */
+    }
+    return ok({ server: summarize(getServerById(id)), message: 'added' });
+  }
+
+  if (action === 'edit') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const existing = getServerById(serverId);
+    if (!existing) return fail(`MCP server ${serverId} not found`);
+    const patch = args?.server && typeof args.server === 'object' ? args.server : {};
+    const isBuiltin = existing.installSource === 'builtin';
+    const merged = {
+      ...existing,
+      ...patch,
+      id: existing.id,
+      installSource: existing.installSource || 'manual',
+      command: isBuiltin ? existing.command : (patch.command ?? existing.command),
+      args: Array.isArray(patch.args) ? patch.args : (patch.args ?? existing.args),
+    };
+    upsertServer(merged);
+    await closeClientsForServerId(existing.id);
+    if (merged.isActive !== false) {
+      try {
+        await checkConnectivity(existing.id);
+      } catch {
+        /* status reflects error */
+      }
+    }
+    return ok({ server: summarize(getServerById(existing.id)), message: 'edited' });
+  }
+
+  if (action === 'remove') {
+    const serverId = String(args?.serverId || '').trim();
+    if (!serverId) return fail('serverId required');
+    const existing = getServerById(serverId);
+    if (!existing) return fail(`MCP server ${serverId} not found`);
+    await removeServer(serverId);
+    deleteServer(serverId);
+    try {
+      unbindMcpServerFromAgent(serverId, deps);
+    } catch {
+      /* non-fatal */
+    }
+    return ok({ serverId, message: 'removed' });
+  }
+
+  return fail(`Unknown action: ${action}`);
+}
+
 async function executeBuiltinTool(toolName, args, deps = {}) {
   switch (toolName) {
     case 'Read':
@@ -522,6 +785,8 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
       return toolNotebookEdit(args);
     case 'UpdateProfile':
       return toolUpdateProfile(args, deps);
+    case 'McpManager':
+      return toolMcpManager(args, deps);
     default:
       return fail(`Unknown builtin tool: ${toolName}`);
   }

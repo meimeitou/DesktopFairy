@@ -81,6 +81,12 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "context",
     false
   ),
+  builtinTool(
+    "McpManager",
+    "Lists, inspects, and manages MCP servers (enable/disable/restart/stop/add/edit/remove)",
+    "context",
+    true
+  ),
 ];
 
 const DEFAULT_SAFE_TOOLS = new Set([
@@ -330,6 +336,46 @@ function getOpenAiToolParameters(toolId: string) {
           content: { type: "string" },
         },
         required: ["field", "action", "content"],
+      };
+    case "McpManager":
+      return {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: [
+              "list",
+              "status",
+              "tools",
+              "enable",
+              "disable",
+              "restart",
+              "stop",
+              "add",
+              "edit",
+              "remove",
+            ],
+          },
+          serverId: { type: "string" },
+          name: { type: "string" },
+          server: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              type: { type: "string", enum: ["stdio", "sse", "streamableHttp"] },
+              description: { type: "string" },
+              reference: { type: "string" },
+              baseUrl: { type: "string" },
+              command: { type: "string" },
+              args: { type: "array", items: { type: "string" } },
+              env: { type: "object" },
+              headers: { type: "object" },
+              isActive: { type: "boolean" },
+            },
+          },
+        },
+        required: ["action"],
       };
     default:
       return { type: "object", properties: {}, required: [] as string[] };

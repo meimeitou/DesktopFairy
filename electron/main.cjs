@@ -23,6 +23,7 @@ const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
 const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
 const { registerToolApprovalHandlers } = require('./agentToolApproval.cjs');
 const { registerMcpServerHandlers } = require('./mcpServerService.cjs');
+const { registerMcpRuntimeHandlers, disposeAll: disposeAllMcpClients } = require('./mcpRuntimeService.cjs');
 const { registerAgentAvatarHandlers } = require('./agentAvatarService.cjs');
 const { installBuiltinSkills } = require('./builtinSkills.cjs');
 const {
@@ -229,7 +230,7 @@ const isTipWebContents = (webContents) => {
 
 const createChatWindow = (options = {}) => {
   const {
-    view = 'chat',
+    view = null,
     refPoint = screen.getCursorScreenPoint(),
     anchor = 'main',
   } = options;
@@ -237,7 +238,7 @@ const createChatWindow = (options = {}) => {
 
   if (chatWindow && !chatWindow.isDestroyed()) {
     presentChatWindowOnMac(screen, mainWindow, chatWindow, refPoint, positionOptions);
-    navigateChatWindow(chatWindow, view);
+    if (view) navigateChatWindow(chatWindow, view);
     return chatWindow;
   }
 
@@ -487,7 +488,7 @@ const setupIPC = () => {
     createChatWindow({ view: 'settings' });
   });
   ipcMain.handle('open_chat_window', async () => {
-    createChatWindow({ view: 'chat' });
+    createChatWindow();
   });
   ipcMain.handle('quit_app', async () => app.quit());
 
@@ -546,6 +547,7 @@ const setupIPC = () => {
 
   registerAgentSkillHandlers(ipcMain);
   registerMcpServerHandlers(ipcMain);
+  registerMcpRuntimeHandlers(ipcMain);
   registerAgentAvatarHandlers(ipcMain);
   registerToolApprovalHandlers(ipcMain);
   registerAgentHandlers(ipcMain, {
@@ -1024,6 +1026,7 @@ app.on('before-quit', () => {
   isQuitting = true;
   killAllSessions();
   abortAllAgentRuns();
+  disposeAllMcpClients();
   selectionService.stopAll();
   globalShortcut.unregisterAll();
   for (const controller of inflightChats.values()) {

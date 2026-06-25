@@ -14,6 +14,7 @@ interface Props {
   onRefresh: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  loadingTopicIds: Set<string>;
 }
 
 function ChevronLeftIcon() {
@@ -53,6 +54,31 @@ function SearchIcon() {
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="11" cy="11" r="8" />
       <path d="M21 21l-4.35-4.35" />
+    </svg>
+  );
+}
+
+function LoadingIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 2v4" />
+      <path d="M12 18v4" />
+      <path d="M4.93 4.93l2.83 2.83" />
+      <path d="M16.24 16.24l2.83 2.83" />
+      <path d="M2 12h4" />
+      <path d="M18 12h4" />
+      <path d="M4.93 19.07l2.83-2.83" />
+      <path d="M16.24 7.76l2.83-2.83" />
     </svg>
   );
 }
@@ -104,6 +130,7 @@ export default function TopicSidebar({
   onRefresh,
   collapsed,
   onToggleCollapse,
+  loadingTopicIds,
 }: Props) {
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -228,7 +255,11 @@ export default function TopicSidebar({
                 <>
                   <div className="topic-item-main">
                     <span className="topic-item-icon">
-                      <ChatIcon />
+                      {loadingTopicIds.has(topic.id) ? (
+                        <LoadingIcon className="topic-loading-icon" />
+                      ) : (
+                        <ChatIcon />
+                      )}
                     </span>
                     <span className="topic-item-name">
                       {topic.name || "新对话"}

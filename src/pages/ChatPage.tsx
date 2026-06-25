@@ -36,11 +36,10 @@ import {
   getActiveChatBackend,
   isAgentBackend,
   getChatApiConfig,
-  getActiveApiConfig,
   type AppSettings,
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
-import { notifyLive2DScene } from "../shared/live2DReactions";
+import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
 import type { AgentSkillDescriptor } from "../shared/agent";
 import {
@@ -54,6 +53,30 @@ import "./ChatPage.css";
 
 const api = window.electronAPI;
 const SESSION_SAVE_DEBOUNCE_MS = 400;
+
+type TopicPageState = {
+  messages: ChatMsg[];
+  input: string;
+  attachments: ChatAttachment[];
+  streaming: boolean;
+  requestId: string | null;
+  requestBackend: string | null;
+  sessionReady: boolean;
+  invalidAttachmentPaths: Set<string>;
+};
+
+function emptyTopicState(): TopicPageState {
+  return {
+    messages: [],
+    input: "",
+    attachments: [],
+    streaming: false,
+    requestId: null,
+    requestBackend: null,
+    sessionReady: false,
+    invalidAttachmentPaths: new Set(),
+  };
+}
 
 function genId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -104,36 +127,42 @@ export default function ChatPage({
   clearRef?: MutableRefObject<(() => void) | null>;
   onMetaChange?: (meta: { streaming: boolean; hasMessages: boolean }) => void;
 }) {
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  const [chatSettings, setChatSettings] = useState<AppSettings>(loadSettings);
-  const [invalidAttachmentPaths, setInvalidAttachmentPaths] = useState(
-    () => new Set<string>(),
-  );
-  const [sessionReady, setSessionReady] = useState(false);
-
-  const [topics, setTopics] = useState<ChatTopic[]>([]);
+  const [topicStates, setTopicStates] = useState<Record<string, TopicPageState>>({});
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
+  const [topics, setTopics] = useState<ChatTopic[]>([]);
   const [topicsLoaded, setTopicsLoaded] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
+  const [chatSettings, setChatSettings] = useState<AppSettings>(loadSettings);
+
+  const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
+  const { messages, input, attachments, streaming, invalidAttachmentPaths } = activeState;
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
-  const inputRef = useRef("");
-  const attachmentsRef = useRef<ChatAttachment[]>([]);
   const requestIdRef = useRef<string>("");
-  const activeRequestBackendRef = useRef<string | null>(null);
-  const handleSendRef = useRef<(text?: string) => void>(() => {});
-  const sessionLoadedRef = useRef(false);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTopicIdRef = useRef<string | null>(null);
-  const initializedTopicIdRef = useRef<string | null>(null);
+  const topicStatesRef = useRef(topicStates);
+  const requestIdToTopicIdRef = useRef<Map<string, string>>(new Map());
+  const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const handleSendRef = useRef<(text?: string) => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
 
-  activeTopicIdRef.current = activeTopicId;
+  useEffect(() => {
+    topicStatesRef.current = topicStates;
+  }, [topicStates]);
+
+  useEffect(() => {
+    activeTopicIdRef.current = activeTopicId;
+  }, [activeTopicId]);
+
+  useEffect(() => {
+    chatMessagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    requestIdRef.current = activeState.requestId ?? "";
+  }, [activeState.requestId]);
 
   const backendItems = getChatBackendItems(chatSettings);
   const selectableModels = backendItems.map((i) => i.value);
@@ -143,81 +172,86 @@ export default function ChatPage({
   const activeBackend = getActiveChatBackend(chatSettings);
   const usingAgent = isAgentBackend(activeBackend);
 
-  const abortActiveRun = useCallback(() => {
-    const id = requestIdRef.current;
-    if (!id) return;
-    const backend = activeRequestBackendRef.current;
-    if (isAgentBackend(backend ?? "")) {
-      void api.invoke("agent:abort", { requestId: id });
-    } else {
-      void api.invoke("chat:abort", { requestId: id });
-    }
-  }, []);
-
-  useEffect(() => {
-    chatMessagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    inputRef.current = input;
-  }, [input]);
-
-  useEffect(() => {
-    attachmentsRef.current = attachments;
-  }, [attachments]);
-
-  const persistSession = useCallback(async (topicIdOverride?: string) => {
-    const tid = topicIdOverride ?? activeTopicIdRef.current;
+  const persistSession = useCallback(async (topicId?: string) => {
+    const tid = topicId ?? activeTopicIdRef.current;
     if (!tid) return;
+    const state = topicStatesRef.current[tid];
+    if (!state?.sessionReady) return;
     const session = trimSessionForStorage(
-      buildChatSession(
-        chatMessagesRef.current,
-        inputRef.current,
-        attachmentsRef.current,
-      ),
+      buildChatSession(state.messages, state.input, state.attachments),
     );
     await api.invoke("chat:session:save", { topicId: tid, session });
   }, []);
 
-  const scheduleSessionSave = useCallback(() => {
-    if (!sessionLoadedRef.current) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      void persistSession();
-    }, SESSION_SAVE_DEBOUNCE_MS);
-  }, [persistSession]);
+  const scheduleTopicSave = useCallback(
+    (topicId: string) => {
+      const state = topicStatesRef.current[topicId];
+      if (!state?.sessionReady) return;
+      const timers = saveTimersRef.current;
+      const existing = timers.get(topicId);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        topicId,
+        setTimeout(() => {
+          timers.delete(topicId);
+          void persistSession(topicId);
+        }, SESSION_SAVE_DEBOUNCE_MS),
+      );
+    },
+    [persistSession],
+  );
 
-  const flushSessionSave = useCallback(() => {
-    if (!sessionLoadedRef.current) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
+  const flushSessionSave = useCallback(
+    (topicId?: string) => {
+      const tid = topicId ?? activeTopicIdRef.current;
+      if (!tid) return;
+      const timers = saveTimersRef.current;
+      const existing = timers.get(tid);
+      if (existing) {
+        clearTimeout(existing);
+        timers.delete(tid);
+      }
+      void persistSession(tid);
+    },
+    [persistSession],
+  );
+
+  const flushAllSessionSaves = useCallback(() => {
+    const timers = saveTimersRef.current;
+    for (const [topicId, timer] of timers) {
+      clearTimeout(timer);
+      void persistSession(topicId);
     }
-    void persistSession();
+    timers.clear();
   }, [persistSession]);
 
   const loadSessionForTopic = useCallback(async (topicId: string) => {
-    sessionLoadedRef.current = false;
-    setSessionReady(false);
+    setTopicStates((prev) => ({
+      ...prev,
+      [topicId]: { ...(prev[topicId] ?? emptyTopicState()), sessionReady: false },
+    }));
     try {
       const raw = (await api.invoke("chat:session:load", topicId)) as unknown;
       const session = normalizeChatSession(raw);
-      setMessages(session.messages);
-      setInput(session.draftInput ?? "");
-      setAttachments(session.draftAttachments ?? []);
       const invalid = await collectInvalidAttachmentPaths(session.messages);
-      setInvalidAttachmentPaths(invalid);
-      requestIdRef.current = "";
-      setStreaming(false);
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: {
+          messages: session.messages,
+          input: session.draftInput ?? "",
+          attachments: session.draftAttachments ?? [],
+          streaming: false,
+          requestId: null,
+          requestBackend: null,
+          sessionReady: true,
+          invalidAttachmentPaths: invalid,
+        },
+      }));
     } catch {
-      setMessages([]);
-      setInput("");
-      setAttachments([]);
-    } finally {
-      sessionLoadedRef.current = true;
-      initializedTopicIdRef.current = topicId;
-      setSessionReady(true);
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: { ...emptyTopicState(), sessionReady: true },
+      }));
     }
   }, []);
 
@@ -232,15 +266,9 @@ export default function ChatPage({
       );
       setTopics(sorted);
       const activeId = store.activeId || sorted[0]?.id || null;
+      setActiveTopicId(activeId);
       if (activeId) {
-        setActiveTopicId(activeId);
         await loadSessionForTopic(activeId);
-      } else {
-        setActiveTopicId(null);
-        setMessages([]);
-        setInput("");
-        setAttachments([]);
-        setSessionReady(true);
       }
       setTopicsLoaded(true);
     } catch {
@@ -254,35 +282,62 @@ export default function ChatPage({
 
   const handleSelectTopic = useCallback(
     (topicId: string) => {
-      if (topicId === activeTopicId) return;
-      if (streaming) abortActiveRun();
-      void persistSession();
+      if (topicId === activeTopicIdRef.current) return;
+      const oldTopicId = activeTopicIdRef.current;
+      if (oldTopicId) {
+        flushSessionSave(oldTopicId);
+      }
       setActiveTopicId(topicId);
-      void loadSessionForTopic(topicId);
+      if (!topicStatesRef.current[topicId]) {
+        void loadSessionForTopic(topicId);
+      }
     },
-    [activeTopicId, persistSession, loadSessionForTopic, streaming, abortActiveRun],
+    [flushSessionSave, loadSessionForTopic],
   );
 
   const handleCreateTopic = useCallback(async () => {
+    const currentActive = activeTopicIdRef.current;
+    if (currentActive) {
+      flushSessionSave(currentActive);
+    }
     try {
-      await persistSession();
-      const topic = (await api.invoke("chat:topics:create", { name: "" })) as ChatTopic;
+      const topic = (await api.invoke("chat:topics:create", {
+        name: "",
+      })) as ChatTopic;
       setTopics((prev) => [...prev, topic]);
+      setTopicStates((prev) => ({
+        ...prev,
+        [topic.id]: { ...emptyTopicState(), sessionReady: true },
+      }));
       setActiveTopicId(topic.id);
-      await loadSessionForTopic(topic.id);
     } catch (e) {
       console.warn("Failed to create topic:", e);
     }
-  }, [persistSession, loadSessionForTopic]);
+  }, [flushSessionSave]);
 
   const handleDeleteTopic = useCallback(
     async (topicId: string) => {
+      const state = topicStatesRef.current[topicId];
+      if (state?.requestId && state.requestBackend) {
+        if (isAgentBackend(state.requestBackend)) {
+          void api.invoke("agent:abort", { requestId: state.requestId });
+        } else {
+          void api.invoke("chat:abort", { requestId: state.requestId });
+        }
+      }
+
       const result = (await api.invoke("chat:topics:delete", topicId)) as {
         ok: boolean;
         activeId: string | null;
         autoCreated?: ChatTopic | null;
       };
       if (!result.ok) return;
+
+      setTopicStates((prev) => {
+        const next = { ...prev };
+        delete next[topicId];
+        return next;
+      });
 
       const replacement = result.autoCreated;
       setTopics((prev) => {
@@ -292,19 +347,17 @@ export default function ChatPage({
 
       const nextActiveId = result.activeId;
       if (nextActiveId) {
-        if (nextActiveId !== activeTopicId) {
+        if (nextActiveId !== activeTopicIdRef.current) {
           setActiveTopicId(nextActiveId);
-          await loadSessionForTopic(nextActiveId);
+          if (!topicStatesRef.current[nextActiveId]) {
+            await loadSessionForTopic(nextActiveId);
+          }
         }
       } else {
         setActiveTopicId(null);
-        setMessages([]);
-        setInput("");
-        setAttachments([]);
-        setSessionReady(true);
       }
     },
-    [activeTopicId, loadSessionForTopic],
+    [loadSessionForTopic],
   );
 
   const handleRenameTopic = useCallback(
@@ -320,20 +373,15 @@ export default function ChatPage({
   );
 
   useEffect(() => {
-    if (!sessionReady) return;
-    scheduleSessionSave();
-  }, [messages, input, attachments, sessionReady, scheduleSessionSave]);
-
-  useEffect(() => {
     const onBeforeUnload = () => {
-      flushSessionSave();
+      flushAllSessionSaves();
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
-      flushSessionSave();
+      flushAllSessionSaves();
     };
-  }, [flushSessionSave]);
+  }, [flushAllSessionSaves]);
 
   useEffect(() => {
     notifyLive2DScene("chatOpen");
@@ -346,14 +394,51 @@ export default function ChatPage({
     return () => off?.();
   }, []);
 
+  const setActiveInput = useCallback(
+    (value: string) => {
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), input: value },
+      }));
+      scheduleTopicSave(topicId);
+    },
+    [scheduleTopicSave],
+  );
+
+  const setActiveAttachments = useCallback(
+    (value: ChatAttachment[]) => {
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), attachments: value },
+      }));
+      scheduleTopicSave(topicId);
+    },
+    [scheduleTopicSave],
+  );
+
   useEffect(() => {
     api.onChatPrefill((payload) => {
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
       const p =
         typeof payload === "string"
           ? { text: payload, autoSend: false }
           : payload;
-      if (typeof p.text === "string") setInput(p.text);
-      if (p.attachments?.length) setAttachments(p.attachments);
+      setTopicStates((prev) => {
+        const state = prev[topicId] ?? emptyTopicState();
+        return {
+          ...prev,
+          [topicId]: {
+            ...state,
+            input: typeof p.text === "string" ? p.text : state.input,
+            attachments: p.attachments?.length ? p.attachments : state.attachments,
+          },
+        };
+      });
       if (p.autoSend && p.text?.trim()) {
         setTimeout(() => handleSendRef.current(p.text), 0);
       }
@@ -379,36 +464,64 @@ export default function ChatPage({
 
   useEffect(() => {
     const offChunk = api.onChatStreamChunk(({ requestId, delta }) => {
-      if (requestId !== requestIdRef.current) return;
-      setMessages((prev) => {
-        const idx = findLastAssistantReplyIndex(prev);
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId) return;
+      setTopicStates((prev) => {
+        const state = prev[topicId];
+        if (!state) return prev;
+        const idx = findLastAssistantReplyIndex(state.messages);
         if (idx < 0) return prev;
-        const next = prev.slice();
+        const next = state.messages.slice();
         const target = next[idx];
         next[idx] = { ...target, content: target.content + delta };
-        return next;
+        return { ...prev, [topicId]: { ...state, messages: next } };
       });
+      scheduleTopicSave(topicId);
     });
 
     const offDone = api.onChatStreamDone(({ requestId, aborted }) => {
-      if (requestId !== requestIdRef.current) return;
-      requestIdRef.current = "";
-      activeRequestBackendRef.current = null;
-      setStreaming(false);
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId) return;
+      requestIdToTopicIdRef.current.delete(requestId);
+
+      setTopicStates((prev) => {
+        const state = prev[topicId];
+        if (!state) return prev;
+        return {
+          ...prev,
+          [topicId]: {
+            ...state,
+            streaming: false,
+            requestId: null,
+            requestBackend: null,
+          },
+        };
+      });
+
+      const isActive = topicId === activeTopicIdRef.current;
+
       if (aborted) {
         compactRequestIdRef.current = null;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.type === "tool" &&
-            (m.toolStatus === "streaming" ||
-              m.toolStatus === "running" ||
-              m.toolStatus === "awaiting_approval")
-              ? { ...m, toolStatus: "error" as const, toolMessage: "已取消" }
-              : m,
-          ),
-        );
-        notifyLive2DScene("replyError");
-        flushSessionSave();
+        setTopicStates((prev) => {
+          const state = prev[topicId];
+          if (!state) return prev;
+          return {
+            ...prev,
+            [topicId]: {
+              ...state,
+              messages: state.messages.map((m) =>
+                m.type === "tool" &&
+                (m.toolStatus === "streaming" ||
+                  m.toolStatus === "running" ||
+                  m.toolStatus === "awaiting_approval")
+                  ? { ...m, toolStatus: "error" as const, toolMessage: "已取消" }
+                  : m,
+              ),
+            },
+          };
+        });
+        if (isActive) notifyLive2DScene("replyError");
+        flushSessionSave(topicId);
         return;
       }
 
@@ -416,64 +529,92 @@ export default function ChatPage({
       compactRequestIdRef.current = null;
 
       if (isCompact) {
-        setMessages((prev) => {
-          const assistantIdx = findLastAssistantReplyIndex(prev);
+        setTopicStates((prev) => {
+          const state = prev[topicId];
+          if (!state) return prev;
+          const assistantIdx = findLastAssistantReplyIndex(state.messages);
           const summary =
-            assistantIdx >= 0 && !prev[assistantIdx].error
-              ? prev[assistantIdx].content
+            assistantIdx >= 0 && !state.messages[assistantIdx].error
+              ? state.messages[assistantIdx].content
               : "";
           if (!summary.trim()) return prev;
-          return [
+          return {
             ...prev,
-            {
-              id: genId(),
-              role: "user" as const,
-              type: "clear" as const,
-              content: "",
-              timestamp: Date.now(),
+            [topicId]: {
+              ...state,
+              messages: [
+                ...state.messages,
+                {
+                  id: genId(),
+                  role: "user" as const,
+                  type: "clear" as const,
+                  content: "",
+                  timestamp: Date.now(),
+                },
+                {
+                  id: genId(),
+                  role: "user" as const,
+                  content: `[上下文摘要]\n\n${summary.trim()}`,
+                  timestamp: Date.now(),
+                },
+              ],
             },
-            {
-              id: genId(),
-              role: "user" as const,
-              content: `[上下文摘要]\n\n${summary.trim()}`,
-              timestamp: Date.now(),
-            },
-          ];
+          };
         });
-        notifyLive2DScene("replyDone");
-        flushSessionSave();
+        if (isActive) notifyLive2DScene("replyDone");
+        flushSessionSave(topicId);
         return;
       }
 
-      const list = chatMessagesRef.current;
-      const assistantIdx = findLastAssistantReplyIndex(list);
-      const assistantText =
-        assistantIdx >= 0 && !list[assistantIdx].error
-          ? list[assistantIdx].content
-          : undefined;
-      notifyLive2DScene("replyDone", assistantText);
-      flushSessionSave();
+      if (isActive) {
+        const list = topicStatesRef.current[topicId]?.messages ?? [];
+        const assistantIdx = findLastAssistantReplyIndex(list);
+        const assistantText =
+          assistantIdx >= 0 && !list[assistantIdx].error
+            ? list[assistantIdx].content
+            : undefined;
+        notifyLive2DScene("replyDone", assistantText);
+      }
+      flushSessionSave(topicId);
     });
 
     const offError = api.onChatStreamError(({ requestId, message }) => {
-      if (requestId !== requestIdRef.current) return;
-      requestIdRef.current = "";
-      activeRequestBackendRef.current = null;
-      setStreaming(false);
-      notifyLive2DScene("replyError");
-      setMessages((prev) => {
-        const idx = findLastAssistantReplyIndex(prev);
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId) return;
+      requestIdToTopicIdRef.current.delete(requestId);
+
+      setTopicStates((prev) => {
+        const state = prev[topicId];
+        if (!state) return prev;
+        return {
+          ...prev,
+          [topicId]: {
+            ...state,
+            streaming: false,
+            requestId: null,
+            requestBackend: null,
+          },
+        };
+      });
+
+      const isActive = topicId === activeTopicIdRef.current;
+      if (isActive) notifyLive2DScene("replyError");
+
+      setTopicStates((prev) => {
+        const state = prev[topicId];
+        if (!state) return prev;
+        const idx = findLastAssistantReplyIndex(state.messages);
         if (idx < 0) return prev;
-        const next = prev.slice();
+        const next = state.messages.slice();
         const target = next[idx];
         next[idx] = {
           ...target,
           content: target.content || `请求失败：${message}`,
           error: true,
         };
-        return next;
+        return { ...prev, [topicId]: { ...state, messages: next } };
       });
-      flushSessionSave();
+      flushSessionSave(topicId);
     });
 
     const offTool = api.onAgentStreamTool?.(
@@ -487,19 +628,23 @@ export default function ChatPage({
         message,
         resultPreview,
       }) => {
-        if (requestId !== requestIdRef.current) return;
-        setMessages((prev) => {
+        const topicId = requestIdToTopicIdRef.current.get(requestId);
+        if (!topicId) return;
+        setTopicStates((prev) => {
+          const state = prev[topicId];
+          if (!state) return prev;
+          const msgs = state.messages;
           const existingIdx = toolCallId
-            ? prev.findIndex(
+            ? msgs.findIndex(
                 (m) => m.type === "tool" && m.toolCallId === toolCallId,
               )
-            : prev.findIndex(
+            : msgs.findIndex(
                 (m) =>
                   m.type === "tool" &&
                   m.toolName === toolName &&
                   (m.toolStatus === "running" || m.toolStatus === "streaming"),
               );
-          const prevTool = existingIdx >= 0 ? prev[existingIdx] : null;
+          const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
           const toolMsg: ChatMsg = {
             id: prevTool?.id || genId(),
             role: "assistant",
@@ -514,30 +659,35 @@ export default function ChatPage({
             toolResultPreview: resultPreview ?? prevTool?.toolResultPreview,
             timestamp: prevTool?.timestamp || Date.now(),
           };
+          let nextMessages: ChatMsg[];
           if (existingIdx >= 0) {
-            const next = prev.slice();
-            next[existingIdx] = toolMsg;
-            return next;
-          }
-          const assistantIdx = findLastAssistantReplyIndex(prev);
-          if (assistantIdx < 0) return [...prev, toolMsg];
-
-          const assistant = prev[assistantIdx];
-          const next = prev.slice();
-          if (assistant.content && !assistant.error) {
-            next.splice(assistantIdx + 1, 0, toolMsg);
-            next.push({
-              id: genId(),
-              role: "assistant",
-              content: "",
-              timestamp: Date.now(),
-            });
+            nextMessages = msgs.slice();
+            nextMessages[existingIdx] = toolMsg;
           } else {
-            next.splice(assistantIdx, 0, toolMsg);
+            const assistantIdx = findLastAssistantReplyIndex(msgs);
+            if (assistantIdx < 0) {
+              nextMessages = [...msgs, toolMsg];
+            } else {
+              const assistant = msgs[assistantIdx];
+              nextMessages = msgs.slice();
+              if (assistant.content && !assistant.error) {
+                nextMessages.splice(assistantIdx + 1, 0, toolMsg);
+                nextMessages.push({
+                  id: genId(),
+                  role: "assistant",
+                  content: "",
+                  timestamp: Date.now(),
+                });
+              } else {
+                nextMessages.splice(assistantIdx, 0, toolMsg);
+              }
+            }
           }
-          return next;
+          return { ...prev, [topicId]: { ...state, messages: nextMessages } };
         });
-        if (status === "running") notifyLive2DScene("toolRunning");
+        scheduleTopicSave(topicId);
+        const isActive = topicId === activeTopicIdRef.current;
+        if (status === "running" && isActive) notifyLive2DScene("toolRunning");
       },
     );
 
@@ -547,7 +697,7 @@ export default function ChatPage({
       offError?.();
       offTool?.();
     };
-  }, [flushSessionSave]);
+  }, [flushSessionSave, scheduleTopicSave]);
 
   useEffect(() => {
     const el = messagesContainerRef.current;
@@ -582,7 +732,7 @@ export default function ChatPage({
     handleApproveTool,
     handleDenyTool,
     handleAlwaysAllowTool,
-  } = useToolApproval(chatMessagesRef, handleChatModeChange);
+  } = useToolApproval(chatMessagesRef, () => handleChatModeChange("full-auto"), requestIdRef);
 
   const slashCommands = useMemo(
     () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
@@ -617,9 +767,13 @@ export default function ChatPage({
 
   const handleSend = useCallback(
     async (overrideText?: string) => {
-      if (streaming) return;
-      const text = (overrideText ?? input).trim();
-      if (!text && attachments.length === 0) return;
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      const state = topicStatesRef.current[topicId];
+      if (!state || state.streaming) return;
+
+      const text = (overrideText ?? state.input).trim();
+      if (!text && state.attachments.length === 0) return;
 
       const isCompactRequest = overrideText === COMPACT_PROMPT;
 
@@ -636,7 +790,8 @@ export default function ChatPage({
       }
 
       const settings = chatSettings;
-      const agentMode = isAgentBackend(getActiveChatBackend(settings));
+      const requestBackend = getActiveChatBackend(settings);
+      const agentMode = isAgentBackend(requestBackend);
       const apiConfig = getChatApiConfig(settings);
 
       if (!apiConfig?.apiHost || !apiConfig.modelName) {
@@ -655,8 +810,8 @@ export default function ChatPage({
         images: [] as { name: string; dataUrl: string }[],
       };
       try {
-        if (attachments.length > 0) {
-          attachmentPayloads = await loadAttachmentPayloads(attachments);
+        if (state.attachments.length > 0) {
+          attachmentPayloads = await loadAttachmentPayloads(state.attachments);
         }
       } catch (e) {
         alert(e instanceof Error ? e.message : "读取附件失败");
@@ -664,7 +819,7 @@ export default function ChatPage({
       }
 
       const agentHistory = trimMessagesForApi(
-        filterAfterContextClear(messages).filter(
+        filterAfterContextClear(state.messages).filter(
           (m) =>
             m.type !== "clear" &&
             !m.error &&
@@ -672,7 +827,7 @@ export default function ChatPage({
               !(m.role === "assistant" && !m.content?.trim())),
         ),
       );
-      const history = trimMessagesForApi(filterForApi(messages));
+      const history = trimMessagesForApi(filterForApi(state.messages));
       const systemPrompt = agentMode ? agent.soul : undefined;
       const payloadMessages = agentMode
         ? buildAgentApiMessages(agentHistory, finalText, attachmentPayloads, systemPrompt)
@@ -683,42 +838,54 @@ export default function ChatPage({
         id: genId(),
         role: "user",
         content: finalText,
-        attachments: attachments.length > 0 ? [...attachments] : undefined,
+        attachments: state.attachments.length > 0 ? [...state.attachments] : undefined,
         timestamp: now,
       };
 
       const requestId = genId();
-      requestIdRef.current = requestId;
-      activeRequestBackendRef.current = getActiveChatBackend(settings);
+      requestIdToTopicIdRef.current.set(requestId, topicId);
       if (isCompactRequest) {
         compactRequestIdRef.current = requestId;
       }
-      setMessages([
-        ...messages,
-        userMsg,
-        { id: genId(), role: "assistant", content: "", timestamp: now },
-      ]);
 
-      if (activeTopicId && messages.length === 0) {
+      const shouldAutoTitle = state.messages.length === 0;
+
+      setTopicStates((prev) => {
+        const s = prev[topicId] ?? emptyTopicState();
+        return {
+          ...prev,
+          [topicId]: {
+            ...s,
+            messages: [...s.messages, userMsg, { id: genId(), role: "assistant", content: "", timestamp: now }],
+            input: "",
+            attachments: [],
+            streaming: true,
+            requestId,
+            requestBackend,
+          },
+        };
+      });
+
+      if (shouldAutoTitle) {
         const autoTitle = generateTopicTitle(text);
         void api
           .invoke("chat:topics:rename", {
-            topicId: activeTopicId,
+            topicId,
             name: autoTitle,
           })
           .then(() => {
             setTopics((prev) =>
               prev.map((t) =>
-                t.id === activeTopicId
+                t.id === topicId
                   ? { ...t, name: autoTitle, updatedAt: Date.now() }
                   : t,
               ),
             );
           });
       }
-      setInput("");
-      setAttachments([]);
-      setStreaming(true);
+
+      scheduleTopicSave(topicId);
+      setSidebarCollapsed(true);
 
       notifyLive2DScene("userSend");
       notifyLive2DScene("thinking");
@@ -752,37 +919,40 @@ export default function ChatPage({
             temperature: settings.temperature,
           });
 
-      invokePromise
-        .catch((e: Error) => {
-          if (requestIdRef.current !== requestId) return;
-          requestIdRef.current = "";
-          activeRequestBackendRef.current = null;
-          setStreaming(false);
-          notifyLive2DScene("replyError");
-          setMessages((prev) => {
-            const idx = findLastAssistantReplyIndex(prev);
-            if (idx < 0) return prev;
-            const next = prev.slice();
-            next[idx] = {
-              ...next[idx],
-              content: `请求失败：${e.message || e}`,
-              error: true,
-            };
-            return next;
-          });
-          flushSessionSave();
+      invokePromise.catch((e: Error) => {
+        if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
+        requestIdToTopicIdRef.current.delete(requestId);
+        setTopicStates((prev) => {
+          const s = prev[topicId];
+          if (!s) return prev;
+          return {
+            ...prev,
+            [topicId]: {
+              ...s,
+              streaming: false,
+              requestId: null,
+              requestBackend: null,
+            },
+          };
         });
+        notifyLive2DScene("replyError");
+        setTopicStates((prev) => {
+          const s = prev[topicId];
+          if (!s) return prev;
+          const idx = findLastAssistantReplyIndex(s.messages);
+          if (idx < 0) return prev;
+          const next = s.messages.slice();
+          next[idx] = {
+            ...next[idx],
+            content: `请求失败：${e.message || e}`,
+            error: true,
+          };
+          return { ...prev, [topicId]: { ...s, messages: next } };
+        });
+        flushSessionSave(topicId);
+      });
     },
-    [
-      input,
-      streaming,
-      messages,
-      attachments,
-      chatSettings,
-      skills,
-      loadAttachmentPayloads,
-      flushSessionSave,
-    ],
+    [chatSettings, skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave],
   );
 
   useEffect(() => {
@@ -792,116 +962,144 @@ export default function ChatPage({
   }, [handleSend]);
 
   const handleStop = useCallback(() => {
-    abortActiveRun();
-  }, [abortActiveRun]);
+    const topicId = activeTopicIdRef.current;
+    if (!topicId) return;
+    const state = topicStatesRef.current[topicId];
+    if (!state?.requestId || !state.requestBackend) return;
+    if (isAgentBackend(state.requestBackend)) {
+      void api.invoke("agent:abort", { requestId: state.requestId });
+    } else {
+      void api.invoke("chat:abort", { requestId: state.requestId });
+    }
+  }, []);
 
   const handleClearContext = useCallback(() => {
-    if (streaming) return;
-    if (messages.length === 0) return;
+    const topicId = activeTopicIdRef.current;
+    if (!topicId) return;
+    const state = topicStatesRef.current[topicId];
+    if (!state || state.streaming || state.messages.length === 0) return;
 
-    const last = messages[messages.length - 1];
-    if (last.type === "clear") {
-      setMessages(messages.slice(0, -1));
-      return;
-    }
+    const last = state.messages[state.messages.length - 1];
+    const nextMessages =
+      last.type === "clear"
+        ? state.messages.slice(0, -1)
+        : [
+            ...state.messages,
+            {
+              id: genId(),
+              role: "user" as const,
+              type: "clear" as const,
+              content: "",
+              timestamp: Date.now(),
+            } as ChatMsg,
+          ];
 
-    setMessages([
-      ...messages,
-      {
-        id: genId(),
-        role: "user",
-        type: "clear",
-        content: "",
-        timestamp: Date.now(),
-      },
-    ]);
-  }, [streaming, messages]);
+    setTopicStates((prev) => {
+      const s = prev[topicId] ?? emptyTopicState();
+      return { ...prev, [topicId]: { ...s, messages: nextMessages } };
+    });
+    scheduleTopicSave(topicId);
+  }, [scheduleTopicSave]);
 
   const handleSlashCommand = useCallback(
     (cmd: SlashCommand | null) => {
       if (!cmd) {
-        setInput("");
+        setActiveInput("");
         return;
       }
       if (cmd.group === "skill" && cmd.insertText) {
-        setInput(cmd.insertText);
+        setActiveInput(cmd.insertText);
         return;
       }
       if (cmd.group === "builtin" && cmd.id === "compact") {
-        setInput("");
+        setActiveInput("");
         void handleSend(COMPACT_PROMPT);
         return;
       }
     },
-    [handleSend],
+    [handleSend, setActiveInput],
   );
 
   const handleClearMessages = useCallback(() => {
-    if (streaming) return;
-    if (messages.length === 0) return;
+    const topicId = activeTopicIdRef.current;
+    if (!topicId) return;
+    const state = topicStatesRef.current[topicId];
+    if (!state || state.streaming || state.messages.length === 0) return;
     if (!window.confirm("确定清空所有消息吗？")) return;
-    setMessages([]);
-    setInput("");
-    setAttachments([]);
-    setInvalidAttachmentPaths(new Set());
-    void persistSession();
-  }, [streaming, messages.length, persistSession]);
+    setTopicStates((prev) => ({
+      ...prev,
+      [topicId]: {
+        ...(prev[topicId] ?? emptyTopicState()),
+        messages: [],
+        input: "",
+        attachments: [],
+        invalidAttachmentPaths: new Set(),
+      },
+    }));
+    flushSessionSave(topicId);
+  }, [flushSessionSave]);
 
   // 重试用户消息：删除该消息及其后所有消息，用原始文本重新发送
   const handleRetry = useCallback(
     (msgId: string) => {
-      if (streaming) return;
-      const idx = messages.findIndex((m) => m.id === msgId);
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      const state = topicStatesRef.current[topicId];
+      if (!state || state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === msgId);
       if (idx === -1) return;
-      const target = messages[idx];
+      const target = state.messages[idx];
       if (target.role !== "user") return;
       const text = target.content;
-      const kept = messages.slice(0, idx);
-      setMessages(kept);
+      const kept = state.messages.slice(0, idx);
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
+      }));
       // 在下一帧用截断后的消息重新发送
       setTimeout(() => handleSendRef.current(text), 0);
     },
-    [streaming, messages],
+    [],
   );
 
   // 删除消息：删除该消息；若是用户消息，同时删除紧跟其后的助手回复
   const handleDeleteMessage = useCallback(
     (msgId: string) => {
-      if (streaming) return;
-      const idx = messages.findIndex((m) => m.id === msgId);
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      const state = topicStatesRef.current[topicId];
+      if (!state || state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === msgId);
       if (idx === -1) return;
-      const target = messages[idx];
+      const target = state.messages[idx];
       let end = idx + 1;
       if (target.role === "user") {
-        while (end < messages.length && messages[end].role !== "user") {
+        while (end < state.messages.length && state.messages[end].role !== "user") {
           end++;
         }
       } else if (target.role === "assistant") {
-        while (end < messages.length && messages[end].type === "tool") {
+        while (end < state.messages.length && state.messages[end].type === "tool") {
           end++;
         }
       }
-      setMessages(messages.slice(0, idx).concat(messages.slice(end)));
+      const nextMessages = state.messages
+        .slice(0, idx)
+        .concat(state.messages.slice(end));
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: nextMessages },
+      }));
+      scheduleTopicSave(topicId);
     },
-    [streaming, messages],
-  );
-
-  // 编辑并重新发送：删除该消息及其后所有消息，用新文本发送
-  const handleEditResend = useCallback(
-    (msgId: string, newContent: string) => {
-      if (streaming) return;
-      const idx = messages.findIndex((m) => m.id === msgId);
-      if (idx === -1) return;
-      const kept = messages.slice(0, idx);
-      setMessages(kept);
-      setTimeout(() => handleSendRef.current(newContent), 0);
-    },
-    [streaming, messages],
+    [scheduleTopicSave],
   );
 
   useEffect(() => {
-    onMetaChange?.({ streaming, hasMessages: messages.length > 0 });
-  }, [streaming, messages.length, onMetaChange]);
+    onMetaChange?.({
+      streaming: activeState.streaming,
+      hasMessages: activeState.messages.length > 0,
+    });
+  }, [activeState.streaming, activeState.messages.length, onMetaChange]);
 
   useEffect(() => {
     if (!clearRef) return;
@@ -910,6 +1108,14 @@ export default function ChatPage({
       clearRef.current = null;
     };
   }, [clearRef, handleClearMessages]);
+
+  const loadingTopicIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const [id, state] of Object.entries(topicStates)) {
+      if (state.streaming) set.add(id);
+    }
+    return set;
+  }, [topicStates]);
 
   return (
     <div className={`chat-page${embedded ? " chat-page-embedded" : ""}`}>
@@ -924,6 +1130,7 @@ export default function ChatPage({
           onRefresh={() => {}}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+          loadingTopicIds={loadingTopicIds}
         />
       )}
       <div className="chat-main-area">
@@ -934,90 +1141,90 @@ export default function ChatPage({
               <p>开始聊天</p>
             </div>
           ) : (
-          (() => {
-            const nodes: ReactNode[] = [];
-            let i = 0;
-            const streamingAssistantIdx = streaming
-              ? findLastAssistantReplyIndex(messages)
-              : -1;
-            const streamingAssistantId =
-              streamingAssistantIdx >= 0 ? messages[streamingAssistantIdx].id : null;
-            while (i < messages.length) {
-              const m = messages[i];
-              if (m.type === "clear") {
-                nodes.push(<ContextClearDivider key={m.id} />);
-                i += 1;
-                continue;
-              }
-              if (m.type === "tool") {
-                const batch: ChatMsg[] = [];
-                while (i < messages.length && messages[i].type === "tool") {
-                  batch.push(messages[i]);
+            (() => {
+              const nodes: ReactNode[] = [];
+              let i = 0;
+              const streamingAssistantIdx = streaming
+                ? findLastAssistantReplyIndex(messages)
+                : -1;
+              const streamingAssistantId =
+                streamingAssistantIdx >= 0 ? messages[streamingAssistantIdx].id : null;
+              while (i < messages.length) {
+                const m = messages[i];
+                if (m.type === "clear") {
+                  nodes.push(<ContextClearDivider key={m.id} />);
                   i += 1;
+                  continue;
+                }
+                if (m.type === "tool") {
+                  const batch: ChatMsg[] = [];
+                  while (i < messages.length && messages[i].type === "tool") {
+                    batch.push(messages[i]);
+                    i += 1;
+                  }
+                  nodes.push(
+                    batch.length > 1 ? (
+                      <ToolCallGroup
+                        key={batch[0].id}
+                        tools={batch}
+                        onApprove={handleApproveTool}
+                        onDeny={handleDenyTool}
+                        onAlwaysAllow={handleAlwaysAllowTool}
+                        submittingApprovalId={submittingApprovalId}
+                      />
+                    ) : (
+                      <ToolCallBubble
+                        key={batch[0].id}
+                        msg={batch[0]}
+                        onApprove={handleApproveTool}
+                        onDeny={handleDenyTool}
+                        onAlwaysAllow={handleAlwaysAllowTool}
+                        submittingApprovalId={submittingApprovalId}
+                      />
+                    ),
+                  );
+                  continue;
                 }
                 nodes.push(
-                  batch.length > 1 ? (
-                    <ToolCallGroup
-                      key={batch[0].id}
-                      tools={batch}
-                      onApprove={handleApproveTool}
-                      onDeny={handleDenyTool}
-                      onAlwaysAllow={handleAlwaysAllowTool}
-                      submittingApprovalId={submittingApprovalId}
-                    />
-                  ) : (
-                    <ToolCallBubble
-                      key={batch[0].id}
-                      msg={batch[0]}
-                      onApprove={handleApproveTool}
-                      onDeny={handleDenyTool}
-                      onAlwaysAllow={handleAlwaysAllowTool}
-                      submittingApprovalId={submittingApprovalId}
-                    />
-                  ),
+                  <MessageBubble
+                    key={m.id}
+                    msg={m}
+                    streaming={streaming}
+                    isStreamingTarget={m.id === streamingAssistantId}
+                    invalidAttachmentPaths={invalidAttachmentPaths}
+                    onRetry={m.role === "user" ? handleRetry : undefined}
+                    onDelete={handleDeleteMessage}
+                  />,
                 );
-                continue;
+                i += 1;
               }
-              nodes.push(
-                <MessageBubble
-                  key={m.id}
-                  msg={m}
-                  streaming={streaming}
-                  isStreamingTarget={m.id === streamingAssistantId}
-                  invalidAttachmentPaths={invalidAttachmentPaths}
-                  onRetry={m.role === "user" ? handleRetry : undefined}
-                  onDelete={handleDeleteMessage}
-                />,
-              );
-              i += 1;
-            }
-            return nodes;
-          })()
-        )}
-      </div>
+              return nodes;
+            })()
+          )}
+        </div>
 
-      <ChatInputBar
-        input={input}
-        onInputChange={setInput}
-        attachments={attachments}
-        onAttachmentsChange={setAttachments}
-        streaming={streaming}
-        hasMessages={messages.length > 0}
-        models={selectableModels}
-        modelName={activeBackend}
-        modelLabels={modelLabels}
-        onModelChange={handleBackendChange}
-        chatMode={chatSettings.chatMode}
-        onChatModeChange={handleChatModeChange}
-        showModeSelector={usingAgent}
-        onSend={() => void handleSend()}
-        onStop={handleStop}
-        onClearContext={handleClearContext}
-        onClearMessages={handleClearMessages}
-        onCompact={() => void handleSend(COMPACT_PROMPT)}
-        slashCommands={slashCommands}
-        onSlashCommand={handleSlashCommand}
-      />
+        <ChatInputBar
+          input={input}
+          onInputChange={setActiveInput}
+          attachments={attachments}
+          onAttachmentsChange={setActiveAttachments}
+          streaming={streaming}
+          hasMessages={messages.length > 0}
+          models={selectableModels}
+          modelName={activeBackend}
+          modelLabels={modelLabels}
+          onModelChange={handleBackendChange}
+          chatMode={chatSettings.chatMode}
+          onChatModeChange={handleChatModeChange}
+          showModeSelector={usingAgent}
+          onSend={() => void handleSend()}
+          onStop={handleStop}
+          onClearContext={handleClearContext}
+          onClearMessages={handleClearMessages}
+          onCompact={() => void handleSend(COMPACT_PROMPT)}
+          slashCommands={slashCommands}
+          onSlashCommand={handleSlashCommand}
+        />
       </div>
     </div>
   );

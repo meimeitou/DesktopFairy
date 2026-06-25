@@ -6,6 +6,7 @@ const api = window.electronAPI;
 export function useToolApproval(
   chatMessagesRef: MutableRefObject<ChatMsg[]>,
   onSwitchToFullAuto: () => void,
+  requestIdRef: MutableRefObject<string>,
 ) {
   const [submittingApprovalId, setSubmittingApprovalId] = useState<string | null>(
     null,
@@ -64,9 +65,14 @@ export function useToolApproval(
         });
       }
 
+      const requestId = requestIdRef.current;
+      if (requestId) {
+        void api.invoke("agent:tool:bypass_approval", { requestId });
+      }
+
       onSwitchToFullAuto();
     },
-    [chatMessagesRef, onSwitchToFullAuto],
+    [chatMessagesRef, requestIdRef, onSwitchToFullAuto],
   );
 
   return {

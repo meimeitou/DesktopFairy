@@ -80,3 +80,22 @@ export function getMcpCommandPreview(server: McpServer): string {
 export function isStdioMcpServer(server: McpServer): boolean {
   return server.type === "stdio" || (!server.type && !!server.command);
 }
+
+export type McpRuntimeState =
+  | "connecting"
+  | "connected"
+  | "error"
+  | "disabled";
+
+export interface McpRuntimeStatus {
+  state: McpRuntimeState;
+  lastError?: string;
+  checkedAt: number;
+}
+
+export interface McpServerLogEntry {
+  timestamp: number;
+  level: string;
+  message: string;
+  source?: string;
+}
