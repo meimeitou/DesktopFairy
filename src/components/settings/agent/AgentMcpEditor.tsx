@@ -183,7 +183,7 @@ export default function AgentMcpEditor({
             />
           </div>
           <div className="field">
-            <label>参数（每行一个，与 Cherry Studio 一致）</label>
+            <label>参数（每行一个）</label>
             <textarea
               className="agent-mcp-textarea"
               value={argsText}

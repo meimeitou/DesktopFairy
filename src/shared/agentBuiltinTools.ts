@@ -1,5 +1,3 @@
-/** Cherry Studio claudeCodeBuiltinTools — ported for DesktopFairy agent settings/runtime. */
-
 export type ToolApproval = "auto" | "prompt";
 export type ToolOrigin = "builtin";
 

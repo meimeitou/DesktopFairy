@@ -341,8 +341,8 @@ export default function AgentToolsSection({
   return (
     <section className="settings-section agent-subsection">
       <h4>工具</h4>
-      <p className="field-hint">
-        内置工具、MCP 与技能均只能启用/禁用。MCP 编辑参考 Cherry Studio：参数每行一个、环境变量 KEY=value；保存前可「测试连接」。技能通过 `Skill` / `Skills` 按需加载与管理。
+      <p className="agent-subsection-intro">
+        内置工具、MCP 与技能均只能启用/禁用。参数每行一个、环境变量 KEY=value；保存前可「测试连接」。技能通过 <code>Skill</code> / <code>Skills</code> 按需加载与管理。
       </p>
 
       <div className="agent-tool-tabs">

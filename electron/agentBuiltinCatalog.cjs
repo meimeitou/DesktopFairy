@@ -1,5 +1,3 @@
-/** Cherry Studio claudeCodeBuiltinTools — main-process mirror of src/shared/agentBuiltinTools.ts */
-
 const DEFAULT_SAFE_TOOLS = new Set([
   'Read',
   'Glob',

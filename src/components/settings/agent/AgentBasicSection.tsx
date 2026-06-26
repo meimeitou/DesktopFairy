@@ -78,7 +78,7 @@ export default function AgentBasicSection({
   return (
     <section className="settings-section agent-subsection">
       <h4>基础设置</h4>
-      <p className="field-hint">
+      <p className="agent-subsection-intro">
         名称、头像与后端模型。智能体模式使用此处配置的 Provider。
       </p>
 

@@ -1,8 +1,3 @@
-/**
- * Accessory (LSUIElement) apps cannot float panel windows over other apps' key windows.
- * Cherry Studio runs as a regular app; DesktopFairy uses accessory + tray.
- * Briefly elevate activation policy while the selection tip is visible.
- */
 const { app } = require('electron');
 
 let overlayElevated = false;

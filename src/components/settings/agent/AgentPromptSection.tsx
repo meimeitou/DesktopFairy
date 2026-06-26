@@ -11,7 +11,7 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
   return (
     <section className="settings-section agent-subsection">
       <h4>提示词设置</h4>
-      <p className="field-hint">
+      <p className="agent-subsection-intro">
         通过 <code>SOUL.md</code> 与 <code>USER.md</code> 定义智能体的人格与用户习惯，
         两者会在智能体模式下注入每次对话的系统提示词。
       </p>
