@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getBuiltinToolCatalog,
+  getEnabledAgentBuiltinTools,
   type AgentConfig,
   type AgentSkillDescriptor,
 } from "../../../shared/agent";
@@ -11,6 +12,7 @@ import type {
 } from "../../../shared/mcpServer";
 import { buildMcpCommandString } from "../../../shared/mcpServer";
 import AgentCatalogToggleList from "./AgentCatalogToggleList";
+import AgentContextualToolList from "./AgentContextualToolList";
 import AgentMcpEditor from "./AgentMcpEditor";
 
 const api = window.electronAPI;
@@ -72,18 +74,16 @@ export default function AgentToolsSection({
     [agent.toolApprovalMode]
   );
 
-  const disabledTools = useMemo(
-    () => new Set(agent.disabledToolIds),
-    [agent.disabledToolIds]
+  const localEnabledIds = useMemo(
+    () => new Set(getEnabledAgentBuiltinTools(agent, "local").map((t) => t.id)),
+    [agent]
   );
 
-  const enabledToolIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const tool of catalog) {
-      if (!disabledTools.has(tool.id)) ids.add(tool.id);
-    }
-    return ids;
-  }, [catalog, disabledTools]);
+  const terminalEnabledIds = useMemo(
+    () =>
+      new Set(getEnabledAgentBuiltinTools(agent, "terminal").map((t) => t.id)),
+    [agent]
+  );
 
   const boundMcpIds = useMemo(
     () => new Set(agent.mcpServerIds),
@@ -151,13 +151,29 @@ export default function AgentToolsSection({
     return () => off?.();
   }, []);
 
-  const toggleBuiltinTool = (id: string, enabled: boolean) => {
+  const toggleLocalTool = (id: string, enabled: boolean) => {
+    if (id === "Terminal") return; // Terminal is never available in the local context.
     if (enabled) {
       onAgentChange({
         disabledToolIds: agent.disabledToolIds.filter((x) => x !== id),
       });
     } else if (!agent.disabledToolIds.includes(id)) {
       onAgentChange({ disabledToolIds: [...agent.disabledToolIds, id] });
+    }
+  };
+
+  const toggleTerminalTool = (id: string, enabled: boolean) => {
+    if (id === "Bash") return; // Bash is never available in the terminal context.
+    if (enabled) {
+      onAgentChange({
+        terminalDisabledToolIds: agent.terminalDisabledToolIds.filter(
+          (x) => x !== id
+        ),
+      });
+    } else if (!agent.terminalDisabledToolIds.includes(id)) {
+      onAgentChange({
+        terminalDisabledToolIds: [...agent.terminalDisabledToolIds, id],
+      });
     }
   };
 
@@ -365,10 +381,24 @@ export default function AgentToolsSection({
       )}
 
       {tab === "builtin" && (
-        <AgentCatalogToggleList
+        <AgentContextualToolList
           items={builtinCatalogItems}
-          enabledIds={enabledToolIds}
-          onToggle={toggleBuiltinTool}
+          contexts={[
+            {
+              key: "local",
+              label: "本地",
+              enabledIds: localEnabledIds,
+              forcedOffIds: new Set(["Terminal"]),
+              onToggle: toggleLocalTool,
+            },
+            {
+              key: "terminal",
+              label: "终端",
+              enabledIds: terminalEnabledIds,
+              forcedOffIds: new Set(["Bash"]),
+              onToggle: toggleTerminalTool,
+            },
+          ]}
           search={search}
           emptyLabel="无匹配的内置工具"
         />

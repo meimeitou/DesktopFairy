@@ -2,9 +2,18 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   padding: 4px 0 0 0;
+  position: relative;
+}
+
+.terminal-page-left {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .terminal-instances-wrapper {
@@ -113,4 +122,101 @@
 .terminal-tab-add:hover {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.95);
+}
+
+.terminal-agent-toggle {
+  position: absolute;
+  right: 16px;
+  bottom: 52px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(30, 30, 45, 0.95);
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  transition:
+    opacity 0.2s ease,
+    background 0.15s,
+    color 0.15s,
+    visibility 0s linear 0.2s;
+}
+
+.terminal-agent-toggle:hover {
+  background: rgba(45, 45, 65, 0.98);
+  color: #ffffff;
+}
+
+.terminal-agent-toggle.open {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.terminal-selection-tooltip {
+  position: absolute;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 4px;
+  background: rgba(20, 15, 40, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  user-select: none;
+  z-index: 30;
+  animation: terminal-tooltip-in 0.12s ease-out;
+}
+
+@keyframes terminal-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.terminal-selection-tooltip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.terminal-selection-tooltip-btn:hover {
+  background: rgba(120, 100, 255, 0.25);
+  color: #ffffff;
+}
+
+.terminal-selection-tooltip-btn.primary {
+  color: rgba(180, 170, 255, 0.95);
+}
+
+.terminal-selection-tooltip-btn.primary:hover {
+  background: rgba(120, 100, 255, 0.35);
+}
+
+.terminal-selection-tooltip-divider {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 2px 0;
 }

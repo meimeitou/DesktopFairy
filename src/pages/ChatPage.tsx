@@ -1127,7 +1127,6 @@ export default function ChatPage({
           onCreate={handleCreateTopic}
           onDelete={handleDeleteTopic}
           onRename={handleRenameTopic}
-          onRefresh={() => {}}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           loadingTopicIds={loadingTopicIds}

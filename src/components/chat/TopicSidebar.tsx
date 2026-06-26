@@ -2,8 +2,6 @@ import { useState } from "react";
 import type { ChatTopic } from "../../shared/chatSession";
 import "./TopicSidebar.css";
 
-const api = window.electronAPI;
-
 interface Props {
   topics: ChatTopic[];
   activeId: string | null;
@@ -11,7 +9,6 @@ interface Props {
   onCreate: () => void;
   onDelete: (id: string) => void;
   onRename: (id: string, name: string) => void;
-  onRefresh: () => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
   loadingTopicIds: Set<string>;
@@ -127,7 +124,6 @@ export default function TopicSidebar({
   onCreate,
   onDelete,
   onRename,
-  onRefresh,
   collapsed,
   onToggleCollapse,
   loadingTopicIds,

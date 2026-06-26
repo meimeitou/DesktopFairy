@@ -3,6 +3,8 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
+import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
+import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
 
 const api = window.electronAPI;
 
@@ -11,11 +13,13 @@ function TerminalInstance({
   tabId,
   onSessionReady,
   onSessionEnd,
+  onSelectionChange,
 }: {
   isActive: boolean;
   tabId: string;
   onSessionReady?: (tabId: string, sessionId: string) => void;
   onSessionEnd?: (tabId: string) => void;
+  onSelectionChange?: (tabId: string, text: string, x: number, y: number) => void;
 }) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -46,7 +50,6 @@ function TerminalInstance({
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
 
-    // Create PTY session
     const { cols, rows } = xterm;
     let isMounted = true;
     api
@@ -67,21 +70,17 @@ function TerminalInstance({
         }
       });
 
-    // Terminal input → PTY
     const inputData = xterm.onData((data) => {
       if (sessionIdRef.current) {
         api.invoke("pty:input", { sessionId: sessionIdRef.current, data });
       }
     });
 
-    // PTY output → terminal
     const offOutput = api.onPtyOutput?.(({ sessionId, data }) => {
-      if (sessionId === sessionIdRef.current) {
-        xterm.write(data);
-      }
+      if (sessionId !== sessionIdRef.current) return;
+      xterm.write(data);
     });
 
-    // PTY exit
     const offExit = api.onPtyExit?.(({ sessionId }) => {
       if (sessionId === sessionIdRef.current) {
         xterm.write("\r\n[进程已退出]\r\n");
@@ -89,7 +88,6 @@ function TerminalInstance({
       }
     });
 
-    // macOS Cmd+C / Cmd+V
     xterm.attachCustomKeyEventHandler((event) => {
       if (event.metaKey && event.type === "keydown") {
         if (event.key === "c") {
@@ -103,7 +101,20 @@ function TerminalInstance({
       return true;
     });
 
-    // Resize handling
+    const el = terminalRef.current;
+    const handleMouseUp = (e: MouseEvent) => {
+      const selection = xterm.getSelection();
+      if (selection?.trim() && el) {
+        const rect = el.getBoundingClientRect();
+        onSelectionChange?.(tabId, selection, e.clientX - rect.left, e.clientY - rect.top);
+      }
+    };
+    const handleMouseDown = () => {
+      onSelectionChange?.(tabId, "", 0, 0);
+    };
+    el?.addEventListener("mouseup", handleMouseUp);
+    el?.addEventListener("mousedown", handleMouseDown);
+
     const handleResize = () => {
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       resizeTimerRef.current = setTimeout(() => {
@@ -131,10 +142,13 @@ function TerminalInstance({
       inputData.dispose();
       offOutput?.();
       offExit?.();
+      el?.removeEventListener("mouseup", handleMouseUp);
+      el?.removeEventListener("mousedown", handleMouseDown);
       resizeObserver.disconnect();
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
-      if (sessionIdRef.current) {
-        api.invoke("pty:kill", { sessionId: sessionIdRef.current });
+      const endedSessionId = sessionIdRef.current;
+      if (endedSessionId) {
+        api.invoke("pty:kill", { sessionId: endedSessionId });
       }
       onSessionEnd?.(tabId);
       xterm.dispose();
@@ -142,9 +156,8 @@ function TerminalInstance({
       fitAddonRef.current = null;
       sessionIdRef.current = "";
     };
-  }, [onSessionEnd, onSessionReady, tabId]);
+  }, [onSessionEnd, onSessionReady, onSelectionChange, tabId]);
 
-  // Fit again when becoming active
   useEffect(() => {
     if (!isActive || !terminalRef.current || !fitAddonRef.current) return;
 
@@ -152,7 +165,6 @@ function TerminalInstance({
 
     const doFit = () => {
       fitAddonRef.current?.fit();
-      // Wait two animation frames for layout + renderer to fully settle
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const xterm = xtermRef.current;
@@ -165,13 +177,11 @@ function TerminalInstance({
       });
     };
 
-    // If already rendered, fit immediately
     if (el.clientWidth > 0 && el.clientHeight > 0) {
       doFit();
       return;
     }
 
-    // Wait for container to recover from display:none before fitting
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
@@ -202,6 +212,13 @@ export default function TerminalPage({
     { id: `tab_${Date.now()}`, title: "终端 1" },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectionTip, setSelectionTip] = useState<{
+    text: string;
+    x: number;
+    y: number;
+    tabId: string;
+  } | null>(null);
   const nextTabIndex = useRef(2);
   const sessionMapRef = useRef<Map<string, string>>(new Map());
   const pendingCommandMapRef = useRef<Map<string, string[]>>(new Map());
@@ -232,15 +249,33 @@ export default function TerminalPage({
     }
   }, []);
 
-  const handleSessionReady = useCallback((tabId: string, sessionId: string) => {
-    sessionMapRef.current.set(tabId, sessionId);
-    flushPendingCommands(tabId);
-  }, [flushPendingCommands]);
+  const handleSessionReady = useCallback(
+    (tabId: string, sessionId: string) => {
+      sessionMapRef.current.set(tabId, sessionId);
+      flushPendingCommands(tabId);
+    },
+    [flushPendingCommands],
+  );
 
   const handleSessionEnd = useCallback((tabId: string) => {
     sessionMapRef.current.delete(tabId);
     pendingCommandMapRef.current.delete(tabId);
   }, []);
+
+  const getActiveSessionId = useCallback(() => {
+    return sessionMapRef.current.get(activeTabId);
+  }, [activeTabId]);
+
+  const handleSelectionChange = useCallback(
+    (tabId: string, text: string, x: number, y: number) => {
+      if (!text) {
+        setSelectionTip((prev) => (prev?.tabId === tabId ? null : prev));
+        return;
+      }
+      setSelectionTip({ text, x, y, tabId });
+    },
+    [],
+  );
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -263,7 +298,7 @@ export default function TerminalPage({
     (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
       setTabs((prev) => {
-        if (prev.length <= 1) return prev; // Keep at least one tab
+        if (prev.length <= 1) return prev;
         const idx = prev.findIndex((t) => t.id === id);
         const nextTabs = prev.filter((t) => t.id !== id);
         if (activeTabId === id) {
@@ -287,7 +322,6 @@ export default function TerminalPage({
     });
   }, [activeTabId]);
 
-  // Global shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isActive) return;
@@ -307,66 +341,121 @@ export default function TerminalPage({
 
   return (
     <div className="terminal-page">
-      <div className="terminal-instances-wrapper">
-        {tabs.map((tab) => (
-          <TerminalInstance
-            key={tab.id}
-            tabId={tab.id}
-            isActive={tab.id === activeTabId && isActive}
-            onSessionReady={handleSessionReady}
-            onSessionEnd={handleSessionEnd}
-          />
-        ))}
+      <div className="terminal-page-left">
+        <div className="terminal-instances-wrapper">
+          {tabs.map((tab) => (
+            <TerminalInstance
+              key={tab.id}
+              tabId={tab.id}
+              isActive={tab.id === activeTabId && isActive}
+              onSessionReady={handleSessionReady}
+              onSessionEnd={handleSessionEnd}
+              onSelectionChange={handleSelectionChange}
+            />
+          ))}
+          {selectionTip && selectionTip.tabId === activeTabId && (
+            <TerminalSelectionTooltip
+              text={selectionTip.text}
+              x={selectionTip.x}
+              y={selectionTip.y}
+              containerWidth={(selectionTip.x + 9999)}
+              containerHeight={(selectionTip.y + 9999)}
+              onAddToChat={() => {
+                window.dispatchEvent(
+                  new CustomEvent("terminal:add-to-chat", {
+                    detail: { text: selectionTip.text },
+                  }),
+                );
+                setDrawerOpen(true);
+                setSelectionTip(null);
+              }}
+              onClose={() => setSelectionTip(null)}
+            />
+          )}
+        </div>
+
+        <div className="terminal-tabs-bottom">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`terminal-tab-item${tab.id === activeTabId ? " active" : ""}`}
+              onClick={() => setActiveTabId(tab.id)}
+            >
+              <span>{tab.title}</span>
+              {tabs.length > 1 && (
+                <div
+                  className="terminal-tab-close"
+                  onClick={(e) => handleCloseTab(tab.id, e)}
+                >
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </div>
+              )}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="terminal-tab-add"
+            onClick={handleAddTab}
+            title="新建终端 (Cmd+T)"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div className="terminal-tabs-bottom">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            className={`terminal-tab-item${tab.id === activeTabId ? " active" : ""}`}
-            onClick={() => setActiveTabId(tab.id)}
-          >
-            <span>{tab.title}</span>
-            {tabs.length > 1 && (
-              <div
-                className="terminal-tab-close"
-                onClick={(e) => handleCloseTab(tab.id, e)}
-              >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </div>
-            )}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="terminal-tab-add"
-          onClick={handleAddTab}
-          title="新建终端 (Cmd+T)"
+      <TerminalAgentDrawer
+        isOpen={drawerOpen}
+        onToggle={() => setDrawerOpen((v) => !v)}
+        activeTabId={activeTabId}
+        getActiveSessionId={getActiveSessionId}
+      />
+
+      <button
+        type="button"
+        className={`terminal-agent-toggle${drawerOpen ? " open" : ""}`}
+        onClick={() => setDrawerOpen((v) => !v)}
+        title="AI 助手"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
-      </div>
+          <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9Z" />
+          <path d="M9 10h.01" />
+          <path d="M15 10h.01" />
+          <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
+          <path d="M12 3v2" />
+          <path d="M4.2 7.5l1.4-1.4" />
+          <path d="M18.4 6.1l1.4 1.4" />
+        </svg>
+      </button>
     </div>
   );
 }

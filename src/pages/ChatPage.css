@@ -776,6 +776,46 @@
   color: #9cdcfe;
 }
 
+.agent-tool-exit-line {
+  margin-top: 6px;
+}
+
+.agent-tool-exit-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agent-tool-exit-ok {
+  background: rgba(80, 200, 120, 0.15);
+  color: #4ec96e;
+}
+
+.agent-tool-exit-err {
+  background: rgba(255, 100, 100, 0.15);
+  color: #ff6464;
+}
+
+.agent-tool-stop-btn {
+  margin-top: 8px;
+  padding: 4px 14px;
+  border: 1px solid rgba(255, 100, 100, 0.4);
+  border-radius: 6px;
+  background: rgba(255, 100, 100, 0.08);
+  color: #ff6464;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.agent-tool-stop-btn:hover {
+  background: rgba(255, 100, 100, 0.18);
+}
+
 .agent-tool-error-text {
   margin: 0;
   padding: 0 12px 10px;

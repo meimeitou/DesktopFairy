@@ -50,7 +50,15 @@ type TestResult =
     }
   | { status: "error"; error: string };
 
-const api = (window as any).electronAPI;
+interface WebSearchTestResponse {
+  ok: boolean;
+  provider?: string;
+  count?: number;
+  sample?: { title: string; url: string } | null;
+  error?: string;
+}
+
+const api = window.electronAPI;
 
 export default function WebSearchSettingsSection({
   settings,
@@ -74,7 +82,7 @@ export default function WebSearchSettingsSection({
   const handleTest = async () => {
     setTestResult({ status: "loading" });
     try {
-      const result = await api.invoke("websearch:test", cfg);
+      const result = (await api.invoke("websearch:test", cfg)) as WebSearchTestResponse;
       if (result?.ok) {
         setTestResult({
           status: "success",
@@ -88,10 +96,14 @@ export default function WebSearchSettingsSection({
           error: String(result?.error || "未知错误"),
         });
       }
-    } catch (e: any) {
+    } catch (e) {
       setTestResult({
         status: "error",
-        error: String(e?.message || e || "调用失败"),
+        error: String(
+          (e && typeof e === "object" && "message" in e
+            ? (e as { message?: unknown }).message
+            : e) || "调用失败",
+        ),
       });
     }
   };

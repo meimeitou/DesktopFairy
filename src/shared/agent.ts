@@ -1,6 +1,5 @@
 import {
   getBuiltinToolCatalog,
-  getEnabledBuiltinTools,
   normalizeDisabledToolIds,
   type AgentBuiltinTool,
 } from "./agentBuiltinTools";
@@ -21,8 +20,12 @@ export interface AgentConfig {
   soul: string;
   /** USER.md — user's profile, preferences and habits. */
   user: string;
-  /** Opt-out: disabled builtin tool ids */
+  /** Opt-out: disabled builtin tool ids for the local / main-chat context */
   disabledToolIds: string[];
+  /** Whether the Terminal tool is enabled for this agent session */
+  enableTerminalTool?: boolean;
+  /** Opt-out: disabled builtin tool ids for the terminal drawer context */
+  terminalDisabledToolIds: string[];
   /** Bound global MCP server ids */
   mcpServerIds: string[];
   /** Enabled skill folder ids */
@@ -108,6 +111,20 @@ export const DEFAULT_USER_TEMPLATE = `# 用户档案
 
 export const BUILTIN_AGENT_TOOLS = getBuiltinToolCatalog("confirm");
 
+export const LOCAL_DEFAULT_DISABLED_TOOL_IDS = ["Terminal"];
+
+export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
+  "Bash",
+  "Read",
+  "Write",
+  "Edit",
+  "MultiEdit",
+  "NotebookRead",
+  "NotebookEdit",
+  "Glob",
+  "Grep",
+];
+
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   name: "桌面精灵",
   avatar: DEFAULT_AGENT_AVATAR,
@@ -117,7 +134,8 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   modelName: "gpt-4o-mini",
   soul: DEFAULT_SOUL,
   user: "",
-  disabledToolIds: [],
+  disabledToolIds: LOCAL_DEFAULT_DISABLED_TOOL_IDS,
+  terminalDisabledToolIds: TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   mcpServerIds: [],
   enabledSkillIds: ["find-skills", "skill-creator"],
   maxTurns: 10,
@@ -199,6 +217,9 @@ export function normalizeAgentConfig(
     })(),
     user: typeof raw.user === "string" ? raw.user : base.user,
     disabledToolIds: normalizeDisabledToolIds(raw.disabledToolIds),
+    terminalDisabledToolIds: normalizeDisabledToolIds(raw.terminalDisabledToolIds),
+    enableTerminalTool:
+      typeof raw.enableTerminalTool === "boolean" ? raw.enableTerminalTool : undefined,
     mcpServerIds,
     enabledSkillIds: (() => {
       const ids = Array.isArray(raw.enabledSkillIds)
@@ -232,14 +253,45 @@ export function getEffectiveToolApprovalMode(
   return "confirm";
 }
 
-export function getEnabledAgentBuiltinTools(agent: AgentConfig): AgentToolDescriptor[] {
+export function getEnabledAgentBuiltinTools(
+  agent: AgentConfig,
+  context: "local" | "terminal" = "local"
+): AgentToolDescriptor[] {
   const approval = getEffectiveToolApprovalMode(agent);
   const card = getChatModeCard(agent.chatMode);
-  const disabled = new Set(agent.disabledToolIds);
+  const disabled = new Set(
+    context === "local" ? agent.disabledToolIds : agent.terminalDisabledToolIds
+  );
   if (card.readOnly) {
-    for (const id of ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "WebFetch", "WebSearch", "Task"]) {
+    for (const id of [
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "NotebookEdit",
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+    ]) {
       disabled.add(id);
     }
   }
+
+  if (context === "local") {
+    disabled.add("Terminal");
+  }
+
+  if (context === "terminal") {
+    disabled.add("Bash");
+    // Terminal must remain available in the terminal drawer, even in plan mode,
+    // unless the user explicitly disabled it or the legacy flag is false.
+    if (
+      !agent.terminalDisabledToolIds?.includes("Terminal") &&
+      agent.enableTerminalTool !== false
+    ) {
+      disabled.delete("Terminal");
+    }
+  }
+
   return getBuiltinToolCatalog(approval).filter((t) => !disabled.has(t.id));
 }

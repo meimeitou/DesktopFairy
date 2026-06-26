@@ -4,6 +4,8 @@ import {
   getEnabledAgentBuiltinTools,
   normalizeAgentConfig,
   DEFAULT_AGENT_CONFIG,
+  LOCAL_DEFAULT_DISABLED_TOOL_IDS,
+  TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   isAgentBackend,
   getAgentBackendLabel,
   type AgentConfig,
@@ -24,8 +26,12 @@ describe('agent', () => {
       expect(DEFAULT_AGENT_CONFIG.enabled).toBe(true)
     })
 
-    it('should have empty disabledToolIds', () => {
-      expect(DEFAULT_AGENT_CONFIG.disabledToolIds).toEqual([])
+    it('should disable Terminal in local context by default', () => {
+      expect(DEFAULT_AGENT_CONFIG.disabledToolIds).toEqual(LOCAL_DEFAULT_DISABLED_TOOL_IDS)
+    })
+
+    it('should have terminalDisabledToolIds matching default file/bash tools', () => {
+      expect(DEFAULT_AGENT_CONFIG.terminalDisabledToolIds).toEqual(TERMINAL_DEFAULT_DISABLED_TOOL_IDS)
     })
 
     it('should have maxTurns >= 1', () => {
@@ -95,6 +101,43 @@ describe('agent', () => {
       const tools = getEnabledAgentBuiltinTools(agent)
       const ids = tools.map((t) => t.id)
       expect(ids).not.toContain('Bash')
+    })
+
+    it('should disable Terminal in local context', () => {
+      const agent = makeAgent({ chatMode: 'normal' })
+      const tools = getEnabledAgentBuiltinTools(agent)
+      const ids = tools.map((t) => t.id)
+      expect(ids).not.toContain('Terminal')
+    })
+
+    it('should enable Terminal and disable Bash/file tools in terminal context', () => {
+      const agent = makeAgent({ chatMode: 'normal' })
+      const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
+      const ids = tools.map((t) => t.id)
+      expect(ids).toContain('Terminal')
+      expect(ids).not.toContain('Bash')
+      expect(ids).not.toContain('Read')
+      expect(ids).not.toContain('Write')
+      expect(ids).not.toContain('Edit')
+      expect(ids).not.toContain('Glob')
+      expect(ids).not.toContain('Grep')
+    })
+
+    it('should keep Terminal available in terminal context even in plan mode', () => {
+      const agent = makeAgent({ chatMode: 'plan' })
+      const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
+      const ids = tools.map((t) => t.id)
+      expect(ids).toContain('Terminal')
+    })
+
+    it('should allow disabling Terminal explicitly in terminal context', () => {
+      const agent = makeAgent({
+        chatMode: 'normal',
+        terminalDisabledToolIds: ['Terminal'],
+      })
+      const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
+      const ids = tools.map((t) => t.id)
+      expect(ids).not.toContain('Terminal')
     })
   })
 

@@ -27,6 +27,8 @@ declare global {
         callback: (settings: Record<string, unknown>) => void
       ) => () => void;
       onMainWindowLayoutChanged: (callback: () => void) => () => void;
+      onChatWindowFullscreenChanged: (callback: (isFullscreen: boolean) => void) => () => void;
+      onChatWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void;
       getShortcut: () => Promise<string>;
       setShortcut: (shortcut: string) => Promise<boolean>;
       loadSettingsFromDisk: () => string | null;

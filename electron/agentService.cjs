@@ -52,14 +52,14 @@ function persistEnabledSkillId(skillId, getWindows) {
   }
 }
 
-function getBuiltinTools(agentConfig) {
-  return getEnabledOpenAiToolDefinitions(agentConfig).map(({ type, function: fn }) => ({
+function getBuiltinTools(agentConfig, context) {
+  return getEnabledOpenAiToolDefinitions(agentConfig, context).map(({ type, function: fn }) => ({
     type,
     function: fn,
   }));
 }
 
-function buildAgentSystemPrompt(agentConfig) {
+function buildAgentSystemPrompt(agentConfig, context = 'local') {
   const parts = [];
   if (agentConfig?.soul?.trim()) {
     parts.push(agentConfig.soul.trim());
@@ -69,8 +69,11 @@ function buildAgentSystemPrompt(agentConfig) {
   }
   const skillsBlock = buildSkillsPrompt(agentConfig?.enabledSkillIds);
   if (skillsBlock) parts.push(skillsBlock);
+  const toolList = context === 'terminal'
+    ? 'Read/Write/Edit/Terminal/Glob/Grep/WebSearch/WebFetch/Skill/Skills'
+    : 'Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skill/Skills';
   parts.push(
-    '你可以使用 Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skill/Skills 等工具完成任务。执行前先理解用户意图，工具失败时向用户说明原因。'
+    `你可以使用 ${toolList} 等工具完成任务。执行前先理解用户意图，工具失败时向用户说明原因。只能使用系统提供的工具列表中的工具；如果缺少你需要的工具，请直接告知用户，不要虚构或声称使用了不存在的工具。`
   );
   parts.push(
     '## 记忆持久化\n\n你可以使用 UpdateProfile 工具将用户偏好和习惯写入持久存储：\n- 用户透露偏好、习惯、身份信息时 → UpdateProfile(field="user", action="append", content="...")\n- 需要调整自己的人格或执行规则时 → UpdateProfile(field="soul", action="replace", content="...")\n- 追加内容应简短原子（一条信息一行），不要重复已有内容。替换时需提供完整的新内容。'
@@ -78,6 +81,11 @@ function buildAgentSystemPrompt(agentConfig) {
   parts.push(
     '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
   );
+  if (context === 'terminal') {
+    parts.push(
+      '## 终端操作\n\n你可以使用 Terminal 工具将 shell 命令发送到用户当前可见的终端执行，命令输出会实时显示在用户终端中，同时返回给你用于判断下一步操作。在当前终端会话中，所有 shell 命令都必须通过 Terminal 工具执行；发送命令前确保意图明确，命令执行结果（包括 exit code）会返回给你。过长的输出会被截断，如需完整输出请缩小命令范围。'
+    );
+  }
   const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
   if (modeSuffix) parts.push(modeSuffix.trim());
   return parts.join('\n\n');
@@ -187,6 +195,7 @@ function registerAgentHandlers(ipcMain, deps) {
       apiConfig,
       chatUrl,
       temperature,
+      terminalSessionId,
     } = payload || {};
 
     if (!requestId || !Array.isArray(messages) || !agentConfig || !apiConfig) {
@@ -221,9 +230,10 @@ function registerAgentHandlers(ipcMain, deps) {
       mcpRuntime = await loadMcpToolDefinitions(
         getServersByIds(agentConfig.mcpServerIds)
       );
-      const builtinTools = getBuiltinTools(agentConfig);
+      const context = terminalSessionId ? 'terminal' : 'local';
+      const builtinTools = getBuiltinTools(agentConfig, context);
       const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
-      const systemPrompt = buildAgentSystemPrompt(agentConfig);
+      const systemPrompt = buildAgentSystemPrompt(agentConfig, context);
       let conversation = mergeSystemMessage(messages, systemPrompt);
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
       const sessionEnabledSkillIds = new Set(agentConfig?.enabledSkillIds || []);
@@ -296,6 +306,7 @@ function registerAgentHandlers(ipcMain, deps) {
             const toolResult = await executeAgentTool(toolCall, {
               getWindows,
               parentWindow,
+              sender,
               agentConfig,
               toolApprovalMode: resolveToolApprovalMode(agentConfig),
               bypassApproval: agentState.bypassApproval,
@@ -308,6 +319,7 @@ function registerAgentHandlers(ipcMain, deps) {
               requestId,
               signal: controller.signal,
               webSearchConfig: getCurrentWebSearchConfig(),
+              terminalSessionId,
             });
             resultText = toolResult.resultText;
             if (toolResult.aborted) {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import {
   extractFilePath,
@@ -7,6 +7,7 @@ import {
   getToolInput,
   parseToolOutput,
 } from "./toolUtils";
+import { TerminalStopContext } from "./TerminalStopContext";
 import TerminalOutput from "./TerminalOutput";
 import ToolHeader from "./ToolHeader";
 
@@ -57,6 +58,64 @@ function BashToolBody({ msg }: { msg: ChatMsg }) {
           <div className="agent-tool-section-label">输出</div>
           <TerminalOutput content={stdout || stderr || "…"} />
         </>
+      )}
+    </div>
+  );
+}
+
+function TerminalToolBody({ msg }: { msg: ChatMsg }) {
+  const stopTerminal = useContext(TerminalStopContext);
+  const input = getToolInput(msg.toolName || "Terminal", msg.toolArgs);
+  const command = typeof input.command === "string" ? input.command : "";
+  const output = parseToolOutput(msg.toolResultPreview);
+  const outObj =
+    output && typeof output === "object" ? (output as Record<string, unknown>) : null;
+  const outText =
+    typeof output === "string"
+      ? output
+      : typeof outObj?.output === "string"
+        ? outObj.output
+        : typeof outObj?.error === "string"
+          ? outObj.error
+          : "";
+  const exitCode =
+    typeof outObj?.exitCode === "number" ? outObj.exitCode : undefined;
+  const isRunning = msg.toolStatus === "running" || msg.toolStatus === "streaming";
+  const isDone = msg.toolStatus === "done";
+
+  return (
+    <div className="agent-tool-body">
+      {command && (
+        <>
+          <div className="agent-tool-section-label">命令</div>
+          <TerminalOutput content={command} commandMode />
+        </>
+      )}
+      {(outText || isRunning) && (
+        <>
+          <div className="agent-tool-section-label">输出</div>
+          <TerminalOutput content={outText || "…"} />
+        </>
+      )}
+      {isRunning && stopTerminal && (
+        <button
+          type="button"
+          className="agent-tool-stop-btn"
+          onClick={stopTerminal}
+        >
+          停止
+        </button>
+      )}
+      {isDone && exitCode !== undefined && (
+        <div className="agent-tool-exit-line">
+          <span
+            className={`agent-tool-exit-badge${
+              exitCode === 0 ? " agent-tool-exit-ok" : " agent-tool-exit-err"
+            }`}
+          >
+            exit: {exitCode}
+          </span>
+        </div>
       )}
     </div>
   );
@@ -172,6 +231,7 @@ function SkillsToolBody({ msg }: { msg: ChatMsg }) {
 function renderToolBody(msg: ChatMsg) {
   const name = msg.toolName || "";
   if (name === "Bash") return <BashToolBody msg={msg} />;
+  if (name === "Terminal") return <TerminalToolBody msg={msg} />;
   if (name === "Skill") return <SkillToolBody msg={msg} />;
   if (name === "Skills") return <SkillsToolBody msg={msg} />;
   if (name === "Read" || name === "Write" || name === "Edit") {

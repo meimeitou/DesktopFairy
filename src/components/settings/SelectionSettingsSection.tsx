@@ -44,6 +44,7 @@ export default function SelectionSettingsSection({
 }: Props) {
   const [accessibility, setAccessibility] =
     useState<AccessibilityStatus | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const refreshAccessibility = () =>
     api
@@ -54,6 +55,11 @@ export default function SelectionSettingsSection({
   useEffect(() => {
     refreshAccessibility();
   }, [settings.selectionTriggerMode, settings.selectionEnabled]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!settings.selectionEnabled || accessibility?.trusted !== false)
@@ -88,12 +94,6 @@ export default function SelectionSettingsSection({
     settings.selectionEnabled &&
     accessibility?.supported &&
     !accessibility?.trusted;
-  const hookNotRunning =
-    settings.selectionEnabled &&
-    accessibility?.supported &&
-    accessibility?.trusted &&
-    accessibility?.hookAvailable &&
-    accessibility?.hookStarted === false;
   const hookMissing =
     settings.selectionEnabled &&
     accessibility?.supported &&
@@ -164,11 +164,11 @@ export default function SelectionSettingsSection({
             {" · 鼠标："}
             {accessibility.lastMouseEventAt == null
               ? "无"
-              : `${Math.round((Date.now() - accessibility.lastMouseEventAt) / 1000)}s前`}
+              : `${Math.round((now - accessibility.lastMouseEventAt) / 1000)}s前`}
             {" · 事件："}
             {accessibility.lastSelectionFiredAt == null
               ? "从未触发"
-              : `${Math.round((Date.now() - accessibility.lastSelectionFiredAt) / 1000)}秒前`}
+              : `${Math.round((now - accessibility.lastSelectionFiredAt) / 1000)}秒前`}
             {accessibility.lastSkipReason != null && (
               <>
                 {" · 上次跳过："}

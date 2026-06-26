@@ -52,6 +52,7 @@ function CloseIcon() {
 
 export default function ChatApp() {
   const [view, setView] = useState<AppView>(initialView);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     document.title = " ";
@@ -60,6 +61,13 @@ export default function ChatApp() {
     return () => {
       document.documentElement.classList.remove("chat-window-shell", "chat-window-mac");
     };
+  }, []);
+
+  // Sync macOS native fullscreen state so the title bar can drop its
+  // traffic-light padding while in fullscreen (matches cherry-studio).
+  useEffect(() => {
+    const off = api.onChatWindowFullscreenChanged?.((value) => setIsFullscreen(Boolean(value)));
+    return () => off?.();
   }, []);
 
   useEffect(() => {
@@ -78,7 +86,9 @@ export default function ChatApp() {
   }, []);
 
   return (
-    <div className={`chat-app${isMac ? " chat-app-mac" : " chat-app-frameless"}`}>
+    <div
+      className={`chat-app${isMac ? " chat-app-mac" : " chat-app-frameless"}${isFullscreen ? " chat-app-fullscreen" : ""}`}
+    >
       <header className="chat-app-topbar">
         <nav className="chat-app-tabs">
           <button

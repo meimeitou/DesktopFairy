@@ -80,7 +80,7 @@ export function resolveExpressionForReaction(
   assistantText?: string
 ): string | null {
   const available = new Set(availableNames);
-  let candidates = REACTION_EXPRESSIONS[reaction];
+  const candidates = REACTION_EXPRESSIONS[reaction];
 
   if (reaction === "replyDone" && assistantText?.trim()) {
     for (const { pattern, names } of REPLY_DONE_KEYWORD_EXPRESSIONS) {

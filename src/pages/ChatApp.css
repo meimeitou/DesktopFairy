@@ -29,6 +29,12 @@ html.chat-window-shell body {
   padding-left: 78px;
 }
 
+/* In macOS native fullscreen the traffic lights are hidden, so the tabs can
+   move left to the window edge (same behavior as cherry-studio). */
+.chat-app-mac.chat-app-fullscreen .chat-app-topbar {
+  padding-left: 12px;
+}
+
 .chat-app-tabs {
   display: flex;
   align-items: center;

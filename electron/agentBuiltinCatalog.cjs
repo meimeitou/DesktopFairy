@@ -19,6 +19,7 @@ const READ_ONLY_TOOLS = new Set([
   'Bash',
   'WebFetch',
   'WebSearch',
+  'Terminal',
 ]);
 
 const CHAT_MODE_SUFFIXES = {
@@ -64,6 +65,7 @@ const CLAUDE_CODE_BUILTIN_TOOLS = [
   { id: 'Skills', name: 'Skills', description: 'Lists, searches, installs, initializes, and registers agent skills', category: 'context', defaultPrompt: true },
   { id: 'UpdateProfile', name: 'UpdateProfile', description: "Updates the agent's SOUL.md or USER.md profile content (auto-approved)", category: 'context', defaultPrompt: false },
   { id: 'McpManager', name: 'McpManager', description: 'Lists, inspects, and manages MCP servers (enable/disable/restart/stop/add/edit/remove)', category: 'context', defaultPrompt: true },
+  { id: 'Terminal', name: 'Terminal', description: 'Sends a shell command to the currently visible terminal session and returns its output', category: 'shell', defaultPrompt: true },
 ];
 
 const TOOL_LABELS = Object.fromEntries(
@@ -287,17 +289,47 @@ function getOpenAiToolParameters(toolId) {
         },
         required: ['action'],
       };
+    case 'Terminal':
+      return {
+        type: 'object',
+        properties: {
+          command: { type: 'string' },
+          timeout: { type: 'number' },
+        },
+        required: ['command'],
+      };
     default:
       return { type: 'object', properties: {}, required: [] };
   }
 }
 
-function getEnabledOpenAiToolDefinitions(agentConfig) {
-  const disabled = new Set(agentConfig?.disabledToolIds || []);
+function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
+  const disabled = new Set(
+    context === 'local'
+      ? agentConfig?.disabledToolIds || []
+      : agentConfig?.terminalDisabledToolIds || []
+  );
   const chatMode = agentConfig?.chatMode;
   if (isReadOnlyMode(chatMode)) {
     for (const id of READ_ONLY_TOOLS) disabled.add(id);
   }
+
+  if (context === 'local') {
+    disabled.add('Terminal');
+  }
+
+  if (context === 'terminal') {
+    disabled.add('Bash');
+    // Terminal must remain available in the terminal drawer, even in plan mode,
+    // unless the user explicitly disabled it or the legacy flag is false.
+    if (
+      !agentConfig?.terminalDisabledToolIds?.includes('Terminal') &&
+      agentConfig?.enableTerminalTool !== false
+    ) {
+      disabled.delete('Terminal');
+    }
+  }
+
   const approvalMode = resolveToolApprovalMode(agentConfig);
   const enabledSkillIds = agentConfig?.enabledSkillIds || [];
   return CLAUDE_CODE_BUILTIN_TOOLS.filter((t) => {

@@ -119,15 +119,32 @@ function presentChatWindow(screen, mainWindow, chatWindow, refPoint, options = {
     mainWindow.focus();
   }
 
+  // Recover from minimized first; positioning calls below would otherwise
+  // misbehave or deadlock on macOS panel windows.
+  if (chatWindow.isMinimized()) {
+    chatWindow.restore();
+  }
+
   attachChatToAllSpaces(chatWindow);
-  positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options);
+  // When the window is already fullscreen or maximized, let the OS manage
+  // geometry rather than forcing a position (prevents window-manager deadlocks).
+  if (!chatWindow.isFullScreen() && !chatWindow.isMaximized()) {
+    positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options);
+  }
   chatWindow.show();
   chatWindow.focus();
-  positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options);
+  if (!chatWindow.isFullScreen() && !chatWindow.isMaximized()) {
+    positionChatWindowNearMain(screen, mainWindow, chatWindow, refPoint, options);
+  }
 }
 
 function hideChatWindow(chatWindow) {
   if (!chatWindow || chatWindow.isDestroyed()) return;
+  // Exiting fullscreen before hiding prevents the window manager from getting
+  // stuck when the window is shown again (macOS panel + fullscreen quirk).
+  if (chatWindow.isFullScreen()) {
+    chatWindow.setFullScreen(false);
+  }
   chatWindow.hide();
   detachChatFromAllSpaces(chatWindow);
 }

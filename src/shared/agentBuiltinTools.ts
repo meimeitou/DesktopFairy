@@ -87,6 +87,12 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "context",
     true
   ),
+  builtinTool(
+    "Terminal",
+    "Sends a shell command to the currently visible terminal session and returns its output",
+    "shell",
+    true
+  ),
 ];
 
 const DEFAULT_SAFE_TOOLS = new Set([
@@ -99,8 +105,6 @@ const DEFAULT_SAFE_TOOLS = new Set([
   "Skill",
   "UpdateProfile",
 ]);
-
-const ACCEPT_EDITS_TOOLS = new Set(["Edit", "MultiEdit", "NotebookEdit", "Write"]);
 
 export function resolveBuiltinToolApproval(
   toolId: string,
@@ -376,6 +380,15 @@ function getOpenAiToolParameters(toolId: string) {
           },
         },
         required: ["action"],
+      };
+    case "Terminal":
+      return {
+        type: "object",
+        properties: {
+          command: { type: "string" },
+          timeout: { type: "number" },
+        },
+        required: ["command"],
       };
     default:
       return { type: "object", properties: {}, required: [] as string[] };

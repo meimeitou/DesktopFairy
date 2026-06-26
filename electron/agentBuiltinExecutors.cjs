@@ -5,6 +5,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const { glob } = require('fs/promises');
 const { app } = require('electron');
+const { runCommandInRenderer } = require('./terminalAgentService.cjs');
 
 const execFileAsync = promisify(execFile);
 
@@ -755,6 +756,42 @@ async function toolMcpManager(args, deps = {}) {
   return fail(`Unknown action: ${action}`);
 }
 
+const MAX_TERMINAL_OUTPUT = 20000;
+const TERMINAL_OUTPUT_HEAD = 18000;
+const TERMINAL_OUTPUT_TAIL = 2000;
+
+function truncateTerminalOutput(text) {
+  const str = String(text || '');
+  if (str.length <= MAX_TERMINAL_OUTPUT) return str;
+  return (
+    str.slice(0, TERMINAL_OUTPUT_HEAD) +
+    `\n…[输出已截断，共 ${str.length} 字符]…\n` +
+    str.slice(str.length - TERMINAL_OUTPUT_TAIL)
+  );
+}
+
+async function toolTerminal(args, deps = {}) {
+  const command = String(args?.command || '').trim();
+  if (!command) return fail('command required');
+  const timeout = Math.min(Number(args?.timeout) || 60_000, 600_000);
+  try {
+    const result = await runCommandInRenderer(deps.sender, {
+      sessionId: deps.terminalSessionId,
+      command,
+      timeout,
+      signal: deps.signal,
+    });
+    return JSON.stringify({
+      ok: true,
+      command,
+      output: truncateTerminalOutput(result.output),
+      exitCode: result.exitCode,
+    });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
 async function executeBuiltinTool(toolName, args, deps = {}) {
   switch (toolName) {
     case 'Read':
@@ -787,8 +824,10 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
       return toolUpdateProfile(args, deps);
     case 'McpManager':
       return toolMcpManager(args, deps);
+    case 'Terminal':
+      return toolTerminal(args, deps);
     default:
-      return fail(`Unknown builtin tool: ${toolName}`);
+      return fail(`工具 "${toolName}" 不在可用工具列表中。请只使用系统提供的工具，不要虚构不存在的工具。`);
   }
 }
 

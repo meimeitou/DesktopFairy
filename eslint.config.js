@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'src/live2d/framework/**']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -23,6 +23,11 @@ export default defineConfig([
         argsIgnorePattern: '^_',
         varsIgnorePattern: '^_',
       }],
+      // React Compiler rules are too noisy for the existing codebase.
+      // Keep them as warnings so they are visible without breaking the build.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/refs': 'warn',
     },
   },
 ])

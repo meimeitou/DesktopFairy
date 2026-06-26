@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'agent:avatar:select',
       'agent:avatar:resolve',
       'agent:avatar:clear_image',
+      'terminal:agent:stop',
       'websearch:test',
     ];
 
@@ -110,6 +111,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = () => callback();
     ipcRenderer.on('main-window:layout-changed', listener);
     return () => ipcRenderer.removeListener('main-window:layout-changed', listener);
+  },
+
+  onChatWindowFullscreenChanged: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on('chat:window:fullscreen_changed', listener);
+    return () => ipcRenderer.removeListener('chat:window:fullscreen_changed', listener);
+  },
+
+  onChatWindowMaximizedChanged: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on('chat:window:maximized_changed', listener);
+    return () => ipcRenderer.removeListener('chat:window:maximized_changed', listener);
   },
 
   // Load settings from disk synchronously (used as localStorage fallback on startup)

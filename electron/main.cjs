@@ -30,6 +30,8 @@ const {
   resolveChatWindowPosition,
   presentChatWindow,
   hideChatWindow,
+  attachChatToAllSpaces,
+  detachChatFromAllSpaces,
 } = require('./chatWindowPosition.cjs');
 
 registerLive2DSchemes();
@@ -266,7 +268,6 @@ const createChatWindow = (options = {}) => {
     backgroundColor: '#0f0f19',
     ...(process.platform === 'darwin'
       ? {
-          type: 'panel',
           titleBarStyle: 'hidden',
           titleBarOverlay: {
             color: '#0f0f19',
@@ -293,13 +294,50 @@ const createChatWindow = (options = {}) => {
 
   chatWindow.on('close', (e) => {
     if (!isQuitting) {
-      e.preventDefault();
-      dismissChatWindow(chatWindow);
+      // When in native fullscreen on macOS, intercepting close can deadlock the
+      // window manager. Let the first close exit fullscreen; the next close hides.
+      if (!chatWindow.isFullScreen()) {
+        e.preventDefault();
+        dismissChatWindow(chatWindow);
+      }
     }
   });
 
   chatWindow.on('hide', () => {
     hideMacDock();
+  });
+
+  // Sync fullscreen/maximized state to renderer so the custom title bar can
+  // adjust its traffic-light padding (same pattern as cherry-studio).
+  chatWindow.on('enter-full-screen', () => {
+    if (chatWindow.isDestroyed()) return;
+    detachChatFromAllSpaces(chatWindow);
+    chatWindow.webContents.send('chat:window:fullscreen_changed', true);
+  });
+
+  chatWindow.on('leave-full-screen', () => {
+    if (chatWindow.isDestroyed()) return;
+    attachChatToAllSpaces(chatWindow);
+    chatWindow.webContents.send('chat:window:fullscreen_changed', false);
+  });
+
+  chatWindow.on('maximize', () => {
+    if (chatWindow.isDestroyed()) return;
+    chatWindow.webContents.send('chat:window:maximized_changed', true);
+  });
+
+  chatWindow.on('unmaximize', () => {
+    if (chatWindow.isDestroyed()) return;
+    chatWindow.webContents.send('chat:window:maximized_changed', false);
+  });
+
+  // Minimizing from fullscreen/maximized can deadlock on macOS panel windows.
+  // Drop out of fullscreen first, then minimize.
+  chatWindow.on('minimize', () => {
+    if (chatWindow.isDestroyed()) return;
+    if (chatWindow.isFullScreen()) {
+      chatWindow.setFullScreen(false);
+    }
   });
 
   chatWindow.on('closed', () => {
@@ -394,6 +432,7 @@ const createMainWindow = () => {
     transparent: true,
     alwaysOnTop: false,
     resizable: false,
+    fullscreenable: false,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -429,10 +468,12 @@ const createMainWindow = () => {
 
   // Re-assert float behavior after macOS Space moves or focus changes
   mainWindow.on('moved', () => {
-    if (process.platform === 'darwin') floatWindowOnAllSpaces(mainWindow);
+    if (process.platform === 'darwin' && !mainWindow.isFullScreen()) {
+      floatWindowOnAllSpaces(mainWindow);
+    }
   });
   mainWindow.on('focus', () => {
-    if (process.platform === 'darwin') {
+    if (process.platform === 'darwin' && !mainWindow.isFullScreen()) {
       floatWindowOnAllSpaces(mainWindow);
       hideMacDock();
     }
@@ -460,7 +501,7 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('reapply_window_float', async () => {
-    if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'darwin') {
+    if (mainWindow && !mainWindow.isDestroyed() && process.platform === 'darwin' && !mainWindow.isFullScreen()) {
       floatWindowOnAllSpaces(mainWindow);
     }
   });

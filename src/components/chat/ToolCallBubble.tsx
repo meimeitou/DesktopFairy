@@ -65,7 +65,7 @@ export function ToolCallGroup({
     (t) => t.toolStatus === "error" || t.toolStatus === "denied",
   ).length;
 
-  let meta = `${tools.length} 个工具`;
+  let meta;
   if (waiting > 0) meta = `${waiting} 个待确认`;
   else if (running > 0) meta = `${running} 个执行中`;
   else if (failed > 0) meta = `${failed} 个失败 · ${done} 个完成`;
