@@ -1,5 +1,6 @@
 import type { ChatAttachment } from "./chatAttachments";
 import { isImageExt } from "./chatAttachments";
+import { formatToolEvidenceForApi } from "./toolEvidence";
 
 export type ChatRole = "user" | "assistant";
 
@@ -24,6 +25,9 @@ export interface ChatMsg {
     | "denied";
   toolMessage?: string;
   toolResultPreview?: string;
+  /** Relative path under chat_tool_results/{topicId}/ */
+  toolResultRef?: string;
+  toolResultBytes?: number;
 }
 
 export type ApiContentPart =
@@ -51,6 +55,17 @@ export function filterForApi(messages: ChatMsg[]): ChatMsg[] {
   );
 }
 
+/** Agent history: keep tool messages and non-empty assistant/user turns. */
+export function filterForAgentHistory(messages: ChatMsg[]): ChatMsg[] {
+  return filterAfterContextClear(messages).filter(
+    (m) =>
+      m.type !== "clear" &&
+      !m.error &&
+      (m.type === "tool" ||
+        !(m.role === "assistant" && !m.content?.trim())),
+  );
+}
+
 /** Last normal assistant bubble (excludes tool/clear/error messages). */
 export function findLastAssistantReplyIndex(messages: ChatMsg[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -71,6 +86,12 @@ export const DEFAULT_API_MAX_MESSAGES = 40;
 export const DEFAULT_API_MAX_CHARS = 24_000;
 
 function messageCharLength(msg: ChatMsg): number {
+  if (msg.type === "tool") {
+    const preview = msg.toolResultPreview || "";
+    const hint = msg.toolMessage || "";
+    const summary = formatToolEvidenceForApi(msg);
+    return Math.max(preview.length, hint.length, summary.length, msg.content.length);
+  }
   return msg.content.length;
 }
 
@@ -111,12 +132,7 @@ function appendTextFileBlocks(
 
 function formatToolHistoryBlock(tools: ChatMsg[]): string {
   if (tools.length === 0) return "";
-  const lines = tools.map((t) => {
-    const name = t.toolName || "tool";
-    const status = t.toolStatus || "done";
-    const preview = t.toolResultPreview || t.toolMessage || "";
-    return `[${name}] (${status}) ${preview}`.trim();
-  });
+  const lines = tools.map((t) => formatToolEvidenceForApi(t));
   return `<previous_tool_results>\n${lines.join("\n")}\n</previous_tool_results>`;
 }
 

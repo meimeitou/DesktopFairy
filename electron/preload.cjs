@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'chat:abort',
       'chat:session:load',
       'chat:session:save',
+      'chat:tool-result:read',
+      'chat:log:load',
       'chat:topics:list',
       'chat:topics:create',
       'chat:topics:delete',

@@ -10,7 +10,7 @@ const { getServersByIds } = require('./mcpServerService.cjs');
 const { getEnabledOpenAiToolDefinitions, getChatModeSuffix, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
 const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
 
-const inflightAgents = new Map();
+const { appendChatLog } = require('./chatSessionLog.cjs');
 
 function getCurrentWebSearchConfig() {
   try {
@@ -80,6 +80,9 @@ function buildAgentSystemPrompt(agentConfig, context = 'local') {
   );
   parts.push(
     '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
+  );
+  parts.push(
+    '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。若需指向某条证据，用简短说明即可（如「见上方 WebSearch 结果 #2」）。'
   );
   if (context === 'terminal') {
     parts.push(
@@ -185,7 +188,7 @@ async function readSseResponse(res, onDelta, onToolDelta) {
 }
 
 function registerAgentHandlers(ipcMain, deps) {
-  const { getChatCompletionsUrl, getWindows, getParentWindow } = deps;
+  const { getChatCompletionsUrl, getWindows, getParentWindow, chatLogsDir } = deps;
 
   ipcMain.handle('agent:run', async (event, payload) => {
     const {
@@ -196,6 +199,7 @@ function registerAgentHandlers(ipcMain, deps) {
       chatUrl,
       temperature,
       terminalSessionId,
+      topicId,
     } = payload || {};
 
     if (!requestId || !Array.isArray(messages) || !agentConfig || !apiConfig) {
@@ -336,6 +340,15 @@ function registerAgentHandlers(ipcMain, deps) {
                   resultPreview: resultText,
                 });
               }
+              if (topicId && chatLogsDir && resultText) {
+                appendChatLog(chatLogsDir, topicId, {
+                  type: 'tool',
+                  toolCallId,
+                  toolName,
+                  toolArgs,
+                  resultText,
+                });
+              }
             }
           } catch (err) {
             resultText = JSON.stringify({
@@ -351,6 +364,15 @@ function registerAgentHandlers(ipcMain, deps) {
               message: String(err?.message || err),
               resultPreview: resultText,
             });
+            if (topicId && chatLogsDir && resultText) {
+              appendChatLog(chatLogsDir, topicId, {
+                type: 'tool',
+                toolCallId,
+                toolName,
+                toolArgs,
+                resultText,
+              });
+            }
           }
 
           if (toolAborted) break;

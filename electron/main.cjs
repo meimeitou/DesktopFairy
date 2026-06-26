@@ -83,6 +83,8 @@ const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'da_settings.json
 const CHAT_SESSION_PATH = () => path.join(app.getPath('userData'), 'da_chat.json');
 const CHAT_TOPICS_INDEX_PATH = () => path.join(app.getPath('userData'), 'da_chat_topics.json');
 const CHAT_SESSIONS_DIR = () => path.join(app.getPath('userData'), 'chat_sessions');
+const CHAT_TOOL_RESULTS_DIR = () => path.join(app.getPath('userData'), 'chat_tool_results');
+const CHAT_LOGS_DIR = () => path.join(app.getPath('userData'), 'chat_session_logs');
 
 const loadSettingsFromDisk = () => {
   try {
@@ -261,6 +263,7 @@ const createChatWindow = (options = {}) => {
     x: initialPos.x,
     y: initialPos.y,
     resizable: true,
+    fullscreenable: false,
     center: false,
     show: false,
     skipTaskbar: true,
@@ -571,6 +574,8 @@ const setupIPC = () => {
     sessionPath: CHAT_SESSION_PATH,
     topicsIndexPath: CHAT_TOPICS_INDEX_PATH,
     sessionsDir: CHAT_SESSIONS_DIR,
+    toolResultsDir: CHAT_TOOL_RESULTS_DIR,
+    chatLogsDir: CHAT_LOGS_DIR,
   });
 
   registerPtyHandlers({ ipcMain });
@@ -594,6 +599,7 @@ const setupIPC = () => {
   registerAgentHandlers(ipcMain, {
     getChatCompletionsUrl,
     getWindows: getScreenshotWindows,
+    chatLogsDir: CHAT_LOGS_DIR,
     getParentWindow: () => {
       if (chatWindow && !chatWindow.isDestroyed()) return chatWindow;
       if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;

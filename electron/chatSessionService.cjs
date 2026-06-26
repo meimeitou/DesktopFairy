@@ -1,9 +1,26 @@
 const fs = require('fs');
 const path = require('path');
+const { readChatLog } = require('./chatSessionLog.cjs');
+
+const CHAT_SESSION_VERSION = 2;
+const INLINE_PREVIEW_MAX = 16 * 1024;
+const STORAGE_PREVIEW_MAX = 4 * 1024;
+
+const STALE_TOOL_STATUSES = new Set(['streaming', 'running', 'awaiting_approval']);
+
+function ensureDir(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+  } catch (e) {
+    console.warn('Failed to create directory:', dirPath, e);
+  }
+}
 
 function emptySession() {
   return {
-    version: 1,
+    version: CHAT_SESSION_VERSION,
     updatedAt: Date.now(),
     messages: [],
     draftInput: '',
@@ -26,15 +43,136 @@ function genId() {
   return `topic-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function registerChatSessionHandlers({ ipcMain, sessionPath, topicsIndexPath, sessionsDir }) {
-  function ensureDir(dirPath) {
-    try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-    } catch (e) {
-      console.warn('Failed to create directory:', dirPath, e);
+function sanitizeToolCallId(toolCallId) {
+  return String(toolCallId || 'tool').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function normalizeToolMessage(m) {
+  const tool = {
+    id: m.id,
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content : '',
+    type: 'tool',
+    error: m.error === true,
+    timestamp: m.timestamp,
+    toolName: typeof m.toolName === 'string' ? m.toolName : undefined,
+    toolCallId: typeof m.toolCallId === 'string' ? m.toolCallId : undefined,
+    toolArgs: typeof m.toolArgs === 'string' ? m.toolArgs : undefined,
+    toolApprovalId: typeof m.toolApprovalId === 'string' ? m.toolApprovalId : undefined,
+    toolStatus: m.toolStatus,
+    toolMessage: typeof m.toolMessage === 'string' ? m.toolMessage : undefined,
+    toolResultPreview: typeof m.toolResultPreview === 'string' ? m.toolResultPreview : undefined,
+    toolResultRef: typeof m.toolResultRef === 'string' ? m.toolResultRef : undefined,
+    toolResultBytes:
+      typeof m.toolResultBytes === 'number' && Number.isFinite(m.toolResultBytes)
+        ? m.toolResultBytes
+        : undefined,
+  };
+  if (tool.toolStatus && STALE_TOOL_STATUSES.has(tool.toolStatus)) {
+    tool.toolStatus = 'error';
+    tool.toolMessage = tool.toolMessage || '会话恢复时工具未完成';
+  }
+  return tool;
+}
+
+function normalizeChatMessage(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const m = raw;
+  if (
+    typeof m.id !== 'string' ||
+    (m.role !== 'user' && m.role !== 'assistant') ||
+    typeof m.content !== 'string'
+  ) {
+    return null;
+  }
+  if (m.type === 'tool') return normalizeToolMessage(m);
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    type: m.type === 'clear' ? 'clear' : undefined,
+    error: m.error === true,
+    timestamp: m.timestamp,
+  };
+}
+
+function normalizeSession(raw) {
+  if (!raw || typeof raw !== 'object') return emptySession();
+  const messages = Array.isArray(raw.messages)
+    ? raw.messages.map(normalizeChatMessage).filter(Boolean)
+    : [];
+  return {
+    version: raw.version === 1 || raw.version === CHAT_SESSION_VERSION ? raw.version : CHAT_SESSION_VERSION,
+    updatedAt:
+      typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt)
+        ? raw.updatedAt
+        : Date.now(),
+    messages,
+    draftInput: typeof raw.draftInput === 'string' ? raw.draftInput : '',
+    draftAttachments: Array.isArray(raw.draftAttachments) ? raw.draftAttachments : [],
+  };
+}
+
+function writeToolResultFile(toolResultsDir, topicId, toolCallId, payload) {
+  const relRef = path.join(topicId, `${sanitizeToolCallId(toolCallId)}.json`);
+  const absPath = path.join(toolResultsDir(), relRef);
+  ensureDir(path.dirname(absPath));
+  fs.writeFileSync(absPath, typeof payload === 'string' ? payload : JSON.stringify(payload));
+  return relRef.split(path.sep).join('/');
+}
+
+function readToolResultFile(toolResultsDir, relRef) {
+  const normalized = String(relRef || '').replace(/\\/g, '/');
+  if (!normalized || normalized.includes('..')) return null;
+  const absPath = path.join(toolResultsDir(), normalized);
+  if (!fs.existsSync(absPath)) return null;
+  return fs.readFileSync(absPath, 'utf8');
+}
+
+function processSessionForSave(session, topicId, toolResultsDir) {
+  if (!session || !topicId || !toolResultsDir) return normalizeSession(session);
+  const base = normalizeSession(session);
+  const messages = base.messages.map((m) => {
+    if (m.type !== 'tool' || !m.toolResultPreview) return m;
+    const preview = m.toolResultPreview;
+    const toolCallId = m.toolCallId || m.id;
+    if (preview.length <= INLINE_PREVIEW_MAX && !m.toolResultRef) return m;
+
+    let ref = m.toolResultRef;
+    if (!ref) {
+      ref = writeToolResultFile(toolResultsDir, topicId, toolCallId, preview);
     }
+
+    const maxPreview = ref ? STORAGE_PREVIEW_MAX : INLINE_PREVIEW_MAX;
+    const truncated =
+      preview.length > maxPreview ? `${preview.slice(0, maxPreview)}…` : preview;
+
+    return {
+      ...m,
+      toolResultRef: ref,
+      toolResultBytes: m.toolResultBytes ?? preview.length,
+      toolResultPreview: truncated,
+    };
+  });
+
+  return {
+    ...base,
+    version: CHAT_SESSION_VERSION,
+    messages,
+    updatedAt: Date.now(),
+  };
+}
+
+function registerChatSessionHandlers({
+  ipcMain,
+  sessionPath,
+  topicsIndexPath,
+  sessionsDir,
+  toolResultsDir,
+  chatLogsDir,
+}) {
+  function ensureDirLocal(dirPath) {
+    ensureDir(dirPath);
   }
 
   function readJsonOrEmpty(filePath, fallback) {
@@ -50,7 +188,7 @@ function registerChatSessionHandlers({ ipcMain, sessionPath, topicsIndexPath, se
 
   function writeJson(filePath, data) {
     try {
-      ensureDir(path.dirname(filePath));
+      ensureDirLocal(path.dirname(filePath));
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
       return { ok: true };
     } catch (e) {
@@ -100,12 +238,27 @@ function registerChatSessionHandlers({ ipcMain, sessionPath, topicsIndexPath, se
 
   ipcMain.handle('chat:session:load', async (_event, topicId) => {
     const filePath = getSessionFilePath(topicId);
-    return readJsonOrEmpty(filePath, emptySession);
+    const raw = readJsonOrEmpty(filePath, emptySession);
+    return normalizeSession(raw);
   });
 
   ipcMain.handle('chat:session:save', async (_event, { topicId, session }) => {
     const filePath = getSessionFilePath(topicId);
-    return writeJson(filePath, session);
+    const processed = processSessionForSave(session, topicId, toolResultsDir);
+    return writeJson(filePath, processed);
+  });
+
+  ipcMain.handle('chat:tool-result:read', async (_event, { topicId, toolCallId, ref }) => {
+    const relRef =
+      ref ||
+      path.join(topicId, `${sanitizeToolCallId(toolCallId)}.json`).split(path.sep).join('/');
+    const text = readToolResultFile(toolResultsDir, relRef);
+    return text;
+  });
+
+  ipcMain.handle('chat:log:load', async (_event, topicId) => {
+    if (!chatLogsDir) return [];
+    return readChatLog(chatLogsDir, topicId);
   });
 
   ipcMain.handle('chat:topics:list', async () => {
@@ -201,4 +354,8 @@ function registerChatSessionHandlers({ ipcMain, sessionPath, topicsIndexPath, se
   });
 }
 
-module.exports = { registerChatSessionHandlers };
+module.exports = {
+  registerChatSessionHandlers,
+  normalizeSession,
+  processSessionForSave,
+};
