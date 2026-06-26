@@ -41,6 +41,7 @@ import {
 import { getChatCompletionsUrl } from "../shared/providers";
 import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
+import type { ReasoningEffort } from "../shared/reasoningEffort";
 import type { AgentSkillDescriptor } from "../shared/agent";
 import {
   type SlashCommand,
@@ -146,6 +147,7 @@ export default function ChatPage({
   const requestIdToTopicIdRef = useRef<Map<string, string>>(new Map());
   const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const handleSendRef = useRef<(text?: string) => void>(() => {});
+  const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -463,7 +465,7 @@ export default function ChatPage({
   }, []);
 
   useEffect(() => {
-    const offChunk = api.onChatStreamChunk(({ requestId, delta }) => {
+    const offChunk = api.onChatStreamChunk(({ requestId, delta, reasoning }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
       setTopicStates((prev) => {
@@ -473,7 +475,13 @@ export default function ChatPage({
         if (idx < 0) return prev;
         const next = state.messages.slice();
         const target = next[idx];
-        next[idx] = { ...target, content: target.content + delta };
+        next[idx] = {
+          ...target,
+          ...(typeof delta === "string" ? { content: target.content + delta } : {}),
+          ...(typeof reasoning === "string"
+            ? { reasoning: (target.reasoning ?? "") + reasoning }
+            : {}),
+        };
         return { ...prev, [topicId]: { ...state, messages: next } };
       });
       scheduleTopicSave(topicId);
@@ -727,6 +735,18 @@ export default function ChatPage({
     [chatSettings],
   );
 
+  const handleReasoningEffortChange = useCallback(
+    (value: ReasoningEffort) => {
+      const next = {
+        ...chatSettings,
+        agent: { ...chatSettings.agent, reasoningEffort: value },
+      };
+      saveSettings(next);
+      setChatSettings(next);
+    },
+    [chatSettings],
+  );
+
   const {
     submittingApprovalId,
     handleApproveTool,
@@ -786,6 +806,16 @@ export default function ChatPage({
           finalText = userMsg
             ? `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据以下要求完成任务：\n\n${userMsg}`
             : `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据用户的后续要求完成任务。`;
+        } else if (parsed?.command === "clear") {
+          handleClearContextRef.current();
+          const tid = activeTopicIdRef.current;
+          if (tid) {
+            setTopicStates((prev) => ({
+              ...prev,
+              [tid]: { ...(prev[tid] ?? emptyTopicState()), input: "" },
+            }));
+          }
+          return;
         }
       }
 
@@ -1001,6 +1031,10 @@ export default function ChatPage({
     scheduleTopicSave(topicId);
   }, [scheduleTopicSave]);
 
+  useEffect(() => {
+    handleClearContextRef.current = handleClearContext;
+  }, [handleClearContext]);
+
   const handleSlashCommand = useCallback(
     (cmd: SlashCommand | null) => {
       if (!cmd) {
@@ -1011,13 +1045,18 @@ export default function ChatPage({
         setActiveInput(cmd.insertText);
         return;
       }
+      if (cmd.group === "builtin" && cmd.id === "clear") {
+        setActiveInput("");
+        handleClearContext();
+        return;
+      }
       if (cmd.group === "builtin" && cmd.id === "compact") {
         setActiveInput("");
         void handleSend(COMPACT_PROMPT);
         return;
       }
     },
-    [handleSend, setActiveInput],
+    [handleSend, setActiveInput, handleClearContext],
   );
 
   const handleClearMessages = useCallback(() => {
@@ -1216,6 +1255,8 @@ export default function ChatPage({
           chatMode={chatSettings.chatMode}
           onChatModeChange={handleChatModeChange}
           showModeSelector={usingAgent}
+          reasoningEffort={chatSettings.agent.reasoningEffort}
+          onReasoningEffortChange={handleReasoningEffortChange}
           onSend={() => void handleSend()}
           onStop={handleStop}
           onClearContext={handleClearContext}

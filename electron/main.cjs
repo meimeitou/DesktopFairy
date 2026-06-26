@@ -819,8 +819,11 @@ const setupIPC = () => {
           if (data === '[DONE]') break streamLoop;
           try {
             const json = JSON.parse(data);
-            const delta = json?.choices?.[0]?.delta?.content;
-            if (delta) safeSend('chat:stream:chunk', { requestId, delta });
+            const delta = json?.choices?.[0]?.delta;
+            const content = delta?.content;
+            if (content) safeSend('chat:stream:chunk', { requestId, delta: content });
+            const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+            if (reasoning) safeSend('chat:stream:chunk', { requestId, reasoning });
           } catch {
             // Ignore malformed JSON line; keep streaming
           }

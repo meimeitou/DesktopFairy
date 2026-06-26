@@ -5,6 +5,11 @@ import {
 } from "./agentBuiltinTools";
 import { DEFAULT_AGENT_AVATAR, isImageAvatar, toAvatarDisplay } from "./agentAvatar";
 import { type ChatMode, DEFAULT_CHAT_MODE, getChatModeCard, normalizeChatMode } from "./chatMode";
+import {
+  type ReasoningEffort,
+  DEFAULT_REASONING_EFFORT,
+  normalizeReasoningEffort,
+} from "./reasoningEffort";
 
 export type ToolApprovalMode = "auto" | "confirm";
 
@@ -35,6 +40,8 @@ export interface AgentConfig {
   envVars: Record<string, string>;
   /** Active conversation mode — drives system prompt + tool behavior. */
   chatMode: ChatMode;
+  /** Reasoning effort for OpenAI-compatible o-series / thinking models. "default" = send nothing. */
+  reasoningEffort: ReasoningEffort;
 }
 
 export type AgentToolDescriptor = AgentBuiltinTool;
@@ -142,6 +149,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   toolApprovalMode: "confirm",
   envVars: {},
   chatMode: DEFAULT_CHAT_MODE,
+  reasoningEffort: DEFAULT_REASONING_EFFORT,
 };
 
 export function isAgentBackend(backend: string): boolean {
@@ -240,6 +248,7 @@ export function normalizeAgentConfig(
         : base.toolApprovalMode,
     envVars,
     chatMode: normalizeChatMode(raw.chatMode),
+    reasoningEffort: normalizeReasoningEffort(raw.reasoningEffort),
   };
 }
 

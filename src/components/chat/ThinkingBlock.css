@@ -1,0 +1,115 @@
+.thinking-block {
+  margin-bottom: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.thinking-block.thinking-active {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.thinking-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.thinking-bulb {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: #f59e0b;
+}
+
+.thinking-block.thinking-active .thinking-bulb {
+  animation: thinking-bulb-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes thinking-bulb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.thinking-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.thinking-block.thinking-active .thinking-label {
+  color: #f59e0b;
+}
+
+.thinking-chevron {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.thinking-block.thinking-expanded .thinking-chevron {
+  transform: rotate(90deg);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.thinking-body {
+  position: relative;
+  padding: 4px 12px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.thinking-copy {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.thinking-copy:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.thinking-body .chat-markdown {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.thinking-body .chat-markdown p {
+  margin: 0 0 6px;
+}
+
+.thinking-body .chat-markdown p:last-child {
+  margin-bottom: 0;
+}

@@ -8,6 +8,8 @@ export interface ChatMsg {
   id: string;
   role: ChatRole;
   content: string;
+  /** Model reasoning / chain-of-thought text (from `reasoning_content`). Display-only, never replayed to the model. */
+  reasoning?: string;
   type?: "clear" | "tool";
   error?: boolean;
   attachments?: ChatAttachment[];

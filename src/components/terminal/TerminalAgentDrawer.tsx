@@ -26,7 +26,7 @@ import {
   getChatApiConfig,
   type AppSettings,
 } from "../../shared/settings";
-import { COMPACT_PROMPT } from "../../shared/slashCommands";
+import { COMPACT_PROMPT, parseSlashCommand } from "../../shared/slashCommands";
 import Tooltip from "../Tooltip";
 import "../../pages/ChatPage.css";
 import "./TerminalAgentDrawer.css";
@@ -140,6 +140,7 @@ export default function TerminalAgentDrawer({
   const settingsRef = useRef(settings);
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
   const compactRequestIdRef = useRef<string | null>(null);
+  const handleClearContextRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     tabStatesRef.current = tabStates;
@@ -265,7 +266,7 @@ export default function TerminalAgentDrawer({
 
   // Stream listeners.
   useEffect(() => {
-    const offChunk = api.onChatStreamChunk?.(({ requestId, delta }) => {
+    const offChunk = api.onChatStreamChunk?.(({ requestId, delta, reasoning }) => {
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
       updateTabState(tabId, (state) => {
@@ -273,7 +274,13 @@ export default function TerminalAgentDrawer({
         if (idx < 0) return state;
         const next = state.messages.slice();
         const target = next[idx];
-        next[idx] = { ...target, content: target.content + delta };
+        next[idx] = {
+          ...target,
+          ...(typeof delta === "string" ? { content: target.content + delta } : {}),
+          ...(typeof reasoning === "string"
+            ? { reasoning: (target.reasoning ?? "") + reasoning }
+            : {}),
+        };
         return { ...state, messages: next };
       });
     });
@@ -378,6 +385,12 @@ export default function TerminalAgentDrawer({
     const isCompactRequest = overrideText === COMPACT_PROMPT;
     const text = (overrideText ?? state.input).trim();
     if (!isCompactRequest && !text) return;
+
+    if (!overrideText && parseSlashCommand(text)?.command === "clear") {
+      handleClearContextRef.current();
+      updateTabState(activeTabId, (s) => ({ ...s, input: "" }));
+      return;
+    }
 
     const currentSettings = settingsRef.current;
     const apiConfig = getChatApiConfig(currentSettings);
@@ -510,6 +523,10 @@ export default function TerminalAgentDrawer({
       return { ...s, messages: nextMessages };
     });
   }, [activeState.streaming, activeState.messages.length, activeTabId, updateTabState]);
+
+  useEffect(() => {
+    handleClearContextRef.current = handleClearContext;
+  }, [handleClearContext]);
 
   const handleCompact = useCallback(() => {
     if (activeState.streaming) return;

@@ -16,6 +16,12 @@ export interface SlashCommand {
 
 const BUILTIN_COMMANDS: SlashCommand[] = [
   {
+    id: "clear",
+    label: "/clear",
+    description: "清除上下文，后续消息不再引用此前对话",
+    group: "builtin",
+  },
+  {
     id: "compact",
     label: "/compact",
     description: "AI 自动压缩上下文摘要并清除旧对话",

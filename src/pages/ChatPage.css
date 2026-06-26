@@ -266,9 +266,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 8px 0;
-  color: rgba(255, 255, 255, 0.35);
-  font-size: 11px;
+  margin: 14px 0;
 }
 
 .msg-context-clear::before,
@@ -276,7 +274,32 @@
   content: "";
   flex: 1;
   height: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 180, 80, 0.45),
+    transparent
+  );
+}
+
+.msg-context-clear span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(255, 180, 80, 0.12);
+  border: 1px solid rgba(255, 180, 80, 0.4);
+  color: rgba(255, 205, 130, 0.95);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.msg-context-clear span::before {
+  content: "✂";
+  font-size: 13px;
 }
 
 .msg-attachments {

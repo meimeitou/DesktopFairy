@@ -10,9 +10,11 @@ import ModelSelector from "../ModelSelector";
 import Tooltip from "../Tooltip";
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
+import ReasoningEffortSelector from "./ReasoningEffortSelector";
 import SlashCommandMenu from "./SlashCommandMenu";
 import type { ChatAttachment } from "../../shared/chatAttachments";
 import type { ChatMode } from "../../shared/chatMode";
+import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import type { SlashCommand } from "../../shared/slashCommands";
 import {
   fileExtFromName,
@@ -123,6 +125,8 @@ interface Props {
   chatMode: ChatMode;
   onChatModeChange: (mode: ChatMode) => void;
   showModeSelector?: boolean;
+  reasoningEffort: ReasoningEffort;
+  onReasoningEffortChange: (value: ReasoningEffort) => void;
   onSend: () => void;
   onStop: () => void;
   onClearContext: () => void;
@@ -146,6 +150,8 @@ export default function ChatInputBar({
   chatMode,
   onChatModeChange,
   showModeSelector = true,
+  reasoningEffort,
+  onReasoningEffortChange,
   onSend,
   onStop,
   onClearContext,
@@ -416,6 +422,13 @@ export default function ChatInputBar({
             <ChatModeSelector
               mode={chatMode}
               onChange={onChatModeChange}
+              disabled={streaming}
+            />
+          )}
+          {showModeSelector && (
+            <ReasoningEffortSelector
+              value={reasoningEffort}
+              onChange={onReasoningEffortChange}
               disabled={streaming}
             />
           )}

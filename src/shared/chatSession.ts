@@ -153,6 +153,7 @@ function normalizeChatMessage(raw: unknown): ChatMsg | null {
     id: m.id,
     role: m.role,
     content: m.content,
+    reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
     type: m.type === "clear" ? "clear" : undefined,
     error: m.error === true,
     attachments: m.attachments,

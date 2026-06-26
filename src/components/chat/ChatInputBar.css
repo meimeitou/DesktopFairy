@@ -133,8 +133,7 @@
   padding-bottom: 10px;
 }
 
-.chat-input-shell .model-selector select,
-.chat-input-shell .model-selector input[type="search"] {
+.chat-input-shell .model-selector-trigger {
   font-size: 12px;
   padding: 4px 8px;
 }

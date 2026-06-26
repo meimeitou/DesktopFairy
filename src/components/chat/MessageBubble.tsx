@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
 import ChatMarkdown from "./ChatMarkdown";
+import ThinkingBlock from "./ThinkingBlock";
 
 function CopyIcon({ size = 14 }: { size?: number }) {
   return (
@@ -76,7 +77,10 @@ export default function MessageBubble({
     }
   };
 
-  const showTyping = isStreamingAssistant && !msg.content && !msg.error;
+  const showTyping =
+    isStreamingAssistant && !msg.content && !msg.reasoning && !msg.error;
+  const showThinking =
+    !isUser && !isError && !!msg.reasoning && msg.reasoning.trim().length > 0;
 
   return (
     <div className={`msg msg-${msg.role}${isError ? " msg-error" : ""}`}>
@@ -96,6 +100,9 @@ export default function MessageBubble({
               </span>
             ))}
           </div>
+        )}
+        {showThinking && (
+          <ThinkingBlock msg={msg} isStreaming={isStreamingAssistant} />
         )}
         {isError ? (
           <span className="msg-plain">{msg.content}</span>

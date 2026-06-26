@@ -12,6 +12,8 @@ const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
 
 const { appendChatLog } = require('./chatSessionLog.cjs');
 
+const inflightAgents = new Map();
+
 function getCurrentWebSearchConfig() {
   try {
     const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
@@ -100,12 +102,12 @@ function mergeSystemMessage(messages, systemPrompt) {
   return [{ role: 'system', content: systemPrompt.trim() }, ...rest];
 }
 
-async function readSseResponse(res, onDelta, onToolDelta) {
+async function readSseResponse(res, onDelta, onToolDelta, onReasoning) {
   if (!res.body) throw new Error('Empty response body');
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
-  let assistantMessage = { role: 'assistant', content: '', tool_calls: [] };
+  let assistantMessage = { role: 'assistant', content: '', reasoning: '', tool_calls: [] };
   const toolCallAcc = new Map();
 
   const syncToolCall = (index) => {
@@ -160,6 +162,11 @@ async function readSseResponse(res, onDelta, onToolDelta) {
           assistantMessage.content += delta.content;
           onDelta?.(delta.content);
         }
+        const reasoningChunk = delta?.reasoning_content ?? delta?.reasoning;
+        if (reasoningChunk) {
+          assistantMessage.reasoning = (assistantMessage.reasoning || '') + reasoningChunk;
+          onReasoning?.(reasoningChunk);
+        }
         if (Array.isArray(delta?.tool_calls)) {
           for (const tc of delta.tool_calls) ingestToolCall(tc);
         }
@@ -167,6 +174,11 @@ async function readSseResponse(res, onDelta, onToolDelta) {
           for (let i = 0; i < message.tool_calls.length; i += 1) {
             ingestToolCall(message.tool_calls[i], i);
           }
+        }
+        const msgReasoning = message?.reasoning_content ?? message?.reasoning;
+        if (msgReasoning) {
+          assistantMessage.reasoning = (assistantMessage.reasoning || '') + msgReasoning;
+          onReasoning?.(msgReasoning);
         }
       } catch {
         /* ignore malformed JSON */
@@ -184,6 +196,7 @@ async function readSseResponse(res, onDelta, onToolDelta) {
     }));
   if (assistantMessage.tool_calls.length === 0) delete assistantMessage.tool_calls;
   else if (!assistantMessage.content) assistantMessage.content = null;
+  if (!assistantMessage.reasoning) delete assistantMessage.reasoning;
   return assistantMessage;
 }
 
@@ -240,6 +253,9 @@ function registerAgentHandlers(ipcMain, deps) {
       const systemPrompt = buildAgentSystemPrompt(agentConfig, context);
       let conversation = mergeSystemMessage(messages, systemPrompt);
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
+      const reasoningEffort = agentConfig.reasoningEffort;
+      const sendReasoningEffort =
+        reasoningEffort && reasoningEffort !== 'default' ? reasoningEffort : null;
       const sessionEnabledSkillIds = new Set(agentConfig?.enabledSkillIds || []);
       const skillEnvVars = {
         ...(agentConfig.envVars || {}),
@@ -258,6 +274,9 @@ function registerAgentHandlers(ipcMain, deps) {
         };
         if (typeof temperature === 'number') {
           body.temperature = temperature;
+        }
+        if (sendReasoningEffort) {
+          body.reasoning_effort = sendReasoningEffort;
         }
 
         const res = await fetch(url, {
@@ -288,10 +307,14 @@ function registerAgentHandlers(ipcMain, deps) {
                 status: 'streaming',
               });
             }
-          }
+          },
+          (reasoning) => safeSend('chat:stream:chunk', { requestId, reasoning }),
         );
 
-        conversation = conversation.concat(assistantMessage);
+        // Reasoning is display-only; strip it so it is not replayed to the model on later turns.
+        const apiAssistantMessage = { ...assistantMessage };
+        delete apiAssistantMessage.reasoning;
+        conversation = conversation.concat(apiAssistantMessage);
 
         const toolCalls = assistantMessage.tool_calls;
         if (!toolCalls || toolCalls.length === 0) break;
@@ -402,6 +425,7 @@ function registerAgentHandlers(ipcMain, deps) {
             tools,
             tool_choice: 'auto',
             ...(typeof temperature === 'number' ? { temperature } : {}),
+            ...(sendReasoningEffort ? { reasoning_effort: sendReasoningEffort } : {}),
           }),
           signal: controller.signal,
         });
@@ -419,9 +443,12 @@ function registerAgentHandlers(ipcMain, deps) {
                   status: 'streaming',
                 });
               }
-            }
+            },
+            (reasoning) => safeSend('chat:stream:chunk', { requestId, reasoning }),
           );
-          conversation = conversation.concat(assistantMessage);
+          const apiAssistantMessage = { ...assistantMessage };
+          delete apiAssistantMessage.reasoning;
+          conversation = conversation.concat(apiAssistantMessage);
         }
       }
 
