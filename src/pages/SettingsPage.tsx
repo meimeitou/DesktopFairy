@@ -4,6 +4,7 @@ import AgentSettingsSection from "../components/settings/agent/AgentSettingsSect
 import SelectionSettingsSection from "../components/settings/SelectionSettingsSection";
 import Live2DSettingsSection from "../components/settings/Live2DSettingsSection";
 import WebSearchSettingsSection from "../components/settings/WebSearchSettingsSection";
+import ShortcutSettingsSection from "../components/settings/ShortcutSettingsSection";
 import {
   loadSettings,
   saveSettings,
@@ -19,6 +20,7 @@ type SettingsTab =
   | "websearch"
   | "selection"
   | "character"
+  | "shortcut"
   | "about";
 
 interface MenuItem {
@@ -120,6 +122,24 @@ function InfoIcon() {
   );
 }
 
+function KeyboardIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
+    </svg>
+  );
+}
+
 function EarthIcon() {
   return (
     <svg
@@ -148,6 +168,7 @@ const MENU_PRIMARY: MenuItem[] = [
 
 const MENU_SECONDARY: MenuItem[] = [
   { id: "character", label: "Live2D 配置", icon: <MaskIcon /> },
+  { id: "shortcut", label: "快捷键", icon: <KeyboardIcon /> },
   { id: "about", label: "关于", icon: <InfoIcon /> },
 ];
 
@@ -215,10 +236,15 @@ export default function SettingsPage({
 
   useEffect(() => {
     (async () => {
-      const shortcut = await api.getShortcut();
-      if (shortcut) {
-        setSettings((prev) => ({ ...prev, selectionShortcut: shortcut }));
-      }
+      const [selectionShortcut, chatShortcut] = await Promise.all([
+        api.getShortcut(),
+        api.getChatShortcut(),
+      ]);
+      setSettings((prev) => ({
+        ...prev,
+        selectionShortcut: selectionShortcut || prev.selectionShortcut,
+        chatShortcut: chatShortcut || prev.chatShortcut,
+      }));
     })();
   }, []);
 
@@ -262,6 +288,8 @@ export default function SettingsPage({
         );
       case "character":
         return <Live2DSettingsSection settings={settings} onChange={update} />;
+      case "shortcut":
+        return <ShortcutSettingsSection settings={settings} onChange={update} />;
       case "about":
         return (
           <section className="settings-section">

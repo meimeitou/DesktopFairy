@@ -114,7 +114,7 @@ function presentChatWindow(screen, mainWindow, chatWindow, refPoint, options = {
 
   const { anchor = 'main' } = options;
 
-  if (anchor === 'main' && mainWindow && !mainWindow.isDestroyed()) {
+  if (anchor === 'main' && mainWindow && !mainWindow.isDestroyed() && options.showMain !== false) {
     mainWindow.show();
     mainWindow.focus();
   }

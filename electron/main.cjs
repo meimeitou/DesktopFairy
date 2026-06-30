@@ -7,6 +7,7 @@ const USER_DATA_DIR = path.join(app.getPath('appData'), 'desktop-fairy');
 app.setPath('userData', USER_DATA_DIR);
 
 const selectionService = require('./selectionService.cjs');
+const chatShortcutService = require('./chatShortcutService.cjs');
 const tipWindow = require('./tipWindow.cjs');
 const { isOverlayElevated } = require('./tipWindowMacPolicy.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
@@ -65,10 +66,16 @@ let chatWindow = null;
 let tray = null;
 let isQuitting = false;
 let currentShortcut = 'Command+Shift+C'; // mirrored for get_shortcut IPC
+let currentChatShortcut = 'Command+R'; // mirrored for get_chat_shortcut IPC
+let modelHiddenByUser = false; // set when user hides the model via the menu toggle
 
 const selectionDeps = () => ({
   loadURL,
   isDev,
+});
+
+const chatShortcutDeps = () => ({
+  toggle: () => togglePresence(),
 });
 
 const applySelectionSettings = (settings) => {
@@ -77,6 +84,14 @@ const applySelectionSettings = (settings) => {
     currentShortcut = settings.selectionShortcut;
   }
   return result;
+};
+
+const applyChatShortcutSettings = (settings) => {
+  const ok = chatShortcutService.applyChatShortcutSettings(settings, chatShortcutDeps());
+  if (settings?.chatShortcut) {
+    currentChatShortcut = settings.chatShortcut;
+  }
+  return ok;
 };
 
 const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'da_settings.json');
@@ -94,12 +109,13 @@ const loadSettingsFromDisk = () => {
   }
 };
 
-/** Selection defaults — keep in sync with src/shared/settings.ts DEFAULT_SETTINGS */
+/** Startup defaults — keep in sync with src/shared/settings.ts DEFAULT_SETTINGS */
 const DEFAULT_SELECTION_SETTINGS = {
   selectionEnabled: true,
   selectionTriggerMode: 'shortcut',
   selectionShortcut: 'Command+Shift+C',
   selectionMaxLength: 500,
+  chatShortcut: 'Command+R',
 };
 
 const resolveStartupSettings = () => ({
@@ -149,8 +165,11 @@ const hideMacDock = () => {
   if (app.dock?.hide) app.dock.hide();
 };
 
-const presentChatWindowOnMac = (...args) => {
-  presentChatWindow(...args);
+const presentChatWindowOnMac = (screen, mainWindow, chatWindow, refPoint, options = {}) => {
+  presentChatWindow(screen, mainWindow, chatWindow, refPoint, {
+    ...options,
+    showMain: !modelHiddenByUser,
+  });
   hideMacDock();
 };
 
@@ -554,6 +573,7 @@ const setupIPC = () => {
       console.warn('Failed to persist settings:', e);
     }
     applySelectionSettings(settings);
+    applyChatShortcutSettings(settings);
     for (const win of [mainWindow, chatWindow]) {
       if (win && !win.isDestroyed()) {
         win.webContents.send('settings:updated', settings);
@@ -684,6 +704,27 @@ const setupIPC = () => {
       currentShortcut = shortcut;
     }
     return result.shortcutRegistered;
+  });
+
+  // Get/set global shortcut that opens the chat window
+  ipcMain.handle('get_chat_shortcut', async () => {
+    const disk = loadSettingsFromDisk();
+    return disk?.chatShortcut || currentChatShortcut;
+  });
+
+  ipcMain.handle('set_chat_shortcut', async (_event, shortcut) => {
+    const settings = resolveStartupSettings();
+    settings.chatShortcut = shortcut;
+    try {
+      fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2));
+    } catch (e) {
+      console.warn('Failed to persist chat shortcut:', e);
+    }
+    const ok = applyChatShortcutSettings(settings);
+    if (ok) {
+      currentChatShortcut = shortcut;
+    }
+    return ok;
   });
 
   ipcMain.handle('selection:check_accessibility', async () => ({
@@ -896,8 +937,24 @@ const setupIPC = () => {
 
 const toggleMainWindow = () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isVisible()) mainWindow.hide();
-  else mainWindow.show() || mainWindow.focus();
+  if (mainWindow.isVisible()) {
+    mainWindow.hide();
+    modelHiddenByUser = true;
+  } else {
+    mainWindow.show();
+    mainWindow.focus();
+    modelHiddenByUser = false;
+  }
+};
+
+// Toggle the chat window bound to the global chat shortcut (Cmd+R).
+// The Live2D main window stays untouched (always visible unless hidden via menu).
+const togglePresence = () => {
+  if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
+    dismissChatWindow(chatWindow);
+  } else {
+    createChatWindow();
+  }
 };
 
 // Rebuild both app menu and tray menu with the correct toggle label.
@@ -935,7 +992,13 @@ const refreshMenus = () => {
     {
       label: '窗口',
       submenu: [
-        { role: 'close', label: '关闭窗口' },
+        {
+          label: '关闭窗口',
+          click: () => {
+            const win = BrowserWindow.getFocusedWindow();
+            if (win) win.close();
+          },
+        },
         { role: 'minimize', label: '最小化' },
       ],
     },
@@ -1013,6 +1076,8 @@ app.whenReady().then(() => {
   const startupSettings = resolveStartupSettings();
   applySelectionSettings(startupSettings);
   currentShortcut = startupSettings.selectionShortcut || currentShortcut;
+  applyChatShortcutSettings(startupSettings);
+  currentChatShortcut = startupSettings.chatShortcut || currentChatShortcut;
 
   // After the renderer finishes loading, do a full cleanup restart so the hook
   // gets a brand-new native instance (same as toggle OFF→ON). This fixes the
@@ -1056,6 +1121,7 @@ app.whenReady().then(() => {
   // Dock icon click → re-show main window (keep accessory / no Dock icon)
   app.on('activate', () => {
     hideMacDock();
+    if (modelHiddenByUser) return;
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
@@ -1078,6 +1144,7 @@ app.on('before-quit', () => {
   abortAllAgentRuns();
   disposeAllMcpClients();
   selectionService.stopAll();
+  chatShortcutService.stopChatShortcut();
   globalShortcut.unregisterAll();
   for (const controller of inflightChats.values()) {
     controller.abort();

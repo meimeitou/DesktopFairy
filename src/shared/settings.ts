@@ -46,6 +46,8 @@ export interface AppSettings {
   selectionEnabled: boolean;
   selectionTriggerMode: SelectionTriggerMode;
   selectionShortcut: string;
+  /** Global shortcut that opens the chat window (same as the Live2D "开始聊天" button). */
+  chatShortcut: string;
   selectionAutoSend: boolean;
   selectionMaxLength: number;
   searchEngine: string;
@@ -89,6 +91,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   selectionEnabled: true,
   selectionTriggerMode: "shortcut",
   selectionShortcut: "Command+Shift+C",
+  chatShortcut: "Command+R",
   selectionAutoSend: false,
   selectionMaxLength: 500,
   searchEngine: DEFAULT_SEARCH_ENGINE,
@@ -250,6 +253,10 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     selectionTriggerMode:
       settings.selectionTriggerMode === "auto" ? "auto" : "shortcut",
     selectionActions: mergeSelectionActions(settings.selectionActions),
+    chatShortcut:
+      typeof settings.chatShortcut === "string" && settings.chatShortcut.trim()
+        ? settings.chatShortcut.trim()
+        : DEFAULT_SETTINGS.chatShortcut,
     modelOffsetX: Number.isFinite(Number(settings.modelOffsetX))
       ? Number(settings.modelOffsetX)
       : 0,

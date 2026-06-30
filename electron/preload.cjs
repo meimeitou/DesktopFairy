@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'resize_main_window',
       'get_shortcut',
       'set_shortcut',
+      'get_chat_shortcut',
+      'set_chat_shortcut',
       'chat:send',
       'chat:abort',
       'chat:session:load',
@@ -133,6 +135,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Shortcut management
   getShortcut: () => ipcRenderer.invoke('get_shortcut'),
   setShortcut: (shortcut) => ipcRenderer.invoke('set_shortcut', shortcut),
+  getChatShortcut: () => ipcRenderer.invoke('get_chat_shortcut'),
+  setChatShortcut: (shortcut) => ipcRenderer.invoke('set_chat_shortcut', shortcut),
 
   // Live2D commands pushed from main process
   onLive2DCommand: (callback) => {

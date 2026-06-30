@@ -268,23 +268,6 @@ export default function SelectionSettingsSection({
           )}
       </div>
 
-      {!isAutoMode && (
-        <div className="field">
-          <label>触发快捷键</label>
-          <input
-            type="text"
-            value={settings.selectionShortcut}
-            onChange={(e) => onChange({ selectionShortcut: e.target.value })}
-            onBlur={async () => {
-              const ok = await api.setShortcut(settings.selectionShortcut);
-              if (!ok) alert("快捷键注册失败，可能已被占用");
-            }}
-            placeholder="Command+Shift+C"
-            disabled={!settings.selectionEnabled}
-          />
-        </div>
-      )}
-
       <div className="field field-row">
         <label>选中后自动发送</label>
         <label className="toggle">

@@ -31,6 +31,8 @@ declare global {
       onChatWindowMaximizedChanged: (callback: (isMaximized: boolean) => void) => () => void;
       getShortcut: () => Promise<string>;
       setShortcut: (shortcut: string) => Promise<boolean>;
+      getChatShortcut: () => Promise<string>;
+      setChatShortcut: (shortcut: string) => Promise<boolean>;
       loadSettingsFromDisk: () => string | null;
       onLive2DCommand: (callback: (cmd: string) => void) => () => void;
       onLive2DBubble: (
