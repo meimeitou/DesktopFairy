@@ -9,6 +9,7 @@ const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
 const { getServersByIds } = require('./mcpServerService.cjs');
 const { getEnabledOpenAiToolDefinitions, getChatModeSuffix, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
 const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
+const { getTerminalForeground } = require('./ptyService.cjs');
 
 const { appendChatLog } = require('./chatSessionLog.cjs');
 
@@ -61,7 +62,18 @@ function getBuiltinTools(agentConfig, context) {
   }));
 }
 
-function buildAgentSystemPrompt(agentConfig, context = 'local') {
+function buildTerminalEnvSection(terminalState) {
+  let envLine = '当前终端前台为本地 shell。';
+  if (terminalState && terminalState.kind === 'remote') {
+    envLine = '⚠️ 当前终端处于 SSH 远程会话' +
+      (terminalState.remoteHost ? '（' + terminalState.remoteHost + '）' : '') +
+      '。通过 Terminal 工具执行的命令将在远程主机上运行，请注意目标环境（路径、操作系统、已安装工具可能与本地不同）。';
+  }
+  return '## 当前终端环境\n\n' + envLine +
+    '\n若终端前台不是 shell（如 vim/less/python 等交互式程序），Terminal 工具会拒绝执行以避免命令被误输入到该程序——此时请引导用户先退出该程序（如 :q / exit / Ctrl-D）。';
+}
+
+function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null) {
   const parts = [];
   if (agentConfig?.soul?.trim()) {
     parts.push(agentConfig.soul.trim());
@@ -90,6 +102,7 @@ function buildAgentSystemPrompt(agentConfig, context = 'local') {
     parts.push(
       '## 终端操作\n\n你可以使用 Terminal 工具将 shell 命令发送到用户当前可见的终端执行，命令输出会实时显示在用户终端中，同时返回给你用于判断下一步操作。在当前终端会话中，所有 shell 命令都必须通过 Terminal 工具执行；发送命令前确保意图明确，命令执行结果（包括 exit code）会返回给你。过长的输出会被截断，如需完整输出请缩小命令范围。'
     );
+    parts.push(buildTerminalEnvSection(terminalState));
   }
   const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
   if (modeSuffix) parts.push(modeSuffix.trim());
@@ -250,7 +263,8 @@ function registerAgentHandlers(ipcMain, deps) {
       const context = terminalSessionId ? 'terminal' : 'local';
       const builtinTools = getBuiltinTools(agentConfig, context);
       const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
-      const systemPrompt = buildAgentSystemPrompt(agentConfig, context);
+      const terminalState = context === 'terminal' ? getTerminalForeground(terminalSessionId) : null;
+      const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState);
       let conversation = mergeSystemMessage(messages, systemPrompt);
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
       const reasoningEffort = agentConfig.reasoningEffort;

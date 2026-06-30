@@ -10,6 +10,7 @@ import MessageBubble from "../chat/MessageBubble";
 import ToolCallBubble, { ToolCallGroup } from "../chat/ToolCallBubble";
 import { TerminalStopContext } from "../chat/agentTools/TerminalStopContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
+import { useStickToBottom } from "../../hooks/useStickToBottom";
 import { getAgentBackendLabel, type AgentConfig } from "../../shared/agent";
 import type { ChatMode } from "../../shared/chatMode";
 import ChatModeSelector from "../chat/ChatModeSelector";
@@ -379,6 +380,23 @@ export default function TerminalAgentDrawer({
     };
   }, []);
 
+  const { containerRef: messagesContainerRef, handleScroll, scrollToBottom } =
+    useStickToBottom(activeState.messages);
+
+  // Center an awaiting-approval tool card in the viewport so the user notices it.
+  useEffect(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const card = el.querySelector<HTMLElement>("[data-tool-approval-id]");
+    if (!card) return;
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeState.messages]);
+
+  // Switching tabs returns to that session's bottom.
+  useEffect(() => {
+    scrollToBottom();
+  }, [activeTabId, scrollToBottom]);
+
   const handleSend = useCallback(async (overrideText?: string) => {
     const state = tabStatesRef.current[activeTabId];
     if (!state || state.streaming) return;
@@ -436,6 +454,7 @@ export default function TerminalAgentDrawer({
       streaming: true,
       requestId,
     }));
+    scrollToBottom();
 
     const chatUrl = getChatCompletionsUrl(
       apiConfig.apiHost,
@@ -474,7 +493,7 @@ export default function TerminalAgentDrawer({
         return { ...s, messages: next, streaming: false, requestId: null };
       });
     }
-  }, [activeTabId, chatMode, getActiveSessionId, updateTabState]);
+  }, [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom]);
 
   const handleStop = useCallback(() => {
     const state = tabStatesRef.current[activeTabId];
@@ -544,13 +563,6 @@ export default function TerminalAgentDrawer({
       input: "",
     }));
   }, [activeState.streaming, activeState.messages.length, activeTabId, updateTabState]);
-
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [activeState.messages]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -672,7 +684,7 @@ export default function TerminalAgentDrawer({
           </div>
         </div>
 
-        <div className="terminal-agent-messages" ref={messagesContainerRef}>
+        <div className="terminal-agent-messages" ref={messagesContainerRef} onScroll={handleScroll}>
           <TerminalStopContext.Provider value={handleStopTerminal}>
             {renderMessages()}
           </TerminalStopContext.Provider>

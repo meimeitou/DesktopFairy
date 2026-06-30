@@ -20,7 +20,7 @@ No tests, no CI. `lint` is the only pre-commit check.
 - **Multi-window via query param**: Single `index.html`, `?window=` selects the page. Not React Router. `?window=chat` and `?window=settings` both route to `ChatApp` (settings is a tab inside it). `?window=tip&text=...` for selection popup.
 - **ChatApp tab keep-alive**: `ChatPage` and `SettingsPage` are both mounted simultaneously with CSS visibility toggle — not conditional rendering. Don't convert to conditional render or chat state will be lost on tab switch.
 - **Electron main process is CJS**: All `electron/*.cjs` files use `require()`. Renderer (`src/`) is ESM. Do not mix.
-- **Main process has no hot-reload**: In dev, `electron .` loads `electron/*.cjs` at startup. Vite HMR only applies to renderer (`src/`). Changing main process files requires restarting the app (quit + `make dev`).
+- **Main process hot-reload (dev only)**: In dev, `electron/*.cjs` changes auto-trigger `app.relaunch()` + `app.exit(0)` via an `fs.watch` watcher in `main.cjs` (debounced 300ms). Vite HMR still only applies to renderer (`src/`). Disable with `ELECTRON_HOT_RELOAD=0 make dev`. Production builds are unaffected (`isDev` gate).
 - **`src/live2d/framework/` is read-only**: Unmodified Cubism SDK. Import via `@framework` alias (configured in both `vite.config.ts` and `tsconfig.app.json`). Never edit framework files.
 - **Zustand is in package.json but unused**: State is React `useState` + `localStorage` + IPC. Do not introduce Zustand stores without explicit request.
 

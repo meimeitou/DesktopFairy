@@ -786,6 +786,8 @@ async function toolTerminal(args, deps = {}) {
       command,
       output: truncateTerminalOutput(result.output),
       exitCode: result.exitCode,
+      remote: result.remote === true,
+      remoteNote: result.remoteNote || null,
     });
   } catch (e) {
     return fail(String(e?.message || e));

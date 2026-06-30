@@ -2,6 +2,7 @@ const pty = require('node-pty');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execFileSync } = require('child_process');
 
 const sessions = new Map();
 
@@ -16,6 +17,88 @@ const sessions = new Map();
 // ST = BEL (\x07).
 const START_PATTERN = /\x1b\]633;C\x07/;
 const END_PATTERN = /\x1b\]633;D;(-?\d+)\x07/;
+
+// Foreground-process detection. The PTY spawns a shell (ptyProcess.pid); we use
+// `ps -o tpgid=,pgid= -p <pid>` to read the controlling terminal's foreground
+// process group (tpgid) vs the shell's own process group (pgid). When they
+// match, the shell is at its prompt. When they differ, a child process is in
+// the foreground — we then read that child's comm to classify it:
+//   - ssh/mosh             → remote session (allow + annotate)
+//   - known shells         → sub-shell / non-ssh remote shell (allow)
+//   - anything else        → vim/less/python/... (block to avoid blind-typing)
+// execFileSync with array args avoids shell injection. On any ps failure we
+// fall back to 'shell' so the existing capture path still runs.
+const REMOTE_COMM_RE = /^(ssh|mosh|mosh-client)$/;
+const SHELL_COMMS = new Set([
+  'bash', 'zsh', 'sh', 'fish', 'dash', 'ksh', 'csh', 'tcsh', 'mksh',
+  'ash', 'busybox', 'nu', 'nushell', 'elvish', 'xonsh', 'pwsh', 'powershell',
+]);
+// Programs that own the terminal but where injecting commands is intentional
+// (user opted in). expect runs Tcl; allow by explicit user preference.
+const ALLOWED_NON_SHELL_COMMS = new Set(['expect', 'expectk']);
+
+function psField(pid, field) {
+  try {
+    const out = execFileSync('ps', ['-o', `${field}=`, '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.trim();
+  } catch {
+    return '';
+  }
+}
+
+function detectForeground(session) {
+  const pid = session?.ptyProcess?.pid;
+  if (!pid) return { kind: 'shell' };
+  // Read tpgid and pgid as separate ps invocations — on macOS the combined
+  // `tpgid=,pgid=` form leaks a "TPGID" header line into the output, while
+  // single-field requests return a clean value.
+  const tpgidRaw = psField(pid, 'tpgid');
+  const pgidRaw = psField(pid, 'pgid');
+  const tpgid = parseInt(tpgidRaw, 10);
+  const pgid = parseInt(pgidRaw, 10);
+  // NaN (ps failed) or tpgid 0 (no controlling tty, e.g. a non-interactive
+  // shell) → treat as an at-rest shell and let the capture path handle it.
+  if (!Number.isFinite(tpgid) || !Number.isFinite(pgid)) return { kind: 'shell' };
+  if (tpgid === 0 || tpgid === pgid) return { kind: 'shell' };
+  // A child process is foreground. The foreground-pg leader has pid === tpgid.
+  const comm = psField(tpgid, 'comm');
+  if (!comm) return { kind: 'blocked', comm: '' };
+  const base = comm.split('/').pop();
+  if (REMOTE_COMM_RE.test(base)) {
+    const remoteHost = parseRemoteHost(tpgid);
+    return { kind: 'remote', comm: base, remoteHost };
+  }
+  if (SHELL_COMMS.has(base)) return { kind: 'shell', comm: base };
+  if (ALLOWED_NON_SHELL_COMMS.has(base)) return { kind: 'shell', comm: base };
+  return { kind: 'blocked', comm: base };
+}
+
+// Best-effort user@host extraction from the ssh/mosh argv tail.
+function parseRemoteHost(pid) {
+  const args = psField(pid, 'args');
+  if (!args) return '';
+  const tokens = args.split(/\s+/).filter(Boolean);
+  // Drop the program name and option flags; the last non-flag token is usually user@host.
+  let host = '';
+  for (let i = tokens.length - 1; i >= 1; i--) {
+    const t = tokens[i];
+    if (!t.startsWith('-')) { host = t; break; }
+  }
+  return host;
+}
+
+function getTerminalForeground(sessionId) {
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session) return null;
+  try {
+    return detectForeground(session);
+  } catch {
+    return { kind: 'shell' };
+  }
+}
 
 function shellQuote(str) {
   return "'" + String(str).replace(/'/g, "'\\''") + "'";
@@ -207,7 +290,7 @@ function registerPtyHandlers({ ipcMain }) {
           const exitCode = parseInt(endMatch[1], 10);
           cap.done = true;
           cleanupCapture(session);
-          cap.resolve({ output: stripAnsi(output), exitCode });
+          cap.resolve({ output: stripAnsi(output), exitCode, remote: !!cap.remoteNote, remoteNote: cap.remoteNote });
         }
       }
 
@@ -236,7 +319,7 @@ function registerPtyHandlers({ ipcMain }) {
         cleanupCapture(session);
         const partial = stripAnsi(cap.buffer);
         if (partial) {
-          cap.resolve({ output: partial, exitCode: -1 });
+          cap.resolve({ output: partial, exitCode: -1, remote: !!cap.remoteNote, remoteNote: cap.remoteNote });
         } else {
           cap.reject(new Error('终端进程已退出'));
         }
@@ -303,6 +386,7 @@ function runCommandInSession(sessionId, command, timeout = 60_000, signal) {
       stopFallbackTimer: null,
       signal: signal || null,
       onAbort: null,
+      remoteNote: null,
     };
 
     const timeoutMs = Math.max(5_000, Math.min(Number(timeout) || 60_000, 600_000));
@@ -321,6 +405,27 @@ function runCommandInSession(sessionId, command, timeout = 60_000, signal) {
     }
 
     session.capture = cap;
+
+    // Foreground-process gate. Classify what the PTY's controlling terminal
+    // is currently running before writing anything. This prevents blind-typing
+    // commands into vim/python/less/etc. and tags SSH sessions as remote so the
+    // AI can be told (via the resolved result) that commands run on a remote host.
+    try {
+      const fg = detectForeground(session);
+      if (fg.kind === 'blocked') {
+        cleanupCapture(session);
+        reject(new Error(
+          `终端前台正在运行 "${fg.comm || '未知程序'}"，无法发送命令。请先退出该程序（如 :q / exit / Ctrl-D）再让 AI 执行。`
+        ));
+        return;
+      }
+      if (fg.kind === 'remote') {
+        cap.remoteNote = '⚠️ 命令在 SSH 远程会话' + (fg.remoteHost ? '（' + fg.remoteHost + '）' : '') + '中执行。';
+      }
+    } catch {
+      // Detection failed (ps unavailable, etc.) — fall through to the
+      // existing write + capture path so we don't block normal usage.
+    }
 
     // Unified adaptive path (works for local shell AND SSH):
     //
@@ -396,4 +501,5 @@ module.exports = {
   stopActiveCapture,
   killAllSessions,
   killSessionsForSender,
+  getTerminalForeground,
 };

@@ -12,6 +12,7 @@ import TopicSidebar from "../components/chat/TopicSidebar";
 import ToolCallBubble, { ToolCallGroup } from "../components/chat/ToolCallBubble";
 import MessageBubble from "../components/chat/MessageBubble";
 import { useToolApproval } from "../hooks/useToolApproval";
+import { useStickToBottom } from "../hooks/useStickToBottom";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import {
   type ChatMsg,
@@ -139,7 +140,8 @@ export default function ChatPage({
   const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
   const { messages, input, attachments, streaming, invalidAttachmentPaths } = activeState;
 
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const { containerRef: messagesContainerRef, handleScroll, scrollToBottom } =
+    useStickToBottom(messages);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const requestIdRef = useRef<string>("");
   const activeTopicIdRef = useRef<string | null>(null);
@@ -707,11 +709,19 @@ export default function ChatPage({
     };
   }, [flushSessionSave, scheduleTopicSave]);
 
+  // Center an awaiting-approval tool card in the viewport so the user notices it.
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const card = el.querySelector<HTMLElement>("[data-tool-approval-id]");
+    if (!card) return;
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [messages]);
+
+  // Switching topics returns to that conversation's bottom.
+  useEffect(() => {
+    scrollToBottom();
+  }, [activeTopicId, scrollToBottom]);
 
   const handleBackendChange = useCallback(
     (backend: string) => {
@@ -895,6 +905,7 @@ export default function ChatPage({
           },
         };
       });
+      scrollToBottom();
 
       if (shouldAutoTitle) {
         const autoTitle = generateTopicTitle(text);
@@ -982,7 +993,7 @@ export default function ChatPage({
         flushSessionSave(topicId);
       });
     },
-    [chatSettings, skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave],
+    [chatSettings, skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave, scrollToBottom],
   );
 
   useEffect(() => {
@@ -1172,7 +1183,7 @@ export default function ChatPage({
         />
       )}
       <div className="chat-main-area">
-        <div className="chat-messages" ref={messagesContainerRef}>
+        <div className="chat-messages" ref={messagesContainerRef} onScroll={handleScroll}>
           {messages.length === 0 ? (
             <div className="chat-empty">
               <span className="chat-empty-icon">🧚‍♀️</span>

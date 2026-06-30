@@ -1053,6 +1053,18 @@ const setupTray = () => {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  if (isDev && process.env.ELECTRON_HOT_RELOAD !== '0') {
+    let reloadTimer = null;
+    fs.watch(__dirname, { recursive: true }, (_evt, file) => {
+      if (!file || !file.endsWith('.cjs')) return;
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => {
+        console.log(`[hot-reload] ${file} changed, restarting…`);
+        app.relaunch();
+        app.exit(0);
+      }, 300);
+    });
+  }
   registerLive2DProtocol();
   // Tray must be registered before hiding Dock, or macOS may omit the status item.
   setupTray();

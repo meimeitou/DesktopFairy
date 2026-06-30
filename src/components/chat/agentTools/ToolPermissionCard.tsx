@@ -25,7 +25,7 @@ export default function ToolPermissionCard({
   const canApprove = !!msg.toolApprovalId && !!display;
 
   return (
-    <div className="agent-tool-permission">
+    <div className="agent-tool-permission" data-tool-approval-id={msg.toolApprovalId ?? undefined}>
       <div className="agent-tool-permission-head-static">
         <span className="agent-tool-permission-title">
           {getToolDisplayName(toolName)}

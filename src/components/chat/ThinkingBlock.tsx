@@ -75,15 +75,15 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
   // Reasoning is "active" while streaming and no answer text has arrived yet
   // (reasoning_content streams before content for typical reasoning models).
   const isThinking = isStreaming && !msg.content;
-  const [expanded, setExpanded] = useState(false);
+  // Three-level display: "half" shows a capped preview with a fade mask,
+  // "full" shows the whole body, "collapsed" hides the body entirely.
+  // Default to "half" so the thinking content is previewed without dominating the bubble,
+  // mirroring cherry-studio's half-folded affordance (but also applied to completed blocks).
+  type FoldState = "collapsed" | "half" | "full";
+  const [fold, setFold] = useState<FoldState>("half");
   const [elapsedMs, setElapsedMs] = useState(0);
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Auto expand while thinking, auto-collapse when thinking ends.
-  useEffect(() => {
-    setExpanded(isThinking);
-  }, [isThinking]);
 
   // Live count-up while thinking; freeze the value when done.
   useEffect(() => {
@@ -123,23 +123,30 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
       ? `已深度思考（用时 ${seconds} 秒）`
       : "已深度思考";
 
-  const cls = `thinking-block${isThinking ? " thinking-active" : ""}${expanded ? " thinking-expanded" : ""}`;
+  // Click cycles: half -> full -> collapsed -> half.
+  const onHeaderClick = () => {
+    setFold((prev) => (prev === "half" ? "full" : prev === "full" ? "collapsed" : "half"));
+  };
+
+  const showBody = fold === "half" || fold === "full";
+  const expanded = fold === "full";
+  const cls = `thinking-block${isThinking ? " thinking-active" : ""}${fold === "full" ? " thinking-expanded" : ""}${fold === "half" ? " thinking-half" : ""}`;
 
   return (
     <div className={cls}>
       <button
         type="button"
         className="thinking-header"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onHeaderClick}
         aria-expanded={expanded}
       >
         <BulbIcon />
         <span className="thinking-label">{label}</span>
         <ChevronIcon />
       </button>
-      {expanded && (
-        <div className="thinking-body">
-          {!isThinking && (
+      {showBody && (
+        <div className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}>
+          {!isThinking && fold === "full" && (
             <button
               type="button"
               className="thinking-copy"
@@ -150,6 +157,7 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
             </button>
           )}
           <ChatMarkdown content={content} streaming={isThinking} />
+          {fold === "half" && <div className="thinking-body-fade" aria-hidden="true" />}
         </div>
       )}
     </div>

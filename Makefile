@@ -14,6 +14,7 @@ help: ## Show available targets
 	@echo "Dev options (make dev):"
 	@echo "  DEVTOOLS=1|0          Open DevTools (default: $(DEVTOOLS))"
 	@echo "  DEVTOOLS_MODE=detach  detach | right | bottom | undocked (default: $(DEVTOOLS_MODE))"
+	@echo "  ELECTRON_HOT_RELOAD=0 Disable main-process hot-reload (default: on in dev)"
 
 install: ## Install npm dependencies
 	npm install
