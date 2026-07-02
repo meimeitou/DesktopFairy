@@ -46,8 +46,12 @@ export function useToolApproval(
     [respondToolApproval],
   );
 
+  // "始终允许"语义：批准当前所有 awaiting_approval 的工具 + 本次请求后续自动通过
+  // + 切换全局 full-auto 模式（onSwitchToFullAuto 回调）。
+  // _originApprovalId 是触发此操作的卡片 id，但批量批准所有待审工具是"始终允许"
+  // 的预期行为（而非仅批准单个），因此该参数被有意忽略。
   const handleAlwaysAllowTool = useCallback(
-    (_approvalId: string) => {
+    (_originApprovalId: string) => {
       const pendingIds = chatMessagesRef.current
         .filter(
           (m) =>

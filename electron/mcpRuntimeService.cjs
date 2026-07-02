@@ -218,7 +218,7 @@ async function getOrCreateClient(server) {
 
       const sdk = await loadSdk();
       const client = new sdk.Client(
-        { name: 'DesktopFairy', version: app.getVersion() || '0.2.0' },
+        { name: 'DesktopFairy', version: app.getVersion() || '0.3.0' },
         { capabilities: {} },
       );
       const transport = await initTransport(server);

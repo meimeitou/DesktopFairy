@@ -9,6 +9,9 @@ interface Props {
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
   submitting?: boolean;
+  // 自定义"始终允许"按钮文案。终端抽屉传入"本次全部允许"以准确反映
+  // 其行为（不会切换全局 full-auto，仅对当前请求生效）。
+  alwaysAllowLabel?: string;
 }
 
 export default function ToolPermissionCard({
@@ -17,6 +20,7 @@ export default function ToolPermissionCard({
   onDeny,
   onAlwaysAllow,
   submitting = false,
+  alwaysAllowLabel = "始终允许",
 }: Props) {
   const toolName = msg.toolName || "工具";
   const command = getToolCommandLine(toolName, msg.toolArgs);
@@ -62,7 +66,7 @@ export default function ToolPermissionCard({
           >
             <polyline points="20 6 9 17 4 12" />
           </svg>
-          始终允许
+          {alwaysAllowLabel}
         </button>
         <button
           type="button"

@@ -263,7 +263,7 @@ function registerAgentHandlers(ipcMain, deps) {
       const context = terminalSessionId ? 'terminal' : 'local';
       const builtinTools = getBuiltinTools(agentConfig, context);
       const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
-      const terminalState = context === 'terminal' ? getTerminalForeground(terminalSessionId) : null;
+      const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
       const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState);
       let conversation = mergeSystemMessage(messages, systemPrompt);
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
@@ -388,6 +388,12 @@ function registerAgentHandlers(ipcMain, deps) {
               }
             }
           } catch (err) {
+            // abort 导致的工具异常（如 PTY 命令被 Ctrl-C 后 reject）不应回放给模型。
+            // 设置 toolAborted 并跳出工具循环，由下方 controller.signal.aborted 检查跳出 while。
+            if (controller.signal.aborted) {
+              toolAborted = true;
+              break;
+            }
             resultText = JSON.stringify({
               ok: false,
               error: String(err?.message || err),

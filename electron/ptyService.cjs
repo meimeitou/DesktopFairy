@@ -2,7 +2,7 @@ const pty = require('node-pty');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync } = require('child_process');
+const { execFile } = require('child_process');
 
 const sessions = new Map();
 
@@ -17,6 +17,14 @@ const sessions = new Map();
 // ST = BEL (\x07).
 const START_PATTERN = /\x1b\]633;C\x07/;
 const END_PATTERN = /\x1b\]633;D;(-?\d+)\x07/;
+// 匹配所有 OSC 633 序列（start/end 及任何变体），用于在 capture 完成后从
+// 渲染器输出中剥离残留标记，避免 fallback 场景下重复 end marker 流向 xterm.js。
+const OSC_633_PATTERN = /\x1b\]633;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
+function stripOsc633(str) {
+  if (!str) return str;
+  return str.replace(OSC_633_PATTERN, '');
+}
 
 // Foreground-process detection. The PTY spawns a shell (ptyProcess.pid); we use
 // `ps -o tpgid=,pgid= -p <pid>` to read the controlling terminal's foreground
@@ -26,8 +34,8 @@ const END_PATTERN = /\x1b\]633;D;(-?\d+)\x07/;
 //   - ssh/mosh             → remote session (allow + annotate)
 //   - known shells         → sub-shell / non-ssh remote shell (allow)
 //   - anything else        → vim/less/python/... (block to avoid blind-typing)
-// execFileSync with array args avoids shell injection. On any ps failure we
-// fall back to 'shell' so the existing capture path still runs.
+// execFile (async) with array args avoids shell injection. On any ps failure we
+// fall back to 'unknown' (treated as unsafe) so we never blind-type into vim/less.
 const REMOTE_COMM_RE = /^(ssh|mosh|mosh-client)$/;
 const SHELL_COMMS = new Set([
   'bash', 'zsh', 'sh', 'fish', 'dash', 'ksh', 'csh', 'tcsh', 'mksh',
@@ -37,38 +45,38 @@ const SHELL_COMMS = new Set([
 // (user opted in). expect runs Tcl; allow by explicit user preference.
 const ALLOWED_NON_SHELL_COMMS = new Set(['expect', 'expectk']);
 
-function psField(pid, field) {
-  try {
-    const out = execFileSync('ps', ['-o', `${field}=`, '-p', String(pid)], {
+function psFieldAsync(pid, field) {
+  return new Promise((resolve) => {
+    execFile('ps', ['-o', `${field}=`, '-p', String(pid)], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+    }, (err, stdout) => {
+      if (err) return resolve('');
+      resolve(String(stdout || '').trim());
     });
-    return out.trim();
-  } catch {
-    return '';
-  }
+  });
 }
 
-function detectForeground(session) {
+async function detectForeground(session) {
   const pid = session?.ptyProcess?.pid;
   if (!pid) return { kind: 'shell' };
   // Read tpgid and pgid as separate ps invocations — on macOS the combined
   // `tpgid=,pgid=` form leaks a "TPGID" header line into the output, while
   // single-field requests return a clean value.
-  const tpgidRaw = psField(pid, 'tpgid');
-  const pgidRaw = psField(pid, 'pgid');
+  const tpgidRaw = await psFieldAsync(pid, 'tpgid');
+  const pgidRaw = await psFieldAsync(pid, 'pgid');
   const tpgid = parseInt(tpgidRaw, 10);
   const pgid = parseInt(pgidRaw, 10);
   // NaN (ps failed) or tpgid 0 (no controlling tty, e.g. a non-interactive
-  // shell) → treat as an at-rest shell and let the capture path handle it.
-  if (!Number.isFinite(tpgid) || !Number.isFinite(pgid)) return { kind: 'shell' };
+  // shell). ps 失败时回退为 'unknown'（不安全），避免盲写到 vim/less。
+  if (!Number.isFinite(tpgid) || !Number.isFinite(pgid)) return { kind: 'unknown' };
   if (tpgid === 0 || tpgid === pgid) return { kind: 'shell' };
   // A child process is foreground. The foreground-pg leader has pid === tpgid.
-  const comm = psField(tpgid, 'comm');
+  const comm = await psFieldAsync(tpgid, 'comm');
   if (!comm) return { kind: 'blocked', comm: '' };
   const base = comm.split('/').pop();
   if (REMOTE_COMM_RE.test(base)) {
-    const remoteHost = parseRemoteHost(tpgid);
+    const remoteHost = await parseRemoteHost(tpgid);
     return { kind: 'remote', comm: base, remoteHost };
   }
   if (SHELL_COMMS.has(base)) return { kind: 'shell', comm: base };
@@ -77,8 +85,8 @@ function detectForeground(session) {
 }
 
 // Best-effort user@host extraction from the ssh/mosh argv tail.
-function parseRemoteHost(pid) {
-  const args = psField(pid, 'args');
+async function parseRemoteHost(pid) {
+  const args = await psFieldAsync(pid, 'args');
   if (!args) return '';
   const tokens = args.split(/\s+/).filter(Boolean);
   // Drop the program name and option flags; the last non-flag token is usually user@host.
@@ -90,13 +98,13 @@ function parseRemoteHost(pid) {
   return host;
 }
 
-function getTerminalForeground(sessionId) {
+async function getTerminalForeground(sessionId) {
   const session = sessionId ? sessions.get(sessionId) : null;
   if (!session) return null;
   try {
-    return detectForeground(session);
+    return await detectForeground(session);
   } catch {
-    return { kind: 'shell' };
+    return { kind: 'unknown' };
   }
 }
 
@@ -294,7 +302,11 @@ function registerPtyHandlers({ ipcMain }) {
         }
       }
 
-      safeSend('pty:output', { sessionId, data: batch });
+      // 当 capture 已完成或不存在时，剥离残留的 OSC 633 标记再发送给渲染器，
+      // 避免 fallback 场景下重复的 end marker（fallback printf 产生的 + 真实
+      // precmd 产生的）流向 xterm.js 渲染为乱码。
+      const outputData = (!cap || cap.done) ? stripOsc633(batch) : batch;
+      safeSend('pty:output', { sessionId, data: outputData });
     };
 
     ptyProcess.onData((data) => {
@@ -387,6 +399,7 @@ function runCommandInSession(sessionId, command, timeout = 60_000, signal) {
       signal: signal || null,
       onAbort: null,
       remoteNote: null,
+      fallbackSent: false, // fallback printf 是否已发送（用于处理重复 end marker）
     };
 
     const timeoutMs = Math.max(5_000, Math.min(Number(timeout) || 60_000, 600_000));
@@ -406,12 +419,12 @@ function runCommandInSession(sessionId, command, timeout = 60_000, signal) {
 
     session.capture = cap;
 
-    // Foreground-process gate. Classify what the PTY's controlling terminal
-    // is currently running before writing anything. This prevents blind-typing
-    // commands into vim/python/less/etc. and tags SSH sessions as remote so the
-    // AI can be told (via the resolved result) that commands run on a remote host.
-    try {
-      const fg = detectForeground(session);
+    // Foreground-process gate (async). Classify what the PTY's controlling
+    // terminal is currently running before writing anything. This prevents
+    // blind-typing commands into vim/python/less/etc. and tags SSH sessions
+    // as remote so the AI can be told (via the resolved result) that commands
+    // run on a remote host.
+    detectForeground(session).then((fg) => {
       if (fg.kind === 'blocked') {
         cleanupCapture(session);
         reject(new Error(
@@ -419,51 +432,63 @@ function runCommandInSession(sessionId, command, timeout = 60_000, signal) {
         ));
         return;
       }
+      if (fg.kind === 'unknown') {
+        // ps 不可用或失败 — 无法安全判断前台状态，拒绝盲写以避免误操作 vim/less 等。
+        cleanupCapture(session);
+        reject(new Error(
+          '无法检测终端前台状态（ps 不可用或返回异常）。请确认当前 shell 处于空闲状态后重试。'
+        ));
+        return;
+      }
       if (fg.kind === 'remote') {
         cap.remoteNote = '⚠️ 命令在 SSH 远程会话' + (fg.remoteHost ? '（' + fg.remoteHost + '）' : '') + '中执行。';
       }
-    } catch {
-      // Detection failed (ps unavailable, etc.) — fall through to the
-      // existing write + capture path so we don't block normal usage.
-    }
 
-    // Unified adaptive path (works for local shell AND SSH):
-    //
-    // 1. Write `command\n` — no wrapper, no stty, no printf.
-    //    If shell integration hooks are active (local shell), preexec
-    //    fires immediately and emits OSC 633;C → cap.started becomes
-    //    true in flushBatch, and startFallbackTimer is cancelled.
-    //
-    // 2. If no OSC 633;C arrives within 500ms (e.g. SSH session where
-    //    the remote shell has no hooks), send a fallback printf that
-    //    emits OSC 633;D with the command's exit code. $? holds the
-    //    exit code of the last command in an interactive shell, so
-    //    this works even over SSH where hooks can't fire.
-    //
-    // 3. flushBatch resolves the capture when OSC 633;D is matched,
-    //    whether or not OSC 633;C was seen:
-    //    - started=true  → output between markers (clean)
-    //    - started=false → output from buffer start to end marker
-    //      (includes command echo, but exit code is correct)
-    try {
-      session.ptyProcess.write(command + '\n');
-    } catch (e) {
-      cleanupCapture(session);
-      reject(new Error('无法写入终端: ' + String(e?.message || e)));
-      return;
-    }
-
-    cap.startFallbackTimer = setTimeout(() => {
-      if (cap.started || cap.done) return;
-      // Shell integration not active (e.g. inside an SSH session).
-      // The command may still be running, but we need to emit the end
-      // marker ourselves. $? is NOT available yet while the command
-      // runs, so we defer: this printf will execute after the command
-      // completes (keystrokes are queued in the shell's input buffer).
+      // Unified adaptive path (works for local shell AND SSH):
+      //
+      // 1. Write `command\n` — no wrapper, no stty, no printf.
+      //    If shell integration hooks are active (local shell), preexec
+      //    fires immediately and emits OSC 633;C → cap.started becomes
+      //    true in flushBatch, and startFallbackTimer is cancelled.
+      //
+      // 2. If no OSC 633;C arrives within 500ms (e.g. SSH session where
+      //    the remote shell has no hooks), send a fallback printf that
+      //    emits OSC 633;D with the command's exit code. $? holds the
+      //    exit code of the last command in an interactive shell, so
+      //    this works even over SSH where hooks can't fire.
+      //
+      // 3. flushBatch resolves the capture when OSC 633;D is matched,
+      //    whether or not OSC 633;C was seen:
+      //    - started=true  → output between markers (clean)
+      //    - started=false → output from buffer start to end marker
+      //      (includes command echo, but exit code is correct)
       try {
-        session.ptyProcess.write("printf '\\033]633;D;%s\\007' \"$?\"\n");
-      } catch { /* dead */ }
-    }, 500);
+        session.ptyProcess.write(command + '\n');
+      } catch (e) {
+        cleanupCapture(session);
+        reject(new Error('无法写入终端: ' + String(e?.message || e)));
+        return;
+      }
+
+      cap.startFallbackTimer = setTimeout(() => {
+        if (cap.started || cap.done) return;
+        // Shell integration not active (e.g. inside an SSH session).
+        // The command may still be running, but we need to emit the end
+        // marker ourselves. $? is NOT available yet while the command
+        // runs, so we defer: this printf will execute after the command
+        // completes (keystrokes are queued in the shell's input buffer).
+        cap.fallbackSent = true;
+        try {
+          session.ptyProcess.write("printf '\\033]633;D;%s\\007' \"$?\"\n");
+        } catch { /* dead */ }
+      }, 500);
+    }).catch(() => {
+      // Detection failed (ps unavailable, etc.) — 拒绝盲写，避免误操作 vim/less。
+      cleanupCapture(session);
+      reject(new Error(
+        '无法检测终端前台状态（ps 不可用或返回异常）。请确认当前 shell 处于空闲状态后重试。'
+      ));
+    });
   });
 }
 

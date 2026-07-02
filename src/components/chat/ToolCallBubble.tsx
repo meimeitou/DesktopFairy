@@ -8,6 +8,7 @@ interface ToolStepProps {
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
   submittingApprovalId?: string | null;
+  alwaysAllowLabel?: string;
 }
 
 function AgentToolStep({
@@ -16,6 +17,7 @@ function AgentToolStep({
   onDeny,
   onAlwaysAllow,
   submittingApprovalId,
+  alwaysAllowLabel,
 }: ToolStepProps) {
   const status = msg.toolStatus || "streaming";
   const submitting = submittingApprovalId === msg.toolApprovalId;
@@ -29,6 +31,7 @@ function AgentToolStep({
           onDeny={onDeny}
           onAlwaysAllow={onAlwaysAllow}
           submitting={submitting}
+          alwaysAllowLabel={alwaysAllowLabel}
         />
       </li>
     );
@@ -47,6 +50,7 @@ interface GroupProps {
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
   submittingApprovalId?: string | null;
+  alwaysAllowLabel?: string;
 }
 
 export function ToolCallGroup({
@@ -55,6 +59,7 @@ export function ToolCallGroup({
   onDeny,
   onAlwaysAllow,
   submittingApprovalId,
+  alwaysAllowLabel,
 }: GroupProps) {
   const waiting = tools.filter((t) => t.toolStatus === "awaiting_approval").length;
   const running = tools.filter(
@@ -87,6 +92,7 @@ export function ToolCallGroup({
               onDeny={onDeny}
               onAlwaysAllow={onAlwaysAllow}
               submittingApprovalId={submittingApprovalId}
+              alwaysAllowLabel={alwaysAllowLabel}
             />
           ))}
         </ul>
@@ -101,6 +107,7 @@ interface BubbleProps {
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
   submittingApprovalId?: string | null;
+  alwaysAllowLabel?: string;
 }
 
 export default function ToolCallBubble({
@@ -109,6 +116,7 @@ export default function ToolCallBubble({
   onDeny,
   onAlwaysAllow,
   submittingApprovalId,
+  alwaysAllowLabel,
 }: BubbleProps) {
   return (
     <ToolCallGroup
@@ -117,6 +125,7 @@ export default function ToolCallBubble({
       onDeny={onDeny}
       onAlwaysAllow={onAlwaysAllow}
       submittingApprovalId={submittingApprovalId}
+      alwaysAllowLabel={alwaysAllowLabel}
     />
   );
 }

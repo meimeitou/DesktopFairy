@@ -56,6 +56,31 @@ DesktopFairy 内置 Hermes 系统 Provider（设置 → AI 模型 → 启用 **H
 - **内置模型**：仅包含 Live2D SDK 官方示例 **Hiyori**（无版权问题）
 - **其他模型**：请自行下载后，在设置 → Live2D →「浏览本地目录…」加载（需遵守相应授权）
 
+## 下载安装
+
+### 下载
+
+前往 [GitHub Releases](https://github.com/meimeitou/DesktopFairy/releases) 下载最新版 `DesktopFairy-x.x.x-arm64.dmg`。
+
+> 仅支持 Apple Silicon（M1/M2/M3/M4 系列）。Intel Mac 暂不支持。
+
+### 安装
+
+1. 双击挂载 DMG，将 `DesktopFairy` 拖入 `Applications` 文件夹
+2. 弹出 DMG
+
+### 首次打开（Gatekeeper 提示处理）
+
+本项目为开源软件，未向 Apple 申请代码签名，首次打开会被 macOS Gatekeeper 拦截，提示「无法打开，因为无法验证开发者」或「已损坏」。这是正常现象，任选以下一种方式处理：
+
+- **方式一（推荐，图形界面）**：在 Finder 的「应用程序」中右键点击 `DesktopFairy` → 选择「打开」→ 在弹窗中点击「仍要打开」
+- **方式二（终端）**：
+  ```bash
+  xattr -d com.apple.quarantine /Applications/DesktopFairy.app
+  ```
+
+处理一次后，后续打开不再提示。
+
 ## 开发
 
 需要 Node.js >= 18。

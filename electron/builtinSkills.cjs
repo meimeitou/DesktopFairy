@@ -20,7 +20,7 @@ function getSkillsDir() {
 async function installBuiltinSkills() {
   const resourceSkillsPath = getResourceSkillsPath();
   const globalSkillsPath = getSkillsDir();
-  const appVersion = app.getVersion?.() || '0.2.0';
+  const appVersion = app.getVersion?.() || '0.3.0';
 
   try {
     await fs.promises.access(resourceSkillsPath);

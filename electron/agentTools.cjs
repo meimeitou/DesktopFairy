@@ -1,7 +1,7 @@
 const { shouldPromptForTool, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
 const { executeBuiltinTool } = require('./agentBuiltinExecutors.cjs');
 const { executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs');
-const { parseToolArguments } = require('./toolCallDisplay.cjs');
+const { parseToolArguments, parseToolArgumentsStrict } = require('./toolCallDisplay.cjs');
 const { makeApprovalId, waitForToolApproval } = require('./agentToolApproval.cjs');
 
 function parseCommandString(commandStr) {
@@ -75,12 +75,26 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
 async function executeAgentTool(toolCall, deps) {
   const name = toolCall?.function?.name;
   const rawArgs = toolCall?.function?.arguments || '';
-  const toolCallId = toolCall?.id || deps.toolCallId;
-  const { args } = parseToolArguments(rawArgs);
+  // readSseResponse 已为缺失 id 提供 call_${index} 兜底（agentService.cjs），
+  // 此处再补一个本地兜底，避免引用不存在的 deps.toolCallId（历史死代码）。
+  const toolCallId = toolCall?.id || `call_${name || 'unknown'}_${Date.now()}`;
+  // 执行层用严格解析：畸形 JSON 直接拒绝执行（不进行正则容错提取）。
+  // 审批卡片仍可用 parseToolArguments 容错展示。
+  const { args } = parseToolArgumentsStrict(rawArgs);
 
   if (!name) {
     return {
       resultText: JSON.stringify({ ok: false, error: 'Missing tool name' }),
+      denied: false,
+    };
+  }
+
+  if (args === null) {
+    return {
+      resultText: JSON.stringify({
+        ok: false,
+        error: 'Invalid tool arguments (malformed JSON). 请模型重新构造合法的 JSON 参数。',
+      }),
       denied: false,
     };
   }

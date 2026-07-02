@@ -92,6 +92,8 @@ interface TerminalAgentDrawerProps {
   onToggle: () => void;
   activeTabId: string;
   getActiveSessionId: () => string | undefined;
+  // 当前所有终端 tab 的 id 列表 — 用于清理已关闭 tab 的孤立状态与 inflight 请求。
+  tabIds: string[];
 }
 
 interface DrawerTabState {
@@ -130,6 +132,7 @@ export default function TerminalAgentDrawer({
   onToggle,
   activeTabId,
   getActiveSessionId,
+  tabIds,
 }: TerminalAgentDrawerProps) {
   const [tabStates, setTabStates] = useState<Record<string, DrawerTabState>>(
     {},
@@ -210,16 +213,14 @@ export default function TerminalAgentDrawer({
     (tabId: string, event: AgentStreamToolEvent) => {
       updateTabState(tabId, (state) => {
         const msgs = state.messages;
+        // 仅按 toolCallId 精确匹配 — 避免并发同名工具（如两个 Read）误合并。
+        // readSseResponse 已为缺失 id 的情况提供 call_${index} 兜底，
+        // 所以缺失 toolCallId 时直接走新建路径（existingIdx = -1）。
         const existingIdx = event.toolCallId
           ? msgs.findIndex(
               (m) => m.type === "tool" && m.toolCallId === event.toolCallId,
             )
-          : msgs.findIndex(
-              (m) =>
-                m.type === "tool" &&
-                m.toolName === event.toolName &&
-                (m.toolStatus === "running" || m.toolStatus === "streaming"),
-            );
+          : -1;
         const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
         const toolMsg: ChatMsg = {
           id: prevTool?.id || genId(),
@@ -244,19 +245,17 @@ export default function TerminalAgentDrawer({
           if (assistantIdx < 0) {
             nextMessages = [...msgs, toolMsg];
           } else {
-            const assistant = msgs[assistantIdx];
             nextMessages = msgs.slice();
-            if (assistant.content && !assistant.error) {
-              nextMessages.splice(assistantIdx + 1, 0, toolMsg);
-              nextMessages.push({
-                id: genId(),
-                role: "assistant",
-                content: "",
-                timestamp: Date.now(),
-              });
-            } else {
-              nextMessages.splice(assistantIdx, 0, toolMsg);
-            }
+            // 始终把工具消息插入到 assistant 占位之后，并在其后追加新的空 assistant
+            // 占位 — 保证工具卡片出现在模型回复之后，符合"模型调用工具"的语义。
+            // （之前的 else 分支会插入到空 assistant 占位之前，导致视觉时序错乱。）
+            nextMessages.splice(assistantIdx + 1, 0, toolMsg);
+            nextMessages.push({
+              id: genId(),
+              role: "assistant",
+              content: "",
+              timestamp: Date.now(),
+            });
           }
         }
         return { ...state, messages: nextMessages };
@@ -379,6 +378,32 @@ export default function TerminalAgentDrawer({
       }
     };
   }, []);
+
+  // 清理已关闭 tab 的孤立状态：abort inflight 请求、删除 tabStates 条目、
+  // 反向清理 requestIdToTabIdRef 映射。防止关闭标签页后 Agent 仍在后台跑 + 内存泄漏。
+  useEffect(() => {
+    const liveSet = new Set(tabIds);
+    const currentIds = Object.keys(tabStatesRef.current);
+    const orphans = currentIds.filter((id) => !liveSet.has(id));
+    if (orphans.length === 0) return;
+    for (const orphanId of orphans) {
+      const st = tabStatesRef.current[orphanId];
+      if (st?.requestId) {
+        void api.invoke("agent:abort", { requestId: st.requestId });
+      }
+    }
+    // 反向清理 requestIdToTabIdRef 中指向 orphan tab 的映射。
+    for (const [reqId, tabId] of requestIdToTabIdRef.current) {
+      if (orphans.includes(tabId)) {
+        requestIdToTabIdRef.current.delete(reqId);
+      }
+    }
+    setTabStates((prev) => {
+      const next = { ...prev };
+      for (const orphanId of orphans) delete next[orphanId];
+      return next;
+    });
+  }, [tabIds]);
 
   const { containerRef: messagesContainerRef, handleScroll, scrollToBottom } =
     useStickToBottom(activeState.messages);
@@ -627,6 +652,7 @@ export default function TerminalAgentDrawer({
               onDeny={handleDenyTool}
               onAlwaysAllow={handleAlwaysAllowTool}
               submittingApprovalId={submittingApprovalId}
+              alwaysAllowLabel="本次全部允许"
             />
           ) : (
             <ToolCallBubble
@@ -636,6 +662,7 @@ export default function TerminalAgentDrawer({
               onDeny={handleDenyTool}
               onAlwaysAllow={handleAlwaysAllowTool}
               submittingApprovalId={submittingApprovalId}
+              alwaysAllowLabel="本次全部允许"
             />
           ),
         );

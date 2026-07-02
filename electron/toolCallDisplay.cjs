@@ -70,6 +70,23 @@ function parseToolArguments(raw) {
   return { args, raw: str };
 }
 
+// 执行层严格解析：JSON.parse 失败时返回 args=null（不进行正则容错提取）。
+// 用于 agentTools.cjs 的实际执行路径 — 畸形 JSON 不再被容错执行。
+// 展示层（formatToolApprovalDetail / 审批卡片）仍用 parseToolArguments 容错显示。
+function parseToolArgumentsStrict(raw) {
+  const str = String(raw || '').trim();
+  if (!str) return { args: {}, raw: str };
+  try {
+    const parsed = JSON.parse(str);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { args: parsed, raw: str };
+    }
+  } catch {
+    return { args: null, raw: str };
+  }
+  return { args: null, raw: str };
+}
+
 function pickString(args, keys) {
   for (const key of keys) {
     const value = args?.[key];
@@ -146,6 +163,7 @@ function getToolLabel(toolName) {
 module.exports = {
   TOOL_LABELS,
   parseToolArguments,
+  parseToolArgumentsStrict,
   formatToolApprovalDetail,
   getToolLabel,
   extractJsonStringField,

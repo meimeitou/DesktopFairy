@@ -429,6 +429,7 @@ export default function TerminalPage({
         onToggle={() => setDrawerOpen((v) => !v)}
         activeTabId={activeTabId}
         getActiveSessionId={getActiveSessionId}
+        tabIds={tabs.map((t) => t.id)}
       />
 
       <button

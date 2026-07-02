@@ -773,6 +773,9 @@ function truncateTerminalOutput(text) {
 async function toolTerminal(args, deps = {}) {
   const command = String(args?.command || '').trim();
   if (!command) return fail('command required');
+  if (!deps.terminalSessionId) {
+    return fail('终端会话未绑定，无法执行命令。请引导用户打开终端后再试。');
+  }
   const timeout = Math.min(Number(args?.timeout) || 60_000, 600_000);
   try {
     const result = await runCommandInRenderer(deps.sender, {
