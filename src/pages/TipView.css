@@ -10,14 +10,16 @@ html.tip-window #root {
 .tip-toolbar {
   display: inline-flex;
   align-items: stretch;
-  gap: 2px;
+  gap: 1px;
   padding: 4px;
-  background: rgba(20, 15, 40, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(34, 30, 26, 0.92);
+  border: 1px solid var(--hairline-strong);
   border-radius: 10px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
   user-select: none;
   outline: none;
 }
@@ -27,14 +29,14 @@ html.tip-window #root {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
+  gap: 2px;
   min-width: 44px;
-  padding: 4px 8px;
+  padding: 5px 9px;
   background: transparent;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background 0.12s, color 0.12s;
   outline: none;
 }
 
@@ -45,17 +47,23 @@ html.tip-window #root {
 }
 
 .tip-action-btn:hover {
-  background: rgba(120, 100, 255, 0.25);
+  background: var(--persimmon-soft);
 }
 
 .tip-action-icon {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
+  filter: saturate(0.9);
 }
 
 .tip-action-label {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.2px;
+  color: var(--bone-300);
   white-space: nowrap;
+}
+
+.tip-action-btn:hover .tip-action-label {
+  color: var(--bone-100);
 }

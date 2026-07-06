@@ -17,13 +17,85 @@ const sessions = new Map();
 // ST = BEL (\x07).
 const START_PATTERN = /\x1b\]633;C\x07/;
 const END_PATTERN = /\x1b\]633;D;(-?\d+)\x07/;
-// 匹配所有 OSC 633 序列（start/end 及任何变体），用于在 capture 完成后从
-// 渲染器输出中剥离残留标记，避免 fallback 场景下重复 end marker 流向 xterm.js。
-const OSC_633_PATTERN = /\x1b\]633;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
-function stripOsc633(str) {
-  if (!str) return str;
-  return str.replace(OSC_633_PATTERN, '');
+// ─── Output pipeline middlewares ───
+// Inspired by tabby's SessionMiddlewareStack but simplified to a synchronous
+// unidirectional chain (PTY output → renderer). Each middleware is a factory
+// returning (chunk: Buffer, session?) => Buffer. Stateful middlewares (UTF-8
+// boundary) keep state in closure. OSC 633 capture state machine is NOT a
+// middleware — it controls whether output flows to the renderer, so it stays
+// in flushBatch.
+
+// UTF-8 boundary fixup. node-pty may split a multi-byte character across
+// onData calls; without this the join('') would produce U+FFFD for CJK/emoji.
+function createUtf8BoundaryMiddleware() {
+  let pending = Buffer.alloc(0);
+  return (chunk) => {
+    const combined = Buffer.concat([pending, chunk]);
+    let cutAt = combined.length;
+    while (cutAt > 0) {
+      const byte = combined[cutAt - 1];
+      if (byte < 0x80) break;             // ASCII, complete
+      if (byte >= 0xC0) {                  // leading byte, check completeness
+        const need = byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : 2;
+        if (combined.length - (cutAt - 1) < need) {
+          cutAt -= 1;                      // incomplete, retain
+        }
+        break;
+      }
+      cutAt -= 1;                          // continuation byte, keep scanning
+    }
+    const complete = combined.slice(0, cutAt);
+    pending = combined.slice(cutAt);
+    return complete;
+  };
+}
+
+// Strip residual OSC 633 markers so they never reach xterm (avoids visible
+// noise in fallback scenarios where a manual printf emits duplicate end markers).
+const OSC_633_STRIP_PATTERN = /\x1b\]633;[^\x07\x1b]*(?:\x07|\x1b\\)/g;
+function createOsc633StripMiddleware() {
+  return (chunk) => Buffer.from(chunk.toString('utf8').replace(OSC_633_STRIP_PATTERN, ''), 'utf8');
+}
+
+// OSC 7: file://<host><path> — macOS Terminal.app / iTerm2 standard for CWD.
+const OSC7_CWD_PATTERN = /\x1b\]7;file:\/\/[^\/]*([^\x07\x1b]*)\x07/g;
+function createOsc7CwdMiddleware() {
+  return (chunk, session) => Buffer.from(chunk.toString('utf8').replace(OSC7_CWD_PATTERN, (_, p) => {
+    try { session.cwd = decodeURIComponent(p); } catch { /* ignore malformed */ }
+    return '';
+  }), 'utf8');
+}
+
+// OSC 1337: CurrentDir=<path> — iTerm2 extension.
+const OSC1337_CWD_PATTERN = /\x1b\]1337;CurrentDir=([^\x07\x1b]*)\x07/g;
+function createOsc1337CwdMiddleware() {
+  return (chunk, session) => Buffer.from(chunk.toString('utf8').replace(OSC1337_CWD_PATTERN, (_, p) => {
+    session.cwd = p;
+    return '';
+  }), 'utf8');
+}
+
+function createSessionPipeline() {
+  const utf8Boundary = createUtf8BoundaryMiddleware();
+  const filters = [
+    createOsc633StripMiddleware(),
+    createOsc7CwdMiddleware(),
+    createOsc1337CwdMiddleware(),
+  ];
+  return {
+    // Apply UTF-8 boundary fixup first — returns complete characters only.
+    fixUtf8(chunk) { return utf8Boundary(chunk); },
+    // Then run OSC strip + CWD extraction filters.
+    filter(chunk, session) {
+      let data = chunk;
+      for (const mw of filters) {
+        data = mw(data, session);
+        if (data.length === 0) return data;
+      }
+      return data;
+    },
+  };
 }
 
 // Foreground-process detection. The PTY spawns a shell (ptyProcess.pid); we use
@@ -102,9 +174,10 @@ async function getTerminalForeground(sessionId) {
   const session = sessionId ? sessions.get(sessionId) : null;
   if (!session) return null;
   try {
-    return await detectForeground(session);
+    const fg = await detectForeground(session);
+    return { ...fg, cwd: session.cwd || null };
   } catch {
-    return { kind: 'unknown' };
+    return { kind: 'unknown', cwd: session.cwd || null };
   }
 }
 
@@ -126,6 +199,10 @@ function buildEnv() {
     'TERM_PROGRAM_VERSION', 'COLORTERM', 'COLORFGBG', 'ITERM_SESSION_ID',
     'SSH_AUTH_SOCK', 'DISPLAY', 'EDITOR', 'VISUAL', 'PAGER', 'LESS',
     'LSCOLORS', 'CLICOLOR', 'NODE_REPL_HISTORY',
+    // History — zsh/bash read these to locate the history file. Preserving
+    // them helps when the parent process (e.g. a shell that launched
+    // DesktopFairy from CLI) already has them set.
+    'HISTFILE', 'HISTSIZE', 'SAVEHIST',
   ];
   for (const key of keepKeys) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
@@ -146,14 +223,66 @@ function setupShellIntegration(shell) {
     if (!shell || shell.includes('zsh')) {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'df-zsh-'));
       const userZdotdir = process.env.ZDOTDIR || '';
+
+      // .zshenv — zsh reads $ZDOTDIR/.zshenv FIRST, before any other rc file.
+      // We set ZDOTDIR=tmpDir at spawn time so zsh finds this file. Here we
+      // temporarily switch ZDOTDIR back to the user's, source their .zshenv
+      // (which often sets HISTFILE/HISTSIZE/SAVEHIST and other env vars), then
+      // restore ZDOTDIR to tmpDir so zsh still finds our .zshrc next.
+      // Without this, the user's .zshenv is silently skipped and shell history
+      // is lost (Up arrow shows nothing).
+      const zshenv = [
+        '# DesktopFairy shell integration (auto-generated .zshenv)',
+        '__df_tmp_zdotdir="$ZDOTDIR"',
+        userZdotdir ? `ZDOTDIR=${shellQuote(userZdotdir)}` : 'unset ZDOTDIR',
+        'if [[ -f "$ZDOTDIR/.zshenv" ]]; then',
+        '  source "$ZDOTDIR/.zshenv"',
+        'elif [[ -z "$ZDOTDIR" && -f "$HOME/.zshenv" ]]; then',
+        '  source "$HOME/.zshenv"',
+        'fi',
+        'ZDOTDIR="$__df_tmp_zdotdir"',
+        'unset __df_tmp_zdotdir',
+        '',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, '.zshenv'), zshenv);
+
+      // .zprofile — login shells (-l) read $ZDOTDIR/.zprofile after .zshenv
+      // but before .zshrc. Same pattern: source user's .zprofile then restore.
+      const zprofile = [
+        '# DesktopFairy shell integration (auto-generated .zprofile)',
+        '__df_tmp_zdotdir="$ZDOTDIR"',
+        userZdotdir ? `ZDOTDIR=${shellQuote(userZdotdir)}` : 'unset ZDOTDIR',
+        'if [[ -f "$ZDOTDIR/.zprofile" ]]; then',
+        '  source "$ZDOTDIR/.zprofile"',
+        'elif [[ -z "$ZDOTDIR" && -f "$HOME/.zprofile" ]]; then',
+        '  source "$HOME/.zprofile"',
+        'fi',
+        'ZDOTDIR="$__df_tmp_zdotdir"',
+        'unset __df_tmp_zdotdir',
+        '',
+      ].join('\n');
+      fs.writeFileSync(path.join(tmpDir, '.zprofile'), zprofile);
+
+      // .zshrc — restore ZDOTDIR, source user's .zshrc, then register hooks.
       const zshrc = [
         '# DesktopFairy shell integration (auto-generated)',
         userZdotdir ? `ZDOTDIR=${shellQuote(userZdotdir)}` : 'unset ZDOTDIR',
-        '[[ -f "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc" || [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"',
+        '# /etc/zshrc runs BEFORE this file, while ZDOTDIR still pointed to our',
+        '# temp dir. On macOS /etc/zshrc sets HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history,',
+        '# so HISTFILE now wrongly points into the temp dir. Re-evaluate with the',
+        '# restored ZDOTDIR so zsh loads the user\'s real history file.',
+        'if [[ -n "$HISTFILE" ]]; then',
+        '  HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history',
+        'fi',
+        'if [[ -f "$ZDOTDIR/.zshrc" ]]; then',
+        '  source "$ZDOTDIR/.zshrc"',
+        'elif [[ -z "$ZDOTDIR" && -f "$HOME/.zshrc" ]]; then',
+        '  source "$HOME/.zshrc"',
+        'fi',
         '',
-        '# OSC 633 shell integration (VS Code compatible)',
+        '# OSC 633 shell integration (VS Code compatible) + OSC 7 CWD report',
         "__df_preexec() { printf '\\033]633;C\\007'; }",
-        "__df_precmd() { printf '\\033]633;D;%s\\007' \"$?\"; }",
+        "__df_precmd() { printf '\\033]633;D;%s\\007' \"$?\"; printf '\\033]7;file://%s%s\\007' \"$HOSTNAME\" \"$PWD\"; }",
         'preexec_functions+=(__df_preexec)',
         'precmd_functions+=(__df_precmd)',
         '',
@@ -168,10 +297,10 @@ function setupShellIntegration(shell) {
         '[ -f ~/.bashrc ] && source ~/.bashrc',
         '[ -f ~/.bash_profile ] && source ~/.bash_profile',
         '',
-        '# OSC 633 shell integration (VS Code compatible)',
+        '# OSC 633 shell integration (VS Code compatible) + OSC 7 CWD report',
         '__df_in_cmd=0',
         "__df_preexec() { if [[ $__df_in_cmd -eq 0 ]]; then __df_in_cmd=1; printf '\\033]633;C\\007'; fi; }",
-        "__df_precmd() { __df_in_cmd=0; printf '\\033]633;D;%s\\007' \"$?\"; }",
+        "__df_precmd() { __df_in_cmd=0; printf '\\033]633;D;%s\\007' \"$?\"; printf '\\033]7;file://%s%s\\007' \"$HOSTNAME\" \"$PWD\"; }",
         "trap '__df_preexec' DEBUG",
         'PROMPT_COMMAND="__df_precmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}"',
         '',
@@ -263,6 +392,8 @@ function registerPtyHandlers({ ipcMain }) {
       capture: null,
       shellIntegrated: integration.integrated,
       integrationDir: integration.cleanupDir,
+      cwd: null,
+      pipeline: createSessionPipeline(),
     };
 
     const batchBuffer = [];
@@ -270,8 +401,14 @@ function registerPtyHandlers({ ipcMain }) {
 
     const flushBatch = () => {
       if (!batchBuffer.length) return;
-      const batch = batchBuffer.join('');
+      const rawBatch = batchBuffer.join('');
       batchBuffer.length = 0;
+
+      // UTF-8 boundary fixup first — cap.buffer string and pipeline both need
+      // complete characters, otherwise CJK/emoji would render as U+FFFD when
+      // node-pty splits a multi-byte sequence across onData calls.
+      const completeBuf = session.pipeline.fixUtf8(Buffer.from(rawBatch, 'utf8'));
+      const batch = completeBuf.toString('utf8');
 
       const cap = session.capture;
       if (cap && !cap.done) {
@@ -302,11 +439,13 @@ function registerPtyHandlers({ ipcMain }) {
         }
       }
 
-      // 当 capture 已完成或不存在时，剥离残留的 OSC 633 标记再发送给渲染器，
-      // 避免 fallback 场景下重复的 end marker（fallback printf 产生的 + 真实
-      // precmd 产生的）流向 xterm.js 渲染为乱码。
-      const outputData = (!cap || cap.done) ? stripOsc633(batch) : batch;
-      safeSend('pty:output', { sessionId, data: outputData });
+      // Pipeline: strip residual OSC 633 markers + extract OSC 7/1337 CWD.
+      // OSC 633 sequences are VS Code-private and ignored by xterm, but in
+      // fallback scenarios a manual printf can emit duplicate end markers
+      // that show up as visible noise — strip them. OSC 7/1337 update
+      // session.cwd for Agent context injection.
+      const processed = session.pipeline.filter(completeBuf, session);
+      safeSend('pty:output', { sessionId, data: processed.toString('utf8') });
     };
 
     ptyProcess.onData((data) => {

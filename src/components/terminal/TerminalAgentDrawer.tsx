@@ -32,6 +32,8 @@ import Tooltip from "../Tooltip";
 import "../../pages/ChatPage.css";
 import "./TerminalAgentDrawer.css";
 
+const MAX_INPUT_HEIGHT = 140;
+
 const api = window.electronAPI;
 
 function EraserIcon() {
@@ -145,6 +147,7 @@ export default function TerminalAgentDrawer({
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
   const compactRequestIdRef = useRef<string | null>(null);
   const handleClearContextRef = useRef<() => void>(() => {});
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     tabStatesRef.current = tabStates;
@@ -170,6 +173,17 @@ export default function TerminalAgentDrawer({
   }, [activeTabId]);
 
   const activeState = tabStates[activeTabId] ?? emptyTabState();
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_INPUT_HEIGHT)}px`;
+  }, []);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [activeState.input, adjustHeight]);
 
   const messagesRef = useRef(activeState.messages);
   const requestIdRef = useRef(activeState.requestId ?? "");
@@ -765,6 +779,7 @@ export default function TerminalAgentDrawer({
           </div>
           <div className="terminal-agent-input-row">
             <textarea
+              ref={textareaRef}
               rows={1}
               placeholder={
                 activeState.streaming ? "生成中…" : "输入消息，Enter 发送…"

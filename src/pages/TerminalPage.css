@@ -56,34 +56,38 @@
   gap: 4px;
   height: 36px;
   padding: 0 8px;
-  background: rgba(0, 0, 0, 0.2);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ink-850);
+  border-top: 1px solid var(--hairline);
   overflow-x: auto;
 }
 
 .terminal-tab-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   height: 24px;
   padding: 0 8px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.6);
+  background: rgba(245, 239, 230, 0.04);
+  color: var(--bone-500);
   font-size: 12px;
   cursor: pointer;
   border: none;
   white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
 }
 
 .terminal-tab-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(245, 239, 230, 0.08);
+  color: var(--bone-300);
 }
 
 .terminal-tab-item.active {
-  background: rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.95);
+  background: var(--persimmon-softer);
+  color: var(--bone-100);
+  /* 签名:左侧 2px 柿色墨痕 — 像终端里的光标/选区条,标明"你在这里" */
+  box-shadow: inset 2px 0 0 var(--persimmon);
 }
 
 .terminal-tab-close {
@@ -101,8 +105,8 @@
 }
 
 .terminal-tab-close:hover {
-  background: rgba(255, 100, 100, 0.3);
-  color: #ff8a8a;
+  background: var(--rust-soft);
+  color: var(--rust-bright);
   opacity: 1;
 }
 
@@ -114,14 +118,209 @@
   height: 24px;
   border-radius: 4px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--bone-500);
   border: none;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
 
 .terminal-tab-add:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(245, 239, 230, 0.08);
+  color: var(--bone-100);
+}
+
+/* SSH 连接按钮 + popover 容器 */
+.terminal-tab-ssh-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.terminal-tab-ssh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bone-500);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.terminal-tab-ssh:hover,
+.terminal-tab-ssh.active {
+  background: rgba(245, 239, 230, 0.08);
+  color: var(--bone-100);
+}
+
+/* SSH 连接选择器 popover — position: fixed 由内联样式注入（锚定到按钮，
+   避开 .terminal-tabs-bottom 的 overflow-x: auto 裁切） */
+.ssh-picker {
+  width: 320px;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(34, 30, 26, 0.94);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(0, 0, 0, 0.15);
+  z-index: 50;
+  overflow: hidden;
+  animation: ssh-picker-in 0.12s ease-out;
+}
+
+@keyframes ssh-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ssh-picker-search-wrap {
+  position: relative;
+  padding: 10px 12px 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ssh-picker-search-icon {
+  position: absolute;
+  left: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--bone-600);
+  pointer-events: none;
+}
+
+.ssh-picker-search {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 30px;
+  background: rgba(245, 239, 230, 0.05);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--bone-100);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.12s;
+}
+
+.ssh-picker-search::placeholder {
+  color: var(--bone-600);
+}
+
+.ssh-picker-search:focus {
+  border-color: var(--persimmon-focus);
+}
+
+.ssh-picker-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.ssh-picker-section {
+  padding: 8px 14px 4px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bone-600);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  user-select: none;
+}
+
+.ssh-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 14px;
+  border: none;
+  background: transparent;
+  color: var(--bone-300);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.ssh-picker-item:hover,
+.ssh-picker-item.active {
+  background: var(--persimmon-soft);
+}
+
+.ssh-picker-item-icon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  color: var(--persimmon-bright);
+  width: 16px;
+  text-align: center;
+}
+
+.ssh-picker-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.ssh-picker-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ssh-picker-item-detail {
+  font-size: 11px;
+  color: var(--bone-500);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ssh-picker-item.quick .ssh-picker-item-name {
+  color: var(--persimmon-bright);
+}
+
+.ssh-picker-empty {
+  padding: 20px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--bone-600);
+}
+
+.ssh-picker-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: none;
+  border-top: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--persimmon-bright);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ssh-picker-footer:hover {
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
 }
 
 .terminal-agent-toggle {
@@ -131,10 +330,10 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: none;
-  background: rgba(30, 30, 45, 0.95);
-  color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-700);
+  color: var(--bone-100);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -144,12 +343,14 @@
     opacity 0.2s ease,
     background 0.15s,
     color 0.15s,
+    border-color 0.15s,
     visibility 0s linear 0.2s;
 }
 
 .terminal-agent-toggle:hover {
-  background: rgba(45, 45, 65, 0.98);
-  color: #ffffff;
+  background: var(--ink-600);
+  color: var(--persimmon-bright);
+  border-color: var(--persimmon-focus);
 }
 
 .terminal-agent-toggle.open {
@@ -164,12 +365,12 @@
   align-items: stretch;
   gap: 0;
   padding: 4px;
-  background: rgba(20, 15, 40, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(34, 30, 26, 0.92);
+  border: 1px solid var(--hairline-strong);
   border-radius: 10px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   user-select: none;
   z-index: 30;
   animation: terminal-tooltip-in 0.12s ease-out;
@@ -194,7 +395,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--bone-300);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -203,20 +404,656 @@
 }
 
 .terminal-selection-tooltip-btn:hover {
-  background: rgba(120, 100, 255, 0.25);
-  color: #ffffff;
+  background: var(--persimmon-soft);
+  color: var(--bone-100);
 }
 
 .terminal-selection-tooltip-btn.primary {
-  color: rgba(180, 170, 255, 0.95);
+  color: var(--persimmon-bright);
 }
 
 .terminal-selection-tooltip-btn.primary:hover {
-  background: rgba(120, 100, 255, 0.35);
+  background: rgba(232, 98, 74, 0.28);
 }
 
 .terminal-selection-tooltip-divider {
   width: 1px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hairline-strong);
   margin: 2px 0;
+}
+
+/* Visual bell — JS toggles this class on .terminal-instance via onBell handler.
+   Uses translateY (vertical bounce) rather than translateX to avoid clashing
+   with horizontal text scanning. animation-fill-mode defaults to none, so the
+   element returns to transform: none after the animation ends. JS restarts the
+   animation via remove → forced reflow → add. */
+.terminal-instance.terminal-bell-shake {
+  animation: terminal-bell-shake 0.4s ease-out;
+}
+
+@keyframes terminal-bell-shake {
+  0%   { transform: translateY(0); }
+  20%  { transform: translateY(-2px); }
+  40%  { transform: translateY(1px); }
+  60%  { transform: translateY(-1px); }
+  80%  { transform: translateY(0.5px); }
+  100% { transform: translateY(0); }
+}
+
+/* 齿轮 FAB — 位于 AI 助手 FAB 上方 */
+.terminal-settings-toggle {
+  position: absolute;
+  right: 16px;
+  bottom: 100px;  /* AI 助手 FAB 在 52px，40px 高 + 8px 间距 */
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-700);
+  color: var(--bone-300);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.terminal-settings-toggle:hover {
+  background: var(--ink-600);
+  color: var(--bone-100);
+  border-color: var(--hairline-bold);
+}
+
+/* 设置 tab 容器 — keep-alive 模式，CSS 控制显隐避免丢失表单状态。
+   纵向布局：顶部 tab 条 + 下方 content。两块内容用 tab 切换比侧栏更省宽度。 */
+.terminal-settings-tab {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--bone-300);
+  background: rgba(26, 23, 20, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0;
+}
+
+.terminal-settings-tab.active {
+  visibility: visible;
+  pointer-events: auto;
+  z-index: 1;
+  opacity: 1;
+}
+
+.terminal-settings-tabstrip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 20px 0;
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.terminal-tabstrip-btn {
+  position: relative;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--bone-500);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.terminal-tabstrip-btn:hover {
+  color: var(--bone-200);
+}
+
+.terminal-tabstrip-btn.active {
+  color: var(--bone-100);
+}
+
+/* 签名:底部 2px 柿色墨痕,与终端底部 tab 条同一 motif */
+.terminal-tabstrip-btn.active::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--persimmon);
+  border-radius: 2px 2px 0 0;
+}
+
+.terminal-settings-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 22px 28px 32px;
+}
+
+.terminal-settings-tab .settings-section {
+  margin-bottom: 24px;
+}
+
+.terminal-settings-tab .settings-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bone-600);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.terminal-settings-tab .field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.terminal-settings-tab .field-row label {
+  flex: 0 0 80px;
+  font-size: 13px;
+  color: var(--bone-300);
+}
+
+.terminal-settings-tab .field-row input,
+.terminal-settings-tab .field-row select {
+  flex: 1;
+  max-width: 320px;
+  height: 30px;
+  padding: 0 8px;
+  background: rgba(245, 239, 230, 0.05);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  color: var(--bone-100);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.terminal-settings-tab .field-row input:focus,
+.terminal-settings-tab .field-row select:focus {
+  border-color: var(--persimmon-focus);
+}
+
+.terminal-settings-tab .link-btn {
+  background: none;
+  border: none;
+  color: var(--persimmon-bright);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+
+.terminal-settings-tab .link-btn:hover {
+  background: var(--persimmon-soft);
+}
+
+.terminal-settings-tab .link-btn.danger {
+  color: var(--rust-bright);
+}
+
+.terminal-settings-tab .link-btn.danger:hover {
+  background: var(--rust-soft);
+}
+
+.terminal-settings-tab .about-text.secondary {
+  color: var(--bone-500);
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+/* SSH 主机列表项 */
+.ssh-host-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: rgba(245, 239, 230, 0.03);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.ssh-host-item:hover {
+  border-color: var(--hairline-strong);
+  background: rgba(245, 239, 230, 0.05);
+}
+
+.ssh-host-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ssh-host-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-100);
+}
+
+.ssh-host-detail {
+  font-size: 12px;
+  color: var(--bone-500);
+  font-family: var(--font-mono);
+}
+
+.ssh-host-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ssh-host-connect-btn {
+  padding: 4px 12px;
+  border: 1px solid rgba(232, 98, 74, 0.4);
+  border-radius: 6px;
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  margin-right: 6px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.ssh-host-connect-btn:hover {
+  background: rgba(232, 98, 74, 0.22);
+  border-color: rgba(232, 98, 74, 0.6);
+}
+
+.ssh-host-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bone-500);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.ssh-host-icon-btn:hover {
+  background: var(--hairline);
+  color: var(--bone-100);
+}
+
+.ssh-host-icon-btn.danger:hover {
+  background: var(--rust-soft);
+  color: var(--rust-bright);
+}
+
+.ssh-host-icon-btn.test-btn.ok {
+  color: #7cb874;
+}
+
+.ssh-host-icon-btn.test-btn.fail {
+  color: var(--rust-bright);
+}
+
+.ssh-host-icon-btn.test-btn.testing {
+  color: var(--bone-500);
+  cursor: wait;
+}
+
+/* SSH 表单弹窗（编辑/添加/快速连接） */
+.ssh-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0 16px 16px 16px;
+  z-index: 100;
+  animation: ssh-modal-fade-in 0.12s ease-out;
+}
+
+@keyframes ssh-modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ssh-modal-card {
+  width: 480px;
+  max-width: 100%;
+  max-height: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  background: var(--ink-800);
+  border: 1px solid var(--hairline-strong);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  animation: ssh-modal-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes ssh-modal-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ssh-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ssh-modal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--bone-100);
+}
+
+.ssh-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bone-500);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.ssh-modal-close:hover {
+  background: var(--hairline);
+  color: var(--bone-100);
+}
+
+.ssh-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.ssh-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--hairline);
+}
+
+.ssh-modal-submit {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  background: var(--persimmon);
+  color: var(--bone-100);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.ssh-modal-submit:hover {
+  background: var(--persimmon-bright);
+}
+
+/* 弹窗内 field-row 宽度限制对齐 */
+.ssh-modal-body .field-row input,
+.ssh-modal-body .field-row select {
+  max-width: none;
+}
+
+.ssh-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline);
+}
+
+/* SSH 分组折叠 */
+.ssh-group {
+  margin-top: 4px;
+}
+
+.ssh-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bone-400);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ssh-group-header .toggle-arrow {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 10px;
+  color: var(--bone-500);
+}
+
+.ssh-group-header.collapsed .toggle-arrow {
+  transform: rotate(-90deg);
+}
+
+.ssh-group-name {
+  flex: 1;
+  color: var(--bone-300);
+}
+
+.ssh-group-rename-input {
+  flex: 1;
+  height: 22px;
+  padding: 0 6px;
+  background: rgba(245, 239, 230, 0.06);
+  border: 1px solid var(--persimmon-focus);
+  border-radius: 4px;
+  color: var(--bone-100);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+}
+
+.ssh-group-rename-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bone-600);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+.ssh-group-header:hover .ssh-group-rename-btn {
+  opacity: 1;
+}
+
+.ssh-group-rename-btn:hover {
+  background: var(--hairline);
+  color: var(--bone-100);
+}
+
+.ssh-group-count {
+  font-weight: 400;
+  color: var(--bone-600);
+}
+
+.ssh-group-hosts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.ssh-group-hosts.collapsed {
+  display: none;
+}
+
+/* 测试按钮状态 */
+.link-btn.test-btn.testing {
+  color: var(--bone-600);
+  cursor: wait;
+}
+
+.link-btn.test-btn.ok {
+  color: #7cb874;
+}
+
+.link-btn.test-btn.fail {
+  color: var(--rust-bright);
+}
+
+/* 终端外观:2 列 grid 紧凑布局,4 字段两行排完 */
+.terminal-appearance-section {
+  padding-top: 0;
+  border-top: none;
+}
+
+.terminal-appearance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 20px;
+}
+
+.terminal-appearance-grid .field-row {
+  margin-bottom: 8px;
+}
+
+.terminal-appearance-grid .field-row label {
+  flex: 0 0 64px;
+}
+
+/* SSH 空状态:引导式 CTA */
+.ssh-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 20px;
+  text-align: center;
+}
+
+.ssh-empty-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--bone-600);
+}
+
+.ssh-empty-cta {
+  padding: 8px 18px;
+  border: 1px solid rgba(232, 98, 74, 0.4);
+  border-radius: 8px;
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.ssh-empty-cta:hover {
+  background: rgba(232, 98, 74, 0.22);
+  border-color: rgba(232, 98, 74, 0.6);
+}
+
+/* SSH 主操作按钮(添加主机) */
+.ssh-primary-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(232, 98, 74, 0.4);
+  border-radius: 7px;
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.ssh-primary-btn:hover {
+  background: rgba(232, 98, 74, 0.22);
+  border-color: rgba(232, 98, 74, 0.6);
+}
+
+/* SSH 表单弹窗:分组 + 主机/端口并排 */
+.ssh-form-group {
+  padding: 0 0 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.ssh-form-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.ssh-form-group-label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--bone-600);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.ssh-form-row-2 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+
+.ssh-form-row-2 .field-row {
+  margin-bottom: 0;
+}
+
+/* 弹窗内 field-row 在并排时去掉 max-width 限制 */
+.ssh-modal-body .ssh-form-row-2 .field-row input,
+.ssh-modal-body .ssh-form-row-2 .field-row select {
+  max-width: none;
 }

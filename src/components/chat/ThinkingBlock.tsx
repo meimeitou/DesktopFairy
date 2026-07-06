@@ -84,6 +84,18 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll the half-folded body to the bottom whenever reasoning
+  // content changes, so the latest thinking text stays visible (mirrors
+  // cherry-studio's half-folded preview behavior). Also runs on mount /
+  // when switching back to "half" so completed blocks show their ending.
+  useEffect(() => {
+    if (fold !== "half") return;
+    const el = bodyRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [fold, content]);
 
   // Live count-up while thinking; freeze the value when done.
   useEffect(() => {
@@ -145,7 +157,10 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
         <ChevronIcon />
       </button>
       {showBody && (
-        <div className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}>
+        <div
+          ref={fold === "half" ? bodyRef : undefined}
+          className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}
+        >
           {!isThinking && fold === "full" && (
             <button
               type="button"
@@ -157,7 +172,6 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
             </button>
           )}
           <ChatMarkdown content={content} streaming={isThinking} />
-          {fold === "half" && <div className="thinking-body-fade" aria-hidden="true" />}
         </div>
       )}
     </div>

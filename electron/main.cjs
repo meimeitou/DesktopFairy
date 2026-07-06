@@ -20,6 +20,7 @@ const {
 } = require('./live2dService.cjs');
 const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
 const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require('./ptyService.cjs');
+const { registerSshHandlers, killAllSshSessions } = require('./sshService.cjs');
 const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
 const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
 const { registerToolApprovalHandlers } = require('./agentToolApproval.cjs');
@@ -600,6 +601,8 @@ const setupIPC = () => {
 
   registerPtyHandlers({ ipcMain });
 
+  registerSshHandlers({ ipcMain });
+
   function getChatCompletionsUrl(apiHost, providerType) {
     const trimmed = String(apiHost || '').replace(/\/$/, '');
     if (!trimmed) return '';
@@ -1153,6 +1156,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   isQuitting = true;
   killAllSessions();
+  killAllSshSessions();
   abortAllAgentRuns();
   disposeAllMcpClients();
   selectionService.stopAll();

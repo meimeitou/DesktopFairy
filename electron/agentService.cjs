@@ -69,8 +69,16 @@ function buildTerminalEnvSection(terminalState) {
       (terminalState.remoteHost ? '（' + terminalState.remoteHost + '）' : '') +
       '。通过 Terminal 工具执行的命令将在远程主机上运行，请注意目标环境（路径、操作系统、已安装工具可能与本地不同）。';
   }
-  return '## 当前终端环境\n\n' + envLine +
-    '\n若终端前台不是 shell（如 vim/less/python 等交互式程序），Terminal 工具会拒绝执行以避免命令被误输入到该程序——此时请引导用户先退出该程序（如 :q / exit / Ctrl-D）。';
+  let section = '## 当前终端环境\n\n' + envLine;
+  // cwd comes from OSC 7 (zsh/bash shell integration) or OSC 1337 (iTerm2).
+  // Null when the shell hasn't reported it (e.g. non-integrated shell, or
+  // SSH remote whose shell hasn't been configured to emit OSC 7). In remote
+  // sessions the path is the remote path — still useful context for the agent.
+  if (terminalState && terminalState.cwd) {
+    section += '\n\n当前工作目录：`' + terminalState.cwd + '`';
+  }
+  section += '\n若终端前台不是 shell（如 vim/less/python 等交互式程序），Terminal 工具会拒绝执行以避免命令被误输入到该程序——此时请引导用户先退出该程序（如 :q / exit / Ctrl-D）。';
+  return section;
 }
 
 function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null) {

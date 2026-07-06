@@ -29,6 +29,15 @@ import {
   normalizeWebSearchConfig,
   type WebSearchConfig,
 } from "./webSearch";
+import {
+  DEFAULT_TERMINAL_SETTINGS,
+  normalizeTerminalSettings,
+  normalizeSshHosts,
+  normalizeSshRecent,
+  type TerminalSettings,
+  type SshHost,
+  type SshRecentEntry,
+} from "./terminalSettings";
 
 export type SelectionTriggerMode = "shortcut" | "auto";
 
@@ -80,6 +89,12 @@ export interface AppSettings {
   mcpServers: McpServer[];
   /** WebSearch tool provider configuration */
   webSearch: WebSearchConfig;
+  /** Terminal appearance and behavior settings */
+  terminal: TerminalSettings;
+  /** Saved SSH host configurations */
+  sshHosts: SshHost[];
+  /** Recent SSH connection history (max 5, newest first) */
+  sshRecent: SshRecentEntry[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -113,6 +128,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chatMode: DEFAULT_CHAT_MODE,
   mcpServers: [],
   webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
+  terminal: { ...DEFAULT_TERMINAL_SETTINGS },
+  sshHosts: [],
+  sshRecent: [],
 };
 
 const STORAGE_KEY = "da_settings";
@@ -291,6 +309,9 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
     mcpServers: migratedMcp.mcpServers,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
+    terminal: normalizeTerminalSettings(settings.terminal),
+    sshHosts: normalizeSshHosts(settings.sshHosts),
+    sshRecent: normalizeSshRecent(settings.sshRecent),
     modelName: (() => {
       const provider = getActiveProvider(settings);
       if (provider.models.length === 0) return settings.modelName;
@@ -584,4 +605,4 @@ export function parseModelCompound(
 }
 
 export { isAgentBackend, AGENT_BACKEND_KEY };
-export type { SelectionActionItem, LlmProvider, AgentConfig, McpServer };
+export type { SelectionActionItem, LlmProvider, AgentConfig, McpServer, TerminalSettings, SshHost };

@@ -56,6 +56,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'pty:input',
       'pty:resize',
       'pty:kill',
+      'ssh:create',
+      'ssh:input',
+      'ssh:resize',
+      'ssh:kill',
+      'ssh:test',
+      'ssh:import_configs',
       'agent:run',
       'agent:abort',
       'agent:tool:approve',
@@ -197,6 +203,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('pty:exit', listener);
     return () => ipcRenderer.removeListener('pty:exit', listener);
+  },
+
+  // SSH events from main process
+  onSshOutput: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ssh:output', listener);
+    return () => ipcRenderer.removeListener('ssh:output', listener);
+  },
+  onSshExit: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ssh:exit', listener);
+    return () => ipcRenderer.removeListener('ssh:exit', listener);
   },
 
   // MCP runtime events from main process

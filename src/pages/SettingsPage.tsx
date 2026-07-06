@@ -172,6 +172,16 @@ const MENU_SECONDARY: MenuItem[] = [
   { id: "about", label: "关于", icon: <InfoIcon /> },
 ];
 
+const TAB_META: Record<SettingsTab, { title: string; desc: string }> = {
+  model: { title: "AI 模型", desc: "配置模型服务商、API 密钥与默认模型" },
+  agent: { title: "智能体", desc: "定义人格、技能、工具与执行策略" },
+  websearch: { title: "网络搜索", desc: "让智能体在回答时检索网络资料" },
+  selection: { title: "划词助手", desc: "选中文本后弹出的快捷操作工具栏" },
+  character: { title: "Live2D 配置", desc: "桌宠模型、窗口尺寸与表现" },
+  shortcut: { title: "快捷键", desc: "全局唤起应用的按键" },
+  about: { title: "关于", desc: "版本与开发进度" },
+};
+
 interface Props {
   onClose?: () => void;
   standalone?: boolean;
@@ -200,8 +210,9 @@ function SettingsSidebar({
   return (
     <aside className="settings-sidebar">
       <nav className="settings-menu">
+        <span className="settings-menu-group-label">功能</span>
         {MENU_PRIMARY.map(renderItem)}
-        <div className="settings-menu-divider" />
+        <span className="settings-menu-group-label">系统</span>
         {MENU_SECONDARY.map(renderItem)}
       </nav>
     </aside>
@@ -292,14 +303,16 @@ export default function SettingsPage({
         return <ShortcutSettingsSection settings={settings} onChange={update} />;
       case "about":
         return (
-          <section className="settings-section">
-            <h3>关于</h3>
-            <p className="about-text">DesktopFairy v0.3.0</p>
-            <p className="about-text secondary">阶段一：桌面壳与基础 UI ✓</p>
-            <p className="about-text secondary">阶段二：Live2D SDK 接入 ✓</p>
-            <p className="about-text secondary">
-              阶段三：OpenAI 兼容流式对话 ✓
-            </p>
+          <section className="settings-section about-section">
+            <div className="about-version-row">
+              <span className="about-version-name">DesktopFairy</span>
+              <span className="about-version-tag">v0.3.0</span>
+            </div>
+            <ul className="about-roadmap">
+              <li className="done">桌面壳与基础 UI</li>
+              <li className="done">Live2D SDK 接入</li>
+              <li className="done">OpenAI 兼容流式对话</li>
+            </ul>
           </section>
         );
       default:
@@ -311,6 +324,10 @@ export default function SettingsPage({
     <div className="settings-layout">
       <SettingsSidebar active={activeTab} onSelect={setActiveTab} />
       <main className="settings-content">
+        <header className="settings-page-header">
+          <h1 className="settings-page-title">{TAB_META[activeTab].title}</h1>
+          <p className="settings-page-desc">{TAB_META[activeTab].desc}</p>
+        </header>
         <div className="settings-content-body">
           <div className="settings-content-inner">{renderContent()}</div>
         </div>
