@@ -101,7 +101,7 @@
   right: 0;
   min-width: 100%;
   width: max-content;
-  max-width: 320px;
+  max-width: min(440px, 90vw);
   display: flex;
   flex-direction: column;
   background: rgba(28, 22, 45, 0.98);
@@ -187,6 +187,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
   transition: background 0.12s, color 0.12s;
 }
 

@@ -150,6 +150,7 @@ export default function ModelSelector({
               className={`model-selector-value${
                 effectiveValue ? "" : " placeholder"
               }`}
+              title={effectiveValue ? selectedLabel : undefined}
             >
               {selectedLabel}
             </span>
@@ -176,6 +177,7 @@ export default function ModelSelector({
                     role="option"
                     aria-selected
                     className="model-selector-option selected"
+                    title={customLabel}
                     onClick={() => {
                       onChange(customValue);
                       setOpen(false);
@@ -196,6 +198,7 @@ export default function ModelSelector({
                       className={`model-selector-option${
                         m === effectiveValue ? " selected" : ""
                       }`}
+                      title={modelLabels?.[m] ?? m}
                       onClick={() => {
                         onChange(m);
                         setOpen(false);

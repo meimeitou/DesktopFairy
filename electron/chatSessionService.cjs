@@ -263,7 +263,29 @@ function registerChatSessionHandlers({
 
   ipcMain.handle('chat:topics:list', async () => {
     migrateLegacySessionIfNeeded();
-    return readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+
+    // Ensure there is always at least one topic.
+    // Without it, renderer's `activeTopicId` stays `null` and the controlled input
+    // will silently drop onChange updates (cursor blinks but cannot type).
+    if (!store?.topics || store.topics.length === 0 || !store.activeId) {
+      const now = Date.now();
+      const newTopic = {
+        id: genId(),
+        name: '',
+        createdAt: now,
+        updatedAt: now,
+        orderKey: now,
+      };
+      store.topics = [newTopic];
+      store.activeId = newTopic.id;
+      writeJson(topicsIndexPath(), store);
+    } else if (!store.topics.find((t) => t.id === store.activeId)) {
+      store.activeId = store.topics[0]?.id ?? null;
+      writeJson(topicsIndexPath(), store);
+    }
+
+    return store;
   });
 
   ipcMain.handle('chat:topics:create', async (_event, { name }) => {
