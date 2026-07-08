@@ -309,9 +309,14 @@ export default function SettingsPage({
               <span className="about-version-tag">v0.3.0</span>
             </div>
             <ul className="about-roadmap">
-              <li className="done">桌面壳与基础 UI</li>
-              <li className="done">Live2D SDK 接入</li>
-              <li className="done">OpenAI 兼容流式对话</li>
+              <li className="done">UI 与基础功能</li>
+              <li className="done">Live2D 支持</li>
+              <li className="done">网络搜索</li>
+              <li className="done">划词助手</li>
+              <li className="done">快捷键</li>
+              <li className="done">智能体</li>
+              <li className="done">AI 模型</li>
+              <li className="done">语音播报</li>
             </ul>
           </section>
         );

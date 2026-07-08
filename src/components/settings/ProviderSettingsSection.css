@@ -1,8 +1,8 @@
 .provider-settings-desc {
-  margin: 0 0 12px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
-  line-height: 1.5;
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--bone-500);
+  line-height: 1.55;
 }
 
 .provider-settings-desc strong {
@@ -94,9 +94,9 @@
 }
 
 .provider-list-item.active {
-  background: rgba(90, 70, 200, 0.22);
-  border-color: rgba(120, 100, 255, 0.35);
-  color: rgba(255, 255, 255, 0.95);
+  background: var(--persimmon-softer);
+  border-color: rgba(232, 98, 74, 0.35);
+  color: var(--bone-100);
 }
 
 .provider-list-item.disabled {
@@ -293,7 +293,7 @@
 }
 
 .provider-modal-footer button[type="submit"] {
-  background: rgba(90, 70, 200, 0.75);
+  background: var(--persimmon);
   border-color: transparent;
   color: #fff;
 }
@@ -346,8 +346,8 @@
 }
 
 .provider-check-btn:hover:not(:disabled) {
-  background: rgba(90, 70, 200, 0.25);
-  border-color: rgba(120, 100, 255, 0.4);
+  background: var(--persimmon-soft);
+  border-color: var(--persimmon-focus);
 }
 
 .provider-check-btn:disabled {

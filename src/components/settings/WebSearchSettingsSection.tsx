@@ -110,7 +110,6 @@ export default function WebSearchSettingsSection({
 
   return (
     <section className="settings-section">
-      <h4>网络搜索</h4>
       <p className="field-hint">
         选择智能体调用 WebSearch 工具时使用的网络搜索服务。当前选择：
         <strong> {meta.label}</strong>

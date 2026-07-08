@@ -46,13 +46,6 @@ export default function AgentSettingsSection({ settings, onChange }: Props) {
 
   return (
     <div className="agent-settings">
-      <div className="agent-settings-header">
-        <h3>智能体配置</h3>
-        <p className="agent-settings-desc">
-          配置名称、提示词、工具与运行策略。更改会即时保存。
-        </p>
-      </div>
-
       <nav className="agent-section-nav" aria-label="智能体配置分区">
         {AGENT_CONFIG_SECTIONS.map((item) => (
           <button

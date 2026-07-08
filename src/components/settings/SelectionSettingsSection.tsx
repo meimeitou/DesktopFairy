@@ -110,7 +110,6 @@ export default function SelectionSettingsSection({
 
   return (
     <section className="settings-section">
-      <h3>划词助手</h3>
       <div className="field field-row">
         <label>启用划词助手</label>
         <label className="toggle">
@@ -316,6 +315,9 @@ export default function SelectionSettingsSection({
           格式：名称|URL，用 {"{{queryString}}"} 作为搜索词占位符
         </p>
       </div>
+
+      <div className="settings-subsection">
+        <p className="settings-subsection-title">自定义动作</p>
       <div className="field">
         <div className="selection-actions-header">
           <label>工具栏动作（{enabledCount} 个已启用）</label>
@@ -374,6 +376,7 @@ export default function SelectionSettingsSection({
             </li>
           ))}
         </ul>
+      </div>
       </div>
     </section>
   );

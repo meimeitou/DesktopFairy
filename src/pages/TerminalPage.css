@@ -1119,8 +1119,9 @@
 
 .ssh-form-row-2 {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 3fr 2fr;
   gap: 12px;
+  align-items: center;
 }
 
 .ssh-form-row-2 .field-row {
@@ -1131,6 +1132,17 @@
 .ssh-modal-body .ssh-form-row-2 .field-row input,
 .ssh-modal-body .ssh-form-row-2 .field-row select {
   max-width: none;
+  min-width: 0;
+}
+
+/* 端口输入框：去掉 number 旋转按钮，避免在窄列里挤压数字 */
+.ssh-form-port input::-webkit-inner-spin-button,
+.ssh-form-port input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.ssh-form-port input {
+  -moz-appearance: textfield;
 }
 
 /* —— SSH 凭据管理 —— */

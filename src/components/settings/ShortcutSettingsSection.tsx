@@ -12,10 +12,8 @@ export default function ShortcutSettingsSection({ settings, onChange }: Props) {
 
   return (
     <section className="settings-section">
-      <h3>快捷键</h3>
-      <p className="about-text secondary">
-        全局快捷键，任何应用下按组合键即可触发。格式如
-        Command+R、Command+Shift+C、Alt+Space。
+      <p className="settings-section-lead">
+        全局快捷键，任何应用下按组合键即可触发。格式如 Command+R、Command+Shift+C、Alt+Space。
       </p>
 
       <div className="field">

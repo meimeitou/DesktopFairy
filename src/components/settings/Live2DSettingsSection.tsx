@@ -309,8 +309,6 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
 
   return (
     <section className="settings-section">
-      <h3>Live2D 配置</h3>
-
       <div className="field">
         <label>选择模型</label>
         <div className="live2d-model-toolbar">
@@ -509,6 +507,9 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
         )}
       </div>
 
+      <div className="settings-subsection">
+        <p className="settings-subsection-title">窗口与显示</p>
+
       <div className="field">
         <label>窗口大小</label>
         <div className="size-presets">
@@ -626,6 +627,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
         >
           重置偏移
         </button>
+      </div>
       </div>
     </section>
   );
