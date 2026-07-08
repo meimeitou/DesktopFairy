@@ -15,6 +15,19 @@ const path = require('path');
 
 const sessions = new Map();
 
+// OSC 633 markers — same protocol as ptyService.cjs. Remote shells have no
+// shell integration hooks, so START never fires; the fallback printf emits
+// the END marker with $?. Both stdout and stderr are captured.
+const START_PATTERN = /\x1b\]633;C\x07/;
+const END_PATTERN = /\x1b\]633;D;(-?\d+)\x07/;
+
+function stripAnsi(str) {
+  if (!str) return str;
+  return str
+    .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, '')
+    .replace(/\x1B\][^\x07\x1b]*(?:\x07|\x1B\\)/g, '');
+}
+
 // 展开 ~/ 和 ~ 为 os.homedir()。~user/ 不处理（需要 passwd 查询）。
 // 参考 tabby 第三方插件 tabby-ssh-keymap 的 ~ 展开做法。
 function expandTilde(p) {
@@ -75,18 +88,11 @@ function parseProxyJump(pj) {
   return { username, host: s, port: port || 22 };
 }
 
-// 由 SshHost 字段构造 ssh2 connectConfig（不含 sock）。失败返回 { error }。
+// 把认证凭据注入到 connectConfig（不含 sock）。返回 { error? }。
 // authMethod='auto' 时同时传入所有可用凭据（agent + privateKey + password），
 // ssh2 会按服务端在 USERAUTH_FAILURE 里返回的 methods 列表依次尝试。
-// 参考 tabby 的 Auto 认证模式。
-function buildConnectConfig({ host, port, user, authMethod, password, privateKeyPath }) {
-  const cfg = {
-    host,
-    port: port || 22,
-    username: user,
-    readyTimeout: 30000,
-    keepaliveInterval: 5000,
-  };
+// 参考 tabby 的 Auto 认证模式。失败返回 { error }，成功返回 {}（cfg 原地修改）。
+function applyAuth(cfg, { authMethod, password, privateKeyPath }) {
   const isAuto = authMethod === 'auto';
 
   // Agent
@@ -119,12 +125,28 @@ function buildConnectConfig({ host, port, user, authMethod, password, privateKey
     cfg.password = password;
   }
 
+  return {};
+}
+
+// 由 SshHost 字段构造 ssh2 connectConfig（不含 sock）。失败返回 { error }。
+function buildConnectConfig({ host, port, user, authMethod, password, privateKeyPath }) {
+  const cfg = {
+    host,
+    port: port || 22,
+    username: user,
+    readyTimeout: 30000,
+    keepaliveInterval: 5000,
+  };
+  const err = applyAuth(cfg, { authMethod, password, privateKeyPath });
+  if (err.error) return err;
   return { config: cfg };
 }
 
-// 处理跳板：若有 proxyJump，先连跳板机（Agent 认证），再 forwardOut 到目标，
+// 处理跳板：若有 proxyJump，先连跳板机（全套认证，缺省 auto），再 forwardOut 到目标，
 // 返回 { conn, jumpConn? } 或 { error }。
-function connectWithJump(connectConfig, proxyJump) {
+// jumpAuth = { authMethod, password, privateKeyPath }；authMethod 缺省按 'auto' 处理，
+// 与 ssh CLI 一致（agent + ~/.ssh 默认私钥 + 密码）。
+function connectWithJump(connectConfig, proxyJump, jumpAuth = {}) {
   const jump = parseProxyJump(proxyJump);
   if (!jump) {
     // 直连
@@ -148,8 +170,15 @@ function connectWithJump(connectConfig, proxyJump) {
       username: jump.username || connectConfig.username,
       readyTimeout: 30000,
       keepaliveInterval: 5000,
-      agent: process.env.SSH_AUTH_SOCK,
     };
+    // 跳板机走全套认证（agent + privateKey + password），缺省 auto。
+    // 旧版仅 agent，无法覆盖 key 在 ~/.ssh/ 但未 ssh-add 的常见场景。
+    const authErr = applyAuth(jumpConfig, {
+      authMethod: jumpAuth.authMethod || 'auto',
+      password: jumpAuth.password,
+      privateKeyPath: jumpAuth.privateKeyPath,
+    });
+    if (authErr.error) return resolve(authErr);
     jumpConn.on('ready', () => {
       const targetHost = connectConfig.host;
       const targetPort = connectConfig.port || 22;
@@ -178,7 +207,8 @@ function registerSshHandlers({ ipcMain }) {
   ipcMain.handle('ssh:create', async (event, params) => {
     const {
       host, port, user, authMethod, password, privateKeyPath,
-      proxyJump, cols, rows,
+      proxyJump, proxyJumpAuthMethod, proxyJumpPassword, proxyJumpPrivateKeyPath,
+      cols, rows,
     } = params || {};
 
     if (!host || !user) {
@@ -196,7 +226,12 @@ function registerSshHandlers({ ipcMain }) {
       } catch { /* receiver gone */ }
     };
 
-    const result = await connectWithJump(built.config, proxyJump);
+    const jumpAuth = proxyJump ? {
+      authMethod: proxyJumpAuthMethod,
+      password: proxyJumpPassword,
+      privateKeyPath: proxyJumpPrivateKeyPath,
+    } : undefined;
+    const result = await connectWithJump(built.config, proxyJump, jumpAuth);
     if (result.error) return { error: result.error };
 
     const { conn, jumpConn } = result;
@@ -219,8 +254,37 @@ function registerSshHandlers({ ipcMain }) {
           try { jumpConn?.end(); } catch { /* already closed */ }
           return;
         }
-        sessions.set(sessionId, { conn, stream, sender, jumpConn });
+        const session = { conn, stream, sender, jumpConn, capture: null };
+        sessions.set(sessionId, session);
 
+        // Capture hook — coexists with the forward-to-renderer listener.
+        // Both fire on every data event; this one buffers for runCommandInSshSession.
+        const onCaptureData = (data) => {
+          const cap = session.capture;
+          if (!cap || cap.done) return;
+          cap.buffer += data.toString('utf8');
+          if (!cap.started) {
+            const startMatch = cap.buffer.match(START_PATTERN);
+            if (startMatch) {
+              cap.started = true;
+              if (cap.startFallbackTimer) {
+                clearTimeout(cap.startFallbackTimer);
+                cap.startFallbackTimer = null;
+              }
+              cap.buffer = cap.buffer.slice(startMatch.index + startMatch[0].length);
+            }
+          }
+          const endMatch = cap.buffer.match(END_PATTERN);
+          if (endMatch) {
+            const output = cap.buffer.slice(0, endMatch.index);
+            const exitCode = parseInt(endMatch[1], 10);
+            cap.done = true;
+            cleanupSshCapture(session);
+            cap.resolve({ output: stripAnsi(output), exitCode, remote: true, remoteNote: cap.remoteNote });
+          }
+        };
+        stream.on('data', onCaptureData);
+        stream.stderr.on('data', onCaptureData);
         stream.on('data', (data) => {
           safeSend('ssh:output', { sessionId, data: data.toString('utf8') });
         });
@@ -228,6 +292,16 @@ function registerSshHandlers({ ipcMain }) {
           safeSend('ssh:output', { sessionId, data: data.toString('utf8') });
         });
         stream.on('close', () => {
+          if (session.capture) {
+            const cap = session.capture;
+            cleanupSshCapture(session);
+            const partial = stripAnsi(cap.buffer);
+            if (partial) {
+              cap.resolve({ output: partial, exitCode: -1, remote: true, remoteNote: cap.remoteNote });
+            } else {
+              cap.reject(new Error('终端进程已退出'));
+            }
+          }
           safeSend('ssh:exit', { sessionId });
           sessions.delete(sessionId);
           try { conn.end(); } catch { /* already closed */ }
@@ -268,10 +342,15 @@ function registerSshHandlers({ ipcMain }) {
 
   // 测试连接：建立后立即断开，不分配 PTY。返回 { ok: true } 或 { ok: false, error }
   ipcMain.handle('ssh:test', async (event, params) => {
-    const { proxyJump } = params || {};
+    const { proxyJump, proxyJumpAuthMethod, proxyJumpPassword, proxyJumpPrivateKeyPath } = params || {};
     const built = buildConnectConfig(params || {});
     if (built.error) return { ok: false, error: built.error };
-    const testResult = await connectWithJump(built.config, proxyJump);
+    const jumpAuth = proxyJump ? {
+      authMethod: proxyJumpAuthMethod,
+      password: proxyJumpPassword,
+      privateKeyPath: proxyJumpPrivateKeyPath,
+    } : undefined;
+    const testResult = await connectWithJump(built.config, proxyJump, jumpAuth);
     if (testResult.error) return { ok: false, error: testResult.error };
     try { testResult.conn.end(); } catch { /* already closed */ }
     try { testResult.jumpConn?.end(); } catch { /* already closed */ }
@@ -298,6 +377,11 @@ function registerSshHandlers({ ipcMain }) {
 
 function killAllSshSessions() {
   for (const session of sessions.values()) {
+    if (session.capture) {
+      const cap = session.capture;
+      cleanupSshCapture(session);
+      cap.reject(new Error('终端会话已被终止'));
+    }
     try { session.stream?.end(); } catch { /* dead */ }
     try { session.conn?.end(); } catch { /* dead */ }
     try { session.jumpConn?.end(); } catch { /* dead */ }
@@ -305,4 +389,104 @@ function killAllSshSessions() {
   sessions.clear();
 }
 
-module.exports = { registerSshHandlers, killAllSshSessions };
+function cleanupSshCapture(session) {
+  const cap = session.capture;
+  if (!cap) return;
+  if (cap.timer) { clearTimeout(cap.timer); cap.timer = null; }
+  if (cap.startFallbackTimer) { clearTimeout(cap.startFallbackTimer); cap.startFallbackTimer = null; }
+  if (cap.stopFallbackTimer) { clearTimeout(cap.stopFallbackTimer); cap.stopFallbackTimer = null; }
+  if (cap.signal && cap.onAbort) { cap.signal.removeEventListener('abort', cap.onAbort); cap.onAbort = null; }
+  session.capture = null;
+}
+
+function stopSshActiveCapture(sessionId) {
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session || !session.capture) return false;
+  const cap = session.capture;
+  if (cap.done) return false;
+  try { session.stream.write('\x03'); } catch { /* dead */ }
+  // Remote shell has no precmd hook — send end marker manually with exit 130.
+  try { session.stream.write("printf '\\033]633;D;130\\007'\n"); } catch { /* dead */ }
+  cap.stopFallbackTimer = setTimeout(() => {
+    if (session.capture === cap && !cap.done) {
+      cleanupSshCapture(session);
+      cap.reject(new Error('命令已被终止'));
+    }
+  }, 500);
+  return true;
+}
+
+// 在 SSH 远程会话中执行命令。与 ptyService.runCommandInSession 对应，
+// 但写入 ssh2 stream 而非 ptyProcess。远程 shell 无 shell 集成 hook，
+// 走 fallback printf 路径（$? 在交互式 shell 中保留上一条命令的退出码）。
+function runCommandInSshSession(sessionId, command, timeout = 60_000, signal) {
+  return new Promise((resolve, reject) => {
+    const session = sessionId ? sessions.get(sessionId) : null;
+    if (!session) {
+      reject(new Error('终端会话不存在或已关闭'));
+      return;
+    }
+    if (session.capture) {
+      reject(new Error('上一条命令仍在执行中'));
+      return;
+    }
+
+    const cap = {
+      buffer: '',
+      started: false,
+      done: false,
+      resolve,
+      reject,
+      timer: null,
+      startFallbackTimer: null,
+      stopFallbackTimer: null,
+      signal: signal || null,
+      onAbort: null,
+      remoteNote: '⚠️ 命令在 SSH 远程会话中执行。',
+      fallbackSent: false,
+    };
+
+    const timeoutMs = Math.max(5_000, Math.min(Number(timeout) || 60_000, 600_000));
+    cap.timer = setTimeout(() => {
+      cleanupSshCapture(session);
+      const partial = stripAnsi(cap.buffer);
+      reject(new Error(`Terminal command timed out${partial ? `\n\n已捕获的部分输出：\n${partial}` : ''}`));
+    }, timeoutMs);
+
+    if (signal && !signal.aborted) {
+      cap.onAbort = () => { stopSshActiveCapture(sessionId); };
+      signal.addEventListener('abort', cap.onAbort, { once: true });
+    } else if (signal && signal.aborted) {
+      reject(new Error('已取消'));
+      return;
+    }
+
+    session.capture = cap;
+
+    // 写入命令 — 跳过前台进程检测（无法对远程 shell 执行 ps）。
+    // 风险：若远程正在 vim/less 等，命令会被盲写进去。由用户确保 shell 空闲。
+    try {
+      session.stream.write(command + '\n');
+    } catch (e) {
+      cleanupSshCapture(session);
+      reject(new Error('无法写入终端: ' + String(e?.message || e)));
+      return;
+    }
+
+    // fallback：500ms 内若没收到 OSC 633;C（远程无 hook，必然收不到），
+    // 发送 printf 输出 END marker + $?。该 printf 在命令完成后执行（排队在
+    // 远程 shell 输入缓冲区）。
+    cap.startFallbackTimer = setTimeout(() => {
+      if (cap.started || cap.done) return;
+      cap.fallbackSent = true;
+      try { session.stream.write("printf '\\033]633;D;%s\\007' \"$?\"\n"); } catch { /* dead */ }
+    }, 500);
+  });
+}
+
+module.exports = {
+  registerSshHandlers,
+  killAllSshSessions,
+  runCommandInSshSession,
+  stopSshActiveCapture,
+};

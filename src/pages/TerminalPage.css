@@ -440,6 +440,109 @@
   100% { transform: translateY(0); }
 }
 
+/* Cmd+F 搜索弹框 — 锚定在终端视图区右上角，悬浮于 xterm 之上。
+   与 .ssh-picker 同一视觉语汇：墨色半透明底 + 毛玻璃 + 柿色焦点。 */
+.terminal-search-bar {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 5px 5px 4px;
+  background: rgba(34, 30, 26, 0.94);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.12);
+  animation: terminal-search-in 0.13s ease-out;
+}
+
+@keyframes terminal-search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.terminal-search-input {
+  width: 180px;
+  height: 26px;
+  padding: 0 6px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--bone-100);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.terminal-search-input::placeholder {
+  color: var(--bone-600);
+}
+
+.terminal-search-count {
+  flex-shrink: 0;
+  min-width: 48px;
+  text-align: center;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--bone-500);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.terminal-search-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--hairline-strong);
+  flex-shrink: 0;
+}
+
+.terminal-search-btn,
+.terminal-search-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bone-500);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+
+.terminal-search-btn:hover:not(:disabled),
+.terminal-search-toggle:hover {
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
+}
+
+.terminal-search-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.terminal-search-toggle.active {
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
+}
+
 /* 齿轮 FAB — 位于 AI 助手 FAB 上方 */
 .terminal-settings-toggle {
   position: absolute;
@@ -840,9 +943,9 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline);
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hairline);
 }
 
 /* SSH 分组折叠 */
@@ -862,6 +965,12 @@
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid var(--hairline);
+}
+
+/* "未分组"是默认桶，不可重命名，视觉略弱化以区分用户自建分组 */
+.ssh-group-header.is-ungrouped {
+  font-weight: 500;
+  color: var(--bone-500);
 }
 
 .ssh-group-header .toggle-arrow {
@@ -967,40 +1076,6 @@
   flex: 0 0 64px;
 }
 
-/* SSH 空状态:引导式 CTA */
-.ssh-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 14px;
-  padding: 48px 20px;
-  text-align: center;
-}
-
-.ssh-empty-text {
-  margin: 0;
-  font-size: 13px;
-  color: var(--bone-600);
-}
-
-.ssh-empty-cta {
-  padding: 8px 18px;
-  border: 1px solid rgba(232, 98, 74, 0.4);
-  border-radius: 8px;
-  background: var(--persimmon-soft);
-  color: var(--persimmon-bright);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
-}
-
-.ssh-empty-cta:hover {
-  background: rgba(232, 98, 74, 0.22);
-  border-color: rgba(232, 98, 74, 0.6);
-}
-
 /* SSH 主操作按钮(添加主机) */
 .ssh-primary-btn {
   padding: 6px 14px;
@@ -1056,4 +1131,139 @@
 .ssh-modal-body .ssh-form-row-2 .field-row input,
 .ssh-modal-body .ssh-form-row-2 .field-row select {
   max-width: none;
+}
+
+/* —— SSH 凭据管理 —— */
+.ssh-credential-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.ssh-credential-empty {
+  margin-top: 24px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--bone-600);
+  font-size: 12px;
+  line-height: 1.6;
+  border: 1px dashed var(--hairline);
+  border-radius: 8px;
+}
+
+.ssh-credential-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.ssh-credential-item:hover {
+  border-color: var(--persimmon-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ssh-credential-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ssh-credential-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ssh-credential-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-100);
+}
+
+.ssh-credential-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--persimmon-soft);
+  color: var(--persimmon-bright);
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.ssh-credential-ref {
+  font-size: 10px;
+  color: var(--bone-600);
+  flex-shrink: 0;
+}
+
+.ssh-credential-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--bone-500);
+}
+
+.ssh-credential-value-label {
+  color: var(--bone-600);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.ssh-credential-value-text {
+  font-family: "Menlo", "Monaco", monospace;
+  word-break: break-all;
+}
+
+.ssh-credential-value-text.mono {
+  color: var(--bone-300);
+}
+
+.ssh-credential-toggle {
+  border: none;
+  background: transparent;
+  color: var(--bone-600);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.ssh-credential-toggle:hover {
+  color: var(--bone-100);
+}
+
+.ssh-credential-note {
+  font-size: 11px;
+  color: var(--bone-600);
+  font-style: italic;
+}
+
+.ssh-credential-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* 主机表单内的提示文本（凭据未选时） */
+.ssh-form-hint {
+  font-size: 11px;
+  color: var(--bone-600);
+  line-height: 1.5;
+  padding: 4px 0 0;
+  margin-top: 2px;
 }

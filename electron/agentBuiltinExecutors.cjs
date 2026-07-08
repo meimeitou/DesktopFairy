@@ -773,27 +773,88 @@ function truncateTerminalOutput(text) {
 async function toolTerminal(args, deps = {}) {
   const command = String(args?.command || '').trim();
   if (!command) return fail('command required');
-  if (!deps.terminalSessionId) {
-    return fail('终端会话未绑定，无法执行命令。请引导用户打开终端后再试。');
-  }
   const timeout = Math.min(Number(args?.timeout) || 60_000, 600_000);
+  // SSH 会话的命令必须在远程执行 —— 即便会话已死也不降级到本机 shell，
+  // 因为那是完全不同的机器，本地执行毫无意义且会产生误导性结果。
+  const isSshSession = !!deps.terminalSessionId && deps.terminalSessionId.startsWith('ssh_');
+
+  // 尝试在绑定的终端会话中执行（输出可见于终端 UI）
+  if (deps.terminalSessionId) {
+    try {
+      const result = await runCommandInRenderer(deps.sender, {
+        sessionId: deps.terminalSessionId,
+        command,
+        timeout,
+        signal: deps.signal,
+      });
+      return JSON.stringify({
+        ok: true,
+        command,
+        output: truncateTerminalOutput(result.output),
+        exitCode: result.exitCode,
+        remote: result.remote === true,
+        remoteNote: result.remoteNote || null,
+      });
+    } catch (e) {
+      const msg = String(e?.message || e);
+      // 本地 PTY 会话已死 → 降级到独立 shell（同一台机器，降级安全）。
+      // SSH 会话死掉 → 不降级，直接报错（不同机器，降级会误导）。
+      if (
+        !isSshSession &&
+        (msg.includes('终端会话不存在或已关闭') ||
+          msg.includes('终端会话已被终止') ||
+          msg.includes('终端进程已退出'))
+      ) {
+        return runInStandaloneShell(command, args, deps, timeout);
+      }
+      return fail(msg);
+    }
+  }
+
+  // 无绑定的终端会话 → 本地命令用独立 shell 执行；SSH 上下文不能降级
+  if (isSshSession) {
+    return fail('SSH 终端会话未绑定，无法在远程执行命令。请重新连接 SSH 后再试。');
+  }
+  return runInStandaloneShell(command, args, deps, timeout);
+}
+
+// 降级路径：用独立 shell（非交互 zsh -lc）执行命令，输出不可见于终端 UI。
+// 复用 toolBash 的执行逻辑，但包装成 toolTerminal 的返回格式。
+async function runInStandaloneShell(command, args, deps, timeout) {
+  const shell = process.env.SHELL || '/bin/zsh';
+  const env = { ...process.env, ...(deps.envVars || {}) };
   try {
-    const result = await runCommandInRenderer(deps.sender, {
-      sessionId: deps.terminalSessionId,
-      command,
+    const { stdout, stderr } = await execFileAsync(shell, ['-lc', command], {
+      env,
       timeout,
-      signal: deps.signal,
+      maxBuffer: 1024 * 1024,
+      cwd: os.homedir(),
     });
+    const combined = String(stdout || '') + (stderr ? '\n' + stderr : '');
     return JSON.stringify({
       ok: true,
       command,
-      output: truncateTerminalOutput(result.output),
-      exitCode: result.exitCode,
-      remote: result.remote === true,
-      remoteNote: result.remoteNote || null,
+      output: truncateTerminalOutput(combined),
+      exitCode: 0,
+      remote: false,
+      remoteNote: '⚠️ 终端会话不可用，命令已在独立 shell 中执行（输出未显示在终端中）。建议打开新终端后重试以获得交互式输出。',
     });
   } catch (e) {
-    return fail(String(e?.message || e));
+    const stdout = String(e?.stdout || '');
+    const stderr = String(e?.stderr || e?.message || e);
+    const combined = stdout + (stderr ? '\n' + stderr : '');
+    // 命令执行失败（非零退出码）也算 ok —— agent 需要看到输出和退出码
+    if (combined.trim()) {
+      return JSON.stringify({
+        ok: true,
+        command,
+        output: truncateTerminalOutput(combined),
+        exitCode: typeof e?.code === 'number' ? e.code : 1,
+        remote: false,
+        remoteNote: '⚠️ 终端会话不可用，命令已在独立 shell 中执行（输出未显示在终端中）。',
+      });
+    }
+    return fail('终端会话不可用且独立 shell 执行失败: ' + stderr);
   }
 }
 

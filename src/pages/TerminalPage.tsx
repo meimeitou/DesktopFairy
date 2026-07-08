@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
+import type { Terminal as TerminalType } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { SearchAddon } from "@xterm/addon-search";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
 import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
+import TerminalSearchBar from "../components/terminal/TerminalSearchBar";
 import TerminalSettingsTab from "../components/terminal/TerminalSettingsTab";
 import SshConnectionPicker from "../components/terminal/SshConnectionPicker";
 import {
@@ -13,6 +16,7 @@ import {
   saveSettings,
   type AppSettings,
   type SshHost,
+  type SshCredential,
   type TerminalSettings,
 } from "../shared/settings";
 import { appendSshRecent } from "../shared/terminalSettings";
@@ -27,22 +31,28 @@ function TerminalInstance({
   isActive,
   tabId,
   sshHost,
+  sshCredentials,
   terminalSettings,
   onSessionReady,
   onSessionEnd,
   onSessionExit,
   onSelectionChange,
   onTitleChange,
+  onSearchAddonReady,
+  onSearchAddonDispose,
 }: {
   isActive: boolean;
   tabId: string;
   sshHost?: SshHost;
+  sshCredentials?: SshCredential[];
   terminalSettings: TerminalSettings;
   onSessionReady?: (tabId: string, sessionId: string, kind: "terminal" | "ssh") => void;
   onSessionEnd?: (tabId: string) => void;
   onSessionExit?: (tabId: string) => void;
   onSelectionChange?: (tabId: string, text: string, x: number, y: number) => void;
   onTitleChange?: (tabId: string, title: string) => void;
+  onSearchAddonReady?: (tabId: string, xterm: TerminalType, searchAddon: SearchAddon) => void;
+  onSearchAddonDispose?: (tabId: string) => void;
 }) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -72,6 +82,7 @@ function TerminalInstance({
       scrollback: ts.scrollback,
       cursorStyle: ts.cursorStyle,
       bellStyle: "none", // custom visual bell via onBell handler
+      allowProposedApi: true, // SearchAddon decorations use registerDecoration (proposed API)
       theme: {
         background: "transparent",
         foreground: "rgba(255, 255, 255, 0.85)",
@@ -88,6 +99,11 @@ function TerminalInstance({
     xterm.loadAddon(new WebLinksAddon((_event, uri) => {
       void api.invoke("selection:open_url", uri);
     }));
+    // SearchAddon: Cmd+F 搜索终端缓冲区（含 scrollback）。装饰高亮所有匹配，
+    // 柿色标当前匹配。registry 由父组件持有，搜索弹框通过它访问活跃 tab 的 addon。
+    const searchAddon = new SearchAddon();
+    xterm.loadAddon(searchAddon);
+    onSearchAddonReady?.(tabId, xterm, searchAddon);
     xterm.open(terminalRef.current);
     fitAddon.fit();
 
@@ -125,15 +141,28 @@ function TerminalInstance({
     const { cols, rows } = xterm;
     let isMounted = true;
 
+    // renderer 侧解析 credentialId → 实际 password/privateKeyPath
+    // main 进程(sshService.cjs)不感知凭据库，只接收解析后的值。
+    const resolveCred = (id?: string): { password?: string; privateKeyPath?: string } => {
+      if (!id) return {};
+      const c = sshCredentials?.find((x) => x.id === id);
+      return c ? { password: c.password, privateKeyPath: c.privateKeyPath } : {};
+    };
+    const targetCred = resolveCred(sshHost?.credentialId);
+    const jumpCred = resolveCred(sshHost?.proxyJumpCredentialId);
+
     const createParams = isSsh
       ? {
           host: sshHost!.host,
           port: sshHost!.port,
           user: sshHost!.user,
           authMethod: sshHost!.authMethod,
-          password: sshHost!.password,
-          privateKeyPath: sshHost!.privateKeyPath,
+          password: targetCred.password,
+          privateKeyPath: targetCred.privateKeyPath,
           proxyJump: sshHost!.proxyJump,
+          proxyJumpAuthMethod: sshHost!.proxyJumpAuthMethod,
+          proxyJumpPassword: jumpCred.password,
+          proxyJumpPrivateKeyPath: jumpCred.privateKeyPath,
           cols,
           rows,
         }
@@ -188,6 +217,11 @@ function TerminalInstance({
       if (sessionId === sessionIdRef.current) {
         xterm.write(`\r\n[${isSsh ? "SSH 连接已断开" : "进程已退出"}]\r\n`);
         sessionIdRef.current = "";
+        // 清理 sessionMapRef：pty 退出后 session 已从 ptyService 的 sessions
+        // Map 中删除，若不清理 renderer 侧的 sessionMapRef，agent 工具会拿到
+        // 过期的 sessionId，调 runCommandInSession 时报"终端会话不存在或已关闭"。
+        // 对 SSH 而言 onSessionExit 会关 tab 触发 cleanup，但显式调用更安全。
+        onSessionEnd?.(tabId);
         // SSH 断开后自动关闭 tab；普通终端进程退出保留 tab 让用户查看输出。
         if (isSsh) onSessionExit?.(tabId);
       }
@@ -221,6 +255,10 @@ function TerminalInstance({
           }
         }
         if (event.key === "v") {
+          // 必须显式 preventDefault：attachCustomKeyEventHandler 返回 false
+          // 只阻止 xterm 自身的键盘处理，不会阻止浏览器原生 paste 事件。
+          // 否则浏览器仍会触发 paste → xterm onData → 再次写入 PTY，导致粘贴双份。
+          event.preventDefault();
           void pasteFromClipboard();
           return false;
         }
@@ -312,12 +350,16 @@ function TerminalInstance({
         api.invoke(killChannel, { sessionId: endedSessionId });
       }
       onSessionEnd?.(tabId);
+      // 先从父组件 registry 注销，再 dispose xterm。父组件若正持有该 tab 的
+      // searchAddon 引用（例如搜索弹框打开中），需要在此之前清掉，避免 dispose
+      // 后调用已失效的 addon。
+      onSearchAddonDispose?.(tabId);
       xterm.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
       sessionIdRef.current = "";
     };
-  }, [onSessionEnd, onSessionExit, onSessionReady, onSelectionChange, onTitleChange, tabId]);
+  }, [onSessionEnd, onSessionExit, onSessionReady, onSelectionChange, onTitleChange, tabId, onSearchAddonReady, onSearchAddonDispose]);
 
   // Apply terminal settings live without recreating the terminal.
   // xterm.js 6.0 supports runtime mutation of these options.
@@ -411,6 +453,12 @@ export default function TerminalPage({
   const nextTabIndex = useRef(2);
   const sessionMapRef = useRef<Map<string, { sessionId: string; kind: "terminal" | "ssh" }>>(new Map());
   const pendingCommandMapRef = useRef<Map<string, string[]>>(new Map());
+  // SearchAddon registry — 每个 tab 创建终端时注册 { xterm, searchAddon }，
+  // 卸载时移除。Cmd+F 时从 registry 取当前 tab 的 addon 引用存入 state，
+  // 搜索弹框从 state 读（不在渲染期读 ref，避免 react-hooks/refs 警告）。
+  // registry 用 ref：xterm 实例不可序列化，且注册/注销不应触发重渲染。
+  const searchRegistryRef = useRef<Map<string, { xterm: TerminalType; searchAddon: SearchAddon }>>(new Map());
+  const [searchEntry, setSearchEntry] = useState<{ xterm: TerminalType; searchAddon: SearchAddon } | null>(null);
 
   // Cross-window settings sync — chat window changes propagate here.
   useEffect(() => {
@@ -575,6 +623,27 @@ export default function TerminalPage({
     );
   }, []);
 
+  // 空依赖：稳定 identity，避免触发 TerminalInstance 的终端创建 useEffect 重跑。
+  const handleSearchAddonReady = useCallback(
+    (tabId: string, xterm: TerminalType, searchAddon: SearchAddon) => {
+      searchRegistryRef.current.set(tabId, { xterm, searchAddon });
+    },
+    [],
+  );
+
+  const handleSearchAddonDispose = useCallback((tabId: string) => {
+    searchRegistryRef.current.delete(tabId);
+  }, []);
+
+  // 切换 tab 时关闭搜索：不同 tab 的 xterm 实例不同，保留打开会引用到
+  // 旧 tab 的 searchAddon，高亮也留在旧 tab 里。用"渲染期对比前值"模式
+  // 调整 state（React 官方推荐的 prop 变化重置写法），避免 effect 内 setState。
+  const [prevActiveTabId, setPrevActiveTabId] = useState(activeTabId);
+  if (activeTabId !== prevActiveTabId) {
+    setPrevActiveTabId(activeTabId);
+    setSearchEntry(null);
+  }
+
   useEffect(() => {
     const handler = (e: Event) => {
       const { command } = (e as CustomEvent<{ command?: string }>).detail ?? {};
@@ -630,12 +699,18 @@ export default function TerminalPage({
       } else if (e.metaKey && e.key === "w") {
         e.preventDefault();
         handleCloseActiveTab();
+      } else if (e.metaKey && e.key === "f") {
+        // 仅在当前 tab 是终端/SSH 且已注册 searchAddon 时打开。
+        // 设置 tab 为 settings 时无注册项，Cmd+F 不响应。
+        e.preventDefault();
+        const entry = searchRegistryRef.current.get(activeTabId);
+        if (entry) setSearchEntry(entry);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActive, handleAddTab, handleCloseActiveTab]);
+  }, [isActive, handleAddTab, handleCloseActiveTab, activeTabId]);
 
   // SSH picker：点击外部关闭
   useEffect(() => {
@@ -673,14 +748,24 @@ export default function TerminalPage({
                 tabId={tab.id}
                 isActive={tab.id === activeTabId && isActive}
                 sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
+                sshCredentials={settings.sshCredentials}
                 terminalSettings={settings.terminal}
                 onSessionReady={handleSessionReady}
                 onSessionEnd={handleSessionEnd}
                 onSessionExit={handleSessionExit}
                 onSelectionChange={handleSelectionChange}
                 onTitleChange={handleTitleChange}
+                onSearchAddonReady={handleSearchAddonReady}
+                onSearchAddonDispose={handleSearchAddonDispose}
               />
             )
+          )}
+          {searchEntry && (
+            <TerminalSearchBar
+              xterm={searchEntry.xterm}
+              searchAddon={searchEntry.searchAddon}
+              onClose={() => setSearchEntry(null)}
+            />
           )}
           {selectionTip && selectionTip.tabId === activeTabId && (
             <TerminalSelectionTooltip

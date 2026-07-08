@@ -34,9 +34,12 @@ import {
   normalizeTerminalSettings,
   normalizeSshHosts,
   normalizeSshRecent,
+  normalizeSshCredentials,
+  migrateInlineCredentials,
   type TerminalSettings,
   type SshHost,
   type SshRecentEntry,
+  type SshCredential,
 } from "./terminalSettings";
 
 export type SelectionTriggerMode = "shortcut" | "auto";
@@ -93,6 +96,8 @@ export interface AppSettings {
   terminal: TerminalSettings;
   /** Saved SSH host configurations */
   sshHosts: SshHost[];
+  /** SSH credential library (passwords / private key paths), referenced by SshHost.credentialId */
+  sshCredentials: SshCredential[];
   /** Recent SSH connection history (max 5, newest first) */
   sshRecent: SshRecentEntry[];
 }
@@ -130,6 +135,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
   terminal: { ...DEFAULT_TERMINAL_SETTINGS },
   sshHosts: [],
+  sshCredentials: [],
   sshRecent: [],
 };
 
@@ -310,8 +316,20 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     mcpServers: migratedMcp.mcpServers,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
     terminal: normalizeTerminalSettings(settings.terminal),
-    sshHosts: normalizeSshHosts(settings.sshHosts),
-    sshRecent: normalizeSshRecent(settings.sshRecent),
+    // 先 normalize 再迁移：把残留的内联凭据(password/privateKeyPath 等)提取为
+    // 独立的 SshCredential 并改存 credentialId 引用。幂等。
+    ...((): Pick<AppSettings, "sshHosts" | "sshRecent" | "sshCredentials"> => {
+      const migrated = migrateInlineCredentials(
+        normalizeSshHosts(settings.sshHosts),
+        normalizeSshRecent(settings.sshRecent),
+        normalizeSshCredentials(settings.sshCredentials),
+      );
+      return {
+        sshHosts: migrated.sshHosts,
+        sshRecent: migrated.sshRecent,
+        sshCredentials: migrated.sshCredentials,
+      };
+    })(),
     modelName: (() => {
       const provider = getActiveProvider(settings);
       if (provider.models.length === 0) return settings.modelName;
@@ -605,4 +623,4 @@ export function parseModelCompound(
 }
 
 export { isAgentBackend, AGENT_BACKEND_KEY };
-export type { SelectionActionItem, LlmProvider, AgentConfig, McpServer, TerminalSettings, SshHost };
+export type { SelectionActionItem, LlmProvider, AgentConfig, McpServer, TerminalSettings, SshHost, SshCredential };
