@@ -132,7 +132,7 @@ export default function TerminalSettingsTab({
   const handleSubmit = () => {
     if (!form.name.trim() || !form.host.trim() || !form.user.trim()) return;
     const hasJump = !!form.proxyJump.trim();
-    const baseHost: SshHost = {
+    const baseHost: Omit<SshHost, "id"> = {
       name: form.name.trim(),
       host: form.host.trim(),
       port: form.port || 22,
@@ -278,9 +278,10 @@ export default function TerminalSettingsTab({
         proxyJumpPassword: jump.password,
         proxyJumpPrivateKeyPath: jump.privateKeyPath,
       });
+      const testResult = result as { ok?: boolean } | null;
       setTestStatus((prev) => ({
         ...prev,
-        [host.id]: result?.ok ? "ok" : "fail",
+        [host.id]: testResult?.ok ? "ok" : "fail",
       }));
       // 5 秒后清除状态
       setTimeout(() => {
@@ -309,16 +310,21 @@ export default function TerminalSettingsTab({
     });
     if (!Array.isArray(result) || result.length === 0) return;
     const files: Array<{ name: string; path: string; content: string }> = [];
-    for (const f of result) {
+    for (const f of result as Array<{ path?: string }>) {
       if (!f?.path) continue;
       // file:read 返回 { kind: 'text', text, name, size }（强制 kind: 'text' 跳过图片探测）
-      const read = await api.invoke("file:read", { path: f.path, kind: "text" });
-      const name = (read?.name as string) || f.path.split("/").pop() || f.path;
+      const read = (await api.invoke("file:read", {
+        path: f.path,
+        kind: "text",
+      })) as { name?: string; text?: string } | null;
+      const name = read?.name || f.path.split("/").pop() || f.path;
       const content = typeof read?.text === "string" ? read.text : "";
       if (content) files.push({ name, path: f.path, content });
     }
     if (files.length === 0) return;
-    const parsed = await api.invoke("ssh:import_configs", { files });
+    const parsed = (await api.invoke("ssh:import_configs", { files })) as {
+      hosts?: SshHost[];
+    } | null;
     if (!parsed?.hosts?.length) {
       window.alert("未从所选文件中解析到任何 SSH 主机");
       return;
@@ -326,7 +332,7 @@ export default function TerminalSettingsTab({
     // 去重合并：以 host|user|port 为键
     const existingKeys = new Set(sshHosts.map((h) => `${h.host}|${h.user}|${h.port}`));
     const newHosts = parsed.hosts.filter(
-      (h: SshHost) => !existingKeys.has(`${h.host}|${h.user}|${h.port}`),
+      (h) => !existingKeys.has(`${h.host}|${h.user}|${h.port}`),
     );
     if (newHosts.length === 0) {
       window.alert("导入的主机均已存在，已跳过");

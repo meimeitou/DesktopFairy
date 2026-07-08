@@ -85,6 +85,12 @@ declare global {
       onPtyExit: (
         callback: (payload: { sessionId: string; exitCode: number }) => void
       ) => () => void;
+      onSshOutput: (
+        callback: (payload: { sessionId: string; data: string }) => void
+      ) => () => void;
+      onSshExit: (
+        callback: (payload: { sessionId: string; exitCode?: number }) => void
+      ) => () => void;
     };
   }
 }

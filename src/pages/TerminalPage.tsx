@@ -20,8 +20,16 @@ import {
   type TerminalSettings,
 } from "../shared/settings";
 import { appendSshRecent } from "../shared/terminalSettings";
+import type { CursorStyle } from "../shared/terminalSettings";
 
 const api = window.electronAPI;
+
+/** Map our CursorStyle to xterm.js option values (`beam` → `bar`). */
+function toXtermCursorStyle(
+  style: CursorStyle,
+): "block" | "underline" | "bar" {
+  return style === "beam" ? "bar" : style;
+}
 
 function quoteForUnix(p: string): string {
   return `'${p.replace(/'/g, "'\\''")}'`;
@@ -80,8 +88,7 @@ function TerminalInstance({
       fontSize: ts.fontSize,
       fontFamily: ts.fontFamily,
       scrollback: ts.scrollback,
-      cursorStyle: ts.cursorStyle,
-      bellStyle: "none", // custom visual bell via onBell handler
+      cursorStyle: toXtermCursorStyle(ts.cursorStyle),
       allowProposedApi: true, // SearchAddon decorations use registerDecoration (proposed API)
       theme: {
         background: "transparent",
@@ -369,7 +376,7 @@ function TerminalInstance({
     xterm.options.fontSize = terminalSettings.fontSize;
     xterm.options.fontFamily = terminalSettings.fontFamily;
     xterm.options.scrollback = terminalSettings.scrollback;
-    xterm.options.cursorStyle = terminalSettings.cursorStyle;
+    xterm.options.cursorStyle = toXtermCursorStyle(terminalSettings.cursorStyle);
     fitAddonRef.current?.fit();
   }, [terminalSettings]);
 
@@ -462,8 +469,8 @@ export default function TerminalPage({
 
   // Cross-window settings sync — chat window changes propagate here.
   useEffect(() => {
-    const off = api?.onSettingsUpdated?.((next: AppSettings) => {
-      setSettings(next);
+    const off = api?.onSettingsUpdated?.((incoming) => {
+      setSettings(incoming as unknown as AppSettings);
     });
     return () => off?.();
   }, []);
