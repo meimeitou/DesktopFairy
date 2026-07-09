@@ -1,17 +1,16 @@
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
-const { buildSkillsPrompt, getSkillsDir, executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs');
-const { executeAgentTool } = require('./agentTools.cjs');
+const { buildSkillsPrompt } = require('./agentSkillService.cjs');
 const { testWebSearchConfig, clearRequestTodos } = require('./agentBuiltinExecutors.cjs');
 const { abortRequestApprovals } = require('./agentToolApproval.cjs');
 const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
+const { runAgentStream } = require('./ai/runAgentStream.cjs');
 const { getServersByIds } = require('./mcpServerService.cjs');
-const { getEnabledOpenAiToolDefinitions, getChatModeSuffix, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
+const { getChatModeSuffix } = require('./agentBuiltinCatalog.cjs');
+const { getBuiltinTools, buildAgentToolDeps } = require('./ai/agentStreamShared.cjs');
 const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
 const { getTerminalForeground } = require('./ptyService.cjs');
-
-const { appendChatLog } = require('./chatSessionLog.cjs');
 
 const inflightAgents = new Map();
 
@@ -53,13 +52,6 @@ function persistEnabledSkillId(skillId, getWindows) {
       /* window gone */
     }
   }
-}
-
-function getBuiltinTools(agentConfig, context) {
-  return getEnabledOpenAiToolDefinitions(agentConfig, context).map(({ type, function: fn }) => ({
-    type,
-    function: fn,
-  }));
 }
 
 function buildTerminalEnvSection(terminalState) {
@@ -123,107 +115,10 @@ function mergeSystemMessage(messages, systemPrompt) {
   return [{ role: 'system', content: systemPrompt.trim() }, ...rest];
 }
 
-async function readSseResponse(res, onDelta, onToolDelta, onReasoning) {
-  if (!res.body) throw new Error('Empty response body');
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
-  let assistantMessage = { role: 'assistant', content: '', reasoning: '', tool_calls: [] };
-  const toolCallAcc = new Map();
-
-  const syncToolCall = (index) => {
-    const acc = toolCallAcc.get(index);
-    if (!acc) return;
-    assistantMessage.tool_calls[index] = {
-      id: acc.id || `call_${index}`,
-      type: 'function',
-      function: { name: acc.name || '', arguments: acc.arguments || '' },
-    };
-  };
-
-  const ingestToolCall = (tc, fallbackIndex = 0) => {
-    const index = tc?.index ?? fallbackIndex;
-    if (!toolCallAcc.has(index)) {
-      toolCallAcc.set(index, { id: '', name: '', arguments: '' });
-    }
-    const acc = toolCallAcc.get(index);
-    if (tc?.id) acc.id = tc.id;
-    if (tc?.function?.name) acc.name = tc.function.name;
-    if (tc?.function?.arguments != null && tc?.function?.arguments !== '') {
-      const chunk = tc.function.arguments;
-      if (typeof chunk === 'string') {
-        acc.arguments += chunk;
-      } else if (typeof chunk === 'object') {
-        acc.arguments = JSON.stringify(chunk);
-      }
-    }
-    syncToolCall(index);
-    onToolDelta?.({ index, name: acc.name, id: acc.id, arguments: acc.arguments });
-  };
-
-  streamLoop: while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    let nlIdx;
-    while ((nlIdx = buf.indexOf('\n')) >= 0) {
-      let line = buf.slice(0, nlIdx);
-      buf = buf.slice(nlIdx + 1);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data) continue;
-      if (data === '[DONE]') break streamLoop;
-      try {
-        const json = JSON.parse(data);
-        const choice = json?.choices?.[0];
-        const delta = choice?.delta;
-        const message = choice?.message;
-        if (delta?.content) {
-          assistantMessage.content += delta.content;
-          onDelta?.(delta.content);
-        }
-        const reasoningChunk = delta?.reasoning_content ?? delta?.reasoning;
-        if (reasoningChunk) {
-          assistantMessage.reasoning = (assistantMessage.reasoning || '') + reasoningChunk;
-          onReasoning?.(reasoningChunk);
-        }
-        if (Array.isArray(delta?.tool_calls)) {
-          for (const tc of delta.tool_calls) ingestToolCall(tc);
-        }
-        if (Array.isArray(message?.tool_calls)) {
-          for (let i = 0; i < message.tool_calls.length; i += 1) {
-            ingestToolCall(message.tool_calls[i], i);
-          }
-        }
-        const msgReasoning = message?.reasoning_content ?? message?.reasoning;
-        if (msgReasoning) {
-          assistantMessage.reasoning = (assistantMessage.reasoning || '') + msgReasoning;
-          onReasoning?.(msgReasoning);
-        }
-      } catch {
-        /* ignore malformed JSON */
-      }
-    }
-  }
-
-  for (const index of toolCallAcc.keys()) syncToolCall(index);
-  assistantMessage.tool_calls = [...toolCallAcc.entries()]
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([index, acc]) => ({
-      id: acc.id || `call_${index}`,
-      type: 'function',
-      function: { name: acc.name || '', arguments: acc.arguments || '' },
-    }));
-  if (assistantMessage.tool_calls.length === 0) delete assistantMessage.tool_calls;
-  else if (!assistantMessage.content) assistantMessage.content = null;
-  if (!assistantMessage.reasoning) delete assistantMessage.reasoning;
-  return assistantMessage;
-}
-
 function registerAgentHandlers(ipcMain, deps) {
   const { getChatCompletionsUrl, getWindows, getParentWindow, chatLogsDir } = deps;
 
+  // Legacy IPC — prefer ai:stream_open for new callers. Shares tool/MCP wiring via agentStreamShared.
   ipcMain.handle('agent:run', async (event, payload) => {
     const {
       requestId,
@@ -273,216 +168,54 @@ function registerAgentHandlers(ipcMain, deps) {
       const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
       const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
       const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState);
-      let conversation = mergeSystemMessage(messages, systemPrompt);
+      const apiMessages = (messages || []).filter((m) => m.role !== 'system');
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
       const reasoningEffort = agentConfig.reasoningEffort;
-      const sendReasoningEffort =
-        reasoningEffort && reasoningEffort !== 'default' ? reasoningEffort : null;
-      const sessionEnabledSkillIds = new Set(agentConfig?.enabledSkillIds || []);
-      const skillEnvVars = {
-        ...(agentConfig.envVars || {}),
-        DESKTOP_FAIRY_SKILLS_DIR: getSkillsDir(),
-      };
+      const legacyTopicId = topicId || `legacy:${requestId}`;
 
-      for (let turn = 0; turn < maxTurns; turn += 1) {
-        if (controller.signal.aborted) break;
-
-        const body = {
-          model: apiConfig.modelName,
-          messages: conversation,
-          stream: true,
-          tools,
-          tool_choice: 'auto',
-        };
-        if (typeof temperature === 'number') {
-          body.temperature = temperature;
-        }
-        if (sendReasoningEffort) {
-          body.reasoning_effort = sendReasoningEffort;
-        }
-
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiConfig.apiKey ? { Authorization: `Bearer ${apiConfig.apiKey}` } : {}),
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-        }
-
-        const assistantMessage = await readSseResponse(
-          res,
-          (delta) => safeSend('chat:stream:chunk', { requestId, delta }),
-          ({ name, id, arguments: toolArgs }) => {
-            if (name && id) {
-              safeSend('agent:stream:tool', {
-                requestId,
-                toolCallId: id,
-                toolName: name,
-                toolArgs: toolArgs || '',
-                status: 'streaming',
-              });
-            }
-          },
-          (reasoning) => safeSend('chat:stream:chunk', { requestId, reasoning }),
-        );
-
-        // Reasoning is display-only; strip it so it is not replayed to the model on later turns.
-        const apiAssistantMessage = { ...assistantMessage };
-        delete apiAssistantMessage.reasoning;
-        conversation = conversation.concat(apiAssistantMessage);
-
-        const toolCalls = assistantMessage.tool_calls;
-        if (!toolCalls || toolCalls.length === 0) break;
-
-        for (const toolCall of toolCalls) {
-          if (controller.signal.aborted) break;
-
-          const toolName = toolCall.function?.name || 'unknown';
-          const toolCallId = toolCall.id || `call_${toolName}_${turn}`;
-          const toolArgs = toolCall.function?.arguments || '';
-
-          let resultText = '';
-          let denied = false;
-          let toolAborted = false;
+      const toolDeps = buildAgentToolDeps({
+        topicId: legacyTopicId,
+        requestId,
+        agentConfig,
+        mcpRuntime,
+        signal: controller.signal,
+        registerMcpCall: (_tid, callId) => {
           try {
-            const toolResult = await executeAgentTool(toolCall, {
-              getWindows,
-              parentWindow,
-              sender,
-              agentConfig,
-              toolApprovalMode: resolveToolApprovalMode(agentConfig),
-              bypassApproval: agentState.bypassApproval,
-              envVars: skillEnvVars,
-              enabledSkillIds: agentConfig.enabledSkillIds || [],
-              sessionEnabledSkillIds,
-              persistEnabledSkillId: (skillId) => persistEnabledSkillId(skillId, getWindows),
-              executeMcpTool: mcpRuntime?.executeMcpTool,
-              safeSend,
-              requestId,
-              signal: controller.signal,
-              webSearchConfig: getCurrentWebSearchConfig(),
-              terminalSessionId,
-            });
-            resultText = toolResult.resultText;
-            if (toolResult.aborted) {
-              toolAborted = true;
-            } else {
-              denied = toolResult.denied === true;
-              if (!denied) {
-                safeSend('agent:stream:tool', {
-                  requestId,
-                  toolCallId,
-                  toolName,
-                  toolArgs,
-                  status: 'done',
-                  resultPreview: resultText,
-                });
-              }
-              if (topicId && chatLogsDir && resultText) {
-                appendChatLog(chatLogsDir, topicId, {
-                  type: 'tool',
-                  toolCallId,
-                  toolName,
-                  toolArgs,
-                  resultText,
-                });
-              }
-            }
-          } catch (err) {
-            // abort 导致的工具异常（如 PTY 命令被 Ctrl-C 后 reject）不应回放给模型。
-            // 设置 toolAborted 并跳出工具循环，由下方 controller.signal.aborted 检查跳出 while。
-            if (controller.signal.aborted) {
-              toolAborted = true;
-              break;
-            }
-            resultText = JSON.stringify({
-              ok: false,
-              error: String(err?.message || err),
-            });
-            safeSend('agent:stream:tool', {
-              requestId,
-              toolCallId,
-              toolName,
-              toolArgs,
-              status: 'error',
-              message: String(err?.message || err),
-              resultPreview: resultText,
-            });
-            if (topicId && chatLogsDir && resultText) {
-              appendChatLog(chatLogsDir, topicId, {
-                type: 'tool',
-                toolCallId,
-                toolName,
-                toolArgs,
-                resultText,
-              });
-            }
+            const { manager } = require('./aiStreamService.cjs');
+            manager.registerMcpCall(legacyTopicId, callId);
+          } catch {
+            /* stream manager optional */
           }
+        },
+        getWindows,
+        parentWindow,
+        sender,
+        safeSend,
+        getBypassApproval: () => agentState.bypassApproval === true,
+        webSearchConfig: getCurrentWebSearchConfig(),
+        terminalSessionId,
+        suppressToolDoneEvent: true,
+      });
+      toolDeps.persistEnabledSkillId = (skillId) => persistEnabledSkillId(skillId, getWindows);
 
-          if (toolAborted) break;
-
-          conversation.push({
-            role: 'tool',
-            tool_call_id: toolCallId,
-            content: resultText,
-          });
-        }
-        if (controller.signal.aborted) break;
-      }
-
-      // Last turn may have executed tools without a follow-up LLM response.
-      const lastMsg = conversation[conversation.length - 1];
-      if (!controller.signal.aborted && lastMsg?.role === 'tool') {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiConfig.apiKey ? { Authorization: `Bearer ${apiConfig.apiKey}` } : {}),
-          },
-          body: JSON.stringify({
-            model: apiConfig.modelName,
-            messages: conversation,
-            stream: true,
-            tools,
-            tool_choice: 'auto',
-            ...(typeof temperature === 'number' ? { temperature } : {}),
-            ...(sendReasoningEffort ? { reasoning_effort: sendReasoningEffort } : {}),
-          }),
-          signal: controller.signal,
-        });
-        if (res.ok) {
-          const assistantMessage = await readSseResponse(
-            res,
-            (delta) => safeSend('chat:stream:chunk', { requestId, delta }),
-            ({ name, id, arguments: toolArgs }) => {
-              if (name && id) {
-                safeSend('agent:stream:tool', {
-                  requestId,
-                  toolCallId: id,
-                  toolName: name,
-                  toolArgs: toolArgs || '',
-                  status: 'streaming',
-                });
-              }
-            },
-            (reasoning) => safeSend('chat:stream:chunk', { requestId, reasoning }),
-          );
-          const apiAssistantMessage = { ...assistantMessage };
-          delete apiAssistantMessage.reasoning;
-          conversation = conversation.concat(apiAssistantMessage);
-        }
-      }
+      const { toolSnapshot, aborted } = await runAgentStream({
+        requestId,
+        messages: apiMessages,
+        systemPrompt,
+        apiConfig,
+        toolDefinitions: tools,
+        toolDeps,
+        maxTurns,
+        temperature,
+        reasoningEffort,
+        signal: controller.signal,
+        safeSend,
+      });
 
       safeSend('chat:stream:done', {
         requestId,
-        ...(controller.signal.aborted ? { aborted: true } : {}),
+        ...(aborted || controller.signal.aborted ? { aborted: true } : {}),
+        tools: toolSnapshot,
       });
     } catch (e) {
       if (e && e.name === 'AbortError') {
@@ -505,16 +238,39 @@ function registerAgentHandlers(ipcMain, deps) {
     const requestId = payload?.requestId;
     const agentState = requestId ? inflightAgents.get(requestId) : null;
     if (agentState) agentState.controller.abort();
+    try {
+      const { manager } = require('./aiStreamService.cjs');
+      for (const [, entry] of manager.activeStreams.entries()) {
+        if (entry.requestId === requestId) {
+          manager.abort(entry.topicId);
+          break;
+        }
+      }
+    } catch {
+      /* stream manager optional */
+    }
   });
 
   ipcMain.handle('agent:tool:bypass_approval', async (_event, payload) => {
     const requestId = payload?.requestId;
+    const topicId = payload?.topicId;
+    let ok = false;
+
     const agentState = requestId ? inflightAgents.get(requestId) : null;
     if (agentState) {
       agentState.bypassApproval = true;
-      return true;
+      ok = true;
     }
-    return false;
+
+    try {
+      const { setTopicBypassApproval, setBypassApprovalByRequestId } = require('./aiStreamService.cjs');
+      if (topicId && setTopicBypassApproval(topicId)) ok = true;
+      if (requestId && setBypassApprovalByRequestId(requestId)) ok = true;
+    } catch {
+      /* stream manager optional */
+    }
+
+    return ok;
   });
 
   ipcMain.handle('websearch:test', async (_event, config) => {
@@ -530,4 +286,10 @@ function abortAllAgentRuns() {
   inflightAgents.clear();
 }
 
-module.exports = { registerAgentHandlers, abortAllAgentRuns, buildAgentSystemPrompt };
+module.exports = {
+  registerAgentHandlers,
+  abortAllAgentRuns,
+  buildAgentSystemPrompt,
+  getCurrentWebSearchConfig,
+  persistEnabledSkillId,
+};

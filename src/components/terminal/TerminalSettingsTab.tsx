@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppSettings } from "../../shared/settings";
 import type { SshHost, SshCredential, SshAuthMethod, CursorStyle } from "../../shared/terminalSettings";
+import { SSH_UNGROUPED_LABEL } from "../../shared/terminalSettings";
 
 const api = window.electronAPI;
 
@@ -59,7 +60,7 @@ type FormMode = "add" | "edit" | "quick" | "duplicate";
 type CredFormMode = "add" | "edit";
 type TestStatus = "testing" | "ok" | "fail";
 
-const UNGROUPED = "未分组";
+const UNGROUPED = SSH_UNGROUPED_LABEL;
 
 export default function TerminalSettingsTab({
   isActive,
@@ -77,6 +78,9 @@ export default function TerminalSettingsTab({
   const [testStatus, setTestStatus] = useState<Record<string, TestStatus>>({});
   const [renamingGroup, setRenamingGroup] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [showAddGroupModal, setShowAddGroupModal] = useState(false);
+  const [addGroupName, setAddGroupName] = useState("");
+  const [addGroupError, setAddGroupError] = useState("");
 
   // 凭据管理 state
   const [credFormMode, setCredFormMode] = useState<CredFormMode | null>(null);
@@ -87,7 +91,7 @@ export default function TerminalSettingsTab({
   // 弹窗中密码显示/隐藏
   const [showCredPassword, setShowCredPassword] = useState(false);
 
-  const { terminal, sshHosts, sshCredentials } = settings;
+  const { terminal, sshHosts, sshGroups, sshCredentials } = settings;
 
   // 凭据解析：credentialId → { password, privateKeyPath }
   // 供 ssh:test / ssh:create 调用前在 renderer 侧解析（main 进程不感知凭据库）
@@ -102,10 +106,13 @@ export default function TerminalSettingsTab({
   );
 
   // 按 group 聚合：空 group 归入 "未分组"。
-  // 始终保证"未分组"在第一位（即使无主机也作为默认组可见），
-  // 让用户清楚看到默认容器，新建主机的归属也直观。
+  // sshGroups 保存无主机的空分组；有主机的分组由 sshHosts 推导。
+  // 始终保证"未分组"在第一位（即使无主机也作为默认组可见）。
   const groups = useMemo(() => {
     const map = new Map<string, SshHost[]>();
+    for (const g of sshGroups) {
+      if (!map.has(g)) map.set(g, []);
+    }
     for (const h of sshHosts) {
       const g = h.group?.trim() || UNGROUPED;
       if (!map.has(g)) map.set(g, []);
@@ -119,7 +126,7 @@ export default function TerminalSettingsTab({
       entries.unshift(ungrouped);
     }
     return entries;
-  }, [sshHosts]);
+  }, [sshHosts, sshGroups]);
 
   const updateTerminal = (patch: Partial<typeof terminal>) => {
     onChange({ terminal: { ...terminal, ...patch } });
@@ -132,6 +139,7 @@ export default function TerminalSettingsTab({
   const handleSubmit = () => {
     if (!form.name.trim() || !form.host.trim() || !form.user.trim()) return;
     const hasJump = !!form.proxyJump.trim();
+    const groupName = form.group.trim() || undefined;
     const baseHost: Omit<SshHost, "id"> = {
       name: form.name.trim(),
       host: form.host.trim(),
@@ -140,11 +148,12 @@ export default function TerminalSettingsTab({
       authMethod: form.authMethod,
       // 凭据引用：agent 模式下 credentialId 仍保留（用户可同时绑 agent + 兜底密码）
       credentialId: form.credentialId || undefined,
-      group: form.group.trim() || undefined,
+      group: groupName,
       proxyJump: form.proxyJump.trim() || undefined,
       proxyJumpAuthMethod: hasJump ? form.proxyJumpAuthMethod : undefined,
       proxyJumpCredentialId: hasJump && form.proxyJumpCredentialId ? form.proxyJumpCredentialId : undefined,
     };
+    const nextSshGroups = groupName ? sshGroups.filter((g) => g !== groupName) : sshGroups;
 
     if (formMode === "quick") {
       const tempHost: SshHost = {
@@ -154,13 +163,16 @@ export default function TerminalSettingsTab({
       onQuickConnect(tempHost);
     } else if (formMode === "edit" && editingId) {
       const updated: SshHost = { ...baseHost, id: editingId };
-      onChange({ sshHosts: sshHosts.map((h) => (h.id === editingId ? updated : h)) });
+      onChange({
+        sshHosts: sshHosts.map((h) => (h.id === editingId ? updated : h)),
+        sshGroups: nextSshGroups,
+      });
     } else if (formMode === "add" || formMode === "duplicate") {
       const newHost: SshHost = {
         ...baseHost,
         id: `ssh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       };
-      onChange({ sshHosts: [...sshHosts, newHost] });
+      onChange({ sshHosts: [...sshHosts, newHost], sshGroups: nextSshGroups });
     }
     setForm(EMPTY_FORM);
     setFormMode(null);
@@ -210,22 +222,37 @@ export default function TerminalSettingsTab({
     onChange({ sshHosts: sshHosts.filter((h) => h.id !== id) });
   };
 
-  // 新增分组：分组由主机的 group 字段聚合而来，没有独立实体。
-  // 这里 prompt 分组名后预填到 add 表单的 group 字段，分组随首个主机一起创建。
+  // 新增分组：写入 sshGroups，可创建无主机的空分组。
   const handleAddGroup = () => {
-    const name = window.prompt("输入新分组名称");
-    if (!name || !name.trim()) return;
-    const trimmed = name.trim();
+    setAddGroupName("");
+    setAddGroupError("");
+    setShowAddGroupModal(true);
+  };
+
+  const cancelAddGroup = () => {
+    setShowAddGroupModal(false);
+    setAddGroupName("");
+    setAddGroupError("");
+  };
+
+  const commitAddGroup = () => {
+    const trimmed = addGroupName.trim();
+    if (!trimmed) {
+      setAddGroupError("请输入分组名称");
+      return;
+    }
     if (trimmed === UNGROUPED) {
-      window.alert(`「${UNGROUPED}」是保留名，请用其他名称`);
+      setAddGroupError(`「${UNGROUPED}」是保留名，请用其他名称`);
       return;
     }
-    if (groups.some(([g]) => g === trimmed)) {
-      window.alert(`分组「${trimmed}」已存在`);
+    if (groups.some(([g]) => g === trimmed) || sshGroups.includes(trimmed)) {
+      setAddGroupError(`分组「${trimmed}」已存在`);
       return;
     }
-    setForm({ ...EMPTY_FORM, group: trimmed });
-    setFormMode("add");
+    onChange({ sshGroups: [...sshGroups, trimmed] });
+    setShowAddGroupModal(false);
+    setAddGroupName("");
+    setAddGroupError("");
   };
 
   const handleCancelForm = () => {
@@ -253,10 +280,13 @@ export default function TerminalSettingsTab({
     setRenamingGroup(null);
     setRenameValue("");
     if (!newName || newName === oldName) return;
+    if (newName === UNGROUPED) return;
+    if (groups.some(([g]) => g === newName)) return;
     onChange({
       sshHosts: sshHosts.map((h) =>
         h.group === oldName ? { ...h, group: newName } : h,
       ),
+      sshGroups: sshGroups.map((g) => (g === oldName ? newName : g)),
     });
   };
 
@@ -438,17 +468,18 @@ export default function TerminalSettingsTab({
 
   // 表单弹窗 Esc 关闭（凭据弹窗也覆盖）
   useEffect(() => {
-    if (formMode === null && credFormMode === null) return;
+    if (formMode === null && credFormMode === null && !showAddGroupModal) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (formMode !== null) handleCancelForm();
+        if (showAddGroupModal) cancelAddGroup();
+        else if (formMode !== null) handleCancelForm();
         else handleCancelCredForm();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [formMode, credFormMode]);
+  }, [formMode, credFormMode, showAddGroupModal]);
 
   const formTitle =
     formMode === "edit" ? "编辑主机" : formMode === "quick" ? "快速连接" : formMode === "duplicate" ? "复制主机" : "添加主机";
@@ -536,7 +567,7 @@ export default function TerminalSettingsTab({
             <div className="ssh-section-actions">
               <button
                 type="button"
-                className="link-btn"
+                className="ssh-primary-btn"
                 onClick={handleAddGroup}
               >
                 + 新增分组
@@ -550,14 +581,14 @@ export default function TerminalSettingsTab({
               </button>
               <button
                 type="button"
-                className="link-btn"
+                className="ssh-primary-btn"
                 onClick={() => { setForm(EMPTY_FORM); setFormMode("quick"); }}
               >
                 快速连接
               </button>
               <button
                 type="button"
-                className="link-btn"
+                className="ssh-primary-btn"
                 onClick={handleImportConfig}
               >
                 导入 SSH Config
@@ -979,6 +1010,57 @@ export default function TerminalSettingsTab({
               </button>
               <button type="button" className="ssh-modal-submit" onClick={handleSubmit}>
                 {submitLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddGroupModal && (
+        <div className="ssh-modal-overlay" onClick={cancelAddGroup}>
+          <div className="ssh-modal-card ssh-modal-card--compact" onClick={(e) => e.stopPropagation()}>
+            <div className="ssh-modal-header">
+              <span className="ssh-modal-title">新增分组</span>
+              <button
+                type="button"
+                className="ssh-modal-close"
+                onClick={cancelAddGroup}
+                title="关闭"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="ssh-modal-body">
+              <div className="field-row">
+                <label>分组名称</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={addGroupName}
+                  placeholder="例如：生产环境"
+                  onChange={(e) => {
+                    setAddGroupName(e.target.value);
+                    if (addGroupError) setAddGroupError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitAddGroup();
+                    }
+                  }}
+                />
+              </div>
+              {addGroupError && <div className="ssh-form-hint ssh-form-error">{addGroupError}</div>}
+            </div>
+            <div className="ssh-modal-footer">
+              <button type="button" className="link-btn" onClick={cancelAddGroup}>
+                取消
+              </button>
+              <button type="button" className="ssh-modal-submit" onClick={commitAddGroup}>
+                创建
               </button>
             </div>
           </div>

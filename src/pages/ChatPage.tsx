@@ -13,6 +13,7 @@ import ToolCallBubble, { ToolCallGroup } from "../components/chat/ToolCallBubble
 import MessageBubble from "../components/chat/MessageBubble";
 import { useToolApproval } from "../hooks/useToolApproval";
 import { useStickToBottom } from "../hooks/useStickToBottom";
+import type { ToolTerminalState } from "../shared/ai/stream";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import {
   type ChatMsg,
@@ -21,6 +22,8 @@ import {
   filterAfterContextClear,
   filterForApi,
   findLastAssistantReplyIndex,
+  reconcileToolMessages,
+  shouldApplyToolStatus,
   trimMessagesForApi,
 } from "../shared/chatMessages";
 import {
@@ -51,7 +54,14 @@ import {
   parseSlashCommand,
   COMPACT_PROMPT,
 } from "../shared/slashCommands";
-import "./ChatPage.css";
+import {
+  attachTopicStream,
+  detachTopicStream,
+  abortTopicStream,
+  openAgentStream,
+  replayLegacyStreamEvents,
+  type LegacyStreamHandlers,
+} from "../services/aiTransport/IpcChatTransport";
 
 const api = window.electronAPI;
 const SESSION_SAVE_DEBOUNCE_MS = 400;
@@ -151,6 +161,7 @@ export default function ChatPage({
   const handleSendRef = useRef<(text?: string) => void>(() => {});
   const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
+  const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
 
   useEffect(() => {
     topicStatesRef.current = topicStates;
@@ -324,6 +335,7 @@ export default function ChatPage({
       const state = topicStatesRef.current[topicId];
       if (state?.requestId && state.requestBackend) {
         if (isAgentBackend(state.requestBackend)) {
+          abortTopicStream(topicId, state.requestId);
           void api.invoke("agent:abort", { requestId: state.requestId });
         } else {
           void api.invoke("chat:abort", { requestId: state.requestId });
@@ -398,6 +410,38 @@ export default function ChatPage({
     return () => off?.();
   }, []);
 
+  useEffect(() => {
+    if (!activeTopicId) return;
+
+    void (async () => {
+      const result = await attachTopicStream(activeTopicId);
+      if (result.requestId) {
+        requestIdToTopicIdRef.current.set(result.requestId, activeTopicId);
+      }
+      replayLegacyStreamEvents(result.legacyEvents, legacyStreamHandlersRef.current);
+      if (result.attached && result.status === "streaming" && result.requestId) {
+        const requestBackend = getActiveChatBackend(loadSettings());
+        setTopicStates((prev) => {
+          const state = prev[activeTopicId];
+          if (!state) return prev;
+          return {
+            ...prev,
+            [activeTopicId]: {
+              ...state,
+              streaming: true,
+              requestId: result.requestId!,
+              requestBackend,
+            },
+          };
+        });
+      }
+    })();
+
+    return () => {
+      detachTopicStream(activeTopicId);
+    };
+  }, [activeTopicId]);
+
   const setActiveInput = useCallback(
     (value: string) => {
       const topicId = activeTopicIdRef.current;
@@ -467,7 +511,11 @@ export default function ChatPage({
   }, []);
 
   useEffect(() => {
-    const offChunk = api.onChatStreamChunk(({ requestId, delta, reasoning }) => {
+    const handleChatChunk = ({ requestId, delta, reasoning }: {
+      requestId: string;
+      delta?: string;
+      reasoning?: string;
+    }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
       setTopicStates((prev) => {
@@ -487,12 +535,19 @@ export default function ChatPage({
         return { ...prev, [topicId]: { ...state, messages: next } };
       });
       scheduleTopicSave(topicId);
-    });
+    };
 
-    const offDone = api.onChatStreamDone(({ requestId, aborted }) => {
+    const handleChatDone = ({ requestId, aborted, tools }: {
+      requestId: string;
+      aborted?: boolean;
+      tools?: ToolTerminalState[];
+    }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
-      requestIdToTopicIdRef.current.delete(requestId);
+
+      setTimeout(() => {
+        requestIdToTopicIdRef.current.delete(requestId);
+      }, 0);
 
       setTopicStates((prev) => {
         const state = prev[topicId];
@@ -504,6 +559,11 @@ export default function ChatPage({
             streaming: false,
             requestId: null,
             requestBackend: null,
+            messages: reconcileToolMessages(
+              state.messages,
+              tools,
+              Boolean(aborted),
+            ),
           },
         };
       });
@@ -512,24 +572,6 @@ export default function ChatPage({
 
       if (aborted) {
         compactRequestIdRef.current = null;
-        setTopicStates((prev) => {
-          const state = prev[topicId];
-          if (!state) return prev;
-          return {
-            ...prev,
-            [topicId]: {
-              ...state,
-              messages: state.messages.map((m) =>
-                m.type === "tool" &&
-                (m.toolStatus === "streaming" ||
-                  m.toolStatus === "running" ||
-                  m.toolStatus === "awaiting_approval")
-                  ? { ...m, toolStatus: "error" as const, toolMessage: "已取消" }
-                  : m,
-              ),
-            },
-          };
-        });
         if (isActive) notifyLive2DScene("replyError");
         flushSessionSave(topicId);
         return;
@@ -586,9 +628,9 @@ export default function ChatPage({
         notifyLive2DScene("replyDone", assistantText);
       }
       flushSessionSave(topicId);
-    });
+    };
 
-    const offError = api.onChatStreamError(({ requestId, message }) => {
+    const handleChatError = ({ requestId, message }: { requestId: string; message: string }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
       requestIdToTopicIdRef.current.delete(requestId);
@@ -625,81 +667,103 @@ export default function ChatPage({
         return { ...prev, [topicId]: { ...state, messages: next } };
       });
       flushSessionSave(topicId);
-    });
+    };
 
-    const offTool = api.onAgentStreamTool?.(
-      ({
-        requestId,
-        toolCallId,
-        toolName,
-        toolArgs,
-        approvalId,
-        status,
-        message,
-        resultPreview,
-      }) => {
-        const topicId = requestIdToTopicIdRef.current.get(requestId);
-        if (!topicId) return;
-        setTopicStates((prev) => {
-          const state = prev[topicId];
-          if (!state) return prev;
-          const msgs = state.messages;
-          const existingIdx = toolCallId
-            ? msgs.findIndex(
-                (m) => m.type === "tool" && m.toolCallId === toolCallId,
-              )
-            : msgs.findIndex(
-                (m) =>
-                  m.type === "tool" &&
-                  m.toolName === toolName &&
-                  (m.toolStatus === "running" || m.toolStatus === "streaming"),
-              );
-          const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
-          const toolMsg: ChatMsg = {
-            id: prevTool?.id || genId(),
-            role: "assistant",
-            type: "tool",
-            content: "",
-            toolCallId: toolCallId || prevTool?.toolCallId,
-            toolName,
-            toolArgs: toolArgs ?? prevTool?.toolArgs,
-            toolApprovalId: approvalId ?? prevTool?.toolApprovalId,
-            toolStatus: status,
-            toolMessage: message ?? prevTool?.toolMessage,
-            toolResultPreview: resultPreview ?? prevTool?.toolResultPreview,
-            timestamp: prevTool?.timestamp || Date.now(),
-          };
-          let nextMessages: ChatMsg[];
-          if (existingIdx >= 0) {
-            nextMessages = msgs.slice();
-            nextMessages[existingIdx] = toolMsg;
+    const handleAgentTool = ({
+      requestId,
+      toolCallId,
+      toolName,
+      toolArgs,
+      approvalId,
+      status,
+      message,
+      resultPreview,
+    }: {
+      requestId: string;
+      toolCallId?: string;
+      toolName?: string;
+      toolArgs?: string;
+      approvalId?: string;
+      status?: ChatMsg["toolStatus"];
+      message?: string;
+      resultPreview?: string;
+    }) => {
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId) return;
+      setTopicStates((prev) => {
+        const state = prev[topicId];
+        if (!state) return prev;
+        const msgs = state.messages;
+        const existingIdx = toolCallId
+          ? msgs.findIndex(
+              (m) => m.type === "tool" && m.toolCallId === toolCallId,
+            )
+          : msgs.findIndex(
+              (m) =>
+                m.type === "tool" &&
+                m.toolName === toolName &&
+                (m.toolStatus === "running" || m.toolStatus === "streaming"),
+            );
+        const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
+        const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, status)
+          ? status
+          : prevTool?.toolStatus;
+        const toolMsg: ChatMsg = {
+          id: prevTool?.id || genId(),
+          role: "assistant",
+          type: "tool",
+          content: "",
+          toolCallId: toolCallId || prevTool?.toolCallId,
+          toolName,
+          toolArgs: toolArgs ?? prevTool?.toolArgs,
+          toolApprovalId: approvalId ?? prevTool?.toolApprovalId,
+          toolStatus: nextStatus,
+          toolMessage: message ?? prevTool?.toolMessage,
+          toolResultPreview: resultPreview ?? prevTool?.toolResultPreview,
+          timestamp: prevTool?.timestamp || Date.now(),
+        };
+        let nextMessages: ChatMsg[];
+        if (existingIdx >= 0) {
+          nextMessages = msgs.slice();
+          nextMessages[existingIdx] = toolMsg;
+        } else {
+          const assistantIdx = findLastAssistantReplyIndex(msgs);
+          if (assistantIdx < 0) {
+            nextMessages = [...msgs, toolMsg];
           } else {
-            const assistantIdx = findLastAssistantReplyIndex(msgs);
-            if (assistantIdx < 0) {
-              nextMessages = [...msgs, toolMsg];
+            const assistant = msgs[assistantIdx];
+            nextMessages = msgs.slice();
+            if (assistant.content && !assistant.error) {
+              nextMessages.splice(assistantIdx + 1, 0, toolMsg);
+              nextMessages.push({
+                id: genId(),
+                role: "assistant",
+                content: "",
+                timestamp: Date.now(),
+              });
             } else {
-              const assistant = msgs[assistantIdx];
-              nextMessages = msgs.slice();
-              if (assistant.content && !assistant.error) {
-                nextMessages.splice(assistantIdx + 1, 0, toolMsg);
-                nextMessages.push({
-                  id: genId(),
-                  role: "assistant",
-                  content: "",
-                  timestamp: Date.now(),
-                });
-              } else {
-                nextMessages.splice(assistantIdx, 0, toolMsg);
-              }
+              nextMessages.splice(assistantIdx, 0, toolMsg);
             }
           }
-          return { ...prev, [topicId]: { ...state, messages: nextMessages } };
-        });
-        scheduleTopicSave(topicId);
-        const isActive = topicId === activeTopicIdRef.current;
-        if (status === "running" && isActive) notifyLive2DScene("toolRunning");
-      },
-    );
+        }
+        return { ...prev, [topicId]: { ...state, messages: nextMessages } };
+      });
+      scheduleTopicSave(topicId);
+      const isActive = topicId === activeTopicIdRef.current;
+      if (status === "running" && isActive) notifyLive2DScene("toolRunning");
+    };
+
+    legacyStreamHandlersRef.current = {
+      onChatChunk: handleChatChunk,
+      onChatDone: handleChatDone,
+      onChatError: handleChatError,
+      onAgentTool: (data) => handleAgentTool(data as Parameters<typeof handleAgentTool>[0]),
+    };
+
+    const offChunk = api.onChatStreamChunk(handleChatChunk);
+    const offDone = api.onChatStreamDone(handleChatDone);
+    const offError = api.onChatStreamError(handleChatError);
+    const offTool = api.onAgentStreamTool?.(handleAgentTool);
 
     return () => {
       offChunk?.();
@@ -762,7 +826,12 @@ export default function ChatPage({
     handleApproveTool,
     handleDenyTool,
     handleAlwaysAllowTool,
-  } = useToolApproval(chatMessagesRef, () => handleChatModeChange("full-auto"), requestIdRef);
+  } = useToolApproval(
+    chatMessagesRef,
+    () => handleChatModeChange("full-auto"),
+    requestIdRef,
+    activeTopicIdRef,
+  );
 
   const slashCommands = useMemo(
     () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
@@ -937,11 +1006,10 @@ export default function ChatPage({
       );
 
       const invokePromise = agentMode
-        ? api.invoke("agent:run", {
+        ? openAgentStream({
+            topicId,
             requestId,
             messages: payloadMessages,
-            chatUrl,
-            apiKey: apiConfig.apiKey,
             apiConfig: {
               apiHost: apiConfig.apiHost,
               apiKey: apiConfig.apiKey,
@@ -960,7 +1028,39 @@ export default function ChatPage({
             temperature: settings.temperature,
           });
 
-      invokePromise.catch((e: Error) => {
+      invokePromise
+        .then((result) => {
+          if (!agentMode || !result || typeof result !== "object") return;
+          if ((result as { mode?: string }).mode !== "blocked") return;
+          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
+          requestIdToTopicIdRef.current.delete(requestId);
+          setTopicStates((prev) => {
+            const s = prev[topicId];
+            if (!s) return prev;
+            const idx = findLastAssistantReplyIndex(s.messages);
+            const next = s.messages.slice();
+            if (idx >= 0) {
+              next[idx] = {
+                ...next[idx],
+                content: "该话题已有进行中的会话，请等待完成或先停止。",
+                error: true,
+              };
+            }
+            return {
+              ...prev,
+              [topicId]: {
+                ...s,
+                messages: next,
+                streaming: false,
+                requestId: null,
+                requestBackend: null,
+              },
+            };
+          });
+          notifyLive2DScene("replyError");
+          flushSessionSave(topicId);
+        })
+        .catch((e: Error) => {
         if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
         requestIdToTopicIdRef.current.delete(requestId);
         setTopicStates((prev) => {
@@ -1008,6 +1108,7 @@ export default function ChatPage({
     const state = topicStatesRef.current[topicId];
     if (!state?.requestId || !state.requestBackend) return;
     if (isAgentBackend(state.requestBackend)) {
+      abortTopicStream(topicId, state.requestId);
       void api.invoke("agent:abort", { requestId: state.requestId });
     } else {
       void api.invoke("chat:abort", { requestId: state.requestId });

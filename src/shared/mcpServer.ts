@@ -17,6 +17,10 @@ export interface McpServer {
   isActive: boolean;
   installSource?: McpInstallSource;
   shouldConfig?: boolean;
+  /** Per-tool timeout in seconds (Cherry Studio compatible) */
+  timeout?: number;
+  /** Long-running mode: reset timeout on MCP progress notifications */
+  longRunning?: boolean;
 }
 
 /** One argument per line (Cherry Studio args textarea). */

@@ -32,6 +32,7 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
     approvalId,
     status: 'awaiting_approval',
   });
+  deps.onApprovalWaitStart?.();
 
   const approvalResult = await waitForToolApproval({
     approvalId,
@@ -70,6 +71,19 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
     status: 'running',
   });
   return 'approved';
+}
+
+function returnToolResult(deps, toolCallId, toolName, rawArgs, resultText) {
+  if (!deps.suppressToolDoneEvent) {
+    emitToolEvent(deps, {
+      toolCallId,
+      toolName,
+      toolArgs: rawArgs,
+      status: 'done',
+      resultPreview: resultText,
+    });
+  }
+  return { resultText, denied: false };
 }
 
 async function executeAgentTool(toolCall, deps) {
@@ -121,9 +135,9 @@ async function executeAgentTool(toolCall, deps) {
   }
 
   if (name.startsWith('mcp__')) {
-    const mcpResult = await deps.executeMcpTool?.(name, args);
+    const mcpResult = await deps.executeMcpTool?.(name, args, toolCallId);
     if (mcpResult != null) {
-      return { resultText: mcpResult, denied: false };
+      return returnToolResult(deps, toolCallId, name, rawArgs, mcpResult);
     }
     return {
       resultText: JSON.stringify({ ok: false, error: 'MCP tool unavailable' }),
@@ -132,23 +146,32 @@ async function executeAgentTool(toolCall, deps) {
   }
 
   if (name === 'Skill') {
-    return {
-      resultText: executeSkillTool(args, deps),
-      denied: false,
-    };
+    return returnToolResult(
+      deps,
+      toolCallId,
+      name,
+      rawArgs,
+      executeSkillTool(args, deps),
+    );
   }
 
   if (name === 'Skills') {
-    return {
-      resultText: await executeSkillsTool(args, deps),
-      denied: false,
-    };
+    return returnToolResult(
+      deps,
+      toolCallId,
+      name,
+      rawArgs,
+      await executeSkillsTool(args, deps),
+    );
   }
 
-  return {
-    resultText: await executeBuiltinTool(name, args, deps),
-    denied: false,
-  };
+  return returnToolResult(
+    deps,
+    toolCallId,
+    name,
+    rawArgs,
+    await executeBuiltinTool(name, args, deps),
+  );
 }
 
 module.exports = {

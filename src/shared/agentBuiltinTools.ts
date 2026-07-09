@@ -26,46 +26,98 @@ function builtinTool(
   };
 }
 
-/** @see cherry-studio/src/shared/ai/claudecode/builtinTools.ts */
+/** Cherry-aligned Claude Code builtins (excludes DF-only tools) */
+const CHERRY_ALIGNED_TOOL_IDS = new Set([
+  "Bash",
+  "Edit",
+  "Glob",
+  "Grep",
+  "MultiEdit",
+  "NotebookEdit",
+  "NotebookRead",
+  "Read",
+  "Task",
+  "TodoWrite",
+  "WebFetch",
+  "WebSearch",
+  "Write",
+]);
+
+/** @see cherry-studio/src/shared/ai/claudecode/builtinTools.ts + electron/agentBuiltinDefinitions.cjs */
 export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
-  builtinTool("Bash", "Executes shell commands in your environment", "shell", true),
-  builtinTool("Edit", "Makes targeted edits to specific files", "file", true),
-  builtinTool("Glob", "Finds files based on pattern matching", "search", false),
-  builtinTool("Grep", "Searches for patterns in file contents", "search", false),
+  builtinTool(
+    "Bash",
+    "Executes shell commands in your environment",
+    "shell",
+    true,
+  ),
+  builtinTool(
+    "Edit",
+    "Performs exact string replacements in files (use Read first; supports fuzzy matching)",
+    "file",
+    true,
+  ),
+  builtinTool(
+    "Glob",
+    "Finds files by glob pattern; returns absolute paths sorted by modification time (max 100)",
+    "search",
+    false,
+  ),
+  builtinTool(
+    "Grep",
+    "Searches file contents with regex; returns paths, line numbers, and matches (max 100)",
+    "search",
+    false,
+  ),
   builtinTool(
     "MultiEdit",
     "Performs multiple edits on a single file atomically",
     "file",
-    true
+    true,
   ),
   builtinTool("NotebookEdit", "Modifies Jupyter notebook cells", "file", true),
   builtinTool(
     "NotebookRead",
     "Reads and displays Jupyter notebook contents",
     "file",
-    false
+    false,
   ),
-  builtinTool("Read", "Reads the contents of files", "file", false),
+  builtinTool(
+    "Read",
+    "Reads file contents with line numbers (default 2000 lines; binary files rejected)",
+    "file",
+    false,
+  ),
   builtinTool(
     "Task",
     "Runs a sub-agent to handle complex, multi-step tasks",
     "orchestration",
-    false
+    false,
   ),
   builtinTool(
     "TodoWrite",
     "Creates and manages structured task lists",
     "orchestration",
-    false
+    false,
   ),
-  builtinTool("WebFetch", "Fetches content from a specified URL", "context", true),
+  builtinTool(
+    "WebFetch",
+    "Fetches readable content from known web page URLs (call WebSearch first if needed)",
+    "context",
+    true,
+  ),
   builtinTool(
     "WebSearch",
-    "Performs web searches with domain filtering",
+    "Searches the web for current information, news, and real-time data",
     "context",
-    true
+    true,
   ),
-  builtinTool("Write", "Creates or overwrites files", "file", true),
+  builtinTool(
+    "Write",
+    "Creates or overwrites files (prefer Edit for existing files; use Read first)",
+    "file",
+    true,
+  ),
   builtinTool("Skill", "Loads full instructions for an enabled skill", "context", false),
   builtinTool(
     "Skills",
@@ -136,6 +188,10 @@ export function normalizeDisabledToolIds(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === "string" && valid.has(id));
 }
 
+export function isCherryAlignedBuiltinTool(toolId: string): boolean {
+  return CHERRY_ALIGNED_TOOL_IDS.has(toolId);
+}
+
 export function buildOpenAiToolDefinitions(tools: AgentBuiltinTool[]) {
   return tools.map((tool) => ({
     type: "function" as const,
@@ -153,9 +209,9 @@ function getOpenAiToolParameters(toolId: string) {
       return {
         type: "object",
         properties: {
-          file_path: { type: "string" },
-          offset: { type: "number" },
-          limit: { type: "number" },
+          file_path: { type: "string", description: "The path to the file to read" },
+          offset: { type: "number", description: "Line number to start from (1-based)" },
+          limit: { type: "number", description: "Number of lines to read (default 2000)" },
         },
         required: ["file_path"],
       };
@@ -204,7 +260,11 @@ function getOpenAiToolParameters(toolId: string) {
         type: "object",
         properties: {
           command: { type: "string" },
-          timeout: { type: "number" },
+          timeout: {
+            type: "number",
+            description:
+              "Max runtime: values < 1000 = seconds, else milliseconds. Default 120000 (2 min), max 600000 (10 min).",
+          },
           description: { type: "string" },
           run_in_background: { type: "boolean" },
         },
@@ -214,8 +274,8 @@ function getOpenAiToolParameters(toolId: string) {
       return {
         type: "object",
         properties: {
-          pattern: { type: "string" },
-          path: { type: "string" },
+          pattern: { type: "string", description: "Glob pattern (e.g. **/*.ts)" },
+          path: { type: "string", description: "Directory to search (defaults to home)" },
         },
         required: ["pattern"],
       };
@@ -223,9 +283,9 @@ function getOpenAiToolParameters(toolId: string) {
       return {
         type: "object",
         properties: {
-          pattern: { type: "string" },
-          path: { type: "string" },
-          glob: { type: "string" },
+          pattern: { type: "string", description: "Regex pattern to search for" },
+          path: { type: "string", description: "Directory or file to search" },
+          glob: { type: "string", description: 'File filter (e.g. "*.js")' },
           output_mode: {
             type: "string",
             enum: ["content", "files_with_matches", "count"],
@@ -249,10 +309,15 @@ function getOpenAiToolParameters(toolId: string) {
       return {
         type: "object",
         properties: {
-          url: { type: "string" },
-          prompt: { type: "string" },
+          url: { type: "string", description: "Single URL (legacy)" },
+          urls: {
+            type: "array",
+            items: { type: "string" },
+            description: "One or more URLs to fetch",
+          },
+          prompt: { type: "string", description: "Optional focus hint" },
         },
-        required: ["url", "prompt"],
+        required: [],
       };
     case "TodoWrite":
       return {

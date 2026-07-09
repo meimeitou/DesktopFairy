@@ -33,6 +33,7 @@ import {
   DEFAULT_TERMINAL_SETTINGS,
   normalizeTerminalSettings,
   normalizeSshHosts,
+  normalizeSshGroups,
   normalizeSshRecent,
   normalizeSshCredentials,
   migrateInlineCredentials,
@@ -96,6 +97,8 @@ export interface AppSettings {
   terminal: TerminalSettings;
   /** Saved SSH host configurations */
   sshHosts: SshHost[];
+  /** Empty SSH groups (persisted independently; groups with hosts are derived from sshHosts) */
+  sshGroups: string[];
   /** SSH credential library (passwords / private key paths), referenced by SshHost.credentialId */
   sshCredentials: SshCredential[];
   /** Recent SSH connection history (max 5, newest first) */
@@ -135,6 +138,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
   terminal: { ...DEFAULT_TERMINAL_SETTINGS },
   sshHosts: [],
+  sshGroups: [],
   sshCredentials: [],
   sshRecent: [],
 };
@@ -318,7 +322,7 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     terminal: normalizeTerminalSettings(settings.terminal),
     // 先 normalize 再迁移：把残留的内联凭据(password/privateKeyPath 等)提取为
     // 独立的 SshCredential 并改存 credentialId 引用。幂等。
-    ...((): Pick<AppSettings, "sshHosts" | "sshRecent" | "sshCredentials"> => {
+    ...((): Pick<AppSettings, "sshHosts" | "sshGroups" | "sshRecent" | "sshCredentials"> => {
       const migrated = migrateInlineCredentials(
         normalizeSshHosts(settings.sshHosts),
         normalizeSshRecent(settings.sshRecent),
@@ -326,6 +330,7 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       );
       return {
         sshHosts: migrated.sshHosts,
+        sshGroups: normalizeSshGroups(settings.sshGroups),
         sshRecent: migrated.sshRecent,
         sshCredentials: migrated.sshCredentials,
       };

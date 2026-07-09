@@ -13,7 +13,7 @@ npm run build:dir # faster build, no DMG installer
 make build-adhoc  # unsigned ad-hoc DMG (no Apple Developer account needed)
 ```
 
-No tests, no CI. `lint` is the only pre-commit check.
+No tests in CI, but `npm test` runs vitest (renderer/shared unit tests). `lint` is the primary pre-commit check; `tsc -b` runs as part of `npm run build`.
 
 ## Architecture Gotchas
 
@@ -31,6 +31,17 @@ Must update **two** places or the channel will be silently rejected at runtime:
 1. `allowedChannels` array in `electron/preload.cjs`
 2. `ipcMain.handle()` in the relevant `electron/*Service.cjs` file
 
+For push events (main → renderer), also add `ipcRenderer.on` listener helpers in `preload.cjs` and types in `src/electron.d.ts`.
+
+**Agent stream channels** (registered in `aiStreamService.cjs`):
+
+| Invoke | Push events |
+|--------|-------------|
+| `ai:stream_open` | `chat:stream:chunk/done/error`, `agent:stream:tool`, `ai:stream:chunk/done/error` |
+| `ai:stream_attach` / `ai:stream_detach` | — |
+| `ai:stream_abort` | — |
+| `ai:tool:bypass_approval` | — |
+
 Window geometry APIs (`windowGetSize`, `windowSetSize`, etc.) are dedicated methods on `electronAPI`, not in the whitelist — they go through their own `ipcRenderer.invoke` calls.
 
 ## macOS Window Pitfalls
@@ -46,9 +57,49 @@ Settings live in `localStorage` key `da_settings` in the renderer. Calling `sett
 
 Startup: disk file is read first (via `settings:load:sync`), falls back to localStorage.
 
+## Agent Runtime (AI SDK)
+
+智能体模式走 **AI SDK `ToolLoopAgent`** 多轮工具循环，不再使用手写 SSE turn loop。
+
+```
+ChatPage / TerminalAgentDrawer
+  → openAgentStream (ai:stream_open)
+  → AiStreamManager.startStream (后台执行)
+  → AiService.streamText → ToolLoopAgent
+  → chunkBridge → chat:stream:chunk / agent:stream:tool
+  → chat:stream:done（含 tools snapshot）
+
+Legacy: agent:run 仍保留（同步等待、无 topic 管理），新代码请用 ai:stream_open。
+普通对话: chat:send 不变（无系统提示词、无工具）。
+```
+
+**关键模块**（`electron/ai/`）：
+
+| 文件 | 作用 |
+|------|------|
+| `AiService.cjs` | `streamText()` 包装 `ToolLoopAgent` |
+| `providerModel.cjs` | apiConfig → AI SDK model（官方 OpenAI 用 `.chat()`，第三方用 `createOpenAICompatible`） |
+| `messages.cjs` | OpenAI 消息 → AI SDK `CoreMessage[]` |
+| `buildToolSet.cjs` | OpenAI function defs → AI SDK `tool()`，桥接 `executeAgentTool` |
+| `chunkBridge.cjs` | `UIMessageChunk` → 既有 `chat:stream:*` / `agent:stream:tool` IPC |
+| `agentStreamShared.cjs` | 共享 `buildAgentToolDeps`（MCP abort、审批 bypass、suppressToolDoneEvent） |
+| `topicBroadcast.cjs` | 向 topic 所有 attach 的 webContents 广播 legacy 流事件 |
+| `streamManager/AiStreamManager.cjs` | topic 级流生命周期、attach/detach、grace、MCP callId 登记 |
+| `aiStreamService.cjs` | `ai:stream_*` IPC 注册 |
+
+**Renderer 传输层**：`src/services/aiTransport/IpcChatTransport.ts` — `openAgentStream`、`attachTopicStream`、`replayLegacyStreamEvents`、`abortTopicStream`。
+
+**关窗重连**：`ai:stream_attach` 返回 `legacyEvents`，renderer 回放错过的 `chat:stream:*` 事件；进行中流通过 `broadcastToTopic` 推送到所有已 attach 窗口。
+
+**同 topic 并发**：`ai:stream_open` 若 topic 已在 streaming 返回 `{ mode: 'blocked' }`；UI 应在发送前检查 `streaming` 状态。
+
+**Stop / 删除 topic**：同时调用 `abortTopicStream(topicId, requestId)` 与 `agent:abort`（后者按 requestId 兜底）。MCP 工具通过 `registerMcpCall` + `abortSignal` → `abortTool(callId)` 终止子进程。
+
+**工具事件双路**：审批类（`awaiting_approval` / `running` / `denied`）由 `executeAgentTool` 发 `agent:stream:tool`；完成/错误由 `chunkBridge` 从 AI SDK chunk 发出（`suppressToolDoneEvent` 避免重复 `done`）。
+
 ## Agent System Prompt
 
-Agent config lives at `settings.agent` (`AgentConfig` in `src/shared/agent.ts`). The system prompt is built in the **main process** by `buildAgentSystemPrompt()` in `electron/agentService.cjs`, NOT in the renderer. The renderer passes `agentConfig` via the `agent:run` IPC payload, but `mergeSystemMessage` strips any system message the renderer prepends and replaces it.
+Agent config lives at `settings.agent` (`AgentConfig` in `src/shared/agent.ts`). The system prompt is built in the **main process** by `buildAgentSystemPrompt()` in `electron/agentService.cjs`, NOT in the renderer. The renderer passes `agentConfig` via `ai:stream_open` (or legacy `agent:run`); any system message in the renderer payload is stripped and replaced in main.
 
 Prompt assembly order: `soul` → `user` (wrapped under `# 用户档案` header) → skills block → hardcoded tool guidance → chat-mode suffix.
 

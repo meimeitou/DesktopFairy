@@ -1,4 +1,5 @@
-export type CursorStyle = "block" | "beam" | "underline";
+export const SSH_UNGROUPED_LABEL = "未分组";
+
 // 'auto' = 同时尝试所有可用方式（agent + privateKey + password），由 ssh2 按服务端允许的方法依次尝试。
 // 参考 tabby 的 Auto 认证模式。
 export type SshAuthMethod = "auto" | "password" | "privateKey" | "agent";
@@ -93,6 +94,21 @@ const VALID_AUTH_METHODS: SshAuthMethod[] = ["auto", "password", "privateKey", "
 
 function genId(): string {
   return `ssh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function normalizeSshGroups(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim();
+    if (!trimmed || trimmed === SSH_UNGROUPED_LABEL) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 }
 
 export function normalizeSshHosts(value: unknown): SshHost[] {

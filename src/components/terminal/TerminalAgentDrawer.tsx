@@ -19,9 +19,11 @@ import {
   buildAgentApiMessages,
   filterForApi,
   findLastAssistantReplyIndex,
+  reconcileToolMessages,
+  shouldApplyToolStatus,
   trimMessagesForApi,
 } from "../../shared/chatMessages";
-import { getChatCompletionsUrl } from "../../shared/providers";
+import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
   loadSettings,
   getChatApiConfig,
@@ -29,6 +31,14 @@ import {
 } from "../../shared/settings";
 import { COMPACT_PROMPT, parseSlashCommand } from "../../shared/slashCommands";
 import Tooltip from "../Tooltip";
+import {
+  attachTopicStream,
+  detachTopicStream,
+  abortTopicStream,
+  openAgentStream,
+  replayLegacyStreamEvents,
+  type LegacyStreamHandlers,
+} from "../../services/aiTransport/IpcChatTransport";
 import "../../pages/ChatPage.css";
 import "./TerminalAgentDrawer.css";
 
@@ -187,6 +197,8 @@ export default function TerminalAgentDrawer({
 
   const messagesRef = useRef(activeState.messages);
   const requestIdRef = useRef(activeState.requestId ?? "");
+  const topicIdRef = useRef<string | null>(`terminal:${activeTabId}`);
+  const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
 
   useEffect(() => {
     messagesRef.current = activeState.messages;
@@ -196,12 +208,16 @@ export default function TerminalAgentDrawer({
     requestIdRef.current = activeState.requestId ?? "";
   }, [activeState.requestId]);
 
+  useEffect(() => {
+    topicIdRef.current = `terminal:${activeTabId}`;
+  }, [activeTabId]);
+
   const {
     submittingApprovalId,
     handleApproveTool,
     handleDenyTool,
     handleAlwaysAllowTool,
-  } = useToolApproval(messagesRef, () => {}, requestIdRef);
+  } = useToolApproval(messagesRef, () => {}, requestIdRef, topicIdRef);
 
   const setActiveInput = useCallback(
     (value: string) => {
@@ -236,6 +252,9 @@ export default function TerminalAgentDrawer({
             )
           : -1;
         const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
+        const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, event.status)
+          ? event.status
+          : prevTool?.toolStatus;
         const toolMsg: ChatMsg = {
           id: prevTool?.id || genId(),
           role: "assistant",
@@ -245,7 +264,7 @@ export default function TerminalAgentDrawer({
           toolName: event.toolName,
           toolArgs: event.toolArgs ?? prevTool?.toolArgs,
           toolApprovalId: event.approvalId ?? prevTool?.toolApprovalId,
-          toolStatus: event.status,
+          toolStatus: nextStatus,
           toolMessage: event.message ?? prevTool?.toolMessage,
           toolResultPreview: event.resultPreview ?? prevTool?.toolResultPreview,
           timestamp: prevTool?.timestamp || Date.now(),
@@ -278,6 +297,30 @@ export default function TerminalAgentDrawer({
     [updateTabState],
   );
 
+  // Re-attach when switching tabs so in-flight streams replay missed chunks.
+  useEffect(() => {
+    const topicId = `terminal:${activeTabId}`;
+
+    void (async () => {
+      const result = await attachTopicStream(topicId);
+      if (result.requestId) {
+        requestIdToTabIdRef.current.set(result.requestId, activeTabId);
+      }
+      replayLegacyStreamEvents(result.legacyEvents, legacyStreamHandlersRef.current);
+      if (result.attached && result.status === "streaming" && result.requestId) {
+        updateTabState(activeTabId, (state) => ({
+          ...state,
+          streaming: true,
+          requestId: result.requestId!,
+        }));
+      }
+    })();
+
+    return () => {
+      detachTopicStream(topicId);
+    };
+  }, [activeTabId, updateTabState]);
+
   // Stream listeners.
   useEffect(() => {
     const offChunk = api.onChatStreamChunk?.(({ requestId, delta, reasoning }) => {
@@ -299,23 +342,22 @@ export default function TerminalAgentDrawer({
       });
     });
 
-    const offDone = api.onChatStreamDone?.(({ requestId, aborted }) => {
+    const offDone = api.onChatStreamDone?.(({ requestId, aborted, tools }) => {
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
-      requestIdToTabIdRef.current.delete(requestId);
+      setTimeout(() => {
+        requestIdToTabIdRef.current.delete(requestId);
+      }, 0);
       const isCompact = compactRequestIdRef.current === requestId;
       compactRequestIdRef.current = null;
       updateTabState(tabId, (state) => {
-        const next = { ...state, streaming: false, requestId: null };
+        const reconciled = reconcileToolMessages(
+          state.messages,
+          tools as ToolTerminalState[] | undefined,
+          Boolean(aborted),
+        );
+        const next = { ...state, streaming: false, requestId: null, messages: reconciled };
         if (aborted) {
-          next.messages = state.messages.map((m) =>
-            m.type === "tool" &&
-            (m.toolStatus === "streaming" ||
-              m.toolStatus === "running" ||
-              m.toolStatus === "awaiting_approval")
-              ? { ...m, toolStatus: "error" as const, toolMessage: "已取消" }
-              : m,
-          );
           return next;
         }
         if (isCompact) {
@@ -326,7 +368,7 @@ export default function TerminalAgentDrawer({
               : "";
           if (summary.trim()) {
             next.messages = [
-              ...state.messages,
+              ...reconciled,
               {
                 id: genId(),
                 role: "user" as const,
@@ -374,6 +416,94 @@ export default function TerminalAgentDrawer({
       mergeToolMessage(tabId, event);
     });
 
+    legacyStreamHandlersRef.current = {
+      onChatChunk: (data) => {
+        const tabId = requestIdToTabIdRef.current.get(data.requestId);
+        if (!tabId) return;
+        updateTabState(tabId, (state) => {
+          const idx = findLastAssistantReplyIndex(state.messages);
+          if (idx < 0) return state;
+          const next = state.messages.slice();
+          const target = next[idx];
+          next[idx] = {
+            ...target,
+            ...(typeof data.delta === "string" ? { content: target.content + data.delta } : {}),
+            ...(typeof data.reasoning === "string"
+              ? { reasoning: (target.reasoning ?? "") + data.reasoning }
+              : {}),
+          };
+          return { ...state, messages: next };
+        });
+      },
+      onChatDone: (data) => {
+        const tabId = requestIdToTabIdRef.current.get(data.requestId);
+        if (!tabId) return;
+        setTimeout(() => {
+          requestIdToTabIdRef.current.delete(data.requestId);
+        }, 0);
+        const isCompact = compactRequestIdRef.current === data.requestId;
+        compactRequestIdRef.current = null;
+        updateTabState(tabId, (state) => {
+          const reconciled = reconcileToolMessages(
+            state.messages,
+            data.tools,
+            Boolean(data.aborted),
+          );
+          const next = { ...state, streaming: false, requestId: null, messages: reconciled };
+          if (data.aborted) return next;
+          if (isCompact) {
+            const assistantIdx = findLastAssistantReplyIndex(state.messages);
+            const summary =
+              assistantIdx >= 0 && !state.messages[assistantIdx].error
+                ? state.messages[assistantIdx].content
+                : "";
+            if (summary.trim()) {
+              next.messages = [
+                ...reconciled,
+                {
+                  id: genId(),
+                  role: "user" as const,
+                  type: "clear" as const,
+                  content: "",
+                  timestamp: Date.now(),
+                } as ChatMsg,
+                {
+                  id: genId(),
+                  role: "user" as const,
+                  content: `[上下文摘要]\n\n${summary.trim()}`,
+                  timestamp: Date.now(),
+                } as ChatMsg,
+              ];
+            }
+          }
+          return next;
+        });
+      },
+      onChatError: (data) => {
+        const tabId = requestIdToTabIdRef.current.get(data.requestId);
+        if (!tabId) return;
+        requestIdToTabIdRef.current.delete(data.requestId);
+        updateTabState(tabId, (state) => {
+          const idx = findLastAssistantReplyIndex(state.messages);
+          if (idx < 0) {
+            return { ...state, streaming: false, requestId: null };
+          }
+          const next = state.messages.slice();
+          next[idx] = {
+            ...next[idx],
+            content: next[idx].content || `请求失败：${data.message}`,
+            error: true,
+          };
+          return { ...state, messages: next, streaming: false, requestId: null };
+        });
+      },
+      onAgentTool: (data) => {
+        const tabId = requestIdToTabIdRef.current.get(String(data.requestId || ""));
+        if (!tabId) return;
+        mergeToolMessage(tabId, data as unknown as AgentStreamToolEvent);
+      },
+    };
+
     return () => {
       offChunk?.();
       offDone?.();
@@ -385,8 +515,9 @@ export default function TerminalAgentDrawer({
   // Abort any inflight runs on unmount.
   useEffect(() => {
     return () => {
-      for (const state of Object.values(tabStatesRef.current)) {
+      for (const [tabId, state] of Object.entries(tabStatesRef.current)) {
         if (state.requestId) {
+          abortTopicStream(`terminal:${tabId}`, state.requestId);
           void api.invoke("agent:abort", { requestId: state.requestId });
         }
       }
@@ -403,6 +534,7 @@ export default function TerminalAgentDrawer({
     for (const orphanId of orphans) {
       const st = tabStatesRef.current[orphanId];
       if (st?.requestId) {
+        abortTopicStream(`terminal:${orphanId}`, st.requestId);
         void api.invoke("agent:abort", { requestId: st.requestId });
       }
     }
@@ -471,6 +603,8 @@ export default function TerminalAgentDrawer({
     );
 
     const requestId = genId();
+    const topicId = `terminal:${activeTabId}`;
+    topicIdRef.current = topicId;
     requestIdToTabIdRef.current.set(requestId, activeTabId);
     if (isCompactRequest) {
       compactRequestIdRef.current = requestId;
@@ -495,16 +629,12 @@ export default function TerminalAgentDrawer({
     }));
     scrollToBottom();
 
-    const chatUrl = getChatCompletionsUrl(
-      apiConfig.apiHost,
-      apiConfig.providerType,
-    );
 
     try {
-      await api.invoke("agent:run", {
+      const result = await openAgentStream({
+        topicId,
         requestId,
         messages: payloadMessages,
-        chatUrl,
         apiConfig: {
           apiHost: apiConfig.apiHost,
           apiKey: apiConfig.apiKey,
@@ -515,6 +645,23 @@ export default function TerminalAgentDrawer({
         temperature: currentSettings.temperature,
         terminalSessionId: sessionId,
       });
+      if (result.mode === "blocked") {
+        if (requestIdToTabIdRef.current.get(requestId) !== activeTabId) return;
+        requestIdToTabIdRef.current.delete(requestId);
+        updateTabState(activeTabId, (s) => {
+          const idx = findLastAssistantReplyIndex(s.messages);
+          if (idx < 0) {
+            return { ...s, streaming: false, requestId: null };
+          }
+          const next = s.messages.slice();
+          next[idx] = {
+            ...next[idx],
+            content: "该终端已有进行中的会话，请等待完成或先停止。",
+            error: true,
+          };
+          return { ...s, messages: next, streaming: false, requestId: null };
+        });
+      }
     } catch (e) {
       if (requestIdToTabIdRef.current.get(requestId) !== activeTabId) return;
       requestIdToTabIdRef.current.delete(requestId);
@@ -537,6 +684,7 @@ export default function TerminalAgentDrawer({
   const handleStop = useCallback(() => {
     const state = tabStatesRef.current[activeTabId];
     if (state?.requestId) {
+      abortTopicStream(`terminal:${activeTabId}`, state.requestId);
       void api.invoke("agent:abort", { requestId: state.requestId });
     }
   }, [activeTabId]);

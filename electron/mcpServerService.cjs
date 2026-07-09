@@ -26,10 +26,12 @@ const BUILTIN_MCP_PRESETS = [
     id: 'builtin-mcp-fetch',
     name: 'Fetch',
     type: 'stdio',
-    description: '抓取网页内容（mcp-server-fetch，官方 Python 实现，需 uvx）',
+    description:
+      '抓取网页为 Markdown（mcp-server-fetch / uvx）。默认单次最多 5000 字符；支持 max_length 与 start_index 分页。Agent 未指定 max_length 时 DesktopFairy 自动使用 50000。',
     reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
     command: 'uvx',
     args: ['mcp-server-fetch'],
+    env: { PYTHONIOENCODING: 'utf-8' },
     isActive: true,
     installSource: 'builtin',
   },

@@ -38,6 +38,8 @@ export default function AgentMcpEditor({
   const [envText, setEnvText] = useState(formatEnvMultiline(server.env));
   const [baseUrl, setBaseUrl] = useState(server.baseUrl || "");
   const [headersText, setHeadersText] = useState(formatEnvMultiline(server.headers));
+  const [timeoutSec, setTimeoutSec] = useState(String(server.timeout ?? ""));
+  const [longRunning, setLongRunning] = useState(Boolean(server.longRunning));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<McpTestResult | null>(null);
@@ -64,6 +66,13 @@ export default function AgentMcpEditor({
       type,
       isActive: server.isActive !== false,
     };
+    const parsedTimeout = Number(timeoutSec);
+    if (Number.isFinite(parsedTimeout) && parsedTimeout > 0) {
+      next.timeout = Math.round(parsedTimeout);
+    } else {
+      delete next.timeout;
+    }
+    next.longRunning = longRunning;
     if (type === "stdio") {
       next.command = command.trim();
       next.args = parseArgsMultiline(argsText);
@@ -235,6 +244,28 @@ export default function AgentMcpEditor({
           </div>
         </>
       )}
+
+      <div className="field">
+        <label>工具超时（秒）</label>
+        <input
+          type="number"
+          min={1}
+          value={timeoutSec}
+          onChange={(e) => setTimeoutSec(e.target.value)}
+          placeholder="默认 60"
+        />
+      </div>
+
+      <div className="field">
+        <label>
+          <input
+            type="checkbox"
+            checked={longRunning}
+            onChange={(e) => setLongRunning(e.target.checked)}
+          />{" "}
+          长时间运行模式（收到 MCP 进度时重置超时，最长 10 分钟）
+        </label>
+      </div>
 
       <div className="agent-mcp-preview">
         <span className="agent-mcp-preview-label">预览</span>

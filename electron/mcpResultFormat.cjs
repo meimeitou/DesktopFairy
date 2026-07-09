@@ -3,15 +3,29 @@
  * Adapted from cherry-studio's mcp result utilities.
  */
 
+/** Align with builtin WebFetch (agentBuiltinExecutors MAX_FETCH_BYTES) */
+const MAX_MCP_TOOL_RESULT_CHARS = 512 * 1024;
+
+function truncateMcpTextSummary(text) {
+  const str = String(text ?? '');
+  if (str.length <= MAX_MCP_TOOL_RESULT_CHARS) return str;
+  const omitted = str.length - MAX_MCP_TOOL_RESULT_CHARS;
+  return (
+    `${str.slice(0, MAX_MCP_TOOL_RESULT_CHARS)}\n\n` +
+    `…[MCP 结果已截断，省略 ${omitted} 字符。` +
+    `若使用 fetch 工具，可增大 max_length 或配合 start_index 分页读取剩余内容。]`
+  );
+}
+
 function mcpResultToTextSummary(result) {
   if (!result || typeof result !== 'object') {
-    return String(result ?? '');
+    return truncateMcpTextSummary(String(result ?? ''));
   }
 
   const content = result.content;
   if (!Array.isArray(content)) {
-    if (typeof result === 'string') return result;
-    return JSON.stringify(result, null, 2);
+    if (typeof result === 'string') return truncateMcpTextSummary(result);
+    return truncateMcpTextSummary(JSON.stringify(result, null, 2));
   }
 
   if (content.length === 0) {
@@ -51,7 +65,8 @@ function mcpResultToTextSummary(result) {
     }
   }
 
-  return parts.join('\n\n').trim() || JSON.stringify(result, null, 2);
+  const joined = parts.join('\n\n').trim() || JSON.stringify(result, null, 2);
+  return truncateMcpTextSummary(joined);
 }
 
 function hasMultimodalContent(result) {
@@ -62,6 +77,8 @@ function hasMultimodalContent(result) {
 }
 
 module.exports = {
+  MAX_MCP_TOOL_RESULT_CHARS,
+  truncateMcpTextSummary,
   mcpResultToTextSummary,
   hasMultimodalContent,
 };

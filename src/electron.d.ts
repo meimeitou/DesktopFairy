@@ -46,7 +46,18 @@ declare global {
         callback: (payload: { requestId: string; delta?: string; reasoning?: string }) => void
       ) => () => void;
       onChatStreamDone: (
-        callback: (payload: { requestId: string; aborted?: boolean }) => void
+        callback: (payload: {
+          requestId: string;
+          aborted?: boolean;
+          tools?: Array<{
+            toolCallId: string;
+            toolName?: string;
+            toolArgs?: string;
+            status: string;
+            resultPreview?: string;
+            message?: string;
+          }>;
+        }) => void
       ) => () => void;
       onChatStreamError: (
         callback: (payload: { requestId: string; message: string }) => void
@@ -76,6 +87,27 @@ declare global {
         callback: (payload: { serverId: string } & McpServerLogEntry) => void
       ) => () => void;
       onMcpToolsChanged: (callback: (payload: { serverId: string }) => void) => () => void;
+      onAiStreamChunk?: (
+        callback: (payload: {
+          topicId: string;
+          requestId: string;
+          chunk: Record<string, unknown>;
+        }) => void
+      ) => () => void;
+      onAiStreamDone?: (
+        callback: (payload: {
+          topicId: string;
+          requestId: string;
+          status: string;
+        }) => void
+      ) => () => void;
+      onAiStreamError?: (
+        callback: (payload: {
+          topicId: string;
+          requestId: string;
+          message: string;
+        }) => void
+      ) => () => void;
       onMcpToolProgress: (
         callback: (payload: { callId: string; progress: number }) => void
       ) => () => void;

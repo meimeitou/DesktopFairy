@@ -23,6 +23,7 @@ const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require(
 const { registerSshHandlers, killAllSshSessions } = require('./sshService.cjs');
 const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
 const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
+const { registerAiStreamHandlers, abortAllAiStreams } = require('./aiStreamService.cjs');
 const { registerToolApprovalHandlers } = require('./agentToolApproval.cjs');
 const { registerMcpServerHandlers } = require('./mcpServerService.cjs');
 const { registerMcpRuntimeHandlers, disposeAll: disposeAllMcpClients } = require('./mcpRuntimeService.cjs');
@@ -629,6 +630,14 @@ const setupIPC = () => {
       return null;
     },
   });
+  registerAiStreamHandlers(ipcMain, {
+    getWindows: getScreenshotWindows,
+    getParentWindow: () => {
+      if (chatWindow && !chatWindow.isDestroyed()) return chatWindow;
+      if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
+      return null;
+    },
+  });
 
   ipcMain.handle('selection:copy', async (_event, text) => {
     clipboard.writeText(String(text || ''));
@@ -1158,6 +1167,7 @@ app.on('before-quit', () => {
   killAllSessions();
   killAllSshSessions();
   abortAllAgentRuns();
+  abortAllAiStreams();
   disposeAllMcpClients();
   selectionService.stopAll();
   chatShortcutService.stopChatShortcut();

@@ -279,20 +279,25 @@ async function callTool({ serverId, name, args, callId }) {
   activeToolCalls.set(toolCallId, abortController);
 
   const timeout = server.timeout ? Math.max(1000, server.timeout * 1000) : DEFAULT_TOOL_TIMEOUT_MS;
+  const callOptions = {
+    onprogress: (progress) => {
+      const ratio = progress.total ? progress.progress / progress.total : 0;
+      broadcast('mcp:tool:progress', { callId: toolCallId, progress: ratio });
+    },
+    timeout,
+    signal: abortController.signal,
+  };
+  if (server.longRunning) {
+    callOptions.resetTimeoutOnProgress = true;
+    callOptions.maxTotalTimeout = 10 * 60 * 1000;
+  }
 
   try {
     emitLog(server, { timestamp: Date.now(), level: 'info', message: `Calling tool: ${name}`, source: 'client' });
     const result = await client.callTool(
       { name, arguments: args || {} },
       undefined,
-      {
-        onprogress: (progress) => {
-          const ratio = progress.total ? progress.progress / progress.total : 0;
-          broadcast('mcp:tool:progress', { callId: toolCallId, progress: ratio });
-        },
-        timeout,
-        signal: abortController.signal,
-      },
+      callOptions,
     );
     emitLog(server, { timestamp: Date.now(), level: 'info', message: `Tool completed: ${name}`, source: 'client' });
     return result;

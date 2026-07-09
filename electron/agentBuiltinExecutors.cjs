@@ -1,17 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawn } = require('child_process');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { glob } = require('fs/promises');
 const { app } = require('electron');
 const { runCommandInRenderer } = require('./terminalAgentService.cjs');
+const {
+  resolveBashTimeoutMs,
+  formatTimeoutLabel,
+} = require('./bashTimeout.cjs');
+const {
+  DEFAULT_READ_LIMIT,
+  MAX_FILES_LIMIT,
+  MAX_GREP_MATCHES,
+  MAX_LINE_LENGTH,
+  MAX_READ_BYTES,
+  expandPath,
+  resolveAgentPath,
+  isBinaryFile,
+  replaceWithFuzzyMatch,
+  runRipgrep,
+  formatReadOutput,
+  formatGrepMatches,
+} = require('./agentBuiltinFsUtils.cjs');
 
 const execFileAsync = promisify(execFile);
-
-const MAX_READ_BYTES = 512 * 1024;
 const MAX_FETCH_BYTES = 512 * 1024;
 const todosByRequest = new Map();
+const AGENT_FS_BASE = () => os.homedir();
 
 function ok(data) {
   return JSON.stringify({ ok: true, ...data });
@@ -21,70 +38,101 @@ function fail(message) {
   return JSON.stringify({ ok: false, error: message });
 }
 
-function expandPath(filePath) {
-  const raw = String(filePath || '').trim();
-  if (!raw) return '';
-  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
-  if (raw === '~') return os.homedir();
-  return raw;
-}
-
-function readTextSlice(content, offset, limit) {
-  const lines = content.split('\n');
-  const start = Math.max(0, (Number(offset) || 1) - 1);
-  const end = limit ? start + Number(limit) : lines.length;
-  return lines.slice(start, end).join('\n');
-}
-
 async function toolRead(args) {
-  const filePath = expandPath(args?.file_path);
-  if (!filePath || !fs.existsSync(filePath)) return fail('File not found');
-  const stat = fs.statSync(filePath);
-  if (stat.size > MAX_READ_BYTES) return fail(`File too large (max ${MAX_READ_BYTES} bytes)`);
-  const content = await fs.promises.readFile(filePath, 'utf8');
-  const text = readTextSlice(content, args?.offset, args?.limit);
-  return ok({ file_path: filePath, content: text });
+  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
+  if (!filePath) return fail('file_path required');
+  try {
+    const stat = await fs.promises.stat(filePath);
+    if (!stat.isFile()) return fail(`Path is not a file: ${args?.file_path}`);
+    if (stat.size > MAX_READ_BYTES) return fail(`File too large (max ${MAX_READ_BYTES} bytes)`);
+    if (await isBinaryFile(filePath)) return fail(`Cannot read binary file: ${args?.file_path}`);
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    const lines = content.split('\n');
+    const offset = Math.max(0, (Number(args?.offset) || 1) - 1);
+    const limit = Number(args?.limit) || DEFAULT_READ_LIMIT;
+    if (offset >= lines.length) {
+      return fail(`Invalid offset: ${offset + 1}. File has ${lines.length} lines.`);
+    }
+    const text = formatReadOutput(filePath, AGENT_FS_BASE(), lines, offset, limit);
+    return ok({ file_path: filePath, content: text });
+  } catch (e) {
+    if (e?.code === 'ENOENT') return fail(`File not found: ${args?.file_path}`);
+    return fail(String(e?.message || e));
+  }
 }
 
 async function toolWrite(args) {
-  const filePath = expandPath(args?.file_path);
+  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
   if (!filePath) return fail('file_path required');
   const content = String(args?.content ?? '');
-  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.promises.writeFile(filePath, content, 'utf8');
-  return ok({ file_path: filePath, bytes: Buffer.byteLength(content, 'utf8') });
+  try {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    let isOverwrite = false;
+    try {
+      await fs.promises.stat(filePath);
+      isOverwrite = true;
+    } catch {
+      /* new file */
+    }
+    await fs.promises.writeFile(filePath, content, 'utf8');
+    const relativePath = path.relative(AGENT_FS_BASE(), filePath);
+    const action = isOverwrite ? 'Updated' : 'Created';
+    const lineCount = content.split('\n').length;
+    return ok({
+      file_path: filePath,
+      message: `${action} file: ${relativePath}\nSize: ${content.length} bytes\nLines: ${lineCount}`,
+    });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
 }
 
 async function applyEdit(filePath, oldString, newString, replaceAll) {
-  const content = await fs.promises.readFile(filePath, 'utf8');
-  if (!content.includes(oldString)) {
-    throw new Error('old_string not found in file');
+  if (oldString === newString) {
+    throw new Error('old_string and new_string must be different');
   }
-  const next = replaceAll
-    ? content.split(oldString).join(newString)
-    : content.replace(oldString, newString);
+  if (oldString === '') {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(filePath, newString, 'utf8');
+    return { created: true, content: newString };
+  }
+  const content = await fs.promises.readFile(filePath, 'utf8');
+  const next = replaceWithFuzzyMatch(content, oldString, newString, replaceAll);
   await fs.promises.writeFile(filePath, next, 'utf8');
-  return next.length;
+  return { created: false, content: next, previous: content };
 }
 
 async function toolEdit(args) {
-  const filePath = expandPath(args?.file_path);
-  if (!filePath || !fs.existsSync(filePath)) return fail('File not found');
+  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
+  if (!filePath) return fail('file_path required');
+  const oldString = String(args?.old_string ?? '');
+  const newString = String(args?.new_string ?? '');
   try {
-    await applyEdit(
-      filePath,
-      String(args?.old_string ?? ''),
-      String(args?.new_string ?? ''),
-      !!args?.replace_all
-    );
-    return ok({ file_path: filePath });
+    if (oldString !== '' && !fs.existsSync(filePath)) {
+      return fail(`File not found: ${args?.file_path}`);
+    }
+    const result = await applyEdit(filePath, oldString, newString, !!args?.replace_all);
+    const relativePath = path.relative(AGENT_FS_BASE(), filePath);
+    if (result.created) {
+      return ok({
+        file_path: filePath,
+        message: `Created new file: ${relativePath}\nLines: ${newString.split('\n').length}`,
+      });
+    }
+    const oldLines = result.previous.split('\n').length;
+    const newLines = result.content.split('\n').length;
+    const lineDiff = newLines - oldLines;
+    let message = `Edited: ${relativePath}`;
+    if (lineDiff > 0) message += `\n+${lineDiff} lines`;
+    else if (lineDiff < 0) message += `\n${lineDiff} lines`;
+    return ok({ file_path: filePath, message });
   } catch (e) {
     return fail(String(e?.message || e));
   }
 }
 
 async function toolMultiEdit(args) {
-  const filePath = expandPath(args?.file_path);
+  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
   if (!filePath || !fs.existsSync(filePath)) return fail('File not found');
   const edits = Array.isArray(args?.edits) ? args.edits : [];
   try {
@@ -96,106 +144,259 @@ async function toolMultiEdit(args) {
         !!edit?.replace_all
       );
     }
-    return ok({ file_path: filePath, edits: edits.length });
+    const relativePath = path.relative(AGENT_FS_BASE(), filePath);
+    return ok({ file_path: filePath, message: `Edited: ${relativePath} (${edits.length} edits)` });
   } catch (e) {
     return fail(String(e?.message || e));
   }
 }
 
-async function toolBash(args, envVars = {}) {
+async function toolBash(args, envVars = {}, deps = {}) {
   const command = String(args?.command || '').trim();
   if (!command) return fail('Empty command');
   if (args?.run_in_background) {
     return fail('Background shell is not supported in DesktopFairy yet');
   }
-  const timeout = Math.min(Number(args?.timeout) || 60_000, 600_000);
+  const timeoutMs = resolveBashTimeoutMs(args?.timeout);
   const shell = process.env.SHELL || '/bin/zsh';
-  try {
-    const { stdout, stderr } = await execFileAsync(shell, ['-lc', command], {
+  const signal = deps?.signal;
+
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let killTimer = null;
+
+    const finish = (payload) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+      resolve(payload);
+    };
+
+    const child = spawn(shell, ['-lc', command], {
       env: { ...process.env, ...envVars },
-      timeout,
-      maxBuffer: 1024 * 1024,
       cwd: os.homedir(),
+      detached: process.platform !== 'win32',
     });
-    return ok({
-      stdout: String(stdout || ''),
-      stderr: String(stderr || ''),
+
+    const killProcessTree = (sig) => {
+      try {
+        if (process.platform !== 'win32' && child.pid) {
+          process.kill(-child.pid, sig);
+        } else {
+          child.kill(sig);
+        }
+      } catch {
+        try { child.kill(sig); } catch { /* ignore */ }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      killProcessTree('SIGTERM');
+      killTimer = setTimeout(() => killProcessTree('SIGKILL'), 5000);
+      const label = formatTimeoutLabel(timeoutMs);
+      finish(ok({
+        stdout,
+        stderr: stderr || `Command timed out after ${label}`,
+        exitCode: 124,
+        timedOut: true,
+        timeoutMs,
+      }));
+    }, timeoutMs);
+
+    const onAbort = () => {
+      killProcessTree('SIGTERM');
+      killTimer = setTimeout(() => killProcessTree('SIGKILL'), 2000);
+      finish(ok({ stdout, stderr: stderr || 'Aborted', exitCode: 130, aborted: true }));
+    };
+
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+    child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+    child.on('error', (e) => {
+      finish(ok({ stdout, stderr: String(e?.message || e), exitCode: 1 }));
     });
-  } catch (e) {
-    return ok({
-      stdout: String(e?.stdout || ''),
-      stderr: String(e?.stderr || e?.message || e),
-      exitCode: e?.code ?? 1,
+    child.on('close', (code) => {
+      finish(ok({ stdout: String(stdout || ''), stderr: String(stderr || ''), exitCode: code ?? 0 }));
     });
-  }
+  });
 }
 
 async function toolGlob(args) {
   const pattern = String(args?.pattern || '').trim();
   if (!pattern) return fail('pattern required');
-  const cwd = expandPath(args?.path) || os.homedir();
+  const searchPath = resolveAgentPath(args?.path || AGENT_FS_BASE(), AGENT_FS_BASE());
   try {
-    const matches = await glob(pattern, { cwd, nodir: true });
-    return ok({ matches: matches.slice(0, 500), cwd });
+    const stat = await fs.promises.stat(searchPath);
+    if (!stat.isDirectory()) return fail(`Path is not a directory: ${args?.path || searchPath}`);
   } catch (e) {
+    if (e?.code === 'ENOENT') return fail(`Directory not found: ${searchPath}`);
     return fail(String(e?.message || e));
   }
+
+  const rgArgs = [
+    '--files',
+    '--follow',
+    '--hidden',
+    `--glob=${pattern}`,
+    '--glob=!.git/*',
+    '--glob=!node_modules/*',
+    '--glob=!dist/*',
+    '--glob=!build/*',
+    '--glob=!__pycache__/*',
+    searchPath,
+  ];
+
+  const files = [];
+  let truncated = false;
+  const rgResult = await runRipgrep(rgArgs);
+  if (rgResult.ok && rgResult.stdout.length > 0) {
+    for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
+      if (files.length >= MAX_FILES_LIMIT) {
+        truncated = true;
+        break;
+      }
+      const filePath = line.trim();
+      if (!filePath) continue;
+      const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(searchPath, filePath);
+      try {
+        const stats = await fs.promises.stat(absolutePath);
+        files.push({ path: absolutePath, modified: stats.mtime });
+      } catch {
+        /* skip */
+      }
+    }
+  }
+
+  files.sort((a, b) => (b.modified?.getTime() || 0) - (a.modified?.getTime() || 0));
+  const output = [];
+  if (files.length === 0) {
+    output.push(`No files found matching pattern "${pattern}" in ${searchPath}`);
+  } else {
+    output.push(...files.map((f) => f.path));
+    if (truncated) {
+      output.push('');
+      output.push(`(Results truncated to ${MAX_FILES_LIMIT} files. Consider using a more specific pattern.)`);
+    }
+  }
+  return ok({ matches: files.map((f) => f.path), output: output.join('\n'), cwd: searchPath });
 }
 
 async function toolGrep(args) {
   const pattern = String(args?.pattern || '').trim();
   if (!pattern) return fail('pattern required');
-  const searchPath = expandPath(args?.path) || os.homedir();
+  const searchPath = resolveAgentPath(args?.path || AGENT_FS_BASE(), AGENT_FS_BASE());
   const outputMode = args?.output_mode || 'content';
-  const rgArgs = ['--no-messages'];
-  if (args?.['-i']) rgArgs.push('-i');
+
+  const rgArgs = [
+    '--no-heading',
+    '--line-number',
+    '--color',
+    'never',
+    '--glob',
+    '!.git/**',
+    '--glob',
+    '!node_modules/**',
+    '--glob',
+    '!dist/**',
+    '--glob',
+    '!build/**',
+    '--glob',
+    '!__pycache__/**',
+  ];
+  if (args?.['-i']) rgArgs.push('--ignore-case');
   if (args?.glob) rgArgs.push('--glob', String(args.glob));
   if (outputMode === 'files_with_matches') rgArgs.push('-l');
   if (outputMode === 'count') rgArgs.push('-c');
   if (args?.head_limit) rgArgs.push('--max-count', String(args.head_limit));
-  rgArgs.push(pattern, searchPath);
+  rgArgs.push('--', pattern, searchPath);
 
-  try {
-    const { stdout } = await execFileAsync('rg', rgArgs, {
-      maxBuffer: 1024 * 1024,
-      timeout: 30_000,
-    });
-    return ok({ output: String(stdout || '') });
-  } catch (e) {
-    if (e?.code === 1) return ok({ output: '' });
-    try {
-      const grepArgs = ['-r', '-n', pattern, searchPath];
-      const { stdout } = await execFileAsync('grep', grepArgs, {
-        maxBuffer: 1024 * 1024,
-        timeout: 30_000,
-      });
-      return ok({ output: String(stdout || '') });
-    } catch (grepErr) {
-      if (grepErr?.code === 1) return ok({ output: '' });
-      return fail(String(grepErr?.message || grepErr));
+  const matches = [];
+  let truncated = false;
+
+  const rgResult = await runRipgrep(rgArgs);
+  if (rgResult.ok && rgResult.exitCode !== null && rgResult.exitCode !== 2) {
+    for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
+      if (matches.length >= MAX_GREP_MATCHES) {
+        truncated = true;
+        break;
+      }
+      const firstColon = line.indexOf(':');
+      const secondColon = line.indexOf(':', firstColon + 1);
+      if (firstColon === -1 || secondColon === -1) continue;
+      const filePart = line.slice(0, firstColon);
+      const linePart = line.slice(firstColon + 1, secondColon);
+      const contentPart = line.slice(secondColon + 1);
+      const lineNum = Number.parseInt(linePart, 10);
+      if (!Number.isFinite(lineNum)) continue;
+      const absoluteFilePath = path.isAbsolute(filePart) ? filePart : path.resolve(searchPath, filePart);
+      const truncatedLine =
+        contentPart.length > MAX_LINE_LENGTH ? contentPart.substring(0, MAX_LINE_LENGTH) + '...' : contentPart;
+      matches.push({ file: absoluteFilePath, line: lineNum, content: truncatedLine.trim() });
     }
   }
+
+  if (outputMode === 'files_with_matches') {
+    const unique = [...new Set(matches.map((m) => m.file))];
+    return ok({ output: unique.join('\n') || '' });
+  }
+  if (outputMode === 'count') {
+    return ok({ output: String(matches.length) });
+  }
+
+  const output = formatGrepMatches(matches, truncated);
+  return ok({ output, matchCount: matches.length });
 }
 
 async function toolWebFetch(args) {
-  const url = String(args?.url || '').trim();
-  if (!url) return fail('url required');
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'DesktopFairy/0.2' },
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    const content = text.slice(0, MAX_FETCH_BYTES);
-    return ok({
-      url,
-      status: res.status,
-      content,
-      prompt: String(args?.prompt || ''),
-    });
-  } catch (e) {
-    return fail(String(e?.message || e));
+  const urlList = [];
+  if (Array.isArray(args?.urls)) {
+    for (const u of args.urls) {
+      const trimmed = String(u || '').trim();
+      if (trimmed) urlList.push(trimmed);
+    }
   }
+  const singleUrl = String(args?.url || '').trim();
+  if (singleUrl) urlList.push(singleUrl);
+  if (urlList.length === 0) return fail('url or urls required');
+  if (urlList.length > 20) return fail('Fetch at most 20 URLs per call');
+
+  const results = [];
+  for (let i = 0; i < urlList.length; i++) {
+    const url = urlList[i];
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'DesktopFairy/0.2' },
+        signal: AbortSignal.timeout(30_000),
+      });
+      const text = await res.text();
+      const content = text.slice(0, MAX_FETCH_BYTES);
+      results.push({
+        id: i + 1,
+        title: url,
+        url,
+        content,
+      });
+    } catch (e) {
+      results.push({
+        id: i + 1,
+        title: url,
+        url,
+        content: `Error: ${String(e?.message || e)}`,
+      });
+    }
+  }
+  return ok({
+    results,
+    prompt: String(args?.prompt || ''),
+  });
 }
 
 async function webSearchDuckDuckGo(query, config) {
@@ -372,7 +573,15 @@ async function toolWebSearch(args, config) {
         results = await webSearchDuckDuckGo(query, cfg);
         break;
     }
-    return ok({ query, results });
+    return ok({
+      query,
+      results: results.map((item, index) => ({
+        id: index + 1,
+        title: item.title,
+        url: item.url,
+        content: item.content,
+      })),
+    });
   } catch (e) {
     return fail(String(e?.message || e));
   }
@@ -444,7 +653,7 @@ function toolUpdateProfile(args, deps) {
 }
 
 async function toolNotebookRead(args) {
-  const notebookPath = expandPath(args?.notebook_path);
+  const notebookPath = resolveAgentPath(args?.notebook_path, AGENT_FS_BASE());
   if (!notebookPath || !fs.existsSync(notebookPath)) return fail('Notebook not found');
   try {
     const raw = await fs.promises.readFile(notebookPath, 'utf8');
@@ -462,7 +671,7 @@ async function toolNotebookRead(args) {
 }
 
 async function toolNotebookEdit(args) {
-  const notebookPath = expandPath(args?.notebook_path);
+  const notebookPath = resolveAgentPath(args?.notebook_path, AGENT_FS_BASE());
   if (!notebookPath || !fs.existsSync(notebookPath)) return fail('Notebook not found');
   const editMode = args?.edit_mode || 'replace';
   try {
@@ -773,7 +982,7 @@ function truncateTerminalOutput(text) {
 async function toolTerminal(args, deps = {}) {
   const command = String(args?.command || '').trim();
   if (!command) return fail('command required');
-  const timeout = Math.min(Number(args?.timeout) || 60_000, 600_000);
+  const timeoutMs = resolveBashTimeoutMs(args?.timeout);
   // SSH 会话的命令必须在远程执行 —— 即便会话已死也不降级到本机 shell，
   // 因为那是完全不同的机器，本地执行毫无意义且会产生误导性结果。
   const isSshSession = !!deps.terminalSessionId && deps.terminalSessionId.startsWith('ssh_');
@@ -784,7 +993,7 @@ async function toolTerminal(args, deps = {}) {
       const result = await runCommandInRenderer(deps.sender, {
         sessionId: deps.terminalSessionId,
         command,
-        timeout,
+        timeout: timeoutMs,
         signal: deps.signal,
       });
       return JSON.stringify({
@@ -805,7 +1014,7 @@ async function toolTerminal(args, deps = {}) {
           msg.includes('终端会话已被终止') ||
           msg.includes('终端进程已退出'))
       ) {
-        return runInStandaloneShell(command, args, deps, timeout);
+        return runInStandaloneShell(command, args, deps, timeoutMs);
       }
       return fail(msg);
     }
@@ -815,18 +1024,18 @@ async function toolTerminal(args, deps = {}) {
   if (isSshSession) {
     return fail('SSH 终端会话未绑定，无法在远程执行命令。请重新连接 SSH 后再试。');
   }
-  return runInStandaloneShell(command, args, deps, timeout);
+  return runInStandaloneShell(command, args, deps, timeoutMs);
 }
 
 // 降级路径：用独立 shell（非交互 zsh -lc）执行命令，输出不可见于终端 UI。
 // 复用 toolBash 的执行逻辑，但包装成 toolTerminal 的返回格式。
-async function runInStandaloneShell(command, args, deps, timeout) {
+async function runInStandaloneShell(command, args, deps, timeoutMs) {
   const shell = process.env.SHELL || '/bin/zsh';
   const env = { ...process.env, ...(deps.envVars || {}) };
   try {
     const { stdout, stderr } = await execFileAsync(shell, ['-lc', command], {
       env,
-      timeout,
+      timeout: timeoutMs,
       maxBuffer: 1024 * 1024,
       cwd: os.homedir(),
     });
@@ -869,7 +1078,7 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
     case 'MultiEdit':
       return toolMultiEdit(args);
     case 'Bash':
-      return toolBash(args, deps.envVars);
+      return toolBash(args, deps.envVars, deps);
     case 'Glob':
       return toolGlob(args);
     case 'Grep':

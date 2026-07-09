@@ -64,6 +64,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'ssh:import_configs',
       'agent:run',
       'agent:abort',
+      'ai:stream_open',
+      'ai:stream_attach',
+      'ai:stream_detach',
+      'ai:stream_abort',
+      'ai:tool:bypass_approval',
       'agent:tool:approve',
       'agent:tool:bypass_approval',
       'agent:skills:scan',
@@ -191,6 +196,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('agent:stream:tool', listener);
     return () => ipcRenderer.removeListener('agent:stream:tool', listener);
+  },
+
+  onAiStreamChunk: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ai:stream:chunk', listener);
+    return () => ipcRenderer.removeListener('ai:stream:chunk', listener);
+  },
+  onAiStreamDone: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ai:stream:done', listener);
+    return () => ipcRenderer.removeListener('ai:stream:done', listener);
+  },
+  onAiStreamError: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('ai:stream:error', listener);
+    return () => ipcRenderer.removeListener('ai:stream:error', listener);
   },
 
   // PTY events from main process

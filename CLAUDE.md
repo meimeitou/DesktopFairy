@@ -18,7 +18,7 @@ Dev mode uses `concurrently` to run Vite dev server and Electron. `wait-on` ensu
 - `make build`, `make build-dir`, `make lint`, `make clean`
 - `make build-adhoc` — unsigned ad-hoc DMG
 
-No test framework or CI is configured.
+No test framework or CI is configured. `npm test` runs vitest for unit tests in `src/`.
 
 ## Architecture
 
@@ -41,6 +41,8 @@ macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React 19 + T
 **Shared state layer** (`src/shared/`): No Zustand/Redux — state lives in React `useState` + `localStorage`. Cross-window sync via IPC events. Key modules: `settings.ts` (AppSettings, load/save, provider/model resolution), `providers.ts` (LlmProvider type, SYSTEM_PROVIDERS including Hermes Agent), `chatMessages.ts` (API message building, context trimming to 40 msgs / 24k chars), `live2dPaths.ts` (bundled vs local model path resolution).
 
 **Frontend → Main process IPC**: `window.electronAPI.invoke('command_name', args)` exposed via `contextBridge` in `electron/preload.cjs`. Main process handlers are in `electron/main.cjs` and various `electron/*Service.cjs` files, registered via `ipcMain.handle()`.
+
+**Agent mode** (when `settings.chatBackend === 'agent'`): Renderer calls `ai:stream_open` via `src/services/aiTransport/IpcChatTransport.ts`. Main process runs `ToolLoopAgent` (`electron/ai/AiService.cjs`) with topic-scoped `AiStreamManager` (`electron/aiStreamService.cjs`). Legacy `agent:run` still exists but new code should use `ai:stream_open`. Plain chat uses `chat:send` with no system prompt or tools.
 
 ## Key Conventions
 
@@ -80,4 +82,9 @@ macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React 19 + T
 | `src/shared/settings.ts` | AppSettings interface, load/save, provider merging, model resolution |
 | `src/shared/providers.ts` | LlmProvider type, SYSTEM_PROVIDERS (OpenAI, Ollama, Hermes) |
 | `src/shared/live2dReactions.ts` | Chat-to-Live2D expression mapping, `notifyLive2DIfReactive` |
-| `src/shared/chatMessages.ts` | `buildApiMessages`, `filterForApi`, `trimMessagesForApi` |
+| `electron/agentService.cjs` | `buildAgentSystemPrompt`, legacy `agent:run` |
+| `electron/aiStreamService.cjs` | `ai:stream_*` IPC, topic agent streams |
+| `electron/ai/AiService.cjs` | AI SDK `ToolLoopAgent` wrapper |
+| `electron/ai/chunkBridge.cjs` | UIMessageChunk → legacy stream IPC |
+| `src/services/aiTransport/IpcChatTransport.ts` | Renderer `openAgentStream` / attach / abort |
+| `src/shared/chatMessages.ts` | `buildApiMessages`, `filterForApi`, `trimMessagesForApi`, `reconcileToolMessages` |

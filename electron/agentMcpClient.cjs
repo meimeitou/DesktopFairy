@@ -1,6 +1,7 @@
 const { getServersByIds, getServerById } = require('./mcpServerService.cjs');
 const { getOrCreateClient, callTool } = require('./mcpRuntimeService.cjs');
 const { mcpResultToTextSummary } = require('./mcpResultFormat.cjs');
+const { normalizeMcpToolArgs, enhanceMcpToolDescription } = require('./mcpToolArgs.cjs');
 
 function parseMcpToolName(openAiName) {
   // Format: mcp__<serverId>__<toolName>
@@ -34,7 +35,7 @@ async function loadMcpToolDefinitions(serversOrIds) {
           type: 'function',
           function: {
             name: openAiName,
-            description: `[MCP:${server.name}] ${tool.description || tool.name}`,
+            description: enhanceMcpToolDescription(server, tool),
             parameters: inputSchema,
           },
         });
@@ -48,7 +49,7 @@ async function loadMcpToolDefinitions(serversOrIds) {
   return {
     definitions,
     connectedServerIds,
-    executeMcpTool: async (openAiName, args) => {
+    executeMcpTool: async (openAiName, args, callId) => {
       const parsed = parseMcpToolName(openAiName);
       if (!parsed) throw new Error(`Invalid MCP tool name: ${openAiName}`);
 
@@ -56,7 +57,8 @@ async function loadMcpToolDefinitions(serversOrIds) {
       const server = await getServerById(serverId);
       if (!server) throw new Error(`MCP server ${serverId} not found`);
 
-      const result = await callTool({ serverId, name: toolName, args });
+      const normalizedArgs = normalizeMcpToolArgs(server, toolName, args);
+      const result = await callTool({ serverId, name: toolName, args: normalizedArgs, callId });
       const summary = mcpResultToTextSummary(result);
       return JSON.stringify({ ok: true, content: summary });
     },

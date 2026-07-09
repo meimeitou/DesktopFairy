@@ -1,5 +1,6 @@
 import type { ChatAttachment } from "./chatAttachments";
 import { isImageExt } from "./chatAttachments";
+import type { ToolTerminalState } from "./ai/stream";
 import { formatToolEvidenceForApi } from "./toolEvidence";
 
 export type ChatRole = "user" | "assistant";
@@ -250,6 +251,76 @@ export function buildApiMessages(
   }
   result.push({ role: "user", content: parts.length > 0 ? parts : textWithFiles });
   return result;
+}
+
+/** Prevent chunkBridge "running" from downgrading an active approval prompt. */
+export function shouldApplyToolStatus(
+  current: ChatMsg["toolStatus"] | undefined,
+  incoming: ChatMsg["toolStatus"],
+): boolean {
+  if (!incoming) return false;
+  if (!current) return true;
+  if (current === incoming) return true;
+  // Terminal states — never regress.
+  if (current === "done" || current === "error" || current === "denied") {
+    return false;
+  }
+  // Approval prompt must not be masked by pre-execute streaming/running events.
+  if (
+    current === "awaiting_approval" &&
+    (incoming === "running" || incoming === "streaming")
+  ) {
+    return false;
+  }
+  const rank: Record<NonNullable<ChatMsg["toolStatus"]>, number> = {
+    streaming: 1,
+    running: 2,
+    awaiting_approval: 3,
+    denied: 4,
+    error: 5,
+    done: 6,
+  };
+  return (rank[incoming] ?? 0) >= (rank[current] ?? 0);
+}
+
+export function reconcileToolMessages(
+  messages: ChatMsg[],
+  tools: ToolTerminalState[] | undefined,
+  aborted: boolean,
+): ChatMsg[] {
+  const snapshot = new Map((tools || []).map((t) => [t.toolCallId, t]));
+  return messages.map((m) => {
+    if (m.type !== "tool") return m;
+    const snap = m.toolCallId ? snapshot.get(m.toolCallId) : undefined;
+    if (snap) {
+      if (snap.status === "done") {
+        return {
+          ...m,
+          toolStatus: "done" as const,
+          toolResultPreview: snap.resultPreview ?? m.toolResultPreview,
+        };
+      }
+      if (snap.status === "error") {
+        return {
+          ...m,
+          toolStatus: "error" as const,
+          toolMessage: snap.message || m.toolMessage,
+        };
+      }
+    }
+    if (
+      m.toolStatus === "streaming" ||
+      m.toolStatus === "running" ||
+      m.toolStatus === "awaiting_approval"
+    ) {
+      return {
+        ...m,
+        toolStatus: "error" as const,
+        toolMessage: aborted ? "已取消" : "会话已结束",
+      };
+    }
+    return m;
+  });
 }
 
 export function isSupportedFileName(name: string): boolean {

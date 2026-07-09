@@ -7,6 +7,7 @@ export function useToolApproval(
   chatMessagesRef: MutableRefObject<ChatMsg[]>,
   onSwitchToFullAuto: () => void,
   requestIdRef: MutableRefObject<string>,
+  topicIdRef?: MutableRefObject<string | null>,
 ) {
   const [submittingApprovalId, setSubmittingApprovalId] = useState<string | null>(
     null,
@@ -73,10 +74,14 @@ export function useToolApproval(
       if (requestId) {
         void api.invoke("agent:tool:bypass_approval", { requestId });
       }
+      const topicId = topicIdRef?.current;
+      if (topicId) {
+        void api.invoke("ai:tool:bypass_approval", { topicId });
+      }
 
       onSwitchToFullAuto();
     },
-    [chatMessagesRef, requestIdRef, onSwitchToFullAuto],
+    [chatMessagesRef, requestIdRef, topicIdRef, onSwitchToFullAuto],
   );
 
   return {
