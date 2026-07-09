@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'agent:avatar:clear_image',
       'terminal:agent:stop',
       'websearch:test',
+      'browser:open',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -258,5 +259,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('mcp:tool:progress', listener);
     return () => ipcRenderer.removeListener('mcp:tool:progress', listener);
+  },
+
+  onBrowserOpenTab: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('browser:open_tab', listener);
+    return () => ipcRenderer.removeListener('browser:open_tab', listener);
   },
 });

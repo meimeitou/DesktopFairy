@@ -1,7 +1,7 @@
 export const SSH_UNGROUPED_LABEL = "未分组";
 
+export type CursorStyle = "block" | "beam" | "underline";
 // 'auto' = 同时尝试所有可用方式（agent + privateKey + password），由 ssh2 按服务端允许的方法依次尝试。
-// 参考 tabby 的 Auto 认证模式。
 export type SshAuthMethod = "auto" | "password" | "privateKey" | "agent";
 
 export interface TerminalSettings {

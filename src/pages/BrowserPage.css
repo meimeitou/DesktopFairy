@@ -1,0 +1,223 @@
+html.browser-window-shell,
+html.browser-window-shell body {
+  background: #0f0f19;
+}
+
+.browser-page {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #0f0f19;
+  color: var(--bone-300, #d4d0c8);
+  overflow: hidden;
+}
+
+.browser-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  background: #0f0f19;
+  -webkit-app-region: drag;
+}
+
+.browser-page-mac .browser-topbar {
+  padding-left: 78px;
+}
+
+.browser-tabstrip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-app-region: no-drag;
+  scrollbar-width: none;
+}
+
+.browser-tabstrip::-webkit-scrollbar {
+  display: none;
+}
+
+.browser-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  max-width: 180px;
+  padding: 0 8px 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--bone-500, #9a958c);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.browser-tab:hover {
+  background: var(--hairline, rgba(255, 255, 255, 0.08));
+  color: var(--bone-200, #e8e4dc);
+}
+
+.browser-tab.active {
+  background: var(--persimmon-softer, rgba(232, 120, 80, 0.18));
+  color: var(--bone-100, #f5f2ec);
+}
+
+.browser-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.browser-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.browser-tab-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.browser-tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--bone-500, #9a958c);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.browser-tab-add:hover {
+  background: var(--hairline, rgba(255, 255, 255, 0.08));
+  color: var(--bone-200, #e8e4dc);
+}
+
+.browser-topbar-drag {
+  flex: 1;
+  min-width: 24px;
+  height: 100%;
+}
+
+.browser-urlbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  background: #0f0f19;
+  -webkit-app-region: drag;
+}
+
+.browser-page-mac .browser-urlbar {
+  padding-left: 78px;
+}
+
+.browser-url-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bone-200, #e8e4dc);
+  font-size: 12px;
+  font-family: Menlo, Monaco, "Courier New", monospace;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.browser-url-input::placeholder {
+  color: var(--bone-600, #6b665e);
+}
+
+.browser-url-input:focus {
+  border-color: rgba(232, 120, 80, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.browser-url-copy {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bone-500, #9a958c);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s, color 0.15s;
+}
+
+.browser-url-copy:hover:not(:disabled) {
+  background: var(--hairline, rgba(255, 255, 255, 0.08));
+  color: var(--bone-200, #e8e4dc);
+}
+
+.browser-url-copy:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.browser-content {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #fff;
+}
+
+.browser-webview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+  border: none;
+}
+
+.browser-webview.active {
+  display: flex;
+}
+
+.browser-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--bone-600, #6b665e);
+  font-size: 13px;
+  background: #0f0f19;
+}

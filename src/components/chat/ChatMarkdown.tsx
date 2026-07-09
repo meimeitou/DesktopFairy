@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type MouseEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkCjkFriendly from "remark-cjk-friendly";
@@ -31,8 +31,20 @@ const components: Components = {
     );
   },
   a({ href, children }) {
+    const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
+      if (!href) return;
+      try {
+        const u = new URL(href);
+        if (u.protocol === "http:" || u.protocol === "https:") {
+          e.preventDefault();
+          void window.electronAPI.invoke("browser:open", { url: href });
+        }
+      } catch {
+        // non-URL href: keep default behavior
+      }
+    };
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer">
+      <a href={href} rel="noopener noreferrer" onClick={handleClick}>
         {children}
       </a>
     );

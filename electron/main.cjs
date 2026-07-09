@@ -36,6 +36,10 @@ const {
   attachChatToAllSpaces,
   detachChatFromAllSpaces,
 } = require('./chatWindowPosition.cjs');
+const {
+  attachWindowOpenHandler,
+  registerBrowserHandlers,
+} = require('./browserService.cjs');
 
 registerLive2DSchemes();
 
@@ -639,6 +643,13 @@ const setupIPC = () => {
     },
   });
 
+  registerBrowserHandlers(ipcMain, {
+    loadURL,
+    getIsQuitting: () => isQuitting,
+    shouldOpenDevTools,
+    getDevToolsMode,
+  });
+
   ipcMain.handle('selection:copy', async (_event, text) => {
     clipboard.writeText(String(text || ''));
   });
@@ -1081,6 +1092,11 @@ app.whenReady().then(() => {
   // Tray must be registered before hiding Dock, or macOS may omit the status item.
   setupTray();
   hideMacDock();
+
+  app.on('web-contents-created', (_event, contents) => {
+    attachWindowOpenHandler(contents);
+  });
+
   if (process.platform === 'darwin') {
     setTimeout(() => {
       setupTray();

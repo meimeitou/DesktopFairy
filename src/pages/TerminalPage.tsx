@@ -8,6 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
 import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
+import TerminalContextMenu from "../components/terminal/TerminalContextMenu";
 import TerminalSearchBar from "../components/terminal/TerminalSearchBar";
 import TerminalSettingsTab from "../components/terminal/TerminalSettingsTab";
 import SshConnectionPicker from "../components/terminal/SshConnectionPicker";
@@ -48,6 +49,7 @@ function TerminalInstance({
   onTitleChange,
   onSearchAddonReady,
   onSearchAddonDispose,
+  onContextMenu,
 }: {
   isActive: boolean;
   tabId: string;
@@ -61,6 +63,7 @@ function TerminalInstance({
   onTitleChange?: (tabId: string, title: string) => void;
   onSearchAddonReady?: (tabId: string, xterm: TerminalType, searchAddon: SearchAddon) => void;
   onSearchAddonDispose?: (tabId: string) => void;
+  onContextMenu?: (tabId: string, x: number, y: number) => void;
 }) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -312,11 +315,17 @@ function TerminalInstance({
       api.invoke(inputChannel, { sessionId: sessionIdRef.current, data: quoted });
     };
     const handleDragOver = (e: DragEvent) => { e.preventDefault(); };
+    // 右键上下文菜单 — 拦截浏览器默认行为，把坐标交给父组件渲染菜单。
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      onContextMenu?.(tabId, e.clientX, e.clientY);
+    };
     el?.addEventListener("mouseup", handleMouseUp);
     el?.addEventListener("mousedown", handleMouseDown);
     el?.addEventListener("auxclick", handleAuxClick);
     el?.addEventListener("drop", handleDrop);
     el?.addEventListener("dragover", handleDragOver);
+    el?.addEventListener("contextmenu", handleContextMenu);
 
     const handleResize = () => {
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
@@ -350,6 +359,7 @@ function TerminalInstance({
       el?.removeEventListener("auxclick", handleAuxClick);
       el?.removeEventListener("drop", handleDrop);
       el?.removeEventListener("dragover", handleDragOver);
+      el?.removeEventListener("contextmenu", handleContextMenu);
       resizeObserver.disconnect();
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       const endedSessionId = sessionIdRef.current;
@@ -366,7 +376,7 @@ function TerminalInstance({
       fitAddonRef.current = null;
       sessionIdRef.current = "";
     };
-  }, [onSessionEnd, onSessionExit, onSessionReady, onSelectionChange, onTitleChange, tabId, onSearchAddonReady, onSearchAddonDispose]);
+  }, [onSessionEnd, onSessionExit, onSessionReady, onSelectionChange, onTitleChange, tabId, onSearchAddonReady, onSearchAddonDispose, onContextMenu]);
 
   // Apply terminal settings live without recreating the terminal.
   // xterm.js 6.0 supports runtime mutation of these options.
@@ -448,6 +458,11 @@ export default function TerminalPage({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectionTip, setSelectionTip] = useState<{
     text: string;
+    x: number;
+    y: number;
+    tabId: string;
+  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     tabId: string;
@@ -615,9 +630,41 @@ export default function TerminalPage({
         setSelectionTip((prev) => (prev?.tabId === tabId ? null : prev));
         return;
       }
+      setContextMenu(null);
       setSelectionTip({ text, x, y, tabId });
     },
     [],
+  );
+
+  // 右键菜单：与选区提示互斥。空依赖保证 identity 稳定，避免
+  // TerminalInstance 的终端创建 useEffect 因回调变化而重跑。
+  const handleContextMenu = useCallback(
+    (tabId: string, cx: number, cy: number) => {
+      setSelectionTip(null);
+      setContextMenu({ x: cx, y: cy, tabId });
+    },
+    [],
+  );
+
+  // 右键“搜索”：复用 Cmd+F 的路径，从 registry 取当前 tab 的 searchAddon。
+  const handleContextSearch = useCallback(() => {
+    if (!contextMenu) return;
+    const entry = searchRegistryRef.current.get(contextMenu.tabId);
+    if (entry) setSearchEntry(entry);
+  }, [contextMenu]);
+
+  // 右键“密码凭证”：将所选凭据的密码写入当前 tab 的会话输入
+  // （与 onData 同路 pty:input / ssh:input），不带回车，由用户自行提交。
+  // 菜单按钮点击会夺走焦点，填完后把焦点还给终端，便于用户继续输入。
+  const handleContextFillPassword = useCallback(
+    (cred: SshCredential) => {
+      if (!contextMenu) return;
+      pasteCommandToTab(contextMenu.tabId, cred.password || "");
+      requestAnimationFrame(() => {
+        searchRegistryRef.current.get(contextMenu.tabId)?.xterm.focus();
+      });
+    },
+    [contextMenu, pasteCommandToTab],
   );
 
   // OSC 0/2 title reports from the shell (e.g. after `cd` or running a command)
@@ -764,6 +811,7 @@ export default function TerminalPage({
                 onTitleChange={handleTitleChange}
                 onSearchAddonReady={handleSearchAddonReady}
                 onSearchAddonDispose={handleSearchAddonDispose}
+                onContextMenu={handleContextMenu}
               />
             )
           )}
@@ -791,6 +839,16 @@ export default function TerminalPage({
                 setSelectionTip(null);
               }}
               onClose={() => setSelectionTip(null)}
+            />
+          )}
+          {contextMenu && contextMenu.tabId === activeTabId && (
+            <TerminalContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              credentials={settings.sshCredentials}
+              onSearch={handleContextSearch}
+              onFillPassword={handleContextFillPassword}
+              onClose={() => setContextMenu(null)}
             />
           )}
         </div>

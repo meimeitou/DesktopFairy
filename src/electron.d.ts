@@ -123,6 +123,19 @@ declare global {
       onSshExit: (
         callback: (payload: { sessionId: string; exitCode?: number }) => void
       ) => () => void;
+      onBrowserOpenTab?: (
+        callback: (payload: { url: string; tabId?: string }) => void
+      ) => () => void;
     };
+  }
+
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> & {
+        src?: string;
+        partition?: string;
+        allowpopups?: string;
+      };
+    }
   }
 }

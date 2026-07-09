@@ -422,6 +422,108 @@
   margin: 2px 0;
 }
 
+/* 右键上下文菜单 — 与 .terminal-selection-tooltip 同一视觉语汇。 */
+.terminal-context-menu {
+  position: fixed;
+  min-width: 168px;
+  padding: 4px;
+  background: rgba(34, 30, 26, 0.94);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.12);
+  user-select: none;
+  z-index: 50;
+  animation: terminal-tooltip-in 0.12s ease-out;
+}
+
+.terminal-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bone-300);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  position: relative;
+}
+
+.terminal-context-menu-item:hover {
+  background: var(--persimmon-soft);
+  color: var(--bone-100);
+}
+
+.terminal-context-menu-item--has-sub {
+  /* 作为子菜单的定位锚点与 hover 触发器。 */
+}
+
+.terminal-context-menu-arrow {
+  margin-left: auto;
+  color: var(--bone-600);
+  font-size: 10px;
+}
+
+.terminal-context-menu-divider {
+  height: 1px;
+  background: var(--hairline-strong);
+  margin: 2px 4px;
+}
+
+.terminal-context-submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  display: none;
+  min-width: 168px;
+  max-width: 240px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  margin-left: 2px;
+  background: rgba(34, 30, 26, 0.96);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.terminal-context-submenu--left {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 2px;
+}
+
+.terminal-context-menu-item--has-sub:hover > .terminal-context-submenu {
+  display: block;
+}
+
+.terminal-context-menu-disabled {
+  color: var(--bone-600);
+  cursor: default;
+}
+
+.terminal-context-menu-disabled:hover {
+  background: transparent;
+  color: var(--bone-600);
+}
+
+.terminal-context-menu-cred-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Visual bell — JS toggles this class on .terminal-instance via onBell handler.
    Uses translateY (vertical bounce) rather than translateX to avoid clashing
    with horizontal text scanning. animation-fill-mode defaults to none, so the
