@@ -16,6 +16,14 @@ interface Live2DModelOption {
   missing?: boolean;
 }
 
+interface ValidateModelResult {
+  canceled?: boolean;
+  error?: string;
+  warning?: string;
+  name?: string;
+  path?: string;
+}
+
 interface ModelCapabilities {
   expressions: string[];
   motionGroups: string[];
@@ -206,39 +214,57 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     return [...customModels, entry];
   };
 
+  // Add a (already-validated) model path to settings + trigger a switch.
+  // Bundled "/models/..." paths are not stored in customModels (they're
+  // scanned from disk); only local paths are registered there.
+  const registerModelPath = async (name: string, modelPath: string) => {
+    const patch: Partial<AppSettings> = { modelPath };
+    if (isLocalModelPath(modelPath)) {
+      patch.customModels = appendCustomModel(settings.customModels, {
+        name: name || modelDisplayName(modelPath),
+        path: modelPath,
+      });
+    }
+    const next = { ...settings, ...patch };
+    onChange(patch);
+    try {
+      await api.invoke("settings:sync", next);
+    } catch {
+      // ignore — useEffect saveSettings will retry
+    }
+    api.invoke("live2d:switch_model", modelPath).catch(() => {});
+  };
+
+  // Apply a validate/select result: error → surface it; otherwise register.
+  // (findModel3Json already auto-picks the first match for multi-model dirs.)
+  const handleValidateResult = async (result: ValidateModelResult) => {
+    if (result.error) {
+      setPickError(result.error);
+      return;
+    }
+    setPickWarning(result.warning ?? null);
+    if (!result.path) {
+      setPickError("未选择有效的模型");
+      return;
+    }
+    await registerModelPath(
+      result.name || modelDisplayName(result.path),
+      result.path,
+    );
+  };
+
   const browseLocalModel = async () => {
     setPickError(null);
     setPickWarning(null);
     try {
-      const result = (await api.invoke("live2d:select_model_dir")) as {
-        canceled?: boolean;
-        error?: string;
-        warning?: string;
-        name?: string;
-        path?: string;
-      };
+      const result = (await api.invoke(
+        "live2d:select_model_dir",
+      )) as ValidateModelResult;
       if (result.canceled) return;
-      if (result.error) {
-        setPickError(result.error);
-        return;
-      }
-      if (!result.path) {
-        setPickError("未选择有效的模型目录");
-        return;
-      }
-      if (result.warning) setPickWarning(result.warning);
-      const entry: CustomLive2DModel = {
-        name: result.name || modelDisplayName(result.path),
-        path: result.path,
-      };
-      onChange({
-        modelPath: result.path,
-        customModels: appendCustomModel(settings.customModels, entry),
-      });
-      api.invoke("live2d:switch_model", result.path).catch(() => {});
+      await handleValidateResult(result);
       refreshModels();
     } catch {
-      setPickError("打开目录选择器失败");
+      setPickError("打开文件选择器失败");
     }
   };
 
@@ -317,7 +343,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
             className="settings-action-btn"
             onClick={() => void browseLocalModel()}
           >
-            浏览本地目录…
+            浏览本地模型…
           </button>
         </div>
         {pickError && <p className="about-text error-text">{pickError}</p>}
@@ -366,7 +392,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
         ) : (
           <p className="about-text secondary">
             未找到模型。内置模型请放入
-            public/models/，或使用「浏览本地目录」选择已下载的模型文件夹。
+            public/models/，或使用「浏览本地模型」选择 .model3.json 文件或包含它的目录。
           </p>
         )}
       </div>
@@ -380,17 +406,15 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
           onBlur={() => {
             const trimmed = settings.modelPath.trim();
             if (!trimmed) return;
-            if (isLocalModelPath(trimmed)) {
-              const entry: CustomLive2DModel = {
-                name: modelDisplayName(trimmed),
-                path: trimmed,
-              };
-              onChange({
-                modelPath: trimmed,
-                customModels: appendCustomModel(settings.customModels, entry),
-              });
-            }
-            api.invoke("live2d:switch_model", trimmed).catch(() => {});
+            setPickError(null);
+            setPickWarning(null);
+            api
+              .invoke("live2d:validate_model_path", trimmed)
+              .then(async (res) => {
+                await handleValidateResult(res as ValidateModelResult);
+                refreshModels();
+              })
+              .catch(() => setPickError("路径校验失败"));
           }}
           placeholder="/models/MyModel/MyModel.model3.json 或本机绝对路径"
         />

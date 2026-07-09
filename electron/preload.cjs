@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'live2d:bubble',
       'live2d:inspect_model',
       'live2d:select_model_dir',
+      'live2d:validate_model_path',
       'selection:check_accessibility',
       'selection:prompt_accessibility',
       'selection:retry_hook',

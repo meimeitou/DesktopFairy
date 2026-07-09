@@ -229,7 +229,6 @@ export default function SettingsPage({
 
   useEffect(() => {
     saveSettings(settings);
-    api.invoke("settings:sync", settings).catch(() => {});
   }, [settings]);
 
   // Sync when another source (e.g. ChatPage mode switch, UpdateProfile tool) writes to disk

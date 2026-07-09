@@ -33,17 +33,21 @@ function findModel3Json(dir) {
     return { error: '目录中未找到 .model3.json 文件' };
   }
 
-  const preferred = `${path.basename(dir)}.model3.json`;
-  let chosen = matches.includes(preferred) ? preferred : null;
+  const dirName = path.basename(dir);
+  // Prefer "<dirName>.model3.json" (the common Live2D naming convention);
+  // otherwise fall back to the first match alphabetically. Always return a
+  // concrete path so the caller can load immediately — surfacing a chooser
+  // for multiple matches caused the model to flicker/jump during loading.
+  const preferred = `${dirName}.model3.json`;
+  let chosen;
   let warning = null;
-
-  if (!chosen) {
-    if (matches.length === 1) {
-      chosen = matches[0];
-    } else {
-      chosen = [...matches].sort()[0];
-      warning = `目录含多个 model3.json，已选用 ${chosen}`;
-    }
+  if (matches.includes(preferred)) {
+    chosen = preferred;
+  } else if (matches.length === 1) {
+    chosen = matches[0];
+  } else {
+    chosen = [...matches].sort()[0];
+    warning = `目录含多个 model3.json，已选用 ${chosen}`;
   }
 
   const fullPath = path.join(dir, chosen);
@@ -52,7 +56,7 @@ function findModel3Json(dir) {
   }
 
   return {
-    name: path.basename(dir),
+    name: dirName,
     path: fullPath,
     source: 'local',
     warning,
@@ -172,7 +176,21 @@ function registerLive2DProtocol() {
   protocol.registerFileProtocol('dfmodel', (request, callback) => {
     try {
       const filePath = dfmodelPathFromUrl(request.url);
-      if (!filePath || !fs.existsSync(filePath)) {
+      if (!filePath) {
+        callback({ error: -6 });
+        return;
+      }
+      // Resolve and verify it's a real file. existsSync is true for
+      // directories, so a user-pasted directory path would otherwise be
+      // served as a "file" and fail later with a confusing parse error.
+      let stat;
+      try {
+        stat = fs.statSync(filePath);
+      } catch {
+        callback({ error: -6 });
+        return;
+      }
+      if (!stat.isFile()) {
         callback({ error: -6 });
         return;
       }
@@ -228,22 +246,78 @@ function registerLive2DHandlers({
     return inspectModelFile(fullPath);
   });
 
+  // Validate a model path typed by the user (or pasted). Accepts:
+  //  - a bundled "/models/..." path
+  //  - an absolute path to a .model3.json file
+  //  - a directory containing one (or more) .model3.json files
+  // Returns { path } on success, { error } / { warning, matches } otherwise.
+  ipcMain.handle('live2d:validate_model_path', async (_event, rawPath) => {
+    const p = String(rawPath || '').trim();
+    if (!p) return { error: '路径为空' };
+
+    if (isBundledModelPath(p)) {
+      const full = resolveModelFsPath(p, publicRoot);
+      if (!full || !fs.existsSync(full)) return { error: '内置模型不存在' };
+      return { path: p };
+    }
+
+    let stat;
+    try {
+      stat = fs.statSync(p);
+    } catch {
+      return { error: '路径不存在，请检查后重试' };
+    }
+
+    if (stat.isDirectory()) {
+      return findModel3Json(p);
+    }
+
+    if (stat.isFile() && p.toLowerCase().endsWith('.model3.json')) {
+      return { path: p };
+    }
+
+    return { error: '请选择 .model3.json 文件或包含它的目录' };
+  });
+
   ipcMain.handle('live2d:select_model_dir', async (event) => {
     const win = event.sender
       ? BrowserWindow.fromWebContents(event.sender)
       : null;
     const result = await dialog.showOpenDialog(win || undefined, {
-      properties: ['openDirectory'],
-      title: '选择 Live2D 模型目录',
+      // Allow picking either a directory (resolved via findModel3Json) or a
+      // single .model3.json file directly. Both openFile and openDirectory
+      // are supported together on macOS.
+      properties: ['openFile', 'openDirectory'],
+      title: '选择 Live2D 模型（目录或 .model3.json 文件）',
     });
     if (result.canceled || result.filePaths.length === 0) {
       return { canceled: true };
     }
-    const picked = findModel3Json(result.filePaths[0]);
-    if (picked.error) {
-      return { error: picked.error };
+    const picked = result.filePaths[0];
+
+    let stat;
+    try {
+      stat = fs.statSync(picked);
+    } catch {
+      return { error: '无法读取所选路径' };
     }
-    return picked;
+
+    if (stat.isDirectory()) {
+      const found = findModel3Json(picked);
+      if (found.error) return { error: found.error };
+      return found;
+    }
+
+    if (stat.isFile() && picked.toLowerCase().endsWith('.model3.json')) {
+      return {
+        name: path.basename(picked).slice(0, -'.model3.json'.length),
+        path: picked,
+        source: 'local',
+        warning: null,
+      };
+    }
+
+    return { error: '请选择 .model3.json 文件或包含它的目录' };
   });
 }
 

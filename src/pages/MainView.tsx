@@ -85,22 +85,18 @@ export default function MainView() {
   // Fallback when user focuses the model window directly
   useEffect(() => {
     const onFocus = () => {
-      const s = loadSettings();
-      applySettings(s);
-      api.invoke("settings:sync", s).catch(() => {});
+      applySettings(loadSettings());
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [applySettings]);
 
-  // Switch model from tray menu
+  // Live2D model path is persisted by the settings UI via settings:sync.
+  // Re-syncing loadSettings() here races with in-flight saves and can
+  // broadcast stale customModels back to the settings window (UI flicker).
   useEffect(() => {
     const unsubscribe = api.onSwitchModel((newPath: string) => {
       setModelPath(newPath);
-      const s = loadSettings();
-      const updated = { ...s, modelPath: newPath };
-      localStorage.setItem("da_settings", JSON.stringify(updated));
-      api.invoke("settings:sync", updated).catch(() => {});
     });
     return unsubscribe;
   }, []);

@@ -572,7 +572,7 @@ const setupIPC = () => {
     });
   });
 
-  ipcMain.handle('settings:sync', async (_event, settings) => {
+  ipcMain.handle('settings:sync', async (event, settings) => {
     try {
       fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2));
     } catch (e) {
@@ -580,8 +580,12 @@ const setupIPC = () => {
     }
     applySelectionSettings(settings);
     applyChatShortcutSettings(settings);
+    const senderId = event.sender?.id;
     for (const win of [mainWindow, chatWindow]) {
       if (win && !win.isDestroyed()) {
+        // Avoid echoing back to the window that initiated the sync — it
+        // already has this state and merging it causes redundant renders.
+        if (senderId != null && win.webContents.id === senderId) continue;
         win.webContents.send('settings:updated', settings);
       }
     }

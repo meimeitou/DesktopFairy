@@ -64,6 +64,7 @@ export class Live2DModel extends CubismUserModel {
   private _frameBuffer: WebGLFramebuffer | null = null;
 
   private _loaded = false;
+  private _released = false;
 
   constructor() {
     super();
@@ -71,6 +72,11 @@ export class Live2DModel extends CubismUserModel {
 
   get isLoaded(): boolean {
     return this._loaded;
+  }
+
+  /** True once release() has been called — load() should bail out ASAP. */
+  private _aborted(signal?: AbortSignal): boolean {
+    return this._released || !!signal?.aborted;
   }
 
   // ── public API (delegated by Live2DController) ────────────────────────────
@@ -196,6 +202,10 @@ export class Live2DModel extends CubismUserModel {
   /**
    * Load all model assets from `modelDir` + `modelFile` (the .model3.json).
    * Must be called once after construction and before the first update/draw.
+   *
+   * Pass an `AbortSignal` so a concurrent release()/model-switch can cancel
+   * in-flight fetches; after every await we re-check `_released`/`signal.aborted`
+   * and bail out before touching the (possibly disposed) Cubism framework.
    */
   async load(
     gl: WebGL2RenderingContext,
@@ -203,18 +213,21 @@ export class Live2DModel extends CubismUserModel {
     frameBuffer: WebGLFramebuffer,
     modelDir: string,
     modelFile: string,
+    signal?: AbortSignal,
   ): Promise<void> {
     this._gl = gl;
     this._frameBuffer = frameBuffer;
 
     // ── 1. model3.json ───────────────────────────────────────────────────────
-    const settingBuffer = await fetch(modelDir + modelFile).then(r => r.arrayBuffer());
+    const settingBuffer = await fetch(modelDir + modelFile, { signal }).then(r => r.arrayBuffer());
+    if (this._aborted(signal)) return;
     this._modelSetting = new CubismModelSettingJson(settingBuffer, settingBuffer.byteLength);
 
     // ── 2. MOC3 ─────────────────────────────────────────────────────────────
     const mocFile = this._modelSetting.getModelFileName();
     if (!mocFile) throw new Error('[Live2DModel] model3.json has no model file');
-    const mocBuffer = await this._fetchFile(modelDir + mocFile);
+    const mocBuffer = await this._fetchFile(modelDir + mocFile, signal);
+    if (this._aborted(signal)) return;
     this.loadModel(mocBuffer, MOCConsistencyValidationEnable);
 
     // ── 3. Expressions (parallel) ────────────────────────────────────────────
@@ -223,12 +236,14 @@ export class Live2DModel extends CubismUserModel {
       Array.from({ length: exprCount }, (_, i) => {
         const name = this._modelSetting!.getExpressionName(i);
         const file = this._modelSetting!.getExpressionFileName(i);
-        return this._fetchFile(modelDir + file).then(buf => {
+        return this._fetchFile(modelDir + file, signal).then(buf => {
+          if (this._aborted(signal)) return;
           const motion = this.loadExpression(buf, buf.byteLength, name);
           this._expressions.set(name, motion);
         });
       }),
     );
+    if (this._aborted(signal)) return;
     if (exprCount > 0 && this._expressionManager) {
       this._updateScheduler.addUpdatableList(
         new CubismExpressionUpdater(this._expressionManager),
@@ -238,7 +253,8 @@ export class Live2DModel extends CubismUserModel {
     // ── 4. Physics ───────────────────────────────────────────────────────────
     const physicsFile = this._modelSetting.getPhysicsFileName();
     if (physicsFile) {
-      const buf = await this._fetchFile(modelDir + physicsFile);
+      const buf = await this._fetchFile(modelDir + physicsFile, signal);
+      if (this._aborted(signal)) return;
       this.loadPhysics(buf, buf.byteLength);
       if (this._physics) {
         this._updateScheduler.addUpdatableList(new CubismPhysicsUpdater(this._physics));
@@ -248,7 +264,8 @@ export class Live2DModel extends CubismUserModel {
     // ── 5. Pose ──────────────────────────────────────────────────────────────
     const poseFile = this._modelSetting.getPoseFileName();
     if (poseFile) {
-      const buf = await this._fetchFile(modelDir + poseFile);
+      const buf = await this._fetchFile(modelDir + poseFile, signal);
+      if (this._aborted(signal)) return;
       this.loadPose(buf, buf.byteLength);
       if (this._pose) {
         this._updateScheduler.addUpdatableList(new CubismPoseUpdater(this._pose));
@@ -293,7 +310,8 @@ export class Live2DModel extends CubismUserModel {
     // ── 8. UserData ──────────────────────────────────────────────────────────
     const userDataFile = this._modelSetting.getUserDataFile();
     if (userDataFile) {
-      const buf = await this._fetchFile(modelDir + userDataFile);
+      const buf = await this._fetchFile(modelDir + userDataFile, signal);
+      if (this._aborted(signal)) return;
       this.loadUserData(buf, buf.byteLength);
     }
 
@@ -360,8 +378,9 @@ export class Live2DModel extends CubismUserModel {
         const motionFile = this._modelSetting.getMotionFileName(group, i);
         const name = `${group}_${i}`;
         allMotionLoads.push(
-          this._fetchFile(modelDir + motionFile)
+          this._fetchFile(modelDir + motionFile, signal)
             .then(buf => {
+              if (this._aborted(signal)) return;
               const motion = this.loadMotion(
                 buf,
                 buf.byteLength,
@@ -378,11 +397,17 @@ export class Live2DModel extends CubismUserModel {
                 this._motions.set(name, motion);
               }
             })
-            .catch(err => CubismLogError(`Failed to load motion ${motionFile}: ${err}`)),
+            .catch(err => {
+              // Don't log aborts as errors — they're expected during model switch.
+              if (!this._aborted(signal)) {
+                CubismLogError(`Failed to load motion ${motionFile}: ${err}`);
+              }
+            }),
         );
       }
     }
     await Promise.all(allMotionLoads);
+    if (this._aborted(signal)) return;
     this._motionManager.stopAllMotions();
 
     // ── 14. Renderer + shaders ───────────────────────────────────────────────
@@ -394,7 +419,7 @@ export class Live2DModel extends CubismUserModel {
 
     // ── 15. Textures (parallel) ──────────────────────────────────────────────
     const textureCount = this._modelSetting.getTextureCount();
-    await new Promise<void>((resolve) => {
+    const textureDone = new Promise<void>((resolve) => {
       let loaded = 0;
       if (textureCount === 0) { resolve(); return; }
 
@@ -406,6 +431,9 @@ export class Live2DModel extends CubismUserModel {
           modelDir + texFile,
           true, // usePremultipliedAlpha
           info => {
+            // Controller released mid-load — don't touch the (possibly
+            // destroyed) renderer; just unblock load() so it can bail out.
+            if (this._aborted(signal)) { resolve(); return; }
             renderer.bindTexture(t, info.id);
             renderer.setIsPremultipliedAlpha(true);
             loaded++;
@@ -414,11 +442,18 @@ export class Live2DModel extends CubismUserModel {
         );
       }
     });
+    // TextureManager uses <img> loads which an AbortSignal can't cancel, so
+    // race against abort to guarantee load() resolves even when release()
+    // happens during texture decoding (callbacks no-op once released).
+    await Promise.race([textureDone, abortPromise(signal)]);
+    if (this._aborted(signal)) return;
 
     this._loaded = true;
   }
 
   override release(): void {
+    if (this._released) return;
+    this._released = true;
     if (this._look) {
       CubismLook.delete(this._look);
       this._look = null;
@@ -429,11 +464,20 @@ export class Live2DModel extends CubismUserModel {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
-  private async _fetchFile(url: string): Promise<ArrayBuffer> {
-    const response = await fetch(url);
+  private async _fetchFile(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+    const response = await fetch(url, { signal });
     if (!response.ok) {
       throw new Error(`[Live2DModel] HTTP ${response.status} for ${url}`);
     }
     return response.arrayBuffer();
   }
+}
+
+/** A promise that resolves when `signal` aborts (never resolves if undefined). */
+function abortPromise(signal?: AbortSignal): Promise<void> {
+  if (!signal) return new Promise<void>(() => {});
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    signal.addEventListener('abort', () => resolve(), { once: true });
+  });
 }

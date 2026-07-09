@@ -44,6 +44,7 @@ export default function Live2DCanvas({
   });
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
+  const [errorDetail, setErrorDetail] = useState("");
   const [bubbleState, setBubbleState] = useState<{
     text: string;
     key: number;
@@ -152,29 +153,50 @@ export default function Live2DCanvas({
 
     setStatus("loading");
     setErrorMsg("");
+    setErrorDetail("");
 
     let cancelled = false;
     let trackingTimer: ReturnType<typeof setInterval> | null = null;
+    // Holds the controller created by *this* effect run, so the cleanup
+    // function can release exactly it (and avoid clobbering a controller
+    // installed by a newer run when this async load resolves late).
+    let controller: Live2DController | null = null;
 
     (async () => {
       try {
-        const controller = new Live2DController(canvas);
+        controller = new Live2DController(canvas);
         controllerRef.current = controller;
         await controller.initialize(modelPath);
         const layout = layoutRef.current;
         controller.setScale(layout.modelScale);
         controller.setOffset(layout.modelOffsetX, layout.modelOffsetY);
         if (cancelled) {
+          // release() is idempotent, so re-releasing here is safe even if
+          // the cleanup function already released this controller. But we
+          // must NOT null controllerRef.current unless it still points at
+          // *this* controller — by the time this async block runs, a newer
+          // load may have already installed a different controller.
           controller.release();
-          controllerRef.current = null;
+          if (controllerRef.current === controller) controllerRef.current = null;
+          controller = null;
           return;
         }
         setStatus("ready");
       } catch (err) {
         if (cancelled) return;
         console.error("[Live2DCanvas]", err);
+        const detail = err instanceof Error ? err.message : String(err);
+        // Missing file / failed fetch → give the user an actionable hint
+        // instead of a raw "HTTP 0 for dfmodel://…" message.
+        const isMissing =
+          /HTTP \d|Failed to fetch|NetworkError|could not load/i.test(detail);
+        setErrorMsg(
+          isMissing
+            ? "模型文件不存在或无法读取，请打开聊天窗口 → 设置重新选择模型"
+            : "模型加载失败",
+        );
+        setErrorDetail(detail);
         setStatus("error");
-        setErrorMsg(err instanceof Error ? err.message : String(err));
       }
     })();
 
@@ -212,8 +234,10 @@ export default function Live2DCanvas({
     return () => {
       cancelled = true;
       stopTracking();
-      controllerRef.current?.release();
-      controllerRef.current = null;
+      controller?.release();
+      // Don't clobber a controller installed by a newer effect run.
+      if (controllerRef.current === controller) controllerRef.current = null;
+      controller = null;
     };
   }, [modelPath]);
 
@@ -248,8 +272,8 @@ export default function Live2DCanvas({
       )}
       {status === "error" && (
         <div className="live2d-status live2d-error">
-          <p>模型加载失败</p>
-          <small>{errorMsg}</small>
+          <p>{errorMsg}</p>
+          {errorDetail && <small>{errorDetail}</small>}
         </div>
       )}
     </div>

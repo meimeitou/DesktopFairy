@@ -30,6 +30,8 @@ export class Live2DController {
   private _offsetX = 0;
   private _offsetY = 0;
   private _expressionIndex = -1;
+  private _released = false;
+  private _abortController: AbortController | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this._canvas = canvas;
@@ -44,6 +46,12 @@ export class Live2DController {
    * rendering has begun.  Throws on any load failure.
    */
   async initialize(modelUrl: string): Promise<void> {
+    // Create the abort controller first so release() can always cancel
+    // in-flight loads, even if it's called during the synchronous setup
+    // below.
+    this._abortController = new AbortController();
+    if (this._released) return;
+
     const loadUrl = toLoadableModelUrl(modelUrl);
     // ── WebGL context ──────────────────────────────────────────────────────
     const gl = this._canvas.getContext('webgl2', {
@@ -79,7 +87,19 @@ export class Live2DController {
     const modelFile = loadUrl.slice(lastSlash + 1);
 
     this._model = new Live2DModel();
-    await this._model.load(gl, this._textureManager, this._frameBuffer, modelDir, modelFile);
+    await this._model.load(
+      gl,
+      this._textureManager,
+      this._frameBuffer,
+      modelDir,
+      modelFile,
+      this._abortController.signal,
+    );
+
+    // Controller was released (model switched / component unmounted) while
+    // load() was still awaiting — the cleanup path already freed resources,
+    // so just stop here and don't start the render loop.
+    if (this._released) return;
 
     // ── Resize observer ─────────────────────────────────────────────────────
     this._resizeObserver = new ResizeObserver(() => this._resizeCanvas());
@@ -106,7 +126,7 @@ export class Live2DController {
 
   /** Start (or resume) the requestAnimationFrame render loop. */
   run(): void {
-    if (this._running) return;
+    if (this._released || !this._gl || this._running) return;
     this._running = true;
     const loop = () => {
       if (!this._running) return;
@@ -162,8 +182,16 @@ export class Live2DController {
     this._rafId = requestAnimationFrame(loop);
   }
 
-  /** Stop the render loop and free all resources. */
+  /** Stop the render loop and free all resources. Idempotent. */
   release(): void {
+    // Mark released first so any in-flight load() continuation bails out
+    // before touching the GL context / Cubism framework we're about to tear
+    // down. Aborting also cancels pending fetch() calls.
+    if (this._released) return;
+    this._released = true;
+    this._abortController?.abort();
+    this._abortController = null;
+
     this._running = false;
     if (this._rafId !== null) {
       cancelAnimationFrame(this._rafId);
