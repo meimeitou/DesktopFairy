@@ -1064,10 +1064,10 @@ const setupTray = () => {
       tray.setTitle('Fairy');
     }
     tray.on('click', () => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        if (mainWindow.isVisible()) mainWindow.focus();
-        else mainWindow.show();
-      }
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      // 「隐藏/显示模型」仅由菜单项控制；托盘点击不擅自显示 app 窗口，
+      // 避免用户「打开菜单就自动弹出模型」。窗口可见时仅聚焦置顶。
+      if (mainWindow.isVisible()) mainWindow.focus();
     });
     refreshMenus();
     return tray;
