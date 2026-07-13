@@ -109,7 +109,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Event listeners
   onChatPrefill: (callback) => {
-    ipcRenderer.on('chat:prefill', (_event, payload) => callback(payload));
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:prefill', listener);
+    return () => ipcRenderer.removeListener('chat:prefill', listener);
   },
 
   onChatNavigate: (callback) => {

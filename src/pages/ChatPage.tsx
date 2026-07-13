@@ -118,16 +118,26 @@ async function collectInvalidAttachmentPaths(
   await Promise.all(
     [...paths].map(async (filePath) => {
       try {
-        const stat = (await api.invoke("file:stat_path", filePath)) as {
-          exists?: boolean;
-        };
-        if (!stat?.exists) invalid.add(filePath);
+        // file:stat_path 在文件不存在时抛错；成功返回即视为存在。
+        await api.invoke("file:stat_path", filePath);
       } catch {
         invalid.add(filePath);
       }
     }),
   );
   return invalid;
+}
+
+// Persist settings and alert the user if the on-disk write failed — otherwise
+// the renderer would silently assume success (data loss on restart).
+function persistSettingsWithAlert(settings: AppSettings): void {
+  void saveSettings(settings).then((r) => {
+    if (!r.persisted) {
+      alert(
+        `设置未能保存到磁盘${r.error ? `：${r.error}` : "，重启后可能丢失"}`,
+      );
+    }
+  });
 }
 
 export default function ChatPage({
@@ -146,6 +156,8 @@ export default function ChatPage({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const [chatSettings, setChatSettings] = useState<AppSettings>(loadSettings);
+  // 递增信号：划词预填文本后通知 ChatInputBar 把焦点收回输入框
+  const [inputFocusSignal, setInputFocusSignal] = useState(0);
 
   const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
   const { messages, input, attachments, streaming, invalidAttachmentPaths } = activeState;
@@ -469,7 +481,7 @@ export default function ChatPage({
   );
 
   useEffect(() => {
-    api.onChatPrefill((payload) => {
+    return api.onChatPrefill((payload) => {
       const topicId = activeTopicIdRef.current;
       if (!topicId) return;
       const p =
@@ -489,6 +501,8 @@ export default function ChatPage({
       });
       if (p.autoSend && p.text?.trim()) {
         setTimeout(() => handleSendRef.current(p.text), 0);
+      } else if (typeof p.text === "string" && p.text.trim()) {
+        setInputFocusSignal((n) => n + 1);
       }
     });
   }, []);
@@ -790,7 +804,7 @@ export default function ChatPage({
   const handleBackendChange = useCallback(
     (backend: string) => {
       const next = { ...chatSettings, chatBackend: backend };
-      saveSettings(next);
+      persistSettingsWithAlert(next);
       setChatSettings(next);
     },
     [chatSettings],
@@ -803,7 +817,7 @@ export default function ChatPage({
         chatMode: mode,
         agent: { ...chatSettings.agent, chatMode: mode },
       };
-      saveSettings(next);
+      persistSettingsWithAlert(next);
       setChatSettings(next);
     },
     [chatSettings],
@@ -815,7 +829,7 @@ export default function ChatPage({
         ...chatSettings,
         agent: { ...chatSettings.agent, reasoningEffort: value },
       };
-      saveSettings(next);
+      persistSettingsWithAlert(next);
       setChatSettings(next);
     },
     [chatSettings],
@@ -1360,6 +1374,7 @@ export default function ChatPage({
           onAttachmentsChange={setActiveAttachments}
           streaming={streaming}
           hasMessages={messages.length > 0}
+          focusSignal={inputFocusSignal}
           models={selectableModels}
           modelName={activeBackend}
           modelLabels={modelLabels}

@@ -411,13 +411,32 @@ export function loadSettings(): AppSettings {
   return { ...DEFAULT_SETTINGS, providers: cloneProviders(SYSTEM_PROVIDERS) };
 }
 
-export function saveSettings(settings: AppSettings): void {
+export interface SettingsSyncResult {
+  persisted: boolean;
+  error?: string;
+}
+
+export async function saveSettings(
+  settings: AppSettings,
+): Promise<SettingsSyncResult> {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  const api = (window as Window & typeof globalThis).electronAPI;
+  if (!api?.invoke) {
+    // Non-Electron (web) context: localStorage is the only store.
+    return { persisted: true };
+  }
   try {
-    const api = (window as Window & typeof globalThis).electronAPI;
-    api?.invoke?.("settings:sync", settings)?.catch?.(() => {});
-  } catch {
-    // no-op in non-Electron context
+    const result = (await api.invoke(
+      "settings:sync",
+      settings,
+    )) as SettingsSyncResult | undefined;
+    if (result && typeof result === "object" && "persisted" in result) {
+      return result;
+    }
+    return { persisted: true };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    return { persisted: false, error };
   }
 }
 

@@ -71,7 +71,12 @@ export default function MainView() {
     const h = s.windowHeight ?? 400;
     api.windowSetSize(w, h);
     api.invoke("reapply_window_float");
-    api.invoke("settings:sync", s).catch(() => {});
+    api.invoke("settings:sync", s).then((r) => {
+      const res = r as { persisted?: boolean; error?: string } | undefined;
+      if (res && !res.persisted) {
+        console.warn("settings:sync did not persist to disk", res.error);
+      }
+    }).catch((e) => console.warn("settings:sync failed", e));
   }, []);
 
   // Apply settings pushed from the chat/settings window immediately

@@ -52,7 +52,8 @@ function registerAiStreamHandlers(ipcMain, deps) {
     const builtinTools = getBuiltinTools(agentConfig, context);
     const toolDefinitions = [...builtinTools, ...(mcpRuntime.definitions || [])];
     const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-    const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState);
+    const enabledToolNames = builtinTools.map((t) => t.function.name);
+    const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
     const apiMessages = (messages || []).filter((m) => m.role !== 'system');
     const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
 

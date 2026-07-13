@@ -468,6 +468,12 @@ export default function TerminalPage({
     tabId: string;
   } | null>(null);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
+  // Mirror settings in a ref so handleSettingsChange (stable callback) can
+  // read the latest value without a stale closure or re-creating on every change.
+  const appSettingsRef = useRef(settings);
+  useEffect(() => {
+    appSettingsRef.current = settings;
+  }, [settings]);
   const [sshPickerOpen, setSshPickerOpen] = useState(false);
   const [sshPickerStyle, setSshPickerStyle] = useState<React.CSSProperties>({});
   const [settingsInitialSection, setSettingsInitialSection] = useState<"appearance" | "ssh">("appearance");
@@ -491,10 +497,14 @@ export default function TerminalPage({
   }, []);
 
   const handleSettingsChange = useCallback((patch: Partial<AppSettings>) => {
-    setSettings((prev) => {
-      const next = { ...prev, ...patch };
-      saveSettings(next);
-      return next;
+    const next = { ...appSettingsRef.current, ...patch };
+    setSettings(next);
+    void saveSettings(next).then((r) => {
+      if (!r.persisted) {
+        alert(
+          `设置未能保存到磁盘${r.error ? `：${r.error}` : "，重启后可能丢失"}`,
+        );
+      }
     });
   }, []);
 

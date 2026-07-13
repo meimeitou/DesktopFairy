@@ -19,7 +19,7 @@ declare global {
           autoSend?: boolean;
           attachments?: ChatAttachment[];
         }) => void
-      ) => void;
+      ) => () => void;
       onChatNavigate: (
         callback: (view: "chat" | "settings" | "terminal") => void
       ) => () => void;

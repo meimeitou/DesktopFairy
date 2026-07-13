@@ -228,9 +228,19 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     const next = { ...settings, ...patch };
     onChange(patch);
     try {
-      await api.invoke("settings:sync", next);
-    } catch {
-      // ignore — useEffect saveSettings will retry
+      const r = (await api.invoke("settings:sync", next)) as {
+        persisted?: boolean;
+        error?: string;
+      } | undefined;
+      if (r && !r.persisted) {
+        setPickError(
+          `设置未保存到磁盘${r.error ? `：${r.error}` : "，重启后可能丢失"}`,
+        );
+      }
+    } catch (e) {
+      setPickError(
+        `设置同步失败：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     api.invoke("live2d:switch_model", modelPath).catch(() => {});
   };

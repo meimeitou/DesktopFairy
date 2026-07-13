@@ -134,6 +134,8 @@ interface Props {
   onCompact: () => void;
   slashCommands?: SlashCommand[];
   onSlashCommand?: (cmd: SlashCommand) => void;
+  /** 递增时把焦点收回输入框（划词预填后使用） */
+  focusSignal?: number;
 }
 
 export default function ChatInputBar({
@@ -159,6 +161,7 @@ export default function ChatInputBar({
   onCompact,
   slashCommands,
   onSlashCommand,
+  focusSignal,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectingRef = useRef(false);
@@ -194,6 +197,19 @@ export default function ChatInputBar({
   useEffect(() => {
     adjustHeight();
   }, [input, attachments.length, adjustHeight]);
+
+  // 划词预填后收回焦点到输入框（autoFocus 只在首次挂载生效，已挂载窗口需手动聚焦）
+  useEffect(() => {
+    if (!focusSignal) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    const t = setTimeout(() => {
+      el.focus();
+      const len = el.value.length;
+      el.setSelectionRange(len, len);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [focusSignal]);
 
   const addAttachments = useCallback(
     (files: ChatAttachment[]) => {

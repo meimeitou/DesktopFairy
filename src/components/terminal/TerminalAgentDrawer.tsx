@@ -17,7 +17,7 @@ import ChatModeSelector from "../chat/ChatModeSelector";
 import {
   type ChatMsg,
   buildAgentApiMessages,
-  filterForApi,
+  filterForAgentHistory,
   findLastAssistantReplyIndex,
   reconcileToolMessages,
   shouldApplyToolStatus,
@@ -594,7 +594,7 @@ export default function TerminalAgentDrawer({
       return;
     }
 
-    const history = trimMessagesForApi(filterForApi(state.messages));
+    const history = trimMessagesForApi(filterForAgentHistory(state.messages));
     const payloadMessages = buildAgentApiMessages(
       history,
       text,

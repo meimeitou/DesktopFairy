@@ -573,11 +573,20 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('settings:sync', async (event, settings) => {
+    // Persist to disk. A write failure is surfaced to the renderer via the
+    // return value so it can alert the user — previously it was silently
+    // swallowed and the renderer assumed success (data loss on restart).
+    let persisted = true;
+    let error;
     try {
       fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2));
     } catch (e) {
+      persisted = false;
+      error = e && e.message ? String(e.message) : String(e);
       console.warn('Failed to persist settings:', e);
     }
+    // Apply in-memory + broadcast even on disk failure so the running session
+    // stays consistent; only the on-disk copy is stale.
     applySelectionSettings(settings);
     applyChatShortcutSettings(settings);
     const senderId = event.sender?.id;
@@ -589,6 +598,7 @@ const setupIPC = () => {
         win.webContents.send('settings:updated', settings);
       }
     }
+    return { persisted, error };
   });
 
   registerLive2DHandlers({
@@ -785,6 +795,16 @@ const setupIPC = () => {
 
   // ── Chat completion (OpenAI-compatible, streaming) ──────────────────────────
 
+  // 仅允许 http/https：防止 file:/data: 等非预期 scheme 经渲染进程配置外泄。
+  function assertHttpUrl(raw) {
+    let u;
+    try { u = new URL(String(raw)); } catch { throw new Error('URL 无效'); }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      throw new Error(`不支持的协议: ${u.protocol}（仅允许 http/https）`);
+    }
+    return u.href;
+  }
+
   ipcMain.handle('chat:check', async (_event, payload) => {
     const { apiHost, apiKey, providerType, model, timeoutMs } = payload || {};
     if (!apiHost) throw new Error('请填写 API Host');
@@ -793,6 +813,7 @@ const setupIPC = () => {
 
     const url = getChatCompletionsUrl(apiHost, providerType);
     if (!url) throw new Error('API Host 无效');
+    assertHttpUrl(url);
 
     const controller = new AbortController();
     const timeout = typeof timeoutMs === 'number' ? timeoutMs : 15000;
@@ -838,6 +859,7 @@ const setupIPC = () => {
     if (!requestId || !url || !model || !Array.isArray(messages)) {
       throw new Error('chat:send invalid payload');
     }
+    assertHttpUrl(url);
     const controller = new AbortController();
     inflightChats.set(requestId, controller);
     const sender = event.sender;
@@ -920,6 +942,7 @@ const setupIPC = () => {
     const { apiHost, apiBaseUrl, apiKey, providerType } = payload || {};
     const host = apiHost || apiBaseUrl;
     if (!host) throw new Error('apiHost required');
+    assertHttpUrl(host);
 
     if (providerType === 'ollama') {
       const base = String(host).replace(/\/$/, '').replace(/\/v1$/, '').replace(/\/api$/, '');

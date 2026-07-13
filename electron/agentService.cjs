@@ -73,7 +73,21 @@ function buildTerminalEnvSection(terminalState) {
   return section;
 }
 
-function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null) {
+const TOOLS_WITH_OWN_SECTION = new Set(['UpdateProfile', 'McpManager']);
+
+function buildToolListPrompt(enabledToolNames, context) {
+  let names = enabledToolNames;
+  if (!Array.isArray(names) || names.length === 0) {
+    names = (context === 'terminal'
+      ? 'Read/Write/Edit/Terminal/Glob/Grep/WebSearch/WebFetch/Skill/Skills'
+      : 'Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skill/Skills'
+    ).split('/');
+  }
+  const visible = names.filter((n) => !TOOLS_WITH_OWN_SECTION.has(n));
+  return visible.length > 0 ? visible.join('/') : '';
+}
+
+function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = []) {
   const parts = [];
   if (agentConfig?.soul?.trim()) {
     parts.push(agentConfig.soul.trim());
@@ -83,12 +97,16 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
   }
   const skillsBlock = buildSkillsPrompt(agentConfig?.enabledSkillIds);
   if (skillsBlock) parts.push(skillsBlock);
-  const toolList = context === 'terminal'
-    ? 'Read/Write/Edit/Terminal/Glob/Grep/WebSearch/WebFetch/Skill/Skills'
-    : 'Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skill/Skills';
-  parts.push(
-    `你可以使用 ${toolList} 等工具完成任务。执行前先理解用户意图，工具失败时向用户说明原因。只能使用系统提供的工具列表中的工具；如果缺少你需要的工具，请直接告知用户，不要虚构或声称使用了不存在的工具。`
-  );
+  const toolList = buildToolListPrompt(enabledToolNames, context);
+  if (toolList) {
+    parts.push(
+      `你可以使用 ${toolList} 等工具完成任务。执行前先理解用户意图，工具失败时向用户说明原因。只能使用系统提供的工具列表中的工具；如果缺少你需要的工具，请直接告知用户，不要虚构或声称使用了不存在的工具。`
+    );
+  } else {
+    parts.push(
+      '执行前先理解用户意图，工具失败时向用户说明原因。只能使用系统提供的工具列表中的工具；如果缺少你需要的工具，请直接告知用户，不要虚构或声称使用了不存在的工具。'
+    );
+  }
   parts.push(
     '## 记忆持久化\n\n你可以使用 UpdateProfile 工具将用户偏好和习惯写入持久存储：\n- 用户透露偏好、习惯、身份信息时 → UpdateProfile(field="user", action="append", content="...")\n- 需要调整自己的人格或执行规则时 → UpdateProfile(field="soul", action="replace", content="...")\n- 追加内容应简短原子（一条信息一行），不要重复已有内容。替换时需提供完整的新内容。'
   );
@@ -167,7 +185,8 @@ function registerAgentHandlers(ipcMain, deps) {
       const builtinTools = getBuiltinTools(agentConfig, context);
       const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
       const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-      const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState);
+      const enabledToolNames = builtinTools.map((t) => t.function.name);
+      const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
       const apiMessages = (messages || []).filter((m) => m.role !== 'system');
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
       const reasoningEffort = agentConfig.reasoningEffort;

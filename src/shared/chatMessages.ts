@@ -265,11 +265,13 @@ export function shouldApplyToolStatus(
   if (current === "done" || current === "error" || current === "denied") {
     return false;
   }
-  // Approval prompt must not be masked by pre-execute streaming/running events.
-  if (
-    current === "awaiting_approval" &&
-    (incoming === "running" || incoming === "streaming")
-  ) {
+  // Post-approval "running": user 已批准，工具开始执行。
+  // 必须允许 awaiting_approval → running，否则停止按钮永远不会显示。
+  if (current === "awaiting_approval" && incoming === "running") {
+    return true;
+  }
+  // Approval prompt must not be masked by pre-execute streaming events.
+  if (current === "awaiting_approval" && incoming === "streaming") {
     return false;
   }
   const rank: Record<NonNullable<ChatMsg["toolStatus"]>, number> = {

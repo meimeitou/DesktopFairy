@@ -226,9 +226,16 @@ export default function SettingsPage({
 }: Props) {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const [persistError, setPersistError] = useState<string | null>(null);
 
   useEffect(() => {
-    saveSettings(settings);
+    let active = true;
+    void saveSettings(settings).then((r) => {
+      if (active) setPersistError(r.persisted ? null : r.error ?? "设置写入磁盘失败");
+    });
+    return () => {
+      active = false;
+    };
   }, [settings]);
 
   // Sync when another source (e.g. ChatPage mode switch, UpdateProfile tool) writes to disk
@@ -332,6 +339,11 @@ export default function SettingsPage({
           <h1 className="settings-page-title">{TAB_META[activeTab].title}</h1>
           <p className="settings-page-desc">{TAB_META[activeTab].desc}</p>
         </header>
+        {persistError && (
+          <div className="settings-persist-error" role="alert">
+            设置未保存到磁盘：{persistError}（重启后可能丢失）
+          </div>
+        )}
         <div className="settings-content-body">
           <div className="settings-content-inner">{renderContent()}</div>
         </div>
