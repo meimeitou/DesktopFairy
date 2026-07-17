@@ -82,18 +82,6 @@ export default function AgentBasicSection({
         名称、头像与后端模型。智能体模式使用此处配置的 Provider。
       </p>
 
-      <div className="field field-row">
-        <label>启用智能体</label>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={agent.enabled}
-            onChange={(e) => onChange({ enabled: e.target.checked })}
-          />
-          <span className="toggle-track" />
-        </label>
-      </div>
-
       <div className="field">
         <label>头像</label>
         <div className="agent-avatar-row">

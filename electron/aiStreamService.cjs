@@ -25,7 +25,6 @@ function registerAiStreamHandlers(ipcMain, deps) {
       messages,
       agentConfig,
       apiConfig,
-      temperature,
       terminalSessionId,
     } = payload || {};
 
@@ -95,7 +94,6 @@ function registerAiStreamHandlers(ipcMain, deps) {
           toolDefinitions,
           toolDeps,
           maxTurns,
-          temperature,
           reasoningEffort: agentConfig.reasoningEffort,
           signal,
         });

@@ -6,6 +6,7 @@ import { AGENT_CONFIG_SECTIONS } from "../../../shared/agentSettingsSections";
 import AgentBasicSection from "./AgentBasicSection";
 import AgentPromptSection from "./AgentPromptSection";
 import AgentToolsSection from "./AgentToolsSection";
+import AgentSkillsSection from "./AgentSkillsSection";
 import AgentAdvancedSection from "./AgentAdvancedSection";
 
 interface Props {
@@ -36,6 +37,10 @@ export default function AgentSettingsSection({ settings, onChange }: Props) {
       case "tools":
         return (
           <AgentToolsSection agent={agent} onAgentChange={updateAgent} />
+        );
+      case "skills":
+        return (
+          <AgentSkillsSection agent={agent} onChange={updateAgent} />
         );
       case "advanced":
         return <AgentAdvancedSection agent={agent} onChange={updateAgent} />;

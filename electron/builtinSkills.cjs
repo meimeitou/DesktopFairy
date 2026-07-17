@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { app } = require('electron');
 
@@ -12,7 +13,7 @@ function getResourceSkillsPath() {
 }
 
 function getSkillsDir() {
-  const dir = path.join(app.getPath('userData'), 'agent-skills');
+  const dir = path.join(os.homedir(), '.agents', 'skills');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

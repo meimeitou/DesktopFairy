@@ -40,6 +40,7 @@ import {
   getActiveChatBackend,
   isAgentBackend,
   getChatApiConfig,
+  getAgentBackendGuidance,
   type AppSettings,
 } from "../shared/settings";
 import { getChatCompletionsUrl } from "../shared/providers";
@@ -917,6 +918,52 @@ export default function ChatPage({
       const agentMode = isAgentBackend(requestBackend);
       const apiConfig = getChatApiConfig(settings);
 
+      if (agentMode) {
+        const guidance = getAgentBackendGuidance(settings);
+        if (guidance) {
+          const now = Date.now();
+          const userMsg: ChatMsg = {
+            id: genId(),
+            role: "user",
+            content: finalText,
+            attachments:
+              state.attachments.length > 0 ? [...state.attachments] : undefined,
+            timestamp: now,
+          };
+          setTopicStates((prev) => {
+            const s = prev[topicId] ?? emptyTopicState();
+            return {
+              ...prev,
+              [topicId]: {
+                ...s,
+                messages: [
+                  ...s.messages,
+                  userMsg,
+                  {
+                    id: genId(),
+                    role: "assistant",
+                    content: guidance,
+                    error: true,
+                    timestamp: now,
+                  },
+                ],
+                input: "",
+                attachments: [],
+                streaming: false,
+                requestId: null,
+                requestBackend: null,
+              },
+            };
+          });
+          scrollToBottom();
+          scheduleTopicSave(topicId);
+          return;
+        }
+      } else if (!apiConfig?.apiHost || !apiConfig.modelName) {
+        alert("请先在设置中配置服务商 API Host 和模型。");
+        return;
+      }
+
       if (!apiConfig?.apiHost || !apiConfig.modelName) {
         alert(
           agentMode
@@ -1031,7 +1078,6 @@ export default function ChatPage({
               modelName: apiConfig.modelName,
             },
             agentConfig: agent,
-            temperature: settings.temperature,
           })
         : api.invoke("chat:send", {
             requestId,
@@ -1039,7 +1085,6 @@ export default function ChatPage({
             chatUrl,
             apiKey: apiConfig.apiKey,
             model: apiConfig.modelName,
-            temperature: settings.temperature,
           });
 
       invokePromise

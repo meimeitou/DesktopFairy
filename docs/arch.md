@@ -274,9 +274,10 @@ interface LlmProvider {
 
 **技能系统**（`electron/agentSkillService.cjs`）：
 
-- 技能目录：`userData/agent-skills/<skill-id>/SKILL.md`（YAML frontmatter + markdown body）
+- 技能目录：`~/.agents/skills/<skill-id>/SKILL.md`（YAML frontmatter + markdown body）
 - 内置技能：`find-skills`（发现并安装技能）、`skill-creator`（创建技能），受保护不可删除
 - `agent:skills:scan` IPC 返回技能列表（id / name / description / folderName / isBuiltin）
+- `agent:skills:import_directory`：系统选目录对话框，校验 `SKILL.md` 后复制到全局技能目录
 - `buildSkillsPrompt` 将已启用技能的目录注入系统提示词；完整内容由 `Skill` 工具按需加载
 - `Skills` 工具支持 list / search（skills.sh 市场）/ install / remove / init / register
 - 运行时安装的技能通过 `persistEnabledSkillId` 写入设置并广播
@@ -357,23 +358,23 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | `window:get_position` / `window:set_position` | 当前窗位置 |
 | `screen:get_cursor_point` | 全局光标（Live2D 跟随） |
 | **聊天** | |
-| `chat:send` | `{ requestId, messages, chatUrl, apiKey, model, temperature? }` |
+| `chat:send` | `{ requestId, messages, chatUrl, apiKey, model }` |
 | `chat:abort` | `{ requestId }` |
 | `chat:session:load` / `chat:session:save` | 单会话 JSON 读写 |
 | `chat:topics:list` / `create` / `delete` / `rename` | 多会话管理 |
 | `chat:list_models` | `{ apiHost, apiKey, providerType }` |
 | `chat:check` | 连通性检测 |
 | **智能体** | |
-| `ai:stream_open` | `{ topicId, requestId, messages, agentConfig, apiConfig, temperature?, terminalSessionId? }` → `{ mode, requestId }` |
+| `ai:stream_open` | `{ topicId, requestId, messages, agentConfig, apiConfig, terminalSessionId? }` → `{ mode, requestId }` |
 | `ai:stream_attach` | `{ topicId }` → `{ attached, legacyEvents, status?, requestId? }` |
 | `ai:stream_detach` | `{ topicId }` |
 | `ai:stream_abort` | `{ topicId?, requestId? }` |
 | `ai:tool:bypass_approval` | `{ topicId }` — 本次 topic 后续工具免审批 |
-| `agent:run` | **Legacy** — `{ requestId, messages, agentConfig, apiConfig, temperature? }` |
+| `agent:run` | **Legacy** — `{ requestId, messages, agentConfig, apiConfig }` |
 | `agent:abort` | `{ requestId }` — 同时尝试 abort 对应 ai stream |
 | `agent:tool:approve` | `{ approvalId, approved }` |
 | `agent:tool:bypass_approval` | `{ requestId?, topicId? }` |
-| `agent:skills:scan` / `agent:skills:open_dir` | 技能扫描 / 打开目录 |
+| `agent:skills:scan` / `agent:skills:open_dir` / `agent:skills:import_directory` | 技能扫描 / 打开根目录 / 选目录导入（须含 SKILL.md） |
 | `agent:avatar:select` / `agent:avatar:resolve` | 智能体头像 |
 | **设置** | |
 | `settings:sync` | 全量 settings 对象写盘并广播 |
@@ -529,7 +530,6 @@ interface AppSettings {
   activeProviderId: string;
   providers: LlmProvider[];
   modelName: string;
-  temperature: number;
   chatBackend: string;          // "agent" | "providerId::modelName"
 
   // 智能体
@@ -650,7 +650,6 @@ await api.invoke('chat:send', {
   apiKey: 'sk-...',
   model: 'gpt-4o-mini',
   messages: [{ role: 'user', content: '你好' }],
-  temperature: 0.7,
 });
 
 // 智能体模式（ai:stream_open）— 主进程构建系统提示词，AI SDK ToolLoopAgent 多轮工具
@@ -662,7 +661,6 @@ await openAgentStream({
   messages: [{ role: 'user', content: '帮我读取文件' }],
   apiConfig: { apiHost, apiKey, providerType, modelName },
   agentConfig: settings.agent,
-  temperature: 0.7,
 });
 // 监听 chat:stream:chunk / agent:stream:tool / chat:stream:done（与旧版相同）
 // 关窗重连：attachTopicStream(topicId) 回放 legacyEvents

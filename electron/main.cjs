@@ -854,7 +854,7 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('chat:send', async (event, payload) => {
-    const { requestId, messages, chatUrl, apiBaseUrl, apiKey, model, temperature } = payload || {};
+    const { requestId, messages, chatUrl, apiBaseUrl, apiKey, model } = payload || {};
     const url = chatUrl || (apiBaseUrl ? `${String(apiBaseUrl).replace(/\/$/, '')}/chat/completions` : '');
     if (!requestId || !url || !model || !Array.isArray(messages)) {
       throw new Error('chat:send invalid payload');
@@ -870,7 +870,6 @@ const setupIPC = () => {
     };
 
     const body = { model, messages, stream: true };
-    if (typeof temperature === 'number') body.temperature = temperature;
 
     try {
       const res = await fetch(url, {

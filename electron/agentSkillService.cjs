@@ -1,8 +1,9 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { app, shell, net } = require('electron');
+const { shell, net, dialog, BrowserWindow } = require('electron');
 
 const execFileAsync = promisify(execFile);
 const VERSION_FILE = '.version';
@@ -18,27 +19,73 @@ const SKILLS_GUIDANCE = `## 技能 (Skills)
 当用户需要的能力可能已有现成技能时，优先 \`Skills\` search，不要从零摸索。安装后通过 \`Skill\` 按需加载完整说明。`;
 
 function getSkillsDir() {
-  const dir = path.join(app.getPath('userData'), 'agent-skills');
+  const dir = path.join(os.homedir(), '.agents', 'skills');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
+function unquoteYamlScalar(value) {
+  const v = String(value || '').trim();
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    return v.slice(1, -1);
+  }
+  return v;
+}
+
+/** Parse SKILL.md YAML frontmatter. Supports single-line and `|` / `>` block scalars. */
 function parseFrontmatter(content) {
   const match = String(content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
-  const block = match[1];
+  const lines = match[1].split('\n');
   const meta = {};
-  for (const line of block.split('\n')) {
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Nested / continuation lines are consumed by block-scalar handling
+    if (/^\s/.test(line)) continue;
+
     const idx = line.indexOf(':');
     if (idx <= 0) continue;
+
     const key = line.slice(0, idx).trim();
     let value = line.slice(idx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+
+    // YAML block scalar: description: |  /  description: >
+    if (/^[>|][-+]?$/.test(value)) {
+      const folded = value.startsWith('>');
+      const blockLines = [];
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1];
+        if (next === '') {
+          i += 1;
+          blockLines.push('');
+          continue;
+        }
+        if (!/^\s/.test(next)) break;
+        i += 1;
+        blockLines.push(next.replace(/^\s+/, ''));
+      }
+      while (blockLines.length && blockLines[blockLines.length - 1] === '') {
+        blockLines.pop();
+      }
+      value = folded
+        ? blockLines.join(' ').replace(/\s+/g, ' ').trim()
+        : blockLines.join('\n').trim();
+    } else if (value === '') {
+      // Nested map (e.g. metadata:) — skip empty top-level key
+      continue;
+    } else {
+      value = unquoteYamlScalar(value);
     }
+
+    // List display prefers a single-line intro
+    if (key === 'description') {
+      value = String(value).replace(/\s+/g, ' ').trim();
+    }
+
     meta[key] = value;
   }
   return meta;
@@ -294,6 +341,58 @@ async function initSkillFolder(name) {
   };
 }
 
+function skillDescriptorFromDir(skillDir, folderName) {
+  const skillMd = path.join(skillDir, 'SKILL.md');
+  const meta = fs.existsSync(skillMd)
+    ? parseFrontmatter(fs.readFileSync(skillMd, 'utf8'))
+    : {};
+  return {
+    id: folderName,
+    folderName,
+    name: meta.name || folderName,
+    description: meta.description || '',
+  };
+}
+
+function importSkillFromDirectory(sourcePath) {
+  const source = path.resolve(String(sourcePath || '').trim());
+  if (!source) throw new Error('未选择目录');
+
+  let stat;
+  try {
+    stat = fs.statSync(source);
+  } catch {
+    throw new Error('无法读取所选路径');
+  }
+  if (!stat.isDirectory()) {
+    throw new Error('请选择技能文件夹（目录）');
+  }
+
+  const skillMd = path.join(source, 'SKILL.md');
+  if (!fs.existsSync(skillMd)) {
+    throw new Error('所选目录不是技能目录（缺少 SKILL.md）');
+  }
+
+  const folderName = path.basename(source);
+  if (!/^[a-z0-9][a-z0-9-_]*$/i.test(folderName)) {
+    throw new Error('技能文件夹名须为字母数字，可含连字符或下划线');
+  }
+
+  const skillsRoot = path.resolve(getSkillsDir());
+  const dest = path.join(skillsRoot, folderName);
+
+  if (path.resolve(source) === path.resolve(dest)) {
+    return skillDescriptorFromDir(dest, folderName);
+  }
+
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+  fs.cpSync(source, dest, { recursive: true });
+
+  return skillDescriptorFromDir(dest, folderName);
+}
+
 async function registerSkillFolder(name, deps = {}) {
   const folderName = String(name || '').trim();
   if (!folderName) throw new Error("'name' is required for register");
@@ -406,6 +505,26 @@ function registerAgentSkillHandlers(ipcMain) {
     const dir = getSkillsDir();
     await shell.openPath(dir);
     return dir;
+  });
+
+  ipcMain.handle('agent:skills:import_directory', async (event) => {
+    const win = event.sender
+      ? BrowserWindow.fromWebContents(event.sender)
+      : null;
+    const result = await dialog.showOpenDialog(win || undefined, {
+      title: '选择技能目录',
+      properties: ['openDirectory'],
+      defaultPath: getSkillsDir(),
+    });
+    if (result.canceled || !result.filePaths?.[0]) {
+      return { canceled: true };
+    }
+    try {
+      const skill = importSkillFromDirectory(result.filePaths[0]);
+      return { skill };
+    } catch (err) {
+      return { error: String(err?.message || err) };
+    }
   });
 }
 

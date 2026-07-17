@@ -144,7 +144,6 @@ function registerAgentHandlers(ipcMain, deps) {
       agentConfig,
       apiConfig,
       chatUrl,
-      temperature,
       terminalSessionId,
       topicId,
     } = payload || {};
@@ -225,7 +224,6 @@ function registerAgentHandlers(ipcMain, deps) {
         toolDefinitions: tools,
         toolDeps,
         maxTurns,
-        temperature,
         reasoningEffort,
         signal: controller.signal,
         safeSend,

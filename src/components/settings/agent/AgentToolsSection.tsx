@@ -3,7 +3,6 @@ import {
   getBuiltinToolCatalog,
   getEnabledAgentBuiltinTools,
   type AgentConfig,
-  type AgentSkillDescriptor,
 } from "../../../shared/agent";
 import type {
   McpServer,
@@ -17,7 +16,7 @@ import AgentMcpEditor from "./AgentMcpEditor";
 
 const api = window.electronAPI;
 
-type ToolTab = "builtin" | "mcp" | "skills";
+type ToolTab = "builtin" | "mcp";
 
 interface McpPreset {
   id: string;
@@ -61,9 +60,7 @@ export default function AgentToolsSection({
   const [search, setSearch] = useState("");
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpPresets, setMcpPresets] = useState<McpPreset[]>([]);
-  const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const [loadingMcp, setLoadingMcp] = useState(true);
-  const [loadingSkills, setLoadingSkills] = useState(true);
   const [addingMcp, setAddingMcp] = useState(false);
   const [editingMcp, setEditingMcp] = useState<McpServer | null>(null);
   const [mcpStatuses, setMcpStatuses] = useState<Record<string, McpRuntimeStatus>>({});
@@ -88,11 +85,6 @@ export default function AgentToolsSection({
   const boundMcpIds = useMemo(
     () => new Set(agent.mcpServerIds),
     [agent.mcpServerIds]
-  );
-
-  const enabledSkillIds = useMemo(
-    () => new Set(agent.enabledSkillIds),
-    [agent.enabledSkillIds]
   );
 
   const loadMcp = useCallback(async () => {
@@ -120,22 +112,9 @@ export default function AgentToolsSection({
     }
   }, []);
 
-  const loadSkills = useCallback(async () => {
-    setLoadingSkills(true);
-    try {
-      const list = (await api.invoke("agent:skills:scan")) as AgentSkillDescriptor[];
-      setSkills(Array.isArray(list) ? list : []);
-    } catch {
-      setSkills([]);
-    } finally {
-      setLoadingSkills(false);
-    }
-  }, []);
-
   useEffect(() => {
     void loadMcp();
-    void loadSkills();
-  }, [loadMcp, loadSkills]);
+  }, [loadMcp]);
 
   useEffect(() => {
     const off = api.onMcpStatusChanged?.((payload) => {
@@ -188,17 +167,6 @@ export default function AgentToolsSection({
     }
   };
 
-  const toggleSkill = (id: string, enabled: boolean) => {
-    if (enabled) {
-      if (agent.enabledSkillIds.includes(id)) return;
-      onAgentChange({ enabledSkillIds: [...agent.enabledSkillIds, id] });
-    } else {
-      onAgentChange({
-        enabledSkillIds: agent.enabledSkillIds.filter((x) => x !== id),
-      });
-    }
-  };
-
   const toggleMcpActive = async (server: McpServer, active: boolean) => {
     setLoadingServerOps((prev) => new Set(prev).add(server.id));
     try {
@@ -216,59 +184,18 @@ export default function AgentToolsSection({
       } catch {
         /* ignore */
       }
+      void loadMcp();
     } finally {
       setLoadingServerOps((prev) => {
         const next = new Set(prev);
         next.delete(server.id);
         return next;
       });
-      void loadMcp();
     }
   };
 
-  const handleRestartServer = async (id: string) => {
-    setLoadingServerOps((prev) => new Set(prev).add(id));
-    try {
-      await api.invoke("mcp:servers:restart", { id });
-    } finally {
-      setLoadingServerOps((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
-
-  const handleStopServer = async (id: string) => {
-    setLoadingServerOps((prev) => new Set(prev).add(id));
-    try {
-      await api.invoke("mcp:servers:stop", { id });
-    } finally {
-      setLoadingServerOps((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
-
-  const installBuiltinMcp = async (id: string) => {
-    const saved = (await api.invoke("mcp:servers:install_builtin", { id })) as McpServer;
-    if (!agent.mcpServerIds.includes(id)) {
-      onAgentChange({ mcpServerIds: [...agent.mcpServerIds, id] });
-    }
-    await loadMcp();
-    const preset = mcpPresets.find((p) => p.id === id);
-    if (preset?.shouldConfig || saved?.shouldConfig) {
-      setEditingMcp(saved);
-      setAddingMcp(false);
-    }
-  };
-
-  const saveMcpServer = async (server: McpServer) => {
-    await api.invoke("mcp:servers:save", server);
-    setEditingMcp(null);
-    setAddingMcp(false);
+  const installBuiltinMcp = async (presetId: string) => {
+    await api.invoke("mcp:servers:install_builtin", { id: presetId });
     void loadMcp();
   };
 
@@ -290,12 +217,21 @@ export default function AgentToolsSection({
   const newMcpTemplate = (): McpServer => ({
     id: newMcpId(),
     name: "",
+    description: "",
     type: "stdio",
-    command: "npx",
-    args: ["-y"],
+    command: "",
+    args: [],
+    env: {},
     isActive: true,
-    installSource: "manual",
+    installSource: "custom",
   });
+
+  const saveMcpServer = async (server: McpServer) => {
+    await api.invoke("mcp:servers:save", server);
+    setAddingMcp(false);
+    setEditingMcp(null);
+    void loadMcp();
+  };
 
   const deleteMcp = async (id: string) => {
     await api.invoke("mcp:servers:delete", { id });
@@ -306,9 +242,34 @@ export default function AgentToolsSection({
     void loadMcp();
   };
 
-  const openSkillsDir = async () => {
-    await api.invoke("agent:skills:open_dir");
-    void loadSkills();
+  const handleRestartServer = async (id: string) => {
+    setLoadingServerOps((prev) => new Set(prev).add(id));
+    try {
+      await api.invoke("mcp:servers:restart", { id });
+      const statuses = (await api.invoke("mcp:servers:status", {})) as Record<string, McpRuntimeStatus>;
+      setMcpStatuses(typeof statuses === "object" && statuses ? statuses : {});
+    } finally {
+      setLoadingServerOps((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleStopServer = async (id: string) => {
+    setLoadingServerOps((prev) => new Set(prev).add(id));
+    try {
+      await api.invoke("mcp:servers:stop", { id });
+      const statuses = (await api.invoke("mcp:servers:status", {})) as Record<string, McpRuntimeStatus>;
+      setMcpStatuses(typeof statuses === "object" && statuses ? statuses : {});
+    } finally {
+      setLoadingServerOps((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   const builtinCatalogItems = catalog.map((tool) => ({
@@ -326,13 +287,6 @@ export default function AgentToolsSection({
       description: s.description || buildMcpCommandString(s),
     }));
 
-  const skillItems = skills.map((s) => ({
-    id: s.id,
-    name: s.name,
-    description: s.description || s.folderName,
-    badge: s.isBuiltin ? "内置" : undefined,
-  }));
-
   const inactivePresets = mcpPresets.filter((preset) => {
     const server = mcpServers.find((s) => s.id === preset.id);
     return !server || server.isActive === false;
@@ -342,7 +296,7 @@ export default function AgentToolsSection({
     <section className="settings-section agent-subsection">
       <h4>工具</h4>
       <p className="agent-subsection-intro">
-        内置工具、MCP 与技能均只能启用/禁用。参数每行一个、环境变量 KEY=value；保存前可「测试连接」。技能通过 <code>Skill</code> / <code>Skills</code> 按需加载与管理。
+        内置工具与 MCP 只能启用/禁用。参数每行一个、环境变量 KEY=value；保存前可「测试连接」。
       </p>
 
       <div className="agent-tool-tabs">
@@ -360,16 +314,9 @@ export default function AgentToolsSection({
         >
           MCP
         </button>
-        <button
-          type="button"
-          className={`agent-tool-tab${tab === "skills" ? " active" : ""}`}
-          onClick={() => setTab("skills")}
-        >
-          技能
-        </button>
       </div>
 
-      {(tab === "builtin" || tab === "skills") && (
+      {tab === "builtin" && (
         <div className="field agent-tool-search">
           <input
             type="search"
@@ -562,38 +509,6 @@ export default function AgentToolsSection({
             </>
           )}
         </div>
-      )}
-
-      {tab === "skills" && (
-        <>
-          <div className="agent-skills-toolbar">
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => void openSkillsDir()}
-            >
-              打开技能目录
-            </button>
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => void loadSkills()}
-            >
-              刷新
-            </button>
-          </div>
-          {loadingSkills ? (
-            <p className="field-hint">正在扫描技能…</p>
-          ) : (
-            <AgentCatalogToggleList
-              items={skillItems}
-              enabledIds={enabledSkillIds}
-              onToggle={toggleSkill}
-              search={search}
-              emptyLabel="暂无技能。可在用户目录 agent-skills/ 下添加 SKILL.md。"
-            />
-          )}
-        </>
       )}
     </section>
   );

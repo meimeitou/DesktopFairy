@@ -55,7 +55,6 @@ export interface AppSettings {
   providers: LlmProvider[];
   modelName: string;
   systemPrompt: string;
-  temperature: number;
   selectionEnabled: boolean;
   selectionTriggerMode: SelectionTriggerMode;
   selectionShortcut: string;
@@ -110,7 +109,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providers: cloneProviders(SYSTEM_PROVIDERS),
   modelName: "gpt-4o-mini",
   systemPrompt: "你是一位可爱的桌面伙伴，回答简洁、自然、有温度。",
-  temperature: 0.7,
   selectionEnabled: true,
   selectionTriggerMode: "shortcut",
   selectionShortcut: "Command+Shift+C",
@@ -274,7 +272,7 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     ...settings,
     mcpServers: normalizeMcpServers(settings.mcpServers),
   });
-  return {
+  const next: AppSettings = {
     ...settings,
     ...migratedMcp,
     selectionMaxLength: normalizeSelectionMaxLength(settings.selectionMaxLength),
@@ -341,6 +339,9 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       return resolveModelNameForProvider(settings, provider);
     })(),
   };
+  // Drop legacy temperature if present in saved settings.
+  delete (next as AppSettings & { temperature?: number }).temperature;
+  return next;
 }
 
 function migrateFromLegacy(parsed: Partial<AppSettings> & LegacySettings): AppSettings {
@@ -519,21 +520,72 @@ export interface ModelItem {
 
 export function getAgentProvider(settings: AppSettings): LlmProvider | undefined {
   const agent = settings.agent;
-  return (
-    settings.providers.find((p) => p.id === agent.providerId && p.enabled) ||
-    settings.providers.find((p) => p.enabled)
-  );
+  return settings.providers.find((p) => p.id === agent.providerId && p.enabled);
 }
 
 export function resolveAgentModelName(settings: AppSettings): string {
   const provider = getAgentProvider(settings);
   const agent = settings.agent;
-  if (!provider) return agent.modelName;
-  if (provider.models.length === 0) return agent.modelName;
-  if (agent.modelName && provider.models.includes(agent.modelName)) {
-    return agent.modelName;
+  if (!provider) return "";
+  const named = typeof agent.modelName === "string" ? agent.modelName.trim() : "";
+  if (named && (provider.models.length === 0 || provider.models.includes(named))) {
+    return named;
   }
-  return provider.models[0] ?? agent.modelName;
+  return "";
+}
+
+/**
+ * Returns setup guidance when the agent backend model is not ready; null when OK.
+ */
+export function getAgentBackendGuidance(settings: AppSettings): string | null {
+  const enabledProviders = settings.providers.filter((p) => p.enabled);
+  if (enabledProviders.length === 0) {
+    return [
+      "智能体尚未配置可用模型。",
+      "1. 打开「设置 → AI 模型」，启用 Provider 并填写 API Host / Key，添加至少一个模型；",
+      "2. 再到「设置 → 智能体 → 基础设置」选择后端模型。",
+    ].join("\n");
+  }
+
+  const agent = settings.agent;
+  const provider = getAgentProvider(settings);
+  if (!provider) {
+    return [
+      "智能体未选择有效的后端 Provider（可能尚未配置，或对应 Provider 已禁用）。",
+      "请到「设置 → 智能体 → 基础设置」选择后端模型。",
+    ].join("\n");
+  }
+
+  if (!String(provider.apiHost || "").trim()) {
+    return [
+      `智能体所用 Provider「${provider.name}」尚未填写 API Host。`,
+      "请到「设置 → AI 模型」完成配置，再回到「智能体 → 基础设置」确认模型。",
+    ].join("\n");
+  }
+
+  const modelName = typeof agent.modelName === "string" ? agent.modelName.trim() : "";
+  if (!modelName) {
+    return [
+      "智能体尚未选择模型。",
+      "请到「设置 → 智能体 → 基础设置」选择后端模型。",
+    ].join("\n");
+  }
+
+  if (provider.models.length > 0 && !provider.models.includes(modelName)) {
+    return [
+      `智能体所选模型「${modelName}」不在 Provider「${provider.name}」的可用列表中。`,
+      "请到「设置 → 智能体 → 基础设置」重新选择后端模型。",
+    ].join("\n");
+  }
+
+  if (provider.models.length === 0) {
+    return [
+      `Provider「${provider.name}」尚未添加模型。`,
+      "请到「设置 → AI 模型」为该 Provider 添加模型，再到「智能体 → 基础设置」选择。",
+    ].join("\n");
+  }
+
+  return null;
 }
 
 export function getAgentApiConfig(settings: AppSettings): {
@@ -543,13 +595,15 @@ export function getAgentApiConfig(settings: AppSettings): {
   modelName: string;
   providerId: string;
 } | null {
+  if (getAgentBackendGuidance(settings)) return null;
   const provider = getAgentProvider(settings);
-  if (!provider) return null;
+  const modelName = resolveAgentModelName(settings);
+  if (!provider || !modelName || !String(provider.apiHost || "").trim()) return null;
   return {
     apiHost: provider.apiHost,
     apiKey: provider.apiKey,
     providerType: provider.type,
-    modelName: resolveAgentModelName(settings),
+    modelName,
     providerId: provider.id,
   };
 }
@@ -606,14 +660,13 @@ export interface ChatBackendItem {
 
 /** Agent entry + all enabled provider models for the chat picker. */
 export function getChatBackendItems(settings: AppSettings): ChatBackendItem[] {
-  const items: ChatBackendItem[] = [];
-  if (settings.agent.enabled !== false) {
-    items.push({
+  const items: ChatBackendItem[] = [
+    {
       value: AGENT_BACKEND_KEY,
       label: getAgentBackendLabel(settings.agent),
       isAgent: true,
-    });
-  }
+    },
+  ];
   for (const model of getSelectableModelItems(settings)) {
     items.push({ value: model.value, label: model.label });
   }

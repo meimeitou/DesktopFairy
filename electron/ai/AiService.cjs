@@ -13,7 +13,6 @@ async function streamText({
   toolDefinitions,
   toolDeps,
   maxTurns = 10,
-  temperature,
   reasoningEffort,
   signal,
 }) {
@@ -27,7 +26,6 @@ async function streamText({
     stopWhen: stepCountIs(Math.max(1, maxTurns)),
   };
 
-  if (typeof temperature === 'number') agentOptions.temperature = temperature;
   if (reasoningEffort && reasoningEffort !== 'default') {
     agentOptions.providerOptions = { openai: { reasoningEffort } };
   }

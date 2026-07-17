@@ -22,10 +22,6 @@ describe('agent', () => {
       expect(DEFAULT_AGENT_CONFIG.chatMode).toBe(DEFAULT_CHAT_MODE)
     })
 
-    it('should have enabled true', () => {
-      expect(DEFAULT_AGENT_CONFIG.enabled).toBe(true)
-    })
-
     it('should disable Terminal in local context by default', () => {
       expect(DEFAULT_AGENT_CONFIG.disabledToolIds).toEqual(LOCAL_DEFAULT_DISABLED_TOOL_IDS)
     })
@@ -145,7 +141,6 @@ describe('agent', () => {
     it('should return default config for null input', () => {
       const result = normalizeAgentConfig(null)
       expect(result.chatMode).toBe(DEFAULT_CHAT_MODE)
-      expect(result.enabled).toBe(true)
     })
 
     it('should return default config for undefined input', () => {

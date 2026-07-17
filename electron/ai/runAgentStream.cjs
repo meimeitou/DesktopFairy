@@ -16,7 +16,6 @@ async function runAgentStream({
   toolDefinitions,
   toolDeps,
   maxTurns = 10,
-  temperature,
   reasoningEffort,
   signal,
   safeSend,
@@ -31,10 +30,6 @@ async function runAgentStream({
     instructions: systemPrompt,
     stopWhen: stepCountIs(Math.max(1, maxTurns)),
   };
-
-  if (typeof temperature === 'number') {
-    agentOptions.temperature = temperature;
-  }
 
   if (reasoningEffort && reasoningEffort !== 'default') {
     agentOptions.providerOptions = {

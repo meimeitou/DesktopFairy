@@ -6,8 +6,8 @@ description: Create new skills, modify and improve existing skills, and measure 
 ## DesktopFairy workflow (READ FIRST — overrides packaging / install steps below)
 
 You are running inside DesktopFairy. Skills live in the app's global skills directory
-(`DESKTOP_FAIRY_SKILLS_DIR`, typically `~/Library/Application Support/DesktopFairy/agent-skills/`
-on macOS). Do **not** write files to `.claude/skills/` directly, and ignore
+(`DESKTOP_FAIRY_SKILLS_DIR`, normally `~/.agents/skills/`). Do **not** write files
+to `.claude/skills/` directly, and ignore
 `package_skill.py` / `.skill` packaging steps (they apply to Claude Code / Claude.ai, not here).
 
 **The flow for creating a new skill is exactly two tool calls:**

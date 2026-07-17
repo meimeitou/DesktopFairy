@@ -35,7 +35,6 @@ export async function openAgentStream(payload: {
     providerType?: string;
     modelName: string;
   };
-  temperature?: number;
   terminalSessionId?: string;
 }) {
   return api.invoke("ai:stream_open", payload) as Promise<AgentStreamOpenResult>;

@@ -423,25 +423,6 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             </div>
           )}
 
-          <div className="field">
-            <label>Temperature</label>
-            <p className="field-hint">Provider 直连模式使用；智能体模式请在「智能体 → 高级」中设置。</p>
-            <div className="slider-row">
-              <input
-                type="range"
-                min={0}
-                max={2}
-                step={0.1}
-                value={settings.temperature}
-                onChange={(e) =>
-                  onChange({ ...settings, temperature: Number(e.target.value) })
-                }
-              />
-              <span className="slider-value">
-                {settings.temperature.toFixed(1)}
-              </span>
-            </div>
-          </div>
         </div>
       </div>
 

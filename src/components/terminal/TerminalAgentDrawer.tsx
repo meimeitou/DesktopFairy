@@ -27,6 +27,7 @@ import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
   loadSettings,
   getChatApiConfig,
+  getAgentBackendGuidance,
   type AppSettings,
 } from "../../shared/settings";
 import { COMPACT_PROMPT, parseSlashCommand } from "../../shared/slashCommands";
@@ -582,6 +583,30 @@ export default function TerminalAgentDrawer({
     }
 
     const currentSettings = settingsRef.current;
+    const guidance = getAgentBackendGuidance(currentSettings);
+    if (guidance) {
+      const now = Date.now();
+      updateTabState(activeTabId, (s) => ({
+        ...s,
+        messages: [
+          ...s.messages,
+          { id: genId(), role: "user", content: text, timestamp: now },
+          {
+            id: genId(),
+            role: "assistant",
+            content: guidance,
+            error: true,
+            timestamp: now,
+          },
+        ],
+        input: "",
+        streaming: false,
+        requestId: null,
+      }));
+      scrollToBottom();
+      return;
+    }
+
     const apiConfig = getChatApiConfig(currentSettings);
     if (!apiConfig?.apiHost || !apiConfig.modelName) {
       alert("请先在设置中配置 Agent 后端 Provider 与模型。");
@@ -642,7 +667,6 @@ export default function TerminalAgentDrawer({
           modelName: apiConfig.modelName,
         },
         agentConfig,
-        temperature: currentSettings.temperature,
         terminalSessionId: sessionId,
       });
       if (result.mode === "blocked") {

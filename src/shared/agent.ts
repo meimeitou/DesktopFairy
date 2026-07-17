@@ -18,7 +18,6 @@ export interface AgentConfig {
   /** Default emoji, or `img:relativePath` for uploaded image */
   avatar: string;
   description: string;
-  enabled: boolean;
   providerId: string;
   modelName: string;
   /** SOUL.md — agent's purpose, personality and execution rules. */
@@ -136,7 +135,6 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   name: "桌面精灵",
   avatar: DEFAULT_AGENT_AVATAR,
   description: "Live2D 桌面智能体",
-  enabled: true,
   providerId: "openai",
   modelName: "gpt-4o-mini",
   soul: DEFAULT_SOUL,
@@ -172,7 +170,6 @@ export function normalizeAgentConfig(
   const raw = value as Partial<AgentConfig> & {
     instructions?: string;
     mcpServers?: { id: string; enabled?: boolean }[];
-    temperature?: number;
     maxContextMessages?: number;
     maxContextChars?: number;
     maxTokens?: number;
@@ -206,7 +203,6 @@ export function normalizeAgentConfig(
     })(),
     description:
       typeof raw.description === "string" ? raw.description : base.description,
-    enabled: typeof raw.enabled === "boolean" ? raw.enabled : base.enabled,
     providerId:
       typeof raw.providerId === "string" && raw.providerId.trim()
         ? raw.providerId.trim()

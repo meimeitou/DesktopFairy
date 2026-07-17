@@ -19,6 +19,5 @@ export interface AiStreamOpenRequest {
     providerType?: string;
     modelName: string;
   };
-  temperature?: number;
   terminalSessionId?: string;
 }

@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'agent:tool:bypass_approval',
       'agent:skills:scan',
       'agent:skills:open_dir',
+      'agent:skills:import_directory',
       'mcp:servers:list',
       'mcp:servers:save',
       'mcp:servers:delete',
