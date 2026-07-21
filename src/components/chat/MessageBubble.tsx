@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
 import ChatMarkdown from "./ChatMarkdown";
@@ -41,16 +41,14 @@ function CheckIcon({ size = 14 }: { size?: number }) {
 
 export interface MessageBubbleProps {
   msg: ChatMsg;
-  streaming: boolean;
   isStreamingTarget: boolean;
   invalidAttachmentPaths: Set<string>;
   onRetry?: (msgId: string) => void;
   onDelete?: (msgId: string) => void;
 }
 
-export default function MessageBubble({
+function MessageBubble({
   msg,
-  streaming,
   isStreamingTarget,
   invalidAttachmentPaths,
   onRetry,
@@ -58,7 +56,6 @@ export default function MessageBubble({
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const isStreamingAssistant =
-    streaming &&
     isStreamingTarget &&
     msg.role === "assistant" &&
     msg.type !== "tool" &&
@@ -156,3 +153,5 @@ export default function MessageBubble({
     </div>
   );
 }
+
+export default memo(MessageBubble);

@@ -77,6 +77,14 @@
   gap: 10px;
 }
 
+.chat-messages-virtual-inner {
+  flex-shrink: 0;
+}
+
+.chat-messages-virtual-row {
+  padding-bottom: 10px;
+}
+
 .chat-empty {
   flex: 1;
   display: flex;
@@ -400,9 +408,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
   margin-bottom: 8px;
-  padding-bottom: 8px;
+  padding: 0 0 8px;
+  border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 
 .msg-tool-group-title {
@@ -412,8 +427,25 @@
 }
 
 .msg-tool-group-meta {
+  margin-left: auto;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.42);
+}
+
+.msg-tool-group-chevron {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.42);
+  transition: transform 0.15s ease;
+}
+
+.msg-tool-group-chevron.open {
+  transform: rotate(180deg);
+}
+
+.msg-tool-group-collapsed .msg-tool-group-head {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .msg-tool-steps {
@@ -793,6 +825,27 @@
   word-break: break-all;
   max-height: 240px;
   overflow: auto;
+}
+
+.agent-tool-terminal-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-tool-terminal-expand {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: rgba(160, 170, 200, 0.85);
+  font-size: 11px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.agent-tool-terminal-expand:hover {
+  color: rgba(200, 210, 240, 1);
+  text-decoration: underline;
 }
 
 .agent-tool-terminal-command {

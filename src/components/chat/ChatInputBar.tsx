@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useRef,
@@ -138,7 +139,7 @@ interface Props {
   focusSignal?: number;
 }
 
-export default function ChatInputBar({
+function ChatInputBar({
   input,
   onInputChange,
   attachments,
@@ -514,3 +515,5 @@ export default function ChatInputBar({
     </div>
   );
 }
+
+export default memo(ChatInputBar);

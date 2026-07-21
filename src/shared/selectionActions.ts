@@ -69,12 +69,18 @@ export const DEFAULT_SELECTION_ACTIONS: SelectionActionItem[] = [
   },
 ];
 
+export function formatFencedText(text: string): string {
+  return `\`\`\`\n${text}\n\`\`\``;
+}
+
 export function formatActionPrompt(
   template: string | undefined,
-  text: string
+  text: string,
+  options?: { fenceText?: boolean },
 ): string {
-  if (!template) return text;
-  return template.replace(/\{\{text\}\}/g, text);
+  const body = options?.fenceText ? formatFencedText(text) : text;
+  if (!template) return body;
+  return template.replace(/\{\{text\}\}/g, body);
 }
 
 export function formatQuotedText(text: string): string {

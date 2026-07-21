@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef } from "react";
 // Threshold tolerates 1-2 lines of margin plus sub-pixel jitter from streaming.
 const BOTTOM_THRESHOLD = 48;
 
+/**
+ * @param stickKey Prefer a primitive (e.g. last message id + length) so the
+ * effect does not re-run on unrelated array identity churn.
+ */
 export function useStickToBottom(stickKey: unknown) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);

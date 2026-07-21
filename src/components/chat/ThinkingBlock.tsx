@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import ChatMarkdown from "./ChatMarkdown";
 import "./ThinkingBlock.css";
@@ -70,52 +70,85 @@ function CheckIcon({ size = 13 }: { size?: number }) {
   );
 }
 
-export default function ThinkingBlock({ msg, isStreaming }: Props) {
+/** Updates label via DOM so the markdown body is not re-rendered every 100ms. */
+function ThinkingElapsedLabel({
+  isThinking,
+  startedAt,
+}: {
+  isThinking: boolean;
+  startedAt: number;
+}) {
+  const spanRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const el = spanRef.current;
+    if (!el) return;
+
+    if (!isThinking) {
+      const ms = Math.max(Date.now() - startedAt, 100);
+      el.textContent = `已深度思考（用时 ${(ms / 1000).toFixed(1)} 秒）`;
+      return;
+    }
+
+    let raf = 0;
+    const tick = () => {
+      const ms = Math.max(Date.now() - startedAt, 100);
+      el.textContent = `思考中（用时 ${(ms / 1000).toFixed(1)} 秒）`;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isThinking, startedAt]);
+
+  return (
+    <span className="thinking-label" ref={spanRef}>
+      {isThinking ? "思考中…" : "已深度思考"}
+    </span>
+  );
+}
+
+const ThinkingMarkdownBody = memo(function ThinkingMarkdownBody({
+  content,
+  isThinking,
+}: {
+  content: string;
+  isThinking: boolean;
+}) {
+  return <ChatMarkdown content={content} streaming={isThinking} />;
+});
+
+function ThinkingBlock({ msg, isStreaming }: Props) {
   const content = msg.reasoning ?? "";
   // Reasoning is "active" while streaming and no answer text has arrived yet
   // (reasoning_content streams before content for typical reasoning models).
   const isThinking = isStreaming && !msg.content;
   // Three-level display: "half" shows a capped preview with a fade mask,
   // "full" shows the whole body, "collapsed" hides the body entirely.
-  // Default to "half" so the thinking content is previewed without dominating the bubble,
-  // mirroring cherry-studio's half-folded affordance (but also applied to completed blocks).
   type FoldState = "collapsed" | "half" | "full";
   const [fold, setFold] = useState<FoldState>("half");
-  const [elapsedMs, setElapsedMs] = useState(0);
   const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startedAtRef = useRef(0);
+  const [startedAt, setStartedAt] = useState(0);
   const bodyRef = useRef<HTMLDivElement | null>(null);
+  const wasThinkingRef = useRef(false);
+
+  useEffect(() => {
+    if (isThinking && !wasThinkingRef.current) {
+      const now = Date.now();
+      startedAtRef.current = now;
+      setStartedAt(now);
+    }
+    wasThinkingRef.current = isThinking;
+  }, [isThinking]);
 
   // Auto-scroll the half-folded body to the bottom whenever reasoning
-  // content changes, so the latest thinking text stays visible (mirrors
-  // cherry-studio's half-folded preview behavior). Also runs on mount /
-  // when switching back to "half" so completed blocks show their ending.
+  // content changes, so the latest thinking text stays visible.
   useEffect(() => {
     if (fold !== "half") return;
     const el = bodyRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [fold, content]);
-
-  // Live count-up while thinking; freeze the value when done.
-  useEffect(() => {
-    if (isThinking) {
-      if (!timerRef.current) {
-        timerRef.current = setInterval(() => {
-          setElapsedMs((prev) => prev + 100);
-        }, 100);
-      }
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, [isThinking]);
 
   const handleCopy = async () => {
     if (!content) return;
@@ -127,13 +160,6 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
       /* clipboard unavailable */
     }
   };
-
-  const seconds = (Math.max(elapsedMs, 100) / 1000).toFixed(1);
-  const label = isThinking
-    ? `思考中（用时 ${seconds} 秒）`
-    : elapsedMs > 0
-      ? `已深度思考（用时 ${seconds} 秒）`
-      : "已深度思考";
 
   // Click cycles: half -> full -> collapsed -> half.
   const onHeaderClick = () => {
@@ -153,7 +179,7 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
         aria-expanded={expanded}
       >
         <BulbIcon />
-        <span className="thinking-label">{label}</span>
+        <ThinkingElapsedLabel isThinking={isThinking} startedAt={startedAt} />
         <ChevronIcon />
       </button>
       {showBody && (
@@ -171,9 +197,11 @@ export default function ThinkingBlock({ msg, isStreaming }: Props) {
               {copied ? <CheckIcon /> : <CopyIcon />}
             </button>
           )}
-          <ChatMarkdown content={content} streaming={isThinking} />
+          <ThinkingMarkdownBody content={content} isThinking={isThinking} />
         </div>
       )}
     </div>
   );
 }
+
+export default memo(ThinkingBlock);

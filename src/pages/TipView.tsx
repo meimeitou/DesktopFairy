@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import {
   buildSearchUrl,
   formatActionPrompt,
+  formatFencedText,
   formatQuotedText,
   type SelectionActionItem,
 } from "../shared/selectionActions";
@@ -77,7 +78,15 @@ export default function TipView({ text: initialText }: Props) {
         await openChat(formatQuotedText(text), false);
         break;
       case "ask":
-        await openChat(text, settings.selectionAutoSend);
+        await openChat(formatFencedText(text), settings.selectionAutoSend);
+        break;
+      case "explain":
+      case "summary":
+        if (action.prompt) {
+          await openChat(formatActionPrompt(action.prompt, text, { fenceText: true }));
+        } else {
+          await openChat(formatFencedText(text));
+        }
         break;
       default:
         if (action.prompt) {
@@ -96,7 +105,7 @@ export default function TipView({ text: initialText }: Props) {
   if (enabledActions.length === 0) {
     return (
       <div className="tip-toolbar" ref={toolbarRef}>
-        <button type="button" className="tip-action-btn" onClick={() => openChat(text)}>
+        <button type="button" className="tip-action-btn" onClick={() => openChat(formatFencedText(text))}>
           <span>💬</span>
           <span>询问</span>
         </button>

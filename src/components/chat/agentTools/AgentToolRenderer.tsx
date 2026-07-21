@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { memo, useContext, useEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import {
   extractFilePath,
@@ -241,7 +241,7 @@ function renderToolBody(msg: ChatMsg) {
   return <GenericToolBody msg={msg} />;
 }
 
-export default function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
+function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
   const status = msg.toolStatus || "streaming";
   const label = STATUS_LABEL[status] || status;
   const isCollapsible = status === "done";
@@ -291,3 +291,5 @@ export default function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
     </div>
   );
 }
+
+export default memo(AgentToolRenderer);

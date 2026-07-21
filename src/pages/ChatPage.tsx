@@ -5,14 +5,14 @@ import {
   useCallback,
   useMemo,
   type MutableRefObject,
-  type ReactNode,
 } from "react";
 import ChatInputBar from "../components/chat/ChatInputBar";
 import TopicSidebar from "../components/chat/TopicSidebar";
-import ToolCallBubble, { ToolCallGroup } from "../components/chat/ToolCallBubble";
-import MessageBubble from "../components/chat/MessageBubble";
+import MessageList, {
+  type MessageListHandle,
+} from "../components/chat/MessageList";
 import { useToolApproval } from "../hooks/useToolApproval";
-import { useStickToBottom } from "../hooks/useStickToBottom";
+import { createStreamChunkBuffer } from "../hooks/createStreamChunkBuffer";
 import type { ToolTerminalState } from "../shared/ai/stream";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import {
@@ -98,14 +98,6 @@ function genId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function ContextClearDivider() {
-  return (
-    <div className="msg-context-clear" role="separator">
-      <span>上下文已清除</span>
-    </div>
-  );
-}
-
 async function collectInvalidAttachmentPaths(
   messages: ChatMsg[],
 ): Promise<Set<string>> {
@@ -163,8 +155,10 @@ export default function ChatPage({
   const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
   const { messages, input, attachments, streaming, invalidAttachmentPaths } = activeState;
 
-  const { containerRef: messagesContainerRef, handleScroll, scrollToBottom } =
-    useStickToBottom(messages);
+  const messageListRef = useRef<MessageListHandle>(null);
+  const scrollToBottom = useCallback(() => {
+    messageListRef.current?.scrollToBottom();
+  }, []);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const requestIdRef = useRef<string>("");
   const activeTopicIdRef = useRef<string | null>(null);
@@ -177,8 +171,23 @@ export default function ChatPage({
   const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
 
   useEffect(() => {
-    topicStatesRef.current = topicStates;
-  }, [topicStates]);
+    // Keep ref in sync without clobbering live background-stream progress.
+    const active = activeTopicId;
+    const next = { ...topicStatesRef.current };
+    for (const [id, state] of Object.entries(topicStates)) {
+      const existing = next[id];
+      if (id === active) {
+        next[id] = state;
+      } else if (!existing || !existing.streaming) {
+        next[id] = state;
+      }
+      // else: background topic is streaming — ref already has fresher messages
+    }
+    for (const id of Object.keys(next)) {
+      if (!(id in topicStates)) delete next[id];
+    }
+    topicStatesRef.current = next;
+  }, [topicStates, activeTopicId]);
 
   useEffect(() => {
     activeTopicIdRef.current = activeTopicId;
@@ -192,10 +201,53 @@ export default function ChatPage({
     requestIdRef.current = activeState.requestId ?? "";
   }, [activeState.requestId]);
 
-  const backendItems = getChatBackendItems(chatSettings);
-  const selectableModels = backendItems.map((i) => i.value);
-  const modelLabels = Object.fromEntries(
-    backendItems.map((i) => [i.value, i.label]),
+  const [streamingTopicIds, setStreamingTopicIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const syncStreamingFlag = useCallback((topicId: string, streaming: boolean) => {
+    setStreamingTopicIds((prev) => {
+      const has = prev.has(topicId);
+      if (streaming === has) return prev;
+      const next = new Set(prev);
+      if (streaming) next.add(topicId);
+      else next.delete(topicId);
+      return next;
+    });
+  }, []);
+
+  /** Patch topic state; background streams update the ref only (no React re-render). */
+  const patchTopicState = useCallback(
+    (
+      topicId: string,
+      updater: (state: TopicPageState) => TopicPageState,
+      opts?: { forceReact?: boolean },
+    ) => {
+      const prev = topicStatesRef.current[topicId];
+      if (!prev) return;
+      const next = updater(prev);
+      if (next === prev) return;
+      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
+      if (prev.streaming !== next.streaming) {
+        syncStreamingFlag(topicId, next.streaming);
+      }
+      if (topicId === activeTopicIdRef.current || opts?.forceReact) {
+        setTopicStates((s) => ({ ...s, [topicId]: next }));
+      }
+    },
+    [syncStreamingFlag],
+  );
+
+  const selectableModels = useMemo(
+    () => getChatBackendItems(chatSettings).map((i) => i.value),
+    [chatSettings],
+  );
+  const modelLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        getChatBackendItems(chatSettings).map((i) => [i.value, i.label]),
+      ),
+    [chatSettings],
   );
   const activeBackend = getActiveChatBackend(chatSettings);
   const usingAgent = isAgentBackend(activeBackend);
@@ -316,7 +368,11 @@ export default function ChatPage({
         flushSessionSave(oldTopicId);
       }
       setActiveTopicId(topicId);
-      if (!topicStatesRef.current[topicId]) {
+      const latest = topicStatesRef.current[topicId];
+      if (latest) {
+        // Hydrate React state from ref (may be ahead after background streaming).
+        setTopicStates((prev) => ({ ...prev, [topicId]: latest }));
+      } else {
         void loadSessionForTopic(topicId);
       }
     },
@@ -447,13 +503,14 @@ export default function ChatPage({
             },
           };
         });
+        syncStreamingFlag(activeTopicId, true);
       }
     })();
 
     return () => {
       detachTopicStream(activeTopicId);
     };
-  }, [activeTopicId]);
+  }, [activeTopicId, syncStreamingFlag]);
 
   const setActiveInput = useCallback(
     (value: string) => {
@@ -526,30 +583,44 @@ export default function ChatPage({
   }, []);
 
   useEffect(() => {
-    const handleChatChunk = ({ requestId, delta, reasoning }: {
+    const applyChunk = (
+      requestId: string,
+      delta: string,
+      reasoning: string,
+    ) => {
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId) return;
+      patchTopicState(topicId, (state) => {
+        const idx = findLastAssistantReplyIndex(state.messages);
+        if (idx < 0) return state;
+        const next = state.messages.slice();
+        const target = next[idx];
+        next[idx] = {
+          ...target,
+          ...(delta ? { content: target.content + delta } : {}),
+          ...(reasoning
+            ? { reasoning: (target.reasoning ?? "") + reasoning }
+            : {}),
+        };
+        return { ...state, messages: next };
+      });
+      // Do not persist on every chunk — flush on done/error/tool events.
+    };
+
+    const chunkBuffer = createStreamChunkBuffer(applyChunk);
+
+    const handleChatChunk = ({
+      requestId,
+      delta,
+      reasoning,
+    }: {
       requestId: string;
       delta?: string;
       reasoning?: string;
     }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
-      setTopicStates((prev) => {
-        const state = prev[topicId];
-        if (!state) return prev;
-        const idx = findLastAssistantReplyIndex(state.messages);
-        if (idx < 0) return prev;
-        const next = state.messages.slice();
-        const target = next[idx];
-        next[idx] = {
-          ...target,
-          ...(typeof delta === "string" ? { content: target.content + delta } : {}),
-          ...(typeof reasoning === "string"
-            ? { reasoning: (target.reasoning ?? "") + reasoning }
-            : {}),
-        };
-        return { ...prev, [topicId]: { ...state, messages: next } };
-      });
-      scheduleTopicSave(topicId);
+      chunkBuffer.push(requestId, delta, reasoning);
     };
 
     const handleChatDone = ({ requestId, aborted, tools }: {
@@ -557,6 +628,7 @@ export default function ChatPage({
       aborted?: boolean;
       tools?: ToolTerminalState[];
     }) => {
+      chunkBuffer.flushRequest(requestId);
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
 
@@ -564,24 +636,21 @@ export default function ChatPage({
         requestIdToTopicIdRef.current.delete(requestId);
       }, 0);
 
-      setTopicStates((prev) => {
-        const state = prev[topicId];
-        if (!state) return prev;
-        return {
-          ...prev,
-          [topicId]: {
-            ...state,
-            streaming: false,
-            requestId: null,
-            requestBackend: null,
-            messages: reconcileToolMessages(
-              state.messages,
-              tools,
-              Boolean(aborted),
-            ),
-          },
-        };
-      });
+      patchTopicState(
+        topicId,
+        (state) => ({
+          ...state,
+          streaming: false,
+          requestId: null,
+          requestBackend: null,
+          messages: reconcileToolMessages(
+            state.messages,
+            tools,
+            Boolean(aborted),
+          ),
+        }),
+        { forceReact: true },
+      );
 
       const isActive = topicId === activeTopicIdRef.current;
 
@@ -596,18 +665,16 @@ export default function ChatPage({
       compactRequestIdRef.current = null;
 
       if (isCompact) {
-        setTopicStates((prev) => {
-          const state = prev[topicId];
-          if (!state) return prev;
-          const assistantIdx = findLastAssistantReplyIndex(state.messages);
-          const summary =
-            assistantIdx >= 0 && !state.messages[assistantIdx].error
-              ? state.messages[assistantIdx].content
-              : "";
-          if (!summary.trim()) return prev;
-          return {
-            ...prev,
-            [topicId]: {
+        patchTopicState(
+          topicId,
+          (state) => {
+            const assistantIdx = findLastAssistantReplyIndex(state.messages);
+            const summary =
+              assistantIdx >= 0 && !state.messages[assistantIdx].error
+                ? state.messages[assistantIdx].content
+                : "";
+            if (!summary.trim()) return state;
+            return {
               ...state,
               messages: [
                 ...state.messages,
@@ -625,9 +692,10 @@ export default function ChatPage({
                   timestamp: Date.now(),
                 },
               ],
-            },
-          };
-        });
+            };
+          },
+          { forceReact: true },
+        );
         if (isActive) notifyLive2DScene("replyDone");
         flushSessionSave(topicId);
         return;
@@ -646,41 +714,43 @@ export default function ChatPage({
     };
 
     const handleChatError = ({ requestId, message }: { requestId: string; message: string }) => {
+      chunkBuffer.flushRequest(requestId);
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
       requestIdToTopicIdRef.current.delete(requestId);
 
-      setTopicStates((prev) => {
-        const state = prev[topicId];
-        if (!state) return prev;
-        return {
-          ...prev,
-          [topicId]: {
+      patchTopicState(
+        topicId,
+        (state) => {
+          const idx = findLastAssistantReplyIndex(state.messages);
+          if (idx < 0) {
+            return {
+              ...state,
+              streaming: false,
+              requestId: null,
+              requestBackend: null,
+            };
+          }
+          const next = state.messages.slice();
+          const target = next[idx];
+          next[idx] = {
+            ...target,
+            content: target.content || `请求失败：${message}`,
+            error: true,
+          };
+          return {
             ...state,
             streaming: false,
             requestId: null,
             requestBackend: null,
-          },
-        };
-      });
+            messages: next,
+          };
+        },
+        { forceReact: true },
+      );
 
       const isActive = topicId === activeTopicIdRef.current;
       if (isActive) notifyLive2DScene("replyError");
-
-      setTopicStates((prev) => {
-        const state = prev[topicId];
-        if (!state) return prev;
-        const idx = findLastAssistantReplyIndex(state.messages);
-        if (idx < 0) return prev;
-        const next = state.messages.slice();
-        const target = next[idx];
-        next[idx] = {
-          ...target,
-          content: target.content || `请求失败：${message}`,
-          error: true,
-        };
-        return { ...prev, [topicId]: { ...state, messages: next } };
-      });
       flushSessionSave(topicId);
     };
 
@@ -705,9 +775,7 @@ export default function ChatPage({
     }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
-      setTopicStates((prev) => {
-        const state = prev[topicId];
-        if (!state) return prev;
+      patchTopicState(topicId, (state) => {
         const msgs = state.messages;
         const existingIdx = toolCallId
           ? msgs.findIndex(
@@ -761,7 +829,7 @@ export default function ChatPage({
             }
           }
         }
-        return { ...prev, [topicId]: { ...state, messages: nextMessages } };
+        return { ...state, messages: nextMessages };
       });
       scheduleTopicSave(topicId);
       const isActive = topicId === activeTopicIdRef.current;
@@ -781,21 +849,13 @@ export default function ChatPage({
     const offTool = api.onAgentStreamTool?.(handleAgentTool);
 
     return () => {
+      chunkBuffer.dispose();
       offChunk?.();
       offDone?.();
       offError?.();
       offTool?.();
     };
-  }, [flushSessionSave, scheduleTopicSave]);
-
-  // Center an awaiting-approval tool card in the viewport so the user notices it.
-  useEffect(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const card = el.querySelector<HTMLElement>("[data-tool-approval-id]");
-    if (!card) return;
-    card.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [messages]);
+  }, [flushSessionSave, scheduleTopicSave, patchTopicState]);
 
   // Switching topics returns to that conversation's bottom.
   useEffect(() => {
@@ -1035,6 +1095,7 @@ export default function ChatPage({
           },
         };
       });
+      syncStreamingFlag(topicId, true);
       scrollToBottom();
 
       if (shouldAutoTitle) {
@@ -1116,6 +1177,7 @@ export default function ChatPage({
               },
             };
           });
+          syncStreamingFlag(topicId, false);
           notifyLive2DScene("replyError");
           flushSessionSave(topicId);
         })
@@ -1135,6 +1197,7 @@ export default function ChatPage({
             },
           };
         });
+        syncStreamingFlag(topicId, false);
         notifyLive2DScene("replyError");
         setTopicStates((prev) => {
           const s = prev[topicId];
@@ -1152,7 +1215,7 @@ export default function ChatPage({
         flushSessionSave(topicId);
       });
     },
-    [chatSettings, skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave, scrollToBottom],
+    [chatSettings, skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave, scrollToBottom, syncStreamingFlag],
   );
 
   useEffect(() => {
@@ -1319,13 +1382,25 @@ export default function ChatPage({
     };
   }, [clearRef, handleClearMessages]);
 
-  const loadingTopicIds = useMemo(() => {
-    const set = new Set<string>();
-    for (const [id, state] of Object.entries(topicStates)) {
-      if (state.streaming) set.add(id);
-    }
-    return set;
-  }, [topicStates]);
+  const loadingTopicIds = streamingTopicIds;
+
+  const emptyContent = useMemo(
+    () => (
+      <div className="chat-empty">
+        <span className="chat-empty-icon">🧚‍♀️</span>
+        <p>开始聊天</p>
+      </div>
+    ),
+    [],
+  );
+
+  const handleSendClick = useCallback(() => {
+    void handleSend();
+  }, [handleSend]);
+
+  const handleCompactClick = useCallback(() => {
+    void handleSend(COMPACT_PROMPT);
+  }, [handleSend]);
 
   return (
     <div className={`chat-page${embedded ? " chat-page-embedded" : ""}`}>
@@ -1343,74 +1418,19 @@ export default function ChatPage({
         />
       )}
       <div className="chat-main-area">
-        <div className="chat-messages" ref={messagesContainerRef} onScroll={handleScroll}>
-          {messages.length === 0 ? (
-            <div className="chat-empty">
-              <span className="chat-empty-icon">🧚‍♀️</span>
-              <p>开始聊天</p>
-            </div>
-          ) : (
-            (() => {
-              const nodes: ReactNode[] = [];
-              let i = 0;
-              const streamingAssistantIdx = streaming
-                ? findLastAssistantReplyIndex(messages)
-                : -1;
-              const streamingAssistantId =
-                streamingAssistantIdx >= 0 ? messages[streamingAssistantIdx].id : null;
-              while (i < messages.length) {
-                const m = messages[i];
-                if (m.type === "clear") {
-                  nodes.push(<ContextClearDivider key={m.id} />);
-                  i += 1;
-                  continue;
-                }
-                if (m.type === "tool") {
-                  const batch: ChatMsg[] = [];
-                  while (i < messages.length && messages[i].type === "tool") {
-                    batch.push(messages[i]);
-                    i += 1;
-                  }
-                  nodes.push(
-                    batch.length > 1 ? (
-                      <ToolCallGroup
-                        key={batch[0].id}
-                        tools={batch}
-                        onApprove={handleApproveTool}
-                        onDeny={handleDenyTool}
-                        onAlwaysAllow={handleAlwaysAllowTool}
-                        submittingApprovalId={submittingApprovalId}
-                      />
-                    ) : (
-                      <ToolCallBubble
-                        key={batch[0].id}
-                        msg={batch[0]}
-                        onApprove={handleApproveTool}
-                        onDeny={handleDenyTool}
-                        onAlwaysAllow={handleAlwaysAllowTool}
-                        submittingApprovalId={submittingApprovalId}
-                      />
-                    ),
-                  );
-                  continue;
-                }
-                nodes.push(
-                  <MessageBubble
-                    key={m.id}
-                    msg={m}
-                    streaming={streaming}
-                    isStreamingTarget={m.id === streamingAssistantId}
-                    invalidAttachmentPaths={invalidAttachmentPaths}
-                    onRetry={m.role === "user" ? handleRetry : undefined}
-                    onDelete={handleDeleteMessage}
-                  />,
-                );
-                i += 1;
-              }
-              return nodes;
-            })()
-          )}
-        </div>
+        <MessageList
+          ref={messageListRef}
+          messages={messages}
+          streaming={streaming}
+          invalidAttachmentPaths={invalidAttachmentPaths}
+          onApprove={handleApproveTool}
+          onDeny={handleDenyTool}
+          onAlwaysAllow={handleAlwaysAllowTool}
+          submittingApprovalId={submittingApprovalId}
+          onRetry={handleRetry}
+          onDelete={handleDeleteMessage}
+          emptyContent={emptyContent}
+        />
 
         <ChatInputBar
           input={input}
@@ -1429,11 +1449,11 @@ export default function ChatPage({
           showModeSelector={usingAgent}
           reasoningEffort={chatSettings.agent.reasoningEffort}
           onReasoningEffortChange={handleReasoningEffortChange}
-          onSend={() => void handleSend()}
+          onSend={handleSendClick}
           onStop={handleStop}
           onClearContext={handleClearContext}
           onClearMessages={handleClearMessages}
-          onCompact={() => void handleSend(COMPACT_PROMPT)}
+          onCompact={handleCompactClick}
           slashCommands={slashCommands}
           onSlashCommand={handleSlashCommand}
         />

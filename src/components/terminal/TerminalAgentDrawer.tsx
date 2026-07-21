@@ -4,13 +4,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
+  type PointerEvent,
 } from "react";
-import MessageBubble from "../chat/MessageBubble";
-import ToolCallBubble, { ToolCallGroup } from "../chat/ToolCallBubble";
+import MessageList, {
+  type MessageListHandle,
+} from "../chat/MessageList";
 import { TerminalStopContext } from "../chat/agentTools/TerminalStopContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
-import { useStickToBottom } from "../../hooks/useStickToBottom";
+import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
 import { getAgentBackendLabel, type AgentConfig } from "../../shared/agent";
 import type { ChatMode } from "../../shared/chatMode";
 import ChatModeSelector from "../chat/ChatModeSelector";
@@ -44,6 +45,15 @@ import "../../pages/ChatPage.css";
 import "./TerminalAgentDrawer.css";
 
 const MAX_INPUT_HEIGHT = 140;
+const DRAWER_MIN_WIDTH = 360;
+
+function getDrawerMaxWidth(): number {
+  return Math.max(DRAWER_MIN_WIDTH, Math.floor(window.innerWidth / 2));
+}
+
+function clampDrawerWidth(width: number): number {
+  return Math.min(Math.max(width, DRAWER_MIN_WIDTH), getDrawerMaxWidth());
+}
 
 const api = window.electronAPI;
 
@@ -132,14 +142,6 @@ function genId(): string {
   return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function ContextClearDivider() {
-  return (
-    <div className="msg-context-clear" role="separator">
-      <span>上下文已清除</span>
-    </div>
-  );
-}
-
 export default function TerminalAgentDrawer({
   isOpen,
   onToggle,
@@ -152,12 +154,17 @@ export default function TerminalAgentDrawer({
   );
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
+  const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
 
   const tabStatesRef = useRef(tabStates);
   const settingsRef = useRef(settings);
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
   const compactRequestIdRef = useRef<string | null>(null);
   const handleClearContextRef = useRef<() => void>(() => {});
+  const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(
+    null,
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -174,6 +181,58 @@ export default function TerminalAgentDrawer({
     });
     return () => off?.();
   }, []);
+
+  useEffect(() => {
+    const onWindowResize = () => {
+      setDrawerWidth((w) => clampDrawerWidth(w));
+    };
+    window.addEventListener("resize", onWindowResize);
+    return () => window.removeEventListener("resize", onWindowResize);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.userSelect = prevUserSelect;
+    };
+  }, [isResizing]);
+
+  const handleResizePointerDown = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (!isOpen) return;
+      e.preventDefault();
+      resizeStartRef.current = { startX: e.clientX, startWidth: drawerWidth };
+      setIsResizing(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [drawerWidth, isOpen],
+  );
+
+  const handleResizePointerMove = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      const start = resizeStartRef.current;
+      if (!start) return;
+      const next = clampDrawerWidth(
+        start.startWidth + (start.startX - e.clientX),
+      );
+      setDrawerWidth(next);
+    },
+    [],
+  );
+
+  const handleResizePointerUp = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (!resizeStartRef.current) return;
+      resizeStartRef.current = null;
+      setIsResizing(false);
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    [],
+  );
 
   // Ensure a session exists for the active tab.
   useEffect(() => {
@@ -324,7 +383,11 @@ export default function TerminalAgentDrawer({
 
   // Stream listeners.
   useEffect(() => {
-    const offChunk = api.onChatStreamChunk?.(({ requestId, delta, reasoning }) => {
+    const applyChunk = (
+      requestId: string,
+      delta: string,
+      reasoning: string,
+    ) => {
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
       updateTabState(tabId, (state) => {
@@ -334,16 +397,41 @@ export default function TerminalAgentDrawer({
         const target = next[idx];
         next[idx] = {
           ...target,
-          ...(typeof delta === "string" ? { content: target.content + delta } : {}),
-          ...(typeof reasoning === "string"
+          ...(delta ? { content: target.content + delta } : {}),
+          ...(reasoning
             ? { reasoning: (target.reasoning ?? "") + reasoning }
             : {}),
         };
         return { ...state, messages: next };
       });
-    });
+    };
 
-    const offDone = api.onChatStreamDone?.(({ requestId, aborted, tools }) => {
+    const chunkBuffer = createStreamChunkBuffer(applyChunk);
+
+    const handleChatChunk = ({
+      requestId,
+      delta,
+      reasoning,
+    }: {
+      requestId: string;
+      delta?: string;
+      reasoning?: string;
+    }) => {
+      const tabId = requestIdToTabIdRef.current.get(requestId);
+      if (!tabId) return;
+      chunkBuffer.push(requestId, delta, reasoning);
+    };
+
+    const handleChatDone = ({
+      requestId,
+      aborted,
+      tools,
+    }: {
+      requestId: string;
+      aborted?: boolean;
+      tools?: ToolTerminalState[];
+    }) => {
+      chunkBuffer.flushRequest(requestId);
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
       setTimeout(() => {
@@ -354,10 +442,15 @@ export default function TerminalAgentDrawer({
       updateTabState(tabId, (state) => {
         const reconciled = reconcileToolMessages(
           state.messages,
-          tools as ToolTerminalState[] | undefined,
+          tools,
           Boolean(aborted),
         );
-        const next = { ...state, streaming: false, requestId: null, messages: reconciled };
+        const next = {
+          ...state,
+          streaming: false,
+          requestId: null,
+          messages: reconciled,
+        };
         if (aborted) {
           return next;
         }
@@ -389,9 +482,16 @@ export default function TerminalAgentDrawer({
         }
         return next;
       });
-    });
+    };
 
-    const offError = api.onChatStreamError?.(({ requestId, message }) => {
+    const handleChatError = ({
+      requestId,
+      message,
+    }: {
+      requestId: string;
+      message: string;
+    }) => {
+      chunkBuffer.flushRequest(requestId);
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
       requestIdToTabIdRef.current.delete(requestId);
@@ -409,7 +509,11 @@ export default function TerminalAgentDrawer({
         };
         return { ...state, messages: next, streaming: false, requestId: null };
       });
-    });
+    };
+
+    const offChunk = api.onChatStreamChunk?.(handleChatChunk);
+    const offDone = api.onChatStreamDone?.(handleChatDone);
+    const offError = api.onChatStreamError?.(handleChatError);
 
     const offTool = api.onAgentStreamTool?.((event) => {
       const tabId = requestIdToTabIdRef.current.get(event.requestId);
@@ -418,94 +522,20 @@ export default function TerminalAgentDrawer({
     });
 
     legacyStreamHandlersRef.current = {
-      onChatChunk: (data) => {
-        const tabId = requestIdToTabIdRef.current.get(data.requestId);
-        if (!tabId) return;
-        updateTabState(tabId, (state) => {
-          const idx = findLastAssistantReplyIndex(state.messages);
-          if (idx < 0) return state;
-          const next = state.messages.slice();
-          const target = next[idx];
-          next[idx] = {
-            ...target,
-            ...(typeof data.delta === "string" ? { content: target.content + data.delta } : {}),
-            ...(typeof data.reasoning === "string"
-              ? { reasoning: (target.reasoning ?? "") + data.reasoning }
-              : {}),
-          };
-          return { ...state, messages: next };
-        });
-      },
-      onChatDone: (data) => {
-        const tabId = requestIdToTabIdRef.current.get(data.requestId);
-        if (!tabId) return;
-        setTimeout(() => {
-          requestIdToTabIdRef.current.delete(data.requestId);
-        }, 0);
-        const isCompact = compactRequestIdRef.current === data.requestId;
-        compactRequestIdRef.current = null;
-        updateTabState(tabId, (state) => {
-          const reconciled = reconcileToolMessages(
-            state.messages,
-            data.tools,
-            Boolean(data.aborted),
-          );
-          const next = { ...state, streaming: false, requestId: null, messages: reconciled };
-          if (data.aborted) return next;
-          if (isCompact) {
-            const assistantIdx = findLastAssistantReplyIndex(state.messages);
-            const summary =
-              assistantIdx >= 0 && !state.messages[assistantIdx].error
-                ? state.messages[assistantIdx].content
-                : "";
-            if (summary.trim()) {
-              next.messages = [
-                ...reconciled,
-                {
-                  id: genId(),
-                  role: "user" as const,
-                  type: "clear" as const,
-                  content: "",
-                  timestamp: Date.now(),
-                } as ChatMsg,
-                {
-                  id: genId(),
-                  role: "user" as const,
-                  content: `[上下文摘要]\n\n${summary.trim()}`,
-                  timestamp: Date.now(),
-                } as ChatMsg,
-              ];
-            }
-          }
-          return next;
-        });
-      },
-      onChatError: (data) => {
-        const tabId = requestIdToTabIdRef.current.get(data.requestId);
-        if (!tabId) return;
-        requestIdToTabIdRef.current.delete(data.requestId);
-        updateTabState(tabId, (state) => {
-          const idx = findLastAssistantReplyIndex(state.messages);
-          if (idx < 0) {
-            return { ...state, streaming: false, requestId: null };
-          }
-          const next = state.messages.slice();
-          next[idx] = {
-            ...next[idx],
-            content: next[idx].content || `请求失败：${data.message}`,
-            error: true,
-          };
-          return { ...state, messages: next, streaming: false, requestId: null };
-        });
-      },
+      onChatChunk: handleChatChunk,
+      onChatDone: handleChatDone,
+      onChatError: handleChatError,
       onAgentTool: (data) => {
-        const tabId = requestIdToTabIdRef.current.get(String(data.requestId || ""));
+        const tabId = requestIdToTabIdRef.current.get(
+          String(data.requestId || ""),
+        );
         if (!tabId) return;
         mergeToolMessage(tabId, data as unknown as AgentStreamToolEvent);
       },
     };
 
     return () => {
+      chunkBuffer.dispose();
       offChunk?.();
       offDone?.();
       offError?.();
@@ -552,17 +582,10 @@ export default function TerminalAgentDrawer({
     });
   }, [tabIds]);
 
-  const { containerRef: messagesContainerRef, handleScroll, scrollToBottom } =
-    useStickToBottom(activeState.messages);
-
-  // Center an awaiting-approval tool card in the viewport so the user notices it.
-  useEffect(() => {
-    const el = messagesContainerRef.current;
-    if (!el) return;
-    const card = el.querySelector<HTMLElement>("[data-tool-approval-id]");
-    if (!card) return;
-    card.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [activeState.messages]);
+  const messageListRef = useRef<MessageListHandle>(null);
+  const scrollToBottom = useCallback(() => {
+    messageListRef.current?.scrollToBottom();
+  }, []);
 
   // Switching tabs returns to that session's bottom.
   useEffect(() => {
@@ -786,6 +809,14 @@ export default function TerminalAgentDrawer({
           input: s.input ? `${s.input}\n\n终端选区：\n${block}` : `终端选区：\n${block}`,
         };
       });
+      // 等 React 提交 input 更新、抽屉打开后再聚焦，光标落在末尾
+      window.setTimeout(() => {
+        const el = textareaRef.current;
+        if (!el || el.disabled) return;
+        el.focus();
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }, 0);
     };
     window.addEventListener("terminal:add-to-chat", handler);
     return () => window.removeEventListener("terminal:add-to-chat", handler);
@@ -796,81 +827,39 @@ export default function TerminalAgentDrawer({
     [settings.agent],
   );
 
-  const renderMessages = () => {
-    const { messages, streaming } = activeState;
-    if (messages.length === 0) {
-      return (
-        <div className="terminal-agent-empty">
-          <span className="terminal-agent-empty-icon">🧚‍♀️</span>
-          <p>开始和终端 Agent 对话</p>
-          <small>Agent 可以发送命令到当前终端并读取结果</small>
-        </div>
-      );
-    }
-
-    const nodes: ReactNode[] = [];
-    let i = 0;
-    const streamingAssistantIdx = streaming
-      ? findLastAssistantReplyIndex(messages)
-      : -1;
-    const streamingAssistantId =
-      streamingAssistantIdx >= 0 ? messages[streamingAssistantIdx].id : null;
-
-    while (i < messages.length) {
-      const m = messages[i];
-      if (m.type === "clear") {
-        nodes.push(<ContextClearDivider key={m.id} />);
-        i += 1;
-        continue;
-      }
-      if (m.type === "tool") {
-        const batch: ChatMsg[] = [];
-        while (i < messages.length && messages[i].type === "tool") {
-          batch.push(messages[i]);
-          i += 1;
-        }
-        nodes.push(
-          batch.length > 1 ? (
-            <ToolCallGroup
-              key={batch[0].id}
-              tools={batch}
-              onApprove={handleApproveTool}
-              onDeny={handleDenyTool}
-              onAlwaysAllow={handleAlwaysAllowTool}
-              submittingApprovalId={submittingApprovalId}
-              alwaysAllowLabel="本次全部允许"
-            />
-          ) : (
-            <ToolCallBubble
-              key={batch[0].id}
-              msg={batch[0]}
-              onApprove={handleApproveTool}
-              onDeny={handleDenyTool}
-              onAlwaysAllow={handleAlwaysAllowTool}
-              submittingApprovalId={submittingApprovalId}
-              alwaysAllowLabel="本次全部允许"
-            />
-          ),
-        );
-        continue;
-      }
-      nodes.push(
-        <MessageBubble
-          key={m.id}
-          msg={m}
-          streaming={streaming}
-          isStreamingTarget={m.id === streamingAssistantId}
-          invalidAttachmentPaths={new Set()}
-        />,
-      );
-      i += 1;
-    }
-    return nodes;
-  };
+  const emptyContent = useMemo(
+    () => (
+      <div className="terminal-agent-empty">
+        <span className="terminal-agent-empty-icon">🧚‍♀️</span>
+        <p>开始和终端 Agent 对话</p>
+        <small>Agent 可以发送命令到当前终端并读取结果</small>
+      </div>
+    ),
+    [],
+  );
 
   return (
-    <aside className={`terminal-agent-drawer${isOpen ? " open" : ""}`}>
-      <div className="terminal-agent-drawer-content">
+    <aside
+      className={`terminal-agent-drawer${isOpen ? " open" : ""}${isResizing ? " resizing" : ""}`}
+      style={isOpen ? { width: drawerWidth } : undefined}
+    >
+      <div
+        className="terminal-agent-drawer-content"
+        style={{ minWidth: drawerWidth }}
+      >
+        {isOpen && (
+          <div
+            className="terminal-agent-drawer-resize-handle"
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+            onPointerCancel={handleResizePointerUp}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整抽屉宽度"
+            title="拖拽调整宽度"
+          />
+        )}
         <div className="terminal-agent-header">
           <div className="terminal-agent-title">
             <span className="terminal-agent-subtitle">{agentLabel}</span>
@@ -897,11 +886,20 @@ export default function TerminalAgentDrawer({
           </div>
         </div>
 
-        <div className="terminal-agent-messages" ref={messagesContainerRef} onScroll={handleScroll}>
-          <TerminalStopContext.Provider value={handleStopTerminal}>
-            {renderMessages()}
-          </TerminalStopContext.Provider>
-        </div>
+        <TerminalStopContext.Provider value={handleStopTerminal}>
+          <MessageList
+            ref={messageListRef}
+            className="terminal-agent-messages"
+            messages={activeState.messages}
+            streaming={activeState.streaming}
+            onApprove={handleApproveTool}
+            onDeny={handleDenyTool}
+            onAlwaysAllow={handleAlwaysAllowTool}
+            submittingApprovalId={submittingApprovalId}
+            alwaysAllowLabel="本次全部允许"
+            emptyContent={emptyContent}
+          />
+        </TerminalStopContext.Provider>
 
         <div className="terminal-agent-input-shell">
           <div className="chat-input-toolbar">

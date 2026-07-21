@@ -1002,7 +1002,10 @@ const togglePresence = () => {
   if (chatWindow && !chatWindow.isDestroyed() && chatWindow.isVisible()) {
     dismissChatWindow(chatWindow);
   } else {
-    createChatWindow();
+    createChatWindow({
+      anchor: 'cursor',
+      refPoint: screen.getCursorScreenPoint(),
+    });
   }
 };
 
