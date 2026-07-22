@@ -116,6 +116,14 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
   parts.push(
     '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。若需指向某条证据，用简短说明即可（如「见上方 WebSearch 结果 #2」）。'
   );
+  if (enabledToolNames.includes('AskUserQuestion')) {
+    parts.push(
+      '## 向用户确认（AskUserQuestion）\n\n' +
+        '**何时调用**：缺少关键偏好/约束且无法从文件、设置或对话推断；用户指令存在多种合理理解且会显著改变方案；执行前被阻塞、必须选定方向才能继续。\n\n' +
+        '**何时不要调用**：Read/Grep/设置/历史能自行确定；仅为礼貌性确认（「可以吗？」）——直接执行或说明假设；答案不会改变下一步动作；每步都问——每轮最多 1–2 个阻塞性问题。\n\n' +
+        '**参数**：`questions` 1–4 题；每题 `question` + `options`（0–4 个，可为 `{label, description?}` 或字符串）。界面始终有「其他」供自由输入，不要在 options 里重复。需要多选时设 `multiSelect: true`。'
+    );
+  }
   if (context === 'terminal') {
     parts.push(
       '## 终端操作\n\n你可以使用 Terminal 工具将 shell 命令发送到用户当前可见的终端执行，命令输出会实时显示在用户终端中，同时返回给你用于判断下一步操作。在当前终端会话中，所有 shell 命令都必须通过 Terminal 工具执行；发送命令前确保意图明确，命令执行结果（包括 exit code）会返回给你。过长的输出会被截断，如需完整输出请缩小命令范围。'

@@ -16,6 +16,11 @@ export function buildMessageListItems(messages: ChatMsg[]): MessageListItem[] {
       continue;
     }
     if (m.type === "tool") {
+      if (m.toolName === "AskUserQuestion") {
+        items.push({ kind: "tools", id: m.id, tools: [m] });
+        i += 1;
+        continue;
+      }
       const batch: ChatMsg[] = [];
       while (i < messages.length && messages[i].type === "tool") {
         batch.push(messages[i]);

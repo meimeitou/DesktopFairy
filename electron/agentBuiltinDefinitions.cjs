@@ -193,6 +193,26 @@ const DF_EXTRA_BUILTIN_TOOLS = [
     category: 'shell',
     defaultPrompt: true,
   },
+  {
+    id: 'AskUserQuestion',
+    name: 'AskUserQuestion',
+    description: `Asks the user clarifying questions during execution and waits for their answers.
+
+Use when:
+- A key preference or constraint is missing and cannot be inferred from files, settings, or chat history
+- The user's instruction has multiple valid interpretations that would significantly change what you do
+- You are blocked and must choose a direction before continuing
+
+Do NOT use when:
+- You can resolve the question with Read / Grep / Glob / settings / prior messages
+- You only want polite confirmation ("shall I continue?") — proceed or state your assumption instead
+- The answer would not change your next action
+- chatMode is full-auto (tool unavailable)
+
+Format: 1–4 questions. Each needs \`question\` plus \`options\` (0–4 preset choices as \`{label, description?}\` or plain strings). The UI always provides an "Other" free-text choice — do not duplicate it in options. Prefer 2–4 concise options when offering alternatives.`,
+    category: 'context',
+    defaultPrompt: false,
+  },
 ];
 
 const CLAUDE_CODE_BUILTIN_TOOLS = [...CHERRY_ALIGNED_BUILTIN_TOOLS, ...DF_EXTRA_BUILTIN_TOOLS];
@@ -445,6 +465,63 @@ function getOpenAiToolParameters(toolId) {
           timeout: { type: 'number' },
         },
         required: ['command'],
+      };
+    case 'AskUserQuestion':
+      return {
+        type: 'object',
+        required: ['questions'],
+        properties: {
+          questions: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 4,
+            description: 'Questions to ask the user (1–4)',
+            items: {
+              type: 'object',
+              required: ['question'],
+              properties: {
+                question: {
+                  type: 'string',
+                  description: 'Complete question text shown to the user',
+                },
+                header: {
+                  type: 'string',
+                  description: 'Very short label for the question (max ~12 chars)',
+                },
+                multiSelect: {
+                  type: 'boolean',
+                  description: 'Allow selecting multiple options',
+                },
+                options: {
+                  type: 'array',
+                  minItems: 0,
+                  maxItems: 4,
+                  description:
+                    'Preset choices (0–4). UI always adds "Other" for custom text. Prefer 2–4 concise labels.',
+                  items: {
+                    oneOf: [
+                      { type: 'string', description: 'Short option label' },
+                      {
+                        type: 'object',
+                        required: ['label'],
+                        properties: {
+                          label: {
+                            type: 'string',
+                            description: 'Short option label (1–5 words)',
+                          },
+                          description: {
+                            type: 'string',
+                            description: 'Explanation of what this option means',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
       };
     default:
       return { type: 'object', properties: {}, required: [] };

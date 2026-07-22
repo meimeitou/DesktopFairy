@@ -1,8 +1,13 @@
 const { shouldPromptForTool, resolveToolApprovalMode } = require('./agentBuiltinCatalog.cjs');
 const { executeBuiltinTool } = require('./agentBuiltinExecutors.cjs');
 const { executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs');
-const { parseToolArguments, parseToolArgumentsStrict } = require('./toolCallDisplay.cjs');
-const { makeApprovalId, waitForToolApproval } = require('./agentToolApproval.cjs');
+const { parseToolArgumentsStrict } = require('./toolCallDisplay.cjs');
+const {
+  makeApprovalId,
+  makeAnswerId,
+  waitForToolApproval,
+  waitForUserAnswer,
+} = require('./agentToolApproval.cjs');
 
 function parseCommandString(commandStr) {
   const parts = String(commandStr || '')
@@ -86,6 +91,127 @@ function returnToolResult(deps, toolCallId, toolName, rawArgs, resultText) {
   return { resultText, denied: false };
 }
 
+function normalizeAskOption(opt) {
+  if (typeof opt === 'string') {
+    const label = opt.trim();
+    return label ? { label } : null;
+  }
+  if (!opt || typeof opt !== 'object') return null;
+  const labelRaw = opt.label ?? opt.text ?? opt.value ?? opt.name ?? opt.title;
+  if (typeof labelRaw !== 'string' || !labelRaw.trim()) return null;
+  const normalized = { label: labelRaw.trim() };
+  if (typeof opt.description === 'string' && opt.description.trim()) {
+    normalized.description = opt.description.trim();
+  } else if (typeof opt.detail === 'string' && opt.detail.trim()) {
+    normalized.description = opt.detail.trim();
+  }
+  return normalized;
+}
+
+function normalizeAskUserQuestionsArgs(args) {
+  const questions = args?.questions;
+  if (!Array.isArray(questions) || questions.length < 1 || questions.length > 4) {
+    return { error: 'questions must be an array of 1–4 items' };
+  }
+  const normalized = [];
+  for (let i = 0; i < questions.length; i += 1) {
+    const q = questions[i];
+    if (!q || typeof q !== 'object') {
+      return { error: `questions[${i}] must be an object` };
+    }
+    if (typeof q.question !== 'string' || !q.question.trim()) {
+      return { error: `questions[${i}].question is required` };
+    }
+    const optionsRaw = Array.isArray(q.options) ? q.options : [];
+    const options = [];
+    for (let j = 0; j < optionsRaw.length; j += 1) {
+      const opt = normalizeAskOption(optionsRaw[j]);
+      if (opt) options.push(opt);
+    }
+    if (options.length > 4) {
+      return { error: `questions[${i}].options must have at most 4 items` };
+    }
+    normalized.push({
+      question: q.question.trim(),
+      ...(typeof q.header === 'string' && q.header.trim() ? { header: q.header.trim() } : {}),
+      ...(q.multiSelect === true ? { multiSelect: true } : {}),
+      options,
+    });
+  }
+  return { questions: normalized };
+}
+
+function validateAskUserQuestions(args) {
+  const result = normalizeAskUserQuestionsArgs(args);
+  if (result.error) return result.error;
+  return null;
+}
+
+async function executeAskUserQuestion(toolCall, deps, args, rawArgs, toolCallId) {
+  const toolName = 'AskUserQuestion';
+  if (deps.agentConfig?.chatMode === 'full-auto') {
+    return returnToolResult(
+      deps,
+      toolCallId,
+      toolName,
+      rawArgs,
+      JSON.stringify({
+        ok: false,
+        error: 'AskUserQuestion is unavailable in full-auto mode',
+      }),
+    );
+  }
+
+  const validationError = validateAskUserQuestions(args);
+  if (validationError) {
+    return returnToolResult(
+      deps,
+      toolCallId,
+      toolName,
+      rawArgs,
+      JSON.stringify({ ok: false, error: validationError }),
+    );
+  }
+
+  const normalized = normalizeAskUserQuestionsArgs(args);
+  const normalizedArgsJson = JSON.stringify({ questions: normalized.questions });
+
+  const answerId = makeAnswerId(deps.requestId, toolCallId);
+  emitToolEvent(deps, {
+    toolCallId,
+    toolName,
+    toolArgs: normalizedArgsJson,
+    approvalId: answerId,
+    status: 'awaiting_input',
+  });
+  deps.onApprovalWaitStart?.();
+
+  const answerResult = await waitForUserAnswer({
+    answerId,
+    signal: deps.signal,
+  });
+
+  if (answerResult.kind === 'aborted') {
+    emitToolEvent(deps, {
+      toolCallId,
+      toolName,
+      toolArgs: normalizedArgsJson,
+      approvalId: answerId,
+      status: 'error',
+      message: '已取消',
+    });
+    return { resultText: '', aborted: true };
+  }
+
+  return returnToolResult(
+    deps,
+    toolCallId,
+    toolName,
+    normalizedArgsJson,
+    JSON.stringify({ ok: true, answers: answerResult.answers }),
+  );
+}
+
 async function executeAgentTool(toolCall, deps) {
   const name = toolCall?.function?.name;
   const rawArgs = toolCall?.function?.arguments || '';
@@ -111,6 +237,11 @@ async function executeAgentTool(toolCall, deps) {
       }),
       denied: false,
     };
+  }
+
+  // AskUserQuestion: never go through danger-tool approval / bypass; always wait for answers.
+  if (name === 'AskUserQuestion') {
+    return executeAskUserQuestion(toolCall, deps, args, rawArgs, toolCallId);
   }
 
   const approvalMode = resolveToolApprovalMode(deps.agentConfig);

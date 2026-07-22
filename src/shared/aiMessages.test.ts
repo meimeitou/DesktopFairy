@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import { createRequire } from "module";
 import { describe, it, expect } from "vitest";
 import {
   buildAgentHistoryMessages,

@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'ai:stream_abort',
       'ai:tool:bypass_approval',
       'agent:tool:approve',
+      'agent:tool:answer',
       'agent:tool:bypass_approval',
       'agent:skills:scan',
       'agent:skills:open_dir',

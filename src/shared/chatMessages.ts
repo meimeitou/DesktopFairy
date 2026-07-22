@@ -22,6 +22,7 @@ export interface ChatMsg {
   toolStatus?:
     | "streaming"
     | "awaiting_approval"
+    | "awaiting_input"
     | "running"
     | "done"
     | "error"
@@ -321,7 +322,7 @@ export function buildApiMessages(
   return result;
 }
 
-/** Prevent chunkBridge "running" from downgrading an active approval prompt. */
+/** Prevent chunkBridge "running" from downgrading an active approval/input prompt. */
 export function shouldApplyToolStatus(
   current: ChatMsg["toolStatus"] | undefined,
   incoming: ChatMsg["toolStatus"],
@@ -338,14 +339,22 @@ export function shouldApplyToolStatus(
   if (current === "awaiting_approval" && incoming === "running") {
     return true;
   }
-  // Approval prompt must not be masked by pre-execute streaming events.
-  if (current === "awaiting_approval" && incoming === "streaming") {
+  // Approval / input prompt must not be masked by pre-execute streaming events.
+  if (
+    (current === "awaiting_approval" || current === "awaiting_input") &&
+    incoming === "streaming"
+  ) {
+    return false;
+  }
+  // awaiting_input stays until answered (done) or cancelled (error); block running race.
+  if (current === "awaiting_input" && incoming === "running") {
     return false;
   }
   const rank: Record<NonNullable<ChatMsg["toolStatus"]>, number> = {
     streaming: 1,
     running: 2,
     awaiting_approval: 3,
+    awaiting_input: 3,
     denied: 4,
     error: 5,
     done: 6,
@@ -381,7 +390,8 @@ export function reconcileToolMessages(
     if (
       m.toolStatus === "streaming" ||
       m.toolStatus === "running" ||
-      m.toolStatus === "awaiting_approval"
+      m.toolStatus === "awaiting_approval" ||
+      m.toolStatus === "awaiting_input"
     ) {
       return {
         ...m,

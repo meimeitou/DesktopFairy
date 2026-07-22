@@ -89,6 +89,21 @@ describe('agent', () => {
       expect(ids).toContain('Bash')
     })
 
+    it('should exclude AskUserQuestion in full-auto mode', () => {
+      const agent = makeAgent({ chatMode: 'full-auto' })
+      const tools = getEnabledAgentBuiltinTools(agent)
+      const ids = tools.map((t) => t.id)
+      expect(ids).not.toContain('AskUserQuestion')
+    })
+
+    it('should include AskUserQuestion in normal / plan / auto-edit modes', () => {
+      for (const chatMode of ['normal', 'plan', 'auto-edit'] as const) {
+        const agent = makeAgent({ chatMode })
+        const ids = getEnabledAgentBuiltinTools(agent).map((t) => t.id)
+        expect(ids).toContain('AskUserQuestion')
+      }
+    })
+
     it('should filter out explicitly disabled tools', () => {
       const agent = makeAgent({
         chatMode: 'full-auto',
@@ -183,6 +198,17 @@ describe('agent', () => {
     it('should ensure disabledToolIds is an array', () => {
       const result = normalizeAgentConfig({ disabledToolIds: null })
       expect(Array.isArray(result.disabledToolIds)).toBe(true)
+      expect(result.disabledToolIds).toEqual(LOCAL_DEFAULT_DISABLED_TOOL_IDS)
+    })
+
+    it('should keep AskUserQuestion enabled even if present in disabledToolIds', () => {
+      const result = normalizeAgentConfig({
+        disabledToolIds: ['AskUserQuestion', 'Terminal'],
+        chatMode: 'normal',
+      })
+      expect(result.disabledToolIds).toEqual(['Terminal'])
+      const ids = getEnabledAgentBuiltinTools(result).map((t) => t.id)
+      expect(ids).toContain('AskUserQuestion')
     })
 
     it('should ensure envVars is an object', () => {

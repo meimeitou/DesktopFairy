@@ -27,5 +27,5 @@
     "noFallthroughCasesInSwitch": false
   },
   "include": ["src", "src/live2d/core"],
-  "exclude": ["src/live2d/framework"]
+  "exclude": ["src/live2d/framework", "src/**/*.test.ts", "src/**/*.test.tsx"]
 }

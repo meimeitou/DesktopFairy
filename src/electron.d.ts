@@ -75,6 +75,7 @@ declare global {
           status:
             | "streaming"
             | "awaiting_approval"
+            | "awaiting_input"
             | "running"
             | "done"
             | "error"

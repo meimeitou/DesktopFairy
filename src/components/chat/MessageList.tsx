@@ -13,6 +13,7 @@ import type { ChatMsg } from "../../shared/chatMessages";
 import { findLastAssistantReplyIndex } from "../../shared/chatMessages";
 import MessageBubble from "./MessageBubble";
 import ToolCallBubble, { ToolCallGroup } from "./ToolCallBubble";
+import type { AskUserAnswers } from "./agentTools/askUserQuestionParse";
 import {
   buildMessageListItems,
   messageListStickKey,
@@ -46,6 +47,7 @@ export interface MessageListProps {
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
+  onAnswer?: (answerId: string, answers: AskUserAnswers) => void;
   submittingApprovalId?: string | null;
   onRetry?: (msgId: string) => void;
   onDelete?: (msgId: string) => void;
@@ -63,6 +65,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       onApprove,
       onDeny,
       onAlwaysAllow,
+      onAnswer,
       submittingApprovalId,
       onRetry,
       onDelete,
@@ -96,7 +99,10 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         const item = items[i];
         if (item.kind !== "tools") continue;
         const waiting = item.tools.filter(
-          (t) => t.toolStatus === "awaiting_approval" && t.toolApprovalId,
+          (t) =>
+            (t.toolStatus === "awaiting_approval" ||
+              t.toolStatus === "awaiting_input") &&
+            t.toolApprovalId,
         );
         if (waiting.length > 0) {
           return {
@@ -230,6 +236,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                       onApprove={onApprove}
                       onDeny={onDeny}
                       onAlwaysAllow={onAlwaysAllow}
+                      onAnswer={onAnswer}
                       submittingApprovalId={submittingApprovalId}
                       alwaysAllowLabel={alwaysAllowLabel}
                     />
@@ -239,6 +246,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                       onApprove={onApprove}
                       onDeny={onDeny}
                       onAlwaysAllow={onAlwaysAllow}
+                      onAnswer={onAnswer}
                       submittingApprovalId={submittingApprovalId}
                       alwaysAllowLabel={alwaysAllowLabel}
                     />

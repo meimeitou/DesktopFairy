@@ -10,6 +10,7 @@ import {
 import { TerminalStopContext } from "./TerminalStopContext";
 import TerminalOutput from "./TerminalOutput";
 import ToolHeader from "./ToolHeader";
+import { parseAskUserQuestions } from "./askUserQuestionParse";
 
 function StatusBadge({
   status,
@@ -31,6 +32,7 @@ function StatusBadge({
 const STATUS_LABEL: Record<string, string> = {
   streaming: "准备中",
   running: "执行中",
+  awaiting_input: "等待回答",
   done: "完成",
   error: "失败",
   denied: "已拒绝",
@@ -228,12 +230,59 @@ function SkillsToolBody({ msg }: { msg: ChatMsg }) {
   );
 }
 
+function AskUserQuestionBody({ msg }: { msg: ChatMsg }) {
+  const questions = parseAskUserQuestions(msg);
+  const output = parseToolOutput(msg.toolResultPreview);
+  const answers =
+    output && typeof output === "object" && (output as Record<string, unknown>).answers
+      ? ((output as Record<string, unknown>).answers as Record<string, unknown>)
+      : null;
+
+  return (
+    <div className="agent-tool-body">
+      {questions.length > 0 && (
+        <>
+          <div className="agent-tool-section-label">问题</div>
+          <ul className="agent-tool-ask-result-list">
+            {questions.map((q) => {
+              const answer =
+                answers && typeof answers[q.question] === "string"
+                  ? String(answers[q.question])
+                  : "";
+              return (
+                <li key={q.question}>
+                  <div className="agent-tool-ask-result-q">{q.question}</div>
+                  {q.options.length > 0 && (
+                    <div className="agent-tool-ask-result-options">
+                      选项：{q.options.map((o) => o.label).join("、")}
+                    </div>
+                  )}
+                  {answer && (
+                    <div className="agent-tool-ask-result-a">答：{answer}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+      {!answers && msg.toolResultPreview && (
+        <>
+          <div className="agent-tool-section-label">结果</div>
+          <TerminalOutput content={msg.toolResultPreview} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function renderToolBody(msg: ChatMsg) {
   const name = msg.toolName || "";
   if (name === "Bash") return <BashToolBody msg={msg} />;
   if (name === "Terminal") return <TerminalToolBody msg={msg} />;
   if (name === "Skill") return <SkillToolBody msg={msg} />;
   if (name === "Skills") return <SkillsToolBody msg={msg} />;
+  if (name === "AskUserQuestion") return <AskUserQuestionBody msg={msg} />;
   if (name === "Read" || name === "Write" || name === "Edit") {
     return name === "Read" ? <ReadToolBody msg={msg} /> : <GenericToolBody msg={msg} />;
   }

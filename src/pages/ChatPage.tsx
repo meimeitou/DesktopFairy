@@ -784,7 +784,9 @@ export default function ChatPage({
               (m) =>
                 m.type === "tool" &&
                 m.toolName === toolName &&
-                (m.toolStatus === "running" || m.toolStatus === "streaming"),
+                (m.toolStatus === "running" ||
+                  m.toolStatus === "streaming" ||
+                  m.toolStatus === "awaiting_input"),
             );
         const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
         const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, status)
@@ -900,6 +902,7 @@ export default function ChatPage({
     handleApproveTool,
     handleDenyTool,
     handleAlwaysAllowTool,
+    submitToolAnswer,
   } = useToolApproval(
     chatMessagesRef,
     () => handleChatModeChange("full-auto"),
@@ -1423,6 +1426,7 @@ export default function ChatPage({
           onApprove={handleApproveTool}
           onDeny={handleDenyTool}
           onAlwaysAllow={handleAlwaysAllowTool}
+          onAnswer={submitToolAnswer}
           submittingApprovalId={submittingApprovalId}
           onRetry={handleRetry}
           onDelete={handleDeleteMessage}

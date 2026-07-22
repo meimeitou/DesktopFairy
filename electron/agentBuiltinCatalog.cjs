@@ -14,7 +14,11 @@ const DEFAULT_SAFE_TOOLS = new Set([
   'TodoWrite',
   'Skill',
   'UpdateProfile',
+  'AskUserQuestion',
 ]);
+
+/** Enabled by default; only chatMode rules (full-auto) may hide from the model. */
+const ALWAYS_ENABLED_TOOL_IDS = new Set(['AskUserQuestion']);
 
 const PLAN_MODE_BLOCKED_TOOLS = new Set([
   'Write',
@@ -28,9 +32,9 @@ const PLAN_MODE_BLOCKED_TOOLS = new Set([
 ]);
 
 const CHAT_MODE_SUFFIXES = {
-  plan: '\n\n## 计划模式\n当前处于【计划模式】。你只能使用 Read / Glob / Grep / TodoWrite / Skill / Skills 等只读工具来理解现状并输出执行计划。严禁调用 Write / Edit / MultiEdit / NotebookEdit / Bash / WebFetch / WebSearch / Task 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。',
-  'auto-edit': '\n\n## 自动编辑模式\n当前处于【自动编辑模式】。为了推进任务，你可以直接读写文件，无需再为 Edit / Write / MultiEdit 等编辑类操作请求用户确认；但 Bash / WebFetch / WebSearch / 网络请求或可能破坏环境的操作仍需先征得用户同意。',
-  'full-auto': '\n\n## 全自动模式\n当前处于【全自动模式】。为了高效推进任务，你可以自主决定使用任何已提供的工具，无需再向用户请求确认，包括文件编辑、Bash 命令、网络请求、子 Agent 调度等。请保持操作的正确性与安全，在任务完成后再向用户汇报结果。',
+  plan: '\n\n## 计划模式\n当前处于【计划模式】。你只能使用 Read / Glob / Grep / TodoWrite / Skill / Skills / AskUserQuestion 等只读工具来理解现状并输出执行计划。严禁调用 Write / Edit / MultiEdit / NotebookEdit / Bash / WebFetch / WebSearch / Task 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。若目标或方案有歧义，可调用 AskUserQuestion 向用户确认。',
+  'auto-edit': '\n\n## 自动编辑模式\n当前处于【自动编辑模式】。为了推进任务，你可以直接读写文件，无需再为 Edit / Write / MultiEdit 等编辑类操作请求用户确认；但 Bash / WebFetch / WebSearch / 网络请求或可能破坏环境的操作仍需先征得用户同意。若缺少关键偏好或实现方向不明确，可调用 AskUserQuestion 向用户确认。',
+  'full-auto': '\n\n## 全自动模式\n当前处于【全自动模式】。为了高效推进任务，你可以自主决定使用任何已提供的工具，无需再向用户请求确认，包括文件编辑、Bash 命令、网络请求、子 Agent 调度等。全自动模式下不可向用户追问方向，请自行做出合理假设并继续；请保持操作的正确性与安全，在任务完成后再向用户汇报结果。',
 };
 
 function getChatModeSuffix(chatMode) {
@@ -68,6 +72,11 @@ function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
   const chatMode = agentConfig?.chatMode;
   if (isReadOnlyMode(chatMode)) {
     for (const id of PLAN_MODE_BLOCKED_TOOLS) disabled.add(id);
+  }
+
+  for (const id of ALWAYS_ENABLED_TOOL_IDS) disabled.delete(id);
+  if (chatMode === 'full-auto') {
+    disabled.add('AskUserQuestion');
   }
 
   if (context === 'local') {

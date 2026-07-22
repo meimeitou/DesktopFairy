@@ -132,6 +132,7 @@ export default function AgentToolsSection({
 
   const toggleLocalTool = (id: string, enabled: boolean) => {
     if (id === "Terminal") return; // Terminal is never available in the local context.
+    if (id === "AskUserQuestion") return; // Always on except full-auto (mode-gated at runtime).
     if (enabled) {
       onAgentChange({
         disabledToolIds: agent.disabledToolIds.filter((x) => x !== id),
@@ -143,6 +144,7 @@ export default function AgentToolsSection({
 
   const toggleTerminalTool = (id: string, enabled: boolean) => {
     if (id === "Bash") return; // Bash is never available in the terminal context.
+    if (id === "AskUserQuestion") return;
     if (enabled) {
       onAgentChange({
         terminalDisabledToolIds: agent.terminalDisabledToolIds.filter(
@@ -335,14 +337,20 @@ export default function AgentToolsSection({
               key: "local",
               label: "本地",
               enabledIds: localEnabledIds,
-              forcedOffIds: new Set(["Terminal"]),
+              forcedOffIds: new Set([
+                "Terminal",
+                ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
+              ]),
               onToggle: toggleLocalTool,
             },
             {
               key: "terminal",
               label: "终端",
               enabledIds: terminalEnabledIds,
-              forcedOffIds: new Set(["Bash"]),
+              forcedOffIds: new Set([
+                "Bash",
+                ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
+              ]),
               onToggle: toggleTerminalTool,
             },
           ]}

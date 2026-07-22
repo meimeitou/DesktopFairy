@@ -33,6 +33,29 @@ export function useToolApproval(
     [],
   );
 
+  const submitToolAnswer = useCallback(
+    async (answerId: string, answers: Record<string, string>) => {
+      setSubmittingApprovalId(answerId);
+      try {
+        const ok = (await api.invoke("agent:tool:answer", {
+          answerId,
+          answers,
+        })) as boolean;
+        if (!ok) {
+          alert("提问已失效，可能任务已结束。");
+          return false;
+        }
+        return true;
+      } catch (e) {
+        alert(e instanceof Error ? e.message : "提交回答失败");
+        return false;
+      } finally {
+        setSubmittingApprovalId(null);
+      }
+    },
+    [],
+  );
+
   const handleApproveTool = useCallback(
     (approvalId: string) => {
       void respondToolApproval(approvalId, true);
@@ -51,6 +74,7 @@ export function useToolApproval(
   // + 切换全局 full-auto 模式（onSwitchToFullAuto 回调）。
   // _originApprovalId 是触发此操作的卡片 id，但批量批准所有待审工具是"始终允许"
   // 的预期行为（而非仅批准单个），因此该参数被有意忽略。
+  // 不处理 awaiting_input：问答卡必须由用户明确作答。
   const handleAlwaysAllowTool = useCallback(
     (_originApprovalId: string) => {
       const pendingIds = chatMessagesRef.current
@@ -87,6 +111,7 @@ export function useToolApproval(
   return {
     submittingApprovalId,
     respondToolApproval,
+    submitToolAnswer,
     handleApproveTool,
     handleDenyTool,
     handleAlwaysAllowTool,

@@ -1,6 +1,11 @@
 import { memo, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import AgentToolRenderer from "./agentTools/AgentToolRenderer";
+import AskUserQuestionCard from "./agentTools/AskUserQuestionCard";
+import {
+  type AskUserAnswers,
+  isAskUserQuestionInteractive,
+} from "./agentTools/askUserQuestionParse";
 import ToolPermissionCard from "./agentTools/ToolPermissionCard";
 
 interface ToolStepProps {
@@ -8,6 +13,7 @@ interface ToolStepProps {
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
+  onAnswer?: (answerId: string, answers: AskUserAnswers) => void;
   submittingApprovalId?: string | null;
   alwaysAllowLabel?: string;
 }
@@ -17,6 +23,7 @@ const AgentToolStep = memo(function AgentToolStep({
   onApprove,
   onDeny,
   onAlwaysAllow,
+  onAnswer,
   submittingApprovalId,
   alwaysAllowLabel,
 }: ToolStepProps) {
@@ -38,6 +45,18 @@ const AgentToolStep = memo(function AgentToolStep({
     );
   }
 
+  if (status === "awaiting_input" || isAskUserQuestionInteractive(msg)) {
+    return (
+      <li className="agent-tool-step-wrap">
+        <AskUserQuestionCard
+          msg={msg}
+          onAnswer={onAnswer}
+          submitting={submitting}
+        />
+      </li>
+    );
+  }
+
   return (
     <li className="agent-tool-step-wrap">
       <AgentToolRenderer msg={msg} />
@@ -50,6 +69,7 @@ interface GroupProps {
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
+  onAnswer?: (answerId: string, answers: AskUserAnswers) => void;
   submittingApprovalId?: string | null;
   alwaysAllowLabel?: string;
 }
@@ -69,6 +89,7 @@ export const ToolCallGroup = memo(
     onApprove,
     onDeny,
     onAlwaysAllow,
+    onAnswer,
     submittingApprovalId,
     alwaysAllowLabel,
   }: GroupProps) {
@@ -76,21 +97,23 @@ export const ToolCallGroup = memo(
     let running = 0;
     let done = 0;
     let failed = 0;
+    let openAsk = 0;
     for (const t of tools) {
       const s = t.toolStatus;
-      if (s === "awaiting_approval") waiting += 1;
+      if (s === "awaiting_approval" || s === "awaiting_input") waiting += 1;
       else if (s === "running" || s === "streaming") running += 1;
       else if (s === "done") done += 1;
       else if (s === "error" || s === "denied") failed += 1;
+      if (isAskUserQuestionInteractive(t)) openAsk += 1;
     }
 
     const allSettled = waiting === 0 && running === 0;
-    // Active batches stay open; settled batches stay collapsed until the user opens them.
     const [userOpened, setUserOpened] = useState(false);
-    const expanded = !allSettled || userOpened;
+    const expanded = !allSettled || userOpened || openAsk > 0;
 
     let meta;
-    if (waiting > 0) meta = `${waiting} 个待确认`;
+    if (openAsk > 0) meta = "等待你的回答";
+    else if (waiting > 0) meta = `${waiting} 个待确认`;
     else if (running > 0) meta = `${running} 个执行中`;
     else if (failed > 0) meta = `${failed} 个失败 · ${done} 个完成`;
     else meta = `${done} 个已完成`;
@@ -129,6 +152,7 @@ export const ToolCallGroup = memo(
                   onApprove={onApprove}
                   onDeny={onDeny}
                   onAlwaysAllow={onAlwaysAllow}
+                  onAnswer={onAnswer}
                   submittingApprovalId={submittingApprovalId}
                   alwaysAllowLabel={alwaysAllowLabel}
                 />
@@ -145,7 +169,8 @@ export const ToolCallGroup = memo(
     prev.alwaysAllowLabel === next.alwaysAllowLabel &&
     prev.onApprove === next.onApprove &&
     prev.onDeny === next.onDeny &&
-    prev.onAlwaysAllow === next.onAlwaysAllow,
+    prev.onAlwaysAllow === next.onAlwaysAllow &&
+    prev.onAnswer === next.onAnswer,
 );
 
 interface BubbleProps {
@@ -153,6 +178,7 @@ interface BubbleProps {
   onApprove?: (approvalId: string) => void;
   onDeny?: (approvalId: string) => void;
   onAlwaysAllow?: (approvalId: string) => void;
+  onAnswer?: (answerId: string, answers: AskUserAnswers) => void;
   submittingApprovalId?: string | null;
   alwaysAllowLabel?: string;
 }
@@ -162,6 +188,7 @@ function ToolCallBubble({
   onApprove,
   onDeny,
   onAlwaysAllow,
+  onAnswer,
   submittingApprovalId,
   alwaysAllowLabel,
 }: BubbleProps) {
@@ -171,6 +198,7 @@ function ToolCallBubble({
       onApprove={onApprove}
       onDeny={onDeny}
       onAlwaysAllow={onAlwaysAllow}
+      onAnswer={onAnswer}
       submittingApprovalId={submittingApprovalId}
       alwaysAllowLabel={alwaysAllowLabel}
     />

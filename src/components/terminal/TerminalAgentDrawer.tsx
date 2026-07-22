@@ -310,6 +310,7 @@ export default function TerminalAgentDrawer({
     handleApproveTool,
     handleDenyTool,
     handleAlwaysAllowTool,
+    submitToolAnswer,
   } = useToolApproval(messagesRef, () => {}, requestIdRef, topicIdRef);
 
   const setActiveInput = useCallback(
@@ -928,6 +929,7 @@ export default function TerminalAgentDrawer({
             onApprove={handleApproveTool}
             onDeny={handleDenyTool}
             onAlwaysAllow={handleAlwaysAllowTool}
+            onAnswer={submitToolAnswer}
             submittingApprovalId={submittingApprovalId}
             alwaysAllowLabel="本次全部允许"
             emptyContent={emptyContent}
@@ -1037,6 +1039,7 @@ interface AgentStreamToolEvent {
   status:
     | "streaming"
     | "awaiting_approval"
+    | "awaiting_input"
     | "running"
     | "done"
     | "error"

@@ -143,6 +143,12 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "shell",
     true
   ),
+  builtinTool(
+    "AskUserQuestion",
+    "Asks the user clarifying questions during execution and waits for their answers (unavailable in full-auto)",
+    "context",
+    false
+  ),
 ];
 
 const DEFAULT_SAFE_TOOLS = new Set([
@@ -154,6 +160,7 @@ const DEFAULT_SAFE_TOOLS = new Set([
   "TodoWrite",
   "Skill",
   "UpdateProfile",
+  "AskUserQuestion",
 ]);
 
 export function resolveBuiltinToolApproval(
@@ -182,10 +189,23 @@ export function getEnabledBuiltinTools(
   return getBuiltinToolCatalog(toolApprovalMode).filter((t) => !disabled.has(t.id));
 }
 
-export function normalizeDisabledToolIds(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
+/** Builtin tools that stay enabled unless mode rules block them (e.g. full-auto). */
+export const ALWAYS_ENABLED_TOOL_IDS = ["AskUserQuestion"] as const;
+
+export function stripAlwaysEnabledToolIds(disabledToolIds: string[]): string[] {
+  const locked = new Set<string>(ALWAYS_ENABLED_TOOL_IDS);
+  return disabledToolIds.filter((id) => !locked.has(id));
+}
+
+export function normalizeDisabledToolIds(
+  value: unknown,
+  fallback: string[] = [],
+): string[] {
+  if (!Array.isArray(value)) return stripAlwaysEnabledToolIds([...fallback]);
   const valid = new Set(CLAUDE_CODE_BUILTIN_TOOLS.map((t) => t.id));
-  return value.filter((id): id is string => typeof id === "string" && valid.has(id));
+  return stripAlwaysEnabledToolIds(
+    value.filter((id): id is string => typeof id === "string" && valid.has(id)),
+  );
 }
 
 export function isCherryAlignedBuiltinTool(toolId: string): boolean {
@@ -452,6 +472,63 @@ function getOpenAiToolParameters(toolId: string) {
           timeout: { type: "number" },
         },
         required: ["command"],
+      };
+    case "AskUserQuestion":
+      return {
+        type: "object",
+        required: ["questions"],
+        properties: {
+          questions: {
+            type: "array",
+            minItems: 1,
+            maxItems: 4,
+            description: "Questions to ask the user (1–4)",
+            items: {
+              type: "object",
+              required: ["question"],
+              properties: {
+                question: {
+                  type: "string",
+                  description: "Complete question text shown to the user",
+                },
+                header: {
+                  type: "string",
+                  description: "Very short label for the question (max ~12 chars)",
+                },
+                multiSelect: {
+                  type: "boolean",
+                  description: "Allow selecting multiple options",
+                },
+                options: {
+                  type: "array",
+                  minItems: 0,
+                  maxItems: 4,
+                  description:
+                    'Preset choices (0–4). UI always adds "Other" for custom text. Prefer 2–4 concise labels.',
+                  items: {
+                    oneOf: [
+                      { type: "string", description: "Short option label" },
+                      {
+                        type: "object",
+                        required: ["label"],
+                        properties: {
+                          label: {
+                            type: "string",
+                            description: "Short option label (1–5 words)",
+                          },
+                          description: {
+                            type: "string",
+                            description: "Explanation of what this option means",
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        },
       };
     default:
       return { type: "object", properties: {}, required: [] as string[] };

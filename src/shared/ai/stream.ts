@@ -5,7 +5,7 @@ export interface ToolTerminalState {
   toolCallId: string;
   toolName?: string;
   toolArgs?: string;
-  status: "streaming" | "running" | "done" | "error" | "awaiting_approval";
+  status: "streaming" | "running" | "done" | "error" | "awaiting_approval" | "awaiting_input";
   resultPreview?: string;
   message?: string;
 }

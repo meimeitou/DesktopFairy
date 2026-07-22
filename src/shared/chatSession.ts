@@ -97,6 +97,7 @@ const STALE_TOOL_STATUSES = new Set([
   "streaming",
   "running",
   "awaiting_approval",
+  "awaiting_input",
 ]);
 
 function normalizeToolFields(m: ChatMsg): ChatMsg {

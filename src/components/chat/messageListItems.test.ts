@@ -38,6 +38,30 @@ describe("buildMessageListItems", () => {
     expect(items[2]).toMatchObject({ kind: "message", id: "a1" });
   });
 
+  it("isolates AskUserQuestion into its own batch", () => {
+    const ask: ChatMsg = {
+      id: "t0",
+      role: "assistant",
+      type: "tool",
+      content: "",
+      toolName: "AskUserQuestion",
+      timestamp: 1,
+    };
+    const bash: ChatMsg = {
+      id: "t1",
+      role: "assistant",
+      type: "tool",
+      content: "",
+      toolName: "Bash",
+      timestamp: 2,
+    };
+    const items = buildMessageListItems([ask, bash]);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ kind: "tools", id: "t0" });
+    if (items[0].kind === "tools") expect(items[0].tools).toHaveLength(1);
+    expect(items[1]).toMatchObject({ kind: "tools", id: "t1" });
+  });
+
   it("builds a stable stick key from last message", () => {
     const messages: ChatMsg[] = [
       { id: "a1", role: "assistant", content: "hello", timestamp: 1 },

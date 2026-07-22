@@ -15,6 +15,7 @@ const TOOL_LABELS: Record<string, string> = {
   Skill: "加载技能",
   Skills: "管理技能",
   McpManager: "管理 MCP",
+  AskUserQuestion: "向用户提问",
 };
 
 const TOOL_ICONS: Record<string, string> = {
@@ -34,6 +35,7 @@ const TOOL_ICONS: Record<string, string> = {
   Skill: "🎯",
   Skills: "📚",
   McpManager: "🔌",
+  AskUserQuestion: "?",
 };
 
 type ToolCategory = "shell" | "file" | "search" | "web" | "other";
@@ -205,6 +207,17 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
       return pickString(args, ["skill"]) || "";
     case "Skills":
       return pickString(args, ["action"]) || "";
+    case "AskUserQuestion": {
+      const questions = Array.isArray(args.questions) ? args.questions : [];
+      const first =
+        questions[0] && typeof questions[0] === "object"
+          ? String((questions[0] as { question?: string }).question || "").trim()
+          : "";
+      if (questions.length <= 1) return first ? truncate(first, 120) : "等待用户回答";
+      return first
+        ? truncate(`${first}（共 ${questions.length} 题）`, 120)
+        : `${questions.length} 个问题`;
+    }
     case "McpManager": {
       const act = pickString(args, ["action"]);
       const srv = pickString(args, ["serverId", "name"]);

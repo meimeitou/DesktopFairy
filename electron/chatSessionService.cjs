@@ -6,7 +6,7 @@ const CHAT_SESSION_VERSION = 2;
 const INLINE_PREVIEW_MAX = 16 * 1024;
 const STORAGE_PREVIEW_MAX = 4 * 1024;
 
-const STALE_TOOL_STATUSES = new Set(['streaming', 'running', 'awaiting_approval']);
+const STALE_TOOL_STATUSES = new Set(['streaming', 'running', 'awaiting_approval', 'awaiting_input']);
 
 function ensureDir(dirPath) {
   try {
