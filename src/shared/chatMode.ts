@@ -24,7 +24,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
     promptSuffix: "",
     readOnly: false,
     toolApprovalOverride: undefined,
-    accent: "#10b981",
+    accent: "#6fbf95",
   },
   {
     mode: "plan",
@@ -35,7 +35,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
       "\n\n## 计划模式\n当前处于【计划模式】。你只能使用 Read / Glob / Grep / TodoWrite / Skill / Skills 等只读工具来理解现状并输出执行计划。严禁调用 Write / Edit / MultiEdit / NotebookEdit / Bash / WebFetch / WebSearch / Task 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。",
     readOnly: true,
     toolApprovalOverride: "confirm",
-    accent: "#3b82f6",
+    accent: "#e8b84a",
   },
   {
     mode: "auto-edit",
@@ -46,7 +46,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
       "\n\n## 自动编辑模式\n当前处于【自动编辑模式】。为了推进任务，你可以直接读写文件，无需再为 Edit / Write / MultiEdit 等编辑类操作请求用户确认；但 Bash / WebFetch / WebSearch / 网络请求或可能破坏环境的操作仍需先征得用户同意。",
     readOnly: false,
     toolApprovalOverride: "auto",
-    accent: "#22c55e",
+    accent: "#5aa882",
   },
   {
     mode: "full-auto",
@@ -57,7 +57,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
       "\n\n## 全自动模式\n当前处于【全自动模式】。为了高效推进任务，你可以自主决定使用任何已提供的工具，无需再向用户请求确认，包括文件编辑、Bash 命令、网络请求、子 Agent 调度等。请保持操作的正确性与安全，在任务完成后再向用户汇报结果。",
     readOnly: false,
     toolApprovalOverride: "auto",
-    accent: "#f97316",
+    accent: "#e8624a",
   },
 ];
 

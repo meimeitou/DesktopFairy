@@ -33,6 +33,7 @@ export default function ModelSelector({
   );
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
+  const [alignEnd, setAlignEnd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -83,7 +84,11 @@ export default function ModelSelector({
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceRight = window.innerWidth - rect.right;
+      const spaceLeft = rect.left;
       setDropUp(rect.top > spaceBelow);
+      // Prefer expanding toward the side with more room (chat toolbar sits on the right).
+      setAlignEnd(spaceLeft >= spaceRight);
     }
   }, [open]);
 
@@ -137,7 +142,7 @@ export default function ModelSelector({
         <div
           className={`model-selector-combo${open ? " open" : ""}${
             dropUp ? " drop-up" : ""
-          }`}
+          }${alignEnd ? " align-end" : ""}`}
           ref={containerRef}
         >
           <button

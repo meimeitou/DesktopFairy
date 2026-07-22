@@ -1,6 +1,6 @@
 export type McpServerType = "stdio" | "sse" | "streamableHttp";
 
-export type McpInstallSource = "builtin" | "manual";
+export type McpInstallSource = "builtin" | "manual" | "custom";
 
 export interface McpServer {
   id: string;

@@ -37,9 +37,18 @@ export type ApiContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
+export type ApiToolCall = {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+};
+
 export type ApiMessage = {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string | ApiContentPart[];
+  tool_calls?: ApiToolCall[];
+  tool_call_id?: string;
+  name?: string;
 };
 
 export function filterAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
@@ -133,13 +142,47 @@ function appendTextFileBlocks(
   return text + blocks.join("");
 }
 
-function formatToolHistoryBlock(tools: ChatMsg[]): string {
-  if (tools.length === 0) return "";
-  const lines = tools.map((t) => formatToolEvidenceForApi(t));
-  return `<previous_tool_results>\n${lines.join("\n")}\n</previous_tool_results>`;
+function parseToolArgsObject(raw?: string): Record<string, unknown> {
+  if (!raw?.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : { _raw: raw };
+  } catch {
+    return { _raw: raw };
+  }
 }
 
-/** Agent history including prior tool turns as context blocks. */
+function toolResultPayload(msg: ChatMsg): string {
+  if (msg.toolStatus === "denied") {
+    return JSON.stringify({
+      ok: false,
+      error: msg.toolMessage || "User denied tool execution",
+    });
+  }
+  if (msg.toolStatus === "error") {
+    return JSON.stringify({
+      ok: false,
+      error: msg.toolMessage || "Tool error",
+    });
+  }
+  const preview = msg.toolResultPreview?.trim();
+  if (preview) return preview;
+  return JSON.stringify({
+    ok: true,
+    summary: formatToolEvidenceForApi(msg),
+  });
+}
+
+function isTerminalToolStatus(status: ChatMsg["toolStatus"] | undefined): boolean {
+  return status === "done" || status === "error" || status === "denied";
+}
+
+/**
+ * Agent history as OpenAI-style assistant tool_calls + tool results
+ * (converted to AI SDK ModelMessage[] in electron/ai/messages.cjs).
+ */
 export function buildAgentHistoryMessages(messages: ChatMsg[]): ApiMessage[] {
   const filtered = filterAfterContextClear(messages).filter(
     (m) => m.type !== "clear" && !m.error,
@@ -151,12 +194,37 @@ export function buildAgentHistoryMessages(messages: ChatMsg[]): ApiMessage[] {
     if (m.type === "tool") {
       const tools: ChatMsg[] = [];
       while (i < filtered.length && filtered[i].type === "tool") {
-        tools.push(filtered[i]);
+        const t = filtered[i];
+        if (isTerminalToolStatus(t.toolStatus) && t.toolCallId && t.toolName) {
+          tools.push(t);
+        }
         i++;
       }
-      const block = formatToolHistoryBlock(tools);
-      if (block.trim()) {
-        result.push({ role: "user", content: block });
+      if (tools.length === 0) continue;
+
+      const toolCalls: ApiToolCall[] = tools.map((t) => ({
+        id: t.toolCallId!,
+        type: "function",
+        function: {
+          name: t.toolName!,
+          arguments: JSON.stringify(parseToolArgsObject(t.toolArgs)),
+        },
+      }));
+
+      const last = result[result.length - 1];
+      if (last?.role === "assistant" && !last.tool_calls) {
+        last.tool_calls = toolCalls;
+      } else {
+        result.push({ role: "assistant", content: "", tool_calls: toolCalls });
+      }
+
+      for (const t of tools) {
+        result.push({
+          role: "tool",
+          tool_call_id: t.toolCallId,
+          name: t.toolName,
+          content: toolResultPayload(t),
+        });
       }
       continue;
     }

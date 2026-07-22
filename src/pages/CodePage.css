@@ -1,0 +1,13 @@
+.code-page {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--ink-900);
+}
+
+.code-page-loading {
+  align-items: center;
+  justify-content: center;
+  color: var(--bone-500);
+  font-size: 13px;
+}

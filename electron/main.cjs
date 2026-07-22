@@ -40,6 +40,8 @@ const {
   attachWindowOpenHandler,
   registerBrowserHandlers,
 } = require('./browserService.cjs');
+const { createCodeProjectService } = require('./codeProjectService.cjs');
+const { registerCodeCliHandlers } = require('./codeCliService.cjs');
 
 registerLive2DSchemes();
 
@@ -106,6 +108,10 @@ const CHAT_TOPICS_INDEX_PATH = () => path.join(app.getPath('userData'), 'da_chat
 const CHAT_SESSIONS_DIR = () => path.join(app.getPath('userData'), 'chat_sessions');
 const CHAT_TOOL_RESULTS_DIR = () => path.join(app.getPath('userData'), 'chat_tool_results');
 const CHAT_LOGS_DIR = () => path.join(app.getPath('userData'), 'chat_session_logs');
+const CODE_PROJECTS_STORE_PATH = () => path.join(app.getPath('userData'), 'da_code_projects.json');
+
+/** @type {ReturnType<createCodeProjectService> | null} */
+let codeProjectService = null;
 
 const loadSettingsFromDisk = () => {
   try {
@@ -236,6 +242,46 @@ const navigateChatWindow = (win, view = 'chat') => {
   }
 };
 
+const sendCodeAction = (win, action) => {
+  if (!win || win.isDestroyed()) return;
+  const send = () => win.webContents.send('code:action', action);
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', send);
+  } else {
+    send();
+  }
+};
+
+const openCodeView = (action = null) => {
+  const win = createChatWindow({ view: 'code' });
+  if (action) sendCodeAction(win, action);
+  return win;
+};
+
+const activateProjectAndOpenCode = (projectId) => {
+  if (codeProjectService) {
+    const store = codeProjectService.readStore();
+    const project = store.projects.find((p) => p.id === projectId);
+    if (project) {
+      store.activeProjectId = projectId;
+      project.lastOpenedAt = Date.now();
+      codeProjectService.writeStore(store);
+    }
+  }
+  openCodeView(null);
+};
+
+const buildProjectListSubmenu = () => {
+  const store = codeProjectService?.readStore?.() ?? { projects: [] };
+  if (!store.projects.length) {
+    return [{ label: '（无项目）', enabled: false }];
+  }
+  return store.projects.map((project) => ({
+    label: project.name,
+    click: () => activateProjectAndOpenCode(project.id),
+  }));
+};
+
 const getSelectionChatAnchor = () => {
   const bounds = tipWindow.getBounds();
   if (bounds) {
@@ -312,7 +358,15 @@ const createChatWindow = (options = {}) => {
     },
   });
 
-  const query = view === 'settings' ? '?window=chat&view=settings' : '?window=chat';
+  const viewSuffix =
+    view === 'settings'
+      ? 'view=settings'
+      : view === 'terminal'
+        ? 'view=terminal'
+        : view === 'code'
+          ? 'view=code'
+          : '';
+  const query = viewSuffix ? `?window=chat&${viewSuffix}` : '?window=chat';
   loadURL(chatWindow, query);
 
   chatWindow.once('ready-to-show', () => {
@@ -589,12 +643,11 @@ const setupIPC = () => {
     // stays consistent; only the on-disk copy is stale.
     applySelectionSettings(settings);
     applyChatShortcutSettings(settings);
-    const senderId = event.sender?.id;
+    // Broadcast to every window, including the sender. Chat / Settings / Code /
+    // Terminal share one BrowserWindow (keep-alive tabs); skipping the sender
+    // left ChatPage / CodeCliPanel stuck on stale provider model lists.
     for (const win of [mainWindow, chatWindow]) {
       if (win && !win.isDestroyed()) {
-        // Avoid echoing back to the window that initiated the sync — it
-        // already has this state and merging it causes redundant renders.
-        if (senderId != null && win.webContents.id === senderId) continue;
         win.webContents.send('settings:updated', settings);
       }
     }
@@ -618,20 +671,13 @@ const setupIPC = () => {
     chatLogsDir: CHAT_LOGS_DIR,
   });
 
+  codeProjectService = createCodeProjectService({ storePath: CODE_PROJECTS_STORE_PATH });
+  codeProjectService.registerHandlers(ipcMain);
+  registerCodeCliHandlers({ ipcMain });
+
   registerPtyHandlers({ ipcMain });
 
   registerSshHandlers({ ipcMain });
-
-  function getChatCompletionsUrl(apiHost, providerType) {
-    const trimmed = String(apiHost || '').replace(/\/$/, '');
-    if (!trimmed) return '';
-    if (providerType === 'ollama') {
-      const base = trimmed.replace(/\/v1$/, '').replace(/\/api$/, '');
-      return `${base}/v1/chat/completions`;
-    }
-    const base = trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
-    return `${base}/chat/completions`;
-  }
 
   registerAgentSkillHandlers(ipcMain);
   registerMcpServerHandlers(ipcMain);
@@ -639,7 +685,6 @@ const setupIPC = () => {
   registerAgentAvatarHandlers(ipcMain);
   registerToolApprovalHandlers(ipcMain);
   registerAgentHandlers(ipcMain, {
-    getChatCompletionsUrl,
     getWindows: getScreenshotWindows,
     chatLogsDir: CHAT_LOGS_DIR,
     getParentWindow: () => {
@@ -806,60 +851,64 @@ const setupIPC = () => {
   }
 
   ipcMain.handle('chat:check', async (_event, payload) => {
-    const { apiHost, apiKey, providerType, model, timeoutMs } = payload || {};
+    const { apiHost, apiKey, providerType, providerId, model, timeoutMs } = payload || {};
     if (!apiHost) throw new Error('请填写 API Host');
     if (!model) throw new Error('请选择或添加模型');
-    if (providerType === 'openai' && !apiKey) throw new Error('请填写 API Key');
+    const needsKey =
+      providerType !== 'ollama' && providerId !== 'hermes';
+    if (needsKey && !apiKey) throw new Error('请填写 API Key');
 
-    const url = getChatCompletionsUrl(apiHost, providerType);
-    if (!url) throw new Error('API Host 无效');
-    assertHttpUrl(url);
+    assertHttpUrl(apiHost);
 
+    const { checkConnection } = require('./ai/AiService.cjs');
     const controller = new AbortController();
     const timeout = typeof timeoutMs === 'number' ? timeoutMs : 15000;
     const timer = setTimeout(() => controller.abort(), timeout);
     const start = Date.now();
 
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      await checkConnection({
+        apiConfig: {
+          apiHost,
+          apiKey,
+          providerType,
+          modelName: model,
         },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: 'hi' }],
-          max_tokens: 1,
-          stream: false,
-        }),
         signal: controller.signal,
       });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
-      }
-
-      await res.json();
       return { ok: true, latencyMs: Date.now() - start, model };
     } catch (e) {
-      if (e?.name === 'AbortError') {
+      if (e?.name === 'AbortError' || controller.signal.aborted) {
         throw new Error(`检测超时（${timeout / 1000}s）`);
       }
-      throw e;
+      const status = e?.statusCode != null ? `HTTP ${e.statusCode}` : '';
+      const url = typeof e?.url === 'string' ? e.url : '';
+      const body =
+        typeof e?.responseBody === 'string'
+          ? e.responseBody.slice(0, 200)
+          : '';
+      const detail = [status, url, body || e?.message || e]
+        .filter(Boolean)
+        .join(' · ');
+      throw new Error(`连接失败：${detail}`);
     } finally {
       clearTimeout(timer);
     }
   });
 
   ipcMain.handle('chat:send', async (event, payload) => {
-    const { requestId, messages, chatUrl, apiBaseUrl, apiKey, model } = payload || {};
-    const url = chatUrl || (apiBaseUrl ? `${String(apiBaseUrl).replace(/\/$/, '')}/chat/completions` : '');
-    if (!requestId || !url || !model || !Array.isArray(messages)) {
+    const { requestId, messages, apiConfig } = payload || {};
+    if (
+      !requestId ||
+      !Array.isArray(messages) ||
+      !apiConfig?.apiHost ||
+      !apiConfig?.modelName
+    ) {
       throw new Error('chat:send invalid payload');
     }
-    assertHttpUrl(url);
+    assertHttpUrl(apiConfig.apiHost);
+
+    const { streamPlainText } = require('./ai/AiService.cjs');
     const controller = new AbortController();
     inflightChats.set(requestId, controller);
     const sender = event.sender;
@@ -869,57 +918,15 @@ const setupIPC = () => {
       } catch { /* receiver gone */ }
     };
 
-    const body = { model, messages, stream: true };
-
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify(body),
+      const { aborted } = await streamPlainText({
+        requestId,
+        messages,
+        apiConfig,
         signal: controller.signal,
+        safeSend,
       });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status} ${res.statusText}: ${text.slice(0, 200)}`);
-      }
-      if (!res.body) throw new Error('Empty response body');
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      // Process SSE: lines like `data: {json}` separated by blank lines; `data: [DONE]` terminates.
-      streamLoop: while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        let nlIdx;
-        while ((nlIdx = buf.indexOf('\n')) >= 0) {
-          let line = buf.slice(0, nlIdx);
-          buf = buf.slice(nlIdx + 1);
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (!line) continue;
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (!data) continue;
-          if (data === '[DONE]') break streamLoop;
-          try {
-            const json = JSON.parse(data);
-            const delta = json?.choices?.[0]?.delta;
-            const content = delta?.content;
-            if (content) safeSend('chat:stream:chunk', { requestId, delta: content });
-            const reasoning = delta?.reasoning_content ?? delta?.reasoning;
-            if (reasoning) safeSend('chat:stream:chunk', { requestId, reasoning });
-          } catch {
-            // Ignore malformed JSON line; keep streaming
-          }
-        }
-      }
-
-      safeSend('chat:stream:done', { requestId });
+      safeSend('chat:stream:done', { requestId, aborted: Boolean(aborted) });
     } catch (e) {
       if (e && e.name === 'AbortError') {
         safeSend('chat:stream:done', { requestId, aborted: true });
@@ -956,6 +963,26 @@ const setupIPC = () => {
       return (Array.isArray(json?.models) ? json.models : [])
         .map((m) => (typeof m === 'string' ? m : m?.name))
         .filter(Boolean);
+    }
+
+    if (providerType === 'anthropic') {
+      const base = String(host).replace(/\/$/, '').replace(/\/v1$/, '');
+      try {
+        const res = await fetch(`${base}/v1/models`, {
+          headers: {
+            'x-api-key': apiKey || '',
+            'anthropic-version': '2023-06-01',
+          },
+        });
+        if (!res.ok) return [];
+        const json = await res.json();
+        const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
+        return list
+          .map((m) => (typeof m === 'string' ? m : m?.id || m?.name))
+          .filter(Boolean);
+      } catch {
+        return [];
+      }
     }
 
     const trimmed = String(host).replace(/\/$/, '');
@@ -1039,6 +1066,16 @@ const refreshMenus = () => {
         { role: 'copy', label: '复制' },
         { role: 'paste', label: '粘贴' },
         { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: 'Code',
+      submenu: [
+        { label: '新建项目…', click: () => openCodeView('new-project') },
+        { label: '打开项目…', click: () => openCodeView('open-project') },
+        { label: '编辑项目…', click: () => openCodeView('edit-project') },
+        { type: 'separator' },
+        { label: '项目列表', submenu: buildProjectListSubmenu() },
       ],
     },
     {

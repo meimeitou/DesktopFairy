@@ -21,7 +21,10 @@ declare global {
         }) => void
       ) => () => void;
       onChatNavigate: (
-        callback: (view: "chat" | "settings" | "terminal") => void
+        callback: (view: "chat" | "settings" | "terminal" | "code") => void
+      ) => () => void;
+      onCodeAction: (
+        callback: (action: "new-project" | "open-project" | "edit-project") => void
       ) => () => void;
       onSettingsUpdated: (
         callback: (settings: Record<string, unknown>) => void

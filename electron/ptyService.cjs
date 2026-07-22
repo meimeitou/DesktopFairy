@@ -181,6 +181,23 @@ async function getTerminalForeground(sessionId) {
   }
 }
 
+function trackOsc633CommandState(session, text) {
+  if (!text || !session) return;
+  if (START_PATTERN.test(text)) session.commandRunning = true;
+  if (END_PATTERN.test(text)) session.commandRunning = false;
+}
+
+async function isTerminalSessionBusy(sessionId) {
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session) return { busy: false };
+  if (session.capture) return { busy: true, reason: 'agent' };
+  if (session.commandRunning) return { busy: true, reason: 'command' };
+  const fg = await detectForeground(session);
+  if (fg.kind === 'blocked') return { busy: true, reason: 'foreground', comm: fg.comm || '' };
+  if (fg.kind === 'unknown') return { busy: true, reason: 'unknown' };
+  return { busy: false };
+}
+
 function shellQuote(str) {
   return "'" + String(str).replace(/'/g, "'\\''") + "'";
 }
@@ -363,7 +380,7 @@ function stopActiveCapture(sessionId) {
 }
 
 function registerPtyHandlers({ ipcMain }) {
-  ipcMain.handle('pty:create', async (event, { cols, rows, shell, cwd }) => {
+  ipcMain.handle('pty:create', async (event, { cols, rows, shell, cwd, initialCommand }) => {
     const sessionId = `pty_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const defaultShell = process.env.SHELL || '/bin/zsh';
     const shellName = shell || defaultShell;
@@ -390,6 +407,7 @@ function registerPtyHandlers({ ipcMain }) {
       sender,
       sessionId,
       capture: null,
+      commandRunning: false,
       shellIntegrated: integration.integrated,
       integrationDir: integration.cleanupDir,
       cwd: null,
@@ -398,6 +416,30 @@ function registerPtyHandlers({ ipcMain }) {
 
     const batchBuffer = [];
     let flushTimer = null;
+
+    // Initial command injection — wait for the shell's first output (its
+    // prompt) before writing. Writing before the shell reads its rc files
+    // can race against prompt rendering and bracketed-paste negotiation.
+    // A one-shot onData listener flushes the command once the shell is
+    // producing output, which is a reliable signal that it's ready.
+    const pendingInitial = typeof initialCommand === 'string' && initialCommand.length > 0
+      ? initialCommand
+      : null;
+    let initialFlushed = false;
+    const flushInitial = () => {
+      if (initialFlushed || !pendingInitial) return;
+      initialFlushed = true;
+      if (initialFallbackTimer) {
+        clearTimeout(initialFallbackTimer);
+        initialFallbackTimer = null;
+      }
+      try { ptyProcess.write(pendingInitial); } catch { /* shell died */ }
+    };
+    // Fallback: if the shell never produces output within 1.5s (rare, e.g.
+    // a very slow .zshrc), flush anyway so the command isn't lost.
+    let initialFallbackTimer = pendingInitial
+      ? setTimeout(flushInitial, 1500)
+      : null;
 
     const flushBatch = () => {
       if (!batchBuffer.length) return;
@@ -409,6 +451,7 @@ function registerPtyHandlers({ ipcMain }) {
       // node-pty splits a multi-byte sequence across onData calls.
       const completeBuf = session.pipeline.fixUtf8(Buffer.from(rawBatch, 'utf8'));
       const batch = completeBuf.toString('utf8');
+      trackOsc633CommandState(session, batch);
 
       const cap = session.capture;
       if (cap && !cap.done) {
@@ -449,6 +492,9 @@ function registerPtyHandlers({ ipcMain }) {
     };
 
     ptyProcess.onData((data) => {
+      // First output from the shell = it's ready. Flush the initial command
+      // (if any) now so it runs against a live prompt.
+      flushInitial();
       batchBuffer.push(data);
       if (!flushTimer) {
         flushTimer = setTimeout(() => {
@@ -463,6 +509,9 @@ function registerPtyHandlers({ ipcMain }) {
         clearTimeout(flushTimer);
         flushTimer = null;
         if (batchBuffer.length) flushBatch();
+      }
+      if (initialFallbackTimer) {
+        clearTimeout(initialFallbackTimer);
       }
 
       if (session.capture) {
@@ -506,6 +555,14 @@ function registerPtyHandlers({ ipcMain }) {
       cleanupSessionDir(session);
       session.ptyProcess.kill();
       sessions.delete(sessionId);
+    }
+  });
+
+  ipcMain.handle('pty:busy', async (_event, { sessionId }) => {
+    try {
+      return { ok: true, ...(await isTerminalSessionBusy(sessionId)) };
+    } catch (err) {
+      return { ok: false, busy: true, error: err.message || String(err) };
     }
   });
 
@@ -671,4 +728,5 @@ module.exports = {
   killAllSessions,
   killSessionsForSender,
   getTerminalForeground,
+  isTerminalSessionBusy,
 };

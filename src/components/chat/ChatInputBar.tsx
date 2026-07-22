@@ -112,6 +112,39 @@ function CompactIcon() {
   );
 }
 
+function SendIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M22 2L11 13" />
+      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
 interface Props {
   input: string;
   onInputChange: (value: string) => void;
@@ -376,141 +409,147 @@ function ChatInputBar({
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <AttachmentPreview
-        files={attachments}
-        onRemove={(id) =>
-          onAttachmentsChange(attachments.filter((f) => f.id !== id))
-        }
-      />
-
-      <div className="chat-input-toolbar">
-        <div className="chat-input-tools-left">
-          <Tooltip tip={"上传文件"}>
-            <button
-              type="button"
-              className="chat-tool-btn"
-              onClick={handleSelectFiles}
-              disabled={streaming}
-            >
-              <PaperclipIcon />
-            </button>
-          </Tooltip>
-          <Tooltip tip={"区域截图\nEsc 取消"}>
-            <button
-              type="button"
-              className="chat-tool-btn"
-              onClick={handleScreenshot}
-              disabled={streaming}
-            >
-              <CameraIcon />
-            </button>
-          </Tooltip>
-          <Tooltip tip={"清除上下文\n后续消息不再引用此前对话"}>
-            <button
-              type="button"
-              className="chat-tool-btn"
-              onClick={onClearContext}
-              disabled={streaming || !hasMessages}
-            >
-              <EraserIcon />
-            </button>
-          </Tooltip>
-          <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
-            <button
-              type="button"
-              className="chat-tool-btn"
-              onClick={onCompact}
-              disabled={streaming || !hasMessages}
-            >
-              <CompactIcon />
-            </button>
-          </Tooltip>
-          <Tooltip tip={"清空消息\n删除当前会话全部消息"}>
-            <button
-              type="button"
-              className="chat-tool-btn chat-tool-btn-danger"
-              onClick={onClearMessages}
-              disabled={streaming || !hasMessages}
-            >
-              <ClearIcon />
-            </button>
-          </Tooltip>
-          {showModeSelector && (
-            <ChatModeSelector
-              mode={chatMode}
-              onChange={onChatModeChange}
-              disabled={streaming}
-            />
-          )}
-          {showModeSelector && (
-            <ReasoningEffortSelector
-              value={reasoningEffort}
-              onChange={onReasoningEffortChange}
-              disabled={streaming}
-            />
-          )}
-        </div>
-
-        <div className="chat-input-model">
-          <ModelSelector
-            models={models}
-            value={modelName}
-            onChange={onModelChange}
-            allowCustom={false}
-            modelLabels={modelLabels}
-            disabled={streaming}
-          />
-        </div>
-      </div>
-
-      <div className="chat-input-row" ref={slashHostRef} style={{ position: "relative" }}>
-        {showSlashMenu && slashCommands && onSlashCommand && (
-          <SlashCommandMenu
-            commands={slashCommands}
-            query={slashQuery}
-            onSelect={onSlashCommand}
-            onClose={() => onSlashCommand(null as unknown as SlashCommand)}
-          />
-        )}
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          placeholder={streaming ? "生成中…" : "输入消息，可拖拽或粘贴文件…"}
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          disabled={streaming}
-          autoFocus
+      <div className="chat-input-dock">
+        <AttachmentPreview
+          files={attachments}
+          onRemove={(id) =>
+            onAttachmentsChange(attachments.filter((f) => f.id !== id))
+          }
         />
-        {streaming ? (
-          <Tooltip tip="停止生成" placement="bottom">
-            <button
-              type="button"
-              className="chat-send-btn chat-stop-btn"
-              onClick={onStop}
-            >
-              停止
-            </button>
-          </Tooltip>
-        ) : (
-          <Tooltip tip="发送消息 (Enter)" placement="bottom">
-            <button
-              type="button"
-              className="chat-send-btn"
-              onClick={onSend}
-              disabled={!canSend}
-            >
-              发送
-            </button>
-          </Tooltip>
-        )}
+
+        <div className="chat-input-editor" ref={slashHostRef}>
+          {showSlashMenu && slashCommands && onSlashCommand && (
+            <SlashCommandMenu
+              commands={slashCommands}
+              query={slashQuery}
+              onSelect={onSlashCommand}
+              onClose={() => onSlashCommand(null as unknown as SlashCommand)}
+            />
+          )}
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            placeholder={streaming ? "生成中…" : "输入消息，可拖拽或粘贴文件…"}
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            disabled={streaming}
+            autoFocus
+          />
+        </div>
+
+        <div className="chat-input-toolbar">
+          <div className="chat-input-tools-left">
+            <Tooltip tip={"上传文件"}>
+              <button
+                type="button"
+                className="chat-tool-btn"
+                onClick={handleSelectFiles}
+                disabled={streaming}
+              >
+                <PaperclipIcon />
+              </button>
+            </Tooltip>
+            <Tooltip tip={"区域截图\nEsc 取消"}>
+              <button
+                type="button"
+                className="chat-tool-btn"
+                onClick={handleScreenshot}
+                disabled={streaming}
+              >
+                <CameraIcon />
+              </button>
+            </Tooltip>
+            <Tooltip tip={"清除上下文\n后续消息不再引用此前对话"}>
+              <button
+                type="button"
+                className="chat-tool-btn"
+                onClick={onClearContext}
+                disabled={streaming || !hasMessages}
+              >
+                <EraserIcon />
+              </button>
+            </Tooltip>
+            <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
+              <button
+                type="button"
+                className="chat-tool-btn"
+                onClick={onCompact}
+                disabled={streaming || !hasMessages}
+              >
+                <CompactIcon />
+              </button>
+            </Tooltip>
+            <Tooltip tip={"清空消息\n删除当前会话全部消息"}>
+              <button
+                type="button"
+                className="chat-tool-btn chat-tool-btn-danger"
+                onClick={onClearMessages}
+                disabled={streaming || !hasMessages}
+              >
+                <ClearIcon />
+              </button>
+            </Tooltip>
+            {showModeSelector && (
+              <ChatModeSelector
+                mode={chatMode}
+                onChange={onChatModeChange}
+                disabled={streaming}
+              />
+            )}
+            {showModeSelector && (
+              <ReasoningEffortSelector
+                value={reasoningEffort}
+                onChange={onReasoningEffortChange}
+                disabled={streaming}
+              />
+            )}
+          </div>
+
+          <div className="chat-input-toolbar-right">
+            <div className="chat-input-model">
+              <ModelSelector
+                models={models}
+                value={modelName}
+                onChange={onModelChange}
+                allowCustom={false}
+                modelLabels={modelLabels}
+                disabled={streaming}
+              />
+            </div>
+            {streaming ? (
+              <Tooltip tip="停止生成" placement="top">
+                <button
+                  type="button"
+                  className="chat-send-btn chat-stop-btn"
+                  onClick={onStop}
+                  aria-label="停止生成"
+                >
+                  <StopIcon />
+                </button>
+              </Tooltip>
+            ) : (
+              <Tooltip tip="发送消息 (Enter)" placement="top">
+                <button
+                  type="button"
+                  className="chat-send-btn"
+                  onClick={onSend}
+                  disabled={!canSend}
+                  aria-label="发送消息"
+                >
+                  <SendIcon />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        </div>
       </div>
 
       <p className="chat-input-hint">
-        Enter 发送 · Shift+Enter 换行 · 输入 / 唤出快捷指令 · 支持拖拽/粘贴文件
+        Enter 发送 · Shift+Enter 换行 · / 快捷指令 · 拖拽或粘贴文件
         {attachments.length > 0 &&
-          ` · 已附加 ${attachments.length} 个文件 (${formatFileSize(attachments.reduce((s, f) => s + f.size, 0))})`}
+          ` · 已附加 ${attachments.length} 个 (${formatFileSize(attachments.reduce((s, f) => s + f.size, 0))})`}
       </p>
     </div>
   );

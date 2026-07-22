@@ -1,0 +1,151 @@
+.code-project-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.code-project-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+}
+
+.code-project-sidebar-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bone-400);
+}
+
+.code-project-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--bone-400);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.code-project-new-btn:hover {
+  background: rgba(255, 140, 100, 0.12);
+  border-color: rgba(255, 140, 100, 0.35);
+  color: var(--bone-200);
+}
+
+.code-project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.code-project-empty {
+  padding: 12px 8px;
+  font-size: 12px;
+  color: var(--bone-600);
+  line-height: 1.5;
+}
+
+.code-project-row {
+  margin-bottom: 4px;
+}
+
+.code-project-item {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.code-project-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.code-project-item.active {
+  border-color: rgba(255, 140, 100, 0.35);
+  background: rgba(255, 140, 100, 0.08);
+}
+
+.code-project-item-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.code-project-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-project-item-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-200);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-project-item-path {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--bone-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-project-item-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.code-project-row:hover .code-project-item-actions {
+  display: flex;
+}
+
+.code-project-item-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bone-500);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.code-project-item-action-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--bone-200);
+}
+
+.code-project-item-action-btn.danger:hover {
+  background: rgba(220, 60, 60, 0.2);
+  color: #fca5a5;
+}

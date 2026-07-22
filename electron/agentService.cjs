@@ -134,7 +134,7 @@ function mergeSystemMessage(messages, systemPrompt) {
 }
 
 function registerAgentHandlers(ipcMain, deps) {
-  const { getChatCompletionsUrl, getWindows, getParentWindow, chatLogsDir } = deps;
+  const { getWindows, getParentWindow, chatLogsDir } = deps;
 
   // Legacy IPC — prefer ai:stream_open for new callers. Shares tool/MCP wiring via agentStreamShared.
   ipcMain.handle('agent:run', async (event, payload) => {
@@ -143,7 +143,6 @@ function registerAgentHandlers(ipcMain, deps) {
       messages,
       agentConfig,
       apiConfig,
-      chatUrl,
       terminalSessionId,
       topicId,
     } = payload || {};
@@ -152,12 +151,7 @@ function registerAgentHandlers(ipcMain, deps) {
       throw new Error('agent:run invalid payload');
     }
 
-    const url =
-      chatUrl ||
-      (apiConfig.apiHost
-        ? getChatCompletionsUrl(apiConfig.apiHost, apiConfig.providerType)
-        : '');
-    if (!url || !apiConfig.modelName) {
+    if (!apiConfig.apiHost || !apiConfig.modelName) {
       throw new Error('agent:run missing API config');
     }
 

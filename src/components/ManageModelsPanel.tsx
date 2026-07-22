@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
-import type { LlmProvider } from "../shared/providers";
+import {
+  getModelsListEndpointLabel,
+  type LlmProvider,
+} from "../shared/providers";
 import "./ManageModelsPanel.css";
 
 const api = window.electronAPI;
@@ -95,13 +98,14 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
     <div className="manage-models-overlay" onClick={() => setOpen(false)}>
       <div className="manage-models-panel" onClick={(e) => e.stopPropagation()}>
         <div className="manage-models-header">
-          <h4>管理模型 · {provider.name}</h4>
+          <h4>管理模型 - {provider.name}</h4>
           <button type="button" className="manage-models-close" onClick={() => setOpen(false)}>
             ×
           </button>
         </div>
         <p className="manage-models-desc">
-          从 {provider.type === "ollama" ? "Ollama /api/tags" : "OpenAI /models"} 拉取列表，勾选要在下拉框中显示的模型
+          从 {getModelsListEndpointLabel(provider.type)}{" "}
+          拉取列表，勾选要在下拉框中显示的模型
         </p>
         <div className="manage-models-toolbar">
           <input

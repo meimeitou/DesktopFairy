@@ -8,8 +8,8 @@
 }
 
 .thinking-block.thinking-active {
-  border-color: rgba(245, 158, 11, 0.35);
-  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(232, 184, 74, 0.38);
+  background: var(--amber-soft);
 }
 
 .thinking-header {
@@ -36,7 +36,7 @@
 .thinking-bulb {
   flex: 0 0 auto;
   display: inline-flex;
-  color: #f59e0b;
+  color: var(--amber);
 }
 
 .thinking-block.thinking-active .thinking-bulb {
@@ -58,7 +58,7 @@
 }
 
 .thinking-block.thinking-active .thinking-label {
-  color: #f59e0b;
+  color: var(--amber);
 }
 
 .thinking-chevron {

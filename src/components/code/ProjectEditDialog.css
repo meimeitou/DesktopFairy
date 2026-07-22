@@ -1,0 +1,102 @@
+.project-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.project-edit-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline);
+  background: var(--ink-850, #151520);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.project-edit-dialog h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bone-200);
+}
+
+.project-edit-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--bone-500);
+}
+
+.project-edit-dialog input,
+.project-edit-dialog textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--bone-200);
+  font: inherit;
+}
+
+.project-edit-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.project-edit-path-row input {
+  flex: 1;
+}
+
+.project-edit-path-row button {
+  flex-shrink: 0;
+  padding: 0 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--bone-300);
+  cursor: pointer;
+}
+
+.project-edit-error {
+  margin: 0 0 12px;
+  color: #f87171;
+  font-size: 12px;
+}
+
+.project-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.project-edit-actions button {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-edit-actions button.secondary {
+  background: transparent;
+  color: var(--bone-400);
+  border: 1px solid var(--hairline);
+}
+
+.project-edit-actions button[type="submit"] {
+  background: rgba(255, 140, 100, 0.2);
+  color: var(--bone-100, #fff);
+  border: 1px solid rgba(255, 140, 100, 0.35);
+}
+
+.project-edit-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

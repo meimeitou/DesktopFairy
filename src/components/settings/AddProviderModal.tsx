@@ -41,6 +41,8 @@ export default function AddProviderModal({ onClose, onConfirm }: Props) {
             onChange={(e) => setType(e.target.value as ProviderType)}
           >
             <option value="openai">OpenAI 兼容 API</option>
+            <option value="openai-response">OpenAI Responses API</option>
+            <option value="anthropic">Anthropic Messages API</option>
             <option value="ollama">Ollama</option>
           </select>
         </div>

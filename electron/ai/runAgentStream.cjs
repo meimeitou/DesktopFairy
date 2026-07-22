@@ -31,7 +31,12 @@ async function runAgentStream({
     stopWhen: stepCountIs(Math.max(1, maxTurns)),
   };
 
-  if (reasoningEffort && reasoningEffort !== 'default') {
+  const pt = apiConfig?.providerType;
+  if (
+    reasoningEffort &&
+    reasoningEffort !== 'default' &&
+    (pt === 'openai' || pt === 'openai-response')
+  ) {
     agentOptions.providerOptions = {
       openai: { reasoningEffort },
     };

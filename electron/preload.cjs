@@ -57,10 +57,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'pty:input',
       'pty:resize',
       'pty:kill',
+      'pty:busy',
       'ssh:create',
       'ssh:input',
       'ssh:resize',
       'ssh:kill',
+      'ssh:busy',
       'ssh:test',
       'ssh:import_configs',
       'agent:run',
@@ -93,6 +95,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'terminal:agent:stop',
       'websearch:test',
       'browser:open',
+      'project:list',
+      'project:create',
+      'project:update',
+      'project:delete',
+      'project:set_active',
+      'project:pick_directory',
+      'project:save_store',
+      'code_cli:write_config',
+      'code_cli:check_binary',
+      'code_cli:build_command',
+      'code_cli:read_config_files',
+      'code_cli:install',
+      'code_cli:build_launch_command',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -119,6 +134,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, view) => callback(view);
     ipcRenderer.on('chat:navigate', listener);
     return () => ipcRenderer.removeListener('chat:navigate', listener);
+  },
+
+  onCodeAction: (callback) => {
+    const listener = (_event, action) => callback(action);
+    ipcRenderer.on('code:action', listener);
+    return () => ipcRenderer.removeListener('code:action', listener);
   },
 
   onSettingsUpdated: (callback) => {

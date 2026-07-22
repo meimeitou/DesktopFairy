@@ -159,7 +159,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
       setCheckMessage("请填写 API Host");
       return;
     }
-    if (providerNeedsApiKey(selected.type) && !selected.apiKey.trim()) {
+    if (providerNeedsApiKey(selected) && !selected.apiKey.trim()) {
       setCheckStatus("failed");
       setCheckMessage("请填写 API Key");
       return;
@@ -177,6 +177,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
         apiHost: selected.apiHost,
         apiKey: selected.apiKey,
         providerType: selected.type,
+        providerId: selected.id,
         model: modelToCheck,
       })) as { ok: boolean; latencyMs: number; model: string };
       setCheckStatus("success");
@@ -301,7 +302,9 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
               placeholder={
                 selected.type === "ollama"
                   ? "http://localhost:11434"
-                  : "https://api.openai.com/v1"
+                  : selected.type === "anthropic"
+                    ? "https://api.anthropic.com/v1"
+                    : "https://api.openai.com/v1"
               }
             />
             <p className="field-hint">
@@ -309,7 +312,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             </p>
           </div>
 
-          {providerNeedsApiKey(selected.type) && (
+          {providerNeedsApiKey(selected) && (
             <div className="field">
               <label>API Key</label>
               <div className="provider-api-key-row">
@@ -333,7 +336,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             </div>
           )}
 
-          {!providerNeedsApiKey(selected.type) && (
+          {!providerNeedsApiKey(selected) && (
             <div className="field">
               <label>连接检测</label>
               <div className="provider-check-row">

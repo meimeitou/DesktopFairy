@@ -43,7 +43,6 @@ import {
   getAgentBackendGuidance,
   type AppSettings,
 } from "../shared/settings";
-import { getChatCompletionsUrl } from "../shared/providers";
 import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
 import type { ReasoningEffort } from "../shared/reasoningEffort";
@@ -1122,11 +1121,6 @@ export default function ChatPage({
       notifyLive2DScene("userSend");
       notifyLive2DScene("thinking");
 
-      const chatUrl = getChatCompletionsUrl(
-        apiConfig.apiHost,
-        apiConfig.providerType,
-      );
-
       const invokePromise = agentMode
         ? openAgentStream({
             topicId,
@@ -1143,9 +1137,12 @@ export default function ChatPage({
         : api.invoke("chat:send", {
             requestId,
             messages: payloadMessages,
-            chatUrl,
-            apiKey: apiConfig.apiKey,
-            model: apiConfig.modelName,
+            apiConfig: {
+              apiHost: apiConfig.apiHost,
+              apiKey: apiConfig.apiKey,
+              providerType: apiConfig.providerType,
+              modelName: apiConfig.modelName,
+            },
           });
 
       invokePromise

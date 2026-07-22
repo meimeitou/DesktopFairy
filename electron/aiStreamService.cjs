@@ -18,6 +18,19 @@ const topicAgentState = new Map();
 function registerAiStreamHandlers(ipcMain, deps) {
   const { getWindows, getParentWindow } = deps;
 
+  function assertHttpUrl(raw) {
+    let u;
+    try {
+      u = new URL(String(raw));
+    } catch {
+      throw new Error('URL 无效');
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      throw new Error(`不支持的协议: ${u.protocol}（仅允许 http/https）`);
+    }
+    return u.href;
+  }
+
   ipcMain.handle('ai:stream_open', async (event, payload) => {
     const {
       topicId,
@@ -31,6 +44,10 @@ function registerAiStreamHandlers(ipcMain, deps) {
     if (!topicId || !requestId || !Array.isArray(messages) || !agentConfig || !apiConfig) {
       throw new Error('ai:stream_open invalid payload');
     }
+    if (!apiConfig.apiHost || !apiConfig.modelName) {
+      throw new Error('ai:stream_open invalid apiConfig');
+    }
+    assertHttpUrl(apiConfig.apiHost);
 
     if (manager.isTopicStreaming(topicId)) {
       const existing = manager.activeStreams.get(topicId);

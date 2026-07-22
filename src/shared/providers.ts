@@ -1,4 +1,8 @@
-export type ProviderType = "openai" | "ollama";
+export type ProviderType =
+  | "openai"
+  | "ollama"
+  | "openai-response"
+  | "anthropic";
 
 export interface LlmProvider {
   id: string;
@@ -52,6 +56,13 @@ export function createProviderId(): string {
   return `provider-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function defaultApiHostForType(type: ProviderType): string {
+  if (type === "ollama") return "http://localhost:11434";
+  if (type === "openai-response") return "https://api.openai.com/v1";
+  if (type === "anthropic") return "https://api.anthropic.com/v1";
+  return "";
+}
+
 export function createCustomProvider(
   name: string,
   type: ProviderType
@@ -60,7 +71,7 @@ export function createCustomProvider(
     id: createProviderId(),
     name: name.trim(),
     type,
-    apiHost: type === "ollama" ? "http://localhost:11434" : "",
+    apiHost: defaultApiHostForType(type),
     apiKey: "",
     enabled: true,
     isSystem: false,
@@ -87,14 +98,23 @@ export function formatOllamaHost(apiHost: string): string {
     .replace(/\/api$/, "");
 }
 
+/** Anthropic SDK baseURL must include /v1 (SDK appends /messages only). */
+export function formatAnthropicHost(apiHost: string): string {
+  const trimmed = withoutTrailingSlash(apiHost.trim());
+  if (!trimmed) return "";
+  if (trimmed.endsWith("/v1")) return trimmed;
+  return `${trimmed}/v1`;
+}
+
+/**
+ * Preview / legacy Completions URL. Not used as the live chat request entry
+ * (all inference goes through the AI SDK).
+ */
 export function getChatCompletionsUrl(
   apiHost: string,
   type: ProviderType
 ): string {
-  if (type === "ollama") {
-    return `${formatOllamaHost(apiHost)}/v1/chat/completions`;
-  }
-  return `${formatOpenAIHost(apiHost)}/chat/completions`;
+  return getEndpointPreview(apiHost, type);
 }
 
 export function getEndpointPreview(
@@ -102,17 +122,55 @@ export function getEndpointPreview(
   type: ProviderType
 ): string {
   if (type === "ollama") {
-    return `${formatOllamaHost(apiHost)}/v1/chat/completions`;
+    // Native Ollama chat (matches createOllama baseURL …/api)
+    return `${formatOllamaHost(apiHost)}/api/chat`;
+  }
+  if (type === "openai-response") {
+    return `${formatOpenAIHost(apiHost)}/responses`;
+  }
+  if (type === "anthropic") {
+    return `${formatAnthropicHost(apiHost)}/messages`;
   }
   return `${formatOpenAIHost(apiHost)}/chat/completions`;
 }
 
-export function providerNeedsApiKey(type: ProviderType): boolean {
-  return type === "openai";
+/** Catalog endpoint label for Manage Models UI (matches chat:list_models). */
+export function getModelsListEndpointLabel(type: ProviderType): string {
+  switch (type) {
+    case "ollama":
+      return "Ollama /api/tags";
+    case "anthropic":
+      return "Anthropic /v1/models";
+    case "openai-response":
+      return "OpenAI /v1/models（Responses）";
+    default:
+      return "OpenAI /v1/models";
+  }
+}
+
+/** Ollama and local Hermes typically accept empty keys. */
+export function providerNeedsApiKey(
+  typeOrProvider: ProviderType | Pick<LlmProvider, "type" | "id">
+): boolean {
+  if (typeof typeOrProvider === "string") {
+    return typeOrProvider !== "ollama";
+  }
+  if (typeOrProvider.type === "ollama") return false;
+  if (typeOrProvider.id === "hermes") return false;
+  return true;
 }
 
 export function getProviderTypeLabel(type: ProviderType): string {
-  return type === "ollama" ? "Ollama" : "OpenAI 兼容";
+  switch (type) {
+    case "ollama":
+      return "Ollama";
+    case "openai-response":
+      return "OpenAI Responses";
+    case "anthropic":
+      return "Anthropic";
+    default:
+      return "OpenAI 兼容";
+  }
 }
 
 export function cloneProviders(providers: LlmProvider[]): LlmProvider[] {

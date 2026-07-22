@@ -156,6 +156,26 @@
   color: var(--bone-100);
 }
 
+.terminal-tab-settings {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--bone-500);
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.terminal-tab-settings:hover {
+  background: rgba(245, 239, 230, 0.08);
+  color: var(--bone-100);
+}
+
 /* SSH 连接选择器 popover — position: fixed 由内联样式注入（锚定到按钮，
    避开 .terminal-tabs-bottom 的 overflow-x: auto 裁切） */
 .ssh-picker {
@@ -327,13 +347,15 @@
   position: absolute;
   right: 16px;
   bottom: 52px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   border: 1px solid var(--hairline-strong);
-  background: var(--ink-700);
+  background: var(--ink-750);
   color: var(--bone-100);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(245, 239, 230, 0.06);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -344,13 +366,22 @@
     background 0.15s,
     color 0.15s,
     border-color 0.15s,
+    transform 0.12s ease,
+    box-shadow 0.15s,
     visibility 0s linear 0.2s;
 }
 
 .terminal-agent-toggle:hover {
-  background: var(--ink-600);
+  background: var(--persimmon-soft);
   color: var(--persimmon-bright);
   border-color: var(--persimmon-focus);
+  box-shadow:
+    0 8px 22px rgba(232, 98, 74, 0.22),
+    inset 0 1px 0 rgba(245, 239, 230, 0.08);
+}
+
+.terminal-agent-toggle:active {
+  transform: scale(0.96);
 }
 
 .terminal-agent-toggle.open {
@@ -643,32 +674,6 @@
 .terminal-search-toggle.active {
   background: var(--persimmon-soft);
   color: var(--persimmon-bright);
-}
-
-/* 齿轮 FAB — 位于 AI 助手 FAB 上方 */
-.terminal-settings-toggle {
-  position: absolute;
-  right: 16px;
-  bottom: 100px;  /* AI 助手 FAB 在 52px，40px 高 + 8px 间距 */
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--hairline-strong);
-  background: var(--ink-700);
-  color: var(--bone-300);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.terminal-settings-toggle:hover {
-  background: var(--ink-600);
-  color: var(--bone-100);
-  border-color: var(--hairline-bold);
 }
 
 /* 设置 tab 容器 — keep-alive 模式，CSS 控制显隐避免丢失表单状态。

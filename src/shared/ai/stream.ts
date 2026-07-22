@@ -1,4 +1,6 @@
 /** Tool terminal state included in chat:stream:done for reconciliation. */
+import type { ProviderType } from "../providers";
+
 export interface ToolTerminalState {
   toolCallId: string;
   toolName?: string;
@@ -16,7 +18,7 @@ export interface AiStreamOpenRequest {
   apiConfig: {
     apiHost: string;
     apiKey?: string;
-    providerType?: string;
+    providerType?: ProviderType;
     modelName: string;
   };
   terminalSessionId?: string;

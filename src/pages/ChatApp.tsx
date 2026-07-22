@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import ChatPage from "./ChatPage";
 import SettingsPage from "./SettingsPage";
 import TerminalPage from "./TerminalPage";
+import CodePage, { type CodePageAction } from "./CodePage";
 import "./ChatApp.css";
 
-type AppView = "chat" | "terminal" | "settings";
+type AppView = "chat" | "terminal" | "code" | "settings";
 
 const api = window.electronAPI;
 const isMac =
@@ -12,8 +13,15 @@ const isMac =
   navigator.platform.toUpperCase().includes("MAC");
 
 const params = new URLSearchParams(window.location.search);
+const viewParam = params.get("view");
 const initialView: AppView =
-  params.get("view") === "settings" ? "settings" : "chat";
+  viewParam === "settings"
+    ? "settings"
+    : viewParam === "terminal"
+      ? "terminal"
+      : viewParam === "code"
+        ? "code"
+        : "chat";
 
 function ChatIcon() {
   return (
@@ -28,6 +36,15 @@ function TerminalIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polyline points="4 17 10 11 4 5" />
       <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  );
+}
+
+function CodeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="16 18 22 12 16 6" />
+      <polyline points="8 6 2 12 8 18" />
     </svg>
   );
 }
@@ -53,6 +70,7 @@ function CloseIcon() {
 export default function ChatApp() {
   const [view, setView] = useState<AppView>(initialView);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [codeAction, setCodeAction] = useState<CodePageAction>(null);
 
   useEffect(() => {
     document.title = " ";
@@ -63,8 +81,6 @@ export default function ChatApp() {
     };
   }, []);
 
-  // Sync macOS native fullscreen state so the title bar can drop its
-  // traffic-light padding while in fullscreen (matches cherry-studio).
   useEffect(() => {
     const off = api.onChatWindowFullscreenChanged?.((value) => setIsFullscreen(Boolean(value)));
     return () => off?.();
@@ -74,15 +90,28 @@ export default function ChatApp() {
     const off = api.onChatNavigate?.((nextView) => {
       if (nextView === "terminal") setView("terminal");
       else if (nextView === "settings") setView("settings");
+      else if (nextView === "code") setView("code");
       else setView("chat");
     });
     return () => off?.();
   }, []);
 
   useEffect(() => {
-    const handler = () => setView("terminal");
-    window.addEventListener("terminal:run-command", handler);
-    return () => window.removeEventListener("terminal:run-command", handler);
+    const off = api.onCodeAction?.((action) => {
+      setView("code");
+      setCodeAction(action as CodePageAction);
+    });
+    return () => off?.();
+  }, []);
+
+  useEffect(() => {
+    const switchTerminal = () => setView("terminal");
+    window.addEventListener("terminal:run-command", switchTerminal);
+    window.addEventListener("terminal:launch-cli", switchTerminal);
+    return () => {
+      window.removeEventListener("terminal:run-command", switchTerminal);
+      window.removeEventListener("terminal:launch-cli", switchTerminal);
+    };
   }, []);
 
   return (
@@ -98,6 +127,14 @@ export default function ChatApp() {
           >
             <ChatIcon />
             <span>对话</span>
+          </button>
+          <button
+            type="button"
+            className={`chat-tab${view === "code" ? " active" : ""}`}
+            onClick={() => setView("code")}
+          >
+            <CodeIcon />
+            <span>代码</span>
           </button>
           <button
             type="button"
@@ -137,6 +174,15 @@ export default function ChatApp() {
           aria-hidden={view !== "chat"}
         >
           <ChatPage embedded />
+        </div>
+        <div
+          className={`chat-app-panel${view === "code" ? "" : " chat-app-panel-hidden"}`}
+          aria-hidden={view !== "code"}
+        >
+          <CodePage
+            initialAction={codeAction}
+            onActionConsumed={() => setCodeAction(null)}
+          />
         </div>
         <div
           className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}

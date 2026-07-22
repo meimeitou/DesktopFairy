@@ -152,7 +152,7 @@ html.chat-window-shell body {
   padding: 4px 10px;
   background: transparent;
   border: 1px solid var(--hairline-strong);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 11px;
   color: var(--bone-500);
   cursor: pointer;

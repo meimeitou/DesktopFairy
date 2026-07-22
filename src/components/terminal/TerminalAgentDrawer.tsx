@@ -110,6 +110,39 @@ function TrashIcon() {
   );
 }
 
+function SendIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M22 2L11 13" />
+      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
 interface TerminalAgentDrawerProps {
   isOpen: boolean;
   onToggle: () => void;
@@ -902,81 +935,89 @@ export default function TerminalAgentDrawer({
         </TerminalStopContext.Provider>
 
         <div className="terminal-agent-input-shell">
-          <div className="chat-input-toolbar">
-            <div className="chat-input-tools-left">
-              <ChatModeSelector
-                mode={chatMode}
-                onChange={setChatMode}
+          <div className="terminal-agent-dock">
+            <div className="terminal-agent-editor">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder={
+                  activeState.streaming ? "生成中…" : "输入消息，Enter 发送…"
+                }
+                value={activeState.input}
+                onChange={(e) => setActiveInput(e.target.value)}
+                onKeyDown={handleKeyDown}
                 disabled={activeState.streaming}
               />
-              <Tooltip tip={"清空上下文\n后续消息不再引用此前对话"}>
-                <button
-                  type="button"
-                  className="chat-tool-btn"
-                  onClick={handleClearContext}
-                  disabled={
-                    activeState.streaming || activeState.messages.length === 0
-                  }
-                >
-                  <EraserIcon />
-                </button>
-              </Tooltip>
-              <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
-                <button
-                  type="button"
-                  className="chat-tool-btn"
-                  onClick={handleCompact}
-                  disabled={
-                    activeState.streaming || activeState.messages.length === 0
-                  }
-                >
-                  <CompactIcon />
-                </button>
-              </Tooltip>
-              <Tooltip tip={"删除上下文\n删除当前会话全部消息"}>
-                <button
-                  type="button"
-                  className="chat-tool-btn chat-tool-btn-danger"
-                  onClick={handleClearMessages}
-                  disabled={
-                    activeState.streaming || activeState.messages.length === 0
-                  }
-                >
-                  <TrashIcon />
-                </button>
-              </Tooltip>
             </div>
-          </div>
-          <div className="terminal-agent-input-row">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              placeholder={
-                activeState.streaming ? "生成中…" : "输入消息，Enter 发送…"
-              }
-              value={activeState.input}
-              onChange={(e) => setActiveInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={activeState.streaming}
-            />
-            {activeState.streaming ? (
-              <button
-                type="button"
-                className="terminal-agent-send-btn terminal-agent-stop-btn"
-                onClick={handleStop}
-              >
-                停止
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="terminal-agent-send-btn"
-                onClick={() => void handleSend()}
-                disabled={!activeState.input.trim()}
-              >
-                发送
-              </button>
-            )}
+            <div className="chat-input-toolbar">
+              <div className="chat-input-tools-left">
+                <ChatModeSelector
+                  mode={chatMode}
+                  onChange={setChatMode}
+                  disabled={activeState.streaming}
+                />
+                <Tooltip tip={"清空上下文\n后续消息不再引用此前对话"}>
+                  <button
+                    type="button"
+                    className="chat-tool-btn"
+                    onClick={handleClearContext}
+                    disabled={
+                      activeState.streaming || activeState.messages.length === 0
+                    }
+                  >
+                    <EraserIcon />
+                  </button>
+                </Tooltip>
+                <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
+                  <button
+                    type="button"
+                    className="chat-tool-btn"
+                    onClick={handleCompact}
+                    disabled={
+                      activeState.streaming || activeState.messages.length === 0
+                    }
+                  >
+                    <CompactIcon />
+                  </button>
+                </Tooltip>
+                <Tooltip tip={"删除上下文\n删除当前会话全部消息"}>
+                  <button
+                    type="button"
+                    className="chat-tool-btn chat-tool-btn-danger"
+                    onClick={handleClearMessages}
+                    disabled={
+                      activeState.streaming || activeState.messages.length === 0
+                    }
+                  >
+                    <TrashIcon />
+                  </button>
+                </Tooltip>
+              </div>
+              <div className="chat-input-toolbar-right">
+                {activeState.streaming ? (
+                  <button
+                    type="button"
+                    className="chat-send-btn chat-stop-btn"
+                    onClick={handleStop}
+                    aria-label="停止生成"
+                    title="停止生成"
+                  >
+                    <StopIcon />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="chat-send-btn"
+                    onClick={() => void handleSend()}
+                    disabled={!activeState.input.trim()}
+                    aria-label="发送消息"
+                    title="发送消息 (Enter)"
+                  >
+                    <SendIcon />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
           <p className="terminal-agent-input-hint">
             Enter 发送 · Shift+Enter 换行

@@ -7,24 +7,28 @@
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: rgba(120, 100, 255, 0.12);
-  border: 1px solid rgba(120, 100, 255, 0.35);
-  border-radius: 7px;
-  color: rgba(220, 210, 255, 0.95);
+  background: var(--persimmon-soft);
+  border: 1px solid rgba(232, 98, 74, 0.4);
+  border-radius: 8px;
+  color: var(--persimmon-bright);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .manage-models-open-btn:hover {
-  background: rgba(120, 100, 255, 0.22);
+  background: rgba(232, 98, 74, 0.25);
+  border-color: rgba(232, 98, 74, 0.6);
 }
 
 .manage-models-count {
   padding: 1px 6px;
-  background: rgba(120, 100, 255, 0.35);
+  background: rgba(232, 98, 74, 0.35);
   border-radius: 10px;
   font-size: 11px;
+  color: var(--bone-100);
 }
 
 .manage-models-overlay {
@@ -44,8 +48,8 @@
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  background: rgb(22, 18, 38);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--ink-800);
+  border: 1px solid var(--hairline-strong);
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
 }
@@ -61,23 +65,27 @@
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--bone-100);
 }
 
 .manage-models-close {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--bone-500);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
   padding: 0 4px;
 }
 
+.manage-models-close:hover {
+  color: var(--bone-300);
+}
+
 .manage-models-desc {
   margin: 0 16px 10px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--bone-500);
   line-height: 1.45;
 }
 
@@ -92,26 +100,43 @@
   flex: 1;
   min-width: 120px;
   padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
+  background: rgba(245, 239, 230, 0.04);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--bone-100);
   outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.manage-models-toolbar input[type="search"]:focus {
+  border-color: var(--persimmon-focus);
+  background: rgba(245, 239, 230, 0.07);
+}
+
+.manage-models-toolbar input[type="search"]::placeholder {
+  color: rgba(245, 239, 230, 0.2);
 }
 
 .manage-models-toolbar button {
   padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  background: rgba(245, 239, 230, 0.04);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--bone-300);
   cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .manage-models-toolbar button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--hairline);
+  border-color: var(--hairline-bold);
+  color: var(--bone-100);
 }
 
 .manage-models-toolbar button:disabled {
@@ -124,8 +149,8 @@
   overflow-y: auto;
   margin: 0 16px;
   padding: 8px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
   max-height: 320px;
 }
 
@@ -135,13 +160,17 @@
   gap: 8px;
   padding: 6px 4px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--bone-200);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 .manage-models-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--hairline);
+}
+
+.manage-models-item input[type="checkbox"] {
+  accent-color: var(--persimmon);
 }
 
 .manage-models-item span {
@@ -150,7 +179,7 @@
 
 .manage-models-empty {
   text-align: center;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--bone-600);
   font-size: 13px;
   padding: 24px 0;
 }
@@ -164,19 +193,24 @@
 
 .manage-models-selected {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--bone-500);
 }
 
 .manage-models-save {
   padding: 8px 20px;
-  background: rgba(90, 70, 200, 0.85);
+  background: var(--persimmon);
   border: none;
   border-radius: 8px;
-  color: #fff;
+  color: var(--bone-100);
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.15s;
 }
 
 .manage-models-save:hover {
-  background: rgba(110, 90, 220, 0.95);
+  background: var(--persimmon-bright);
+}
+
+.manage-models-save:active {
+  transform: translateY(1px);
 }

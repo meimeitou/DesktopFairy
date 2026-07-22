@@ -3,6 +3,7 @@
  */
 import type { AgentConfig } from "../../shared/agent";
 import type { ToolTerminalState } from "../../shared/ai/stream";
+import type { ProviderType } from "../../shared/providers";
 
 const api = window.electronAPI;
 
@@ -32,7 +33,7 @@ export async function openAgentStream(payload: {
   apiConfig: {
     apiHost: string;
     apiKey?: string;
-    providerType?: string;
+    providerType?: ProviderType;
     modelName: string;
   };
   terminalSessionId?: string;

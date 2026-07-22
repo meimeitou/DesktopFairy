@@ -39,6 +39,8 @@ function quoteForUnix(p: string): string {
 function TerminalInstance({
   isActive,
   tabId,
+  cwd,
+  launchCommand,
   sshHost,
   sshCredentials,
   terminalSettings,
@@ -53,6 +55,8 @@ function TerminalInstance({
 }: {
   isActive: boolean;
   tabId: string;
+  cwd?: string;
+  launchCommand?: string;
   sshHost?: SshHost;
   sshCredentials?: SshCredential[];
   terminalSettings: TerminalSettings;
@@ -176,7 +180,12 @@ function TerminalInstance({
           cols,
           rows,
         }
-      : { cols, rows };
+      : {
+          cols,
+          rows,
+          cwd: cwd || undefined,
+          initialCommand: launchCommand ? `${launchCommand}\r` : undefined,
+        };
 
     const createChannel = isSsh ? "ssh:create" : "pty:create";
     const inputChannel = isSsh ? "ssh:input" : "pty:input";
@@ -224,17 +233,16 @@ function TerminalInstance({
     });
 
     const offExit = onExit?.(({ sessionId }) => {
-      if (sessionId === sessionIdRef.current) {
-        xterm.write(`\r\n[${isSsh ? "SSH 连接已断开" : "进程已退出"}]\r\n`);
-        sessionIdRef.current = "";
-        // 清理 sessionMapRef：pty 退出后 session 已从 ptyService 的 sessions
-        // Map 中删除，若不清理 renderer 侧的 sessionMapRef，agent 工具会拿到
-        // 过期的 sessionId，调 runCommandInSession 时报"终端会话不存在或已关闭"。
-        // 对 SSH 而言 onSessionExit 会关 tab 触发 cleanup，但显式调用更安全。
-        onSessionEnd?.(tabId);
-        // SSH 断开后自动关闭 tab；普通终端进程退出保留 tab 让用户查看输出。
-        if (isSsh) onSessionExit?.(tabId);
+      if (sessionId !== sessionIdRef.current) return;
+      const autoClose = isSsh || Boolean(launchCommand);
+      if (!autoClose) {
+        xterm.write("\r\n[进程已退出]\r\n");
+      } else if (isSsh) {
+        xterm.write("\r\n[SSH 连接已断开]\r\n");
       }
+      sessionIdRef.current = "";
+      onSessionEnd?.(tabId);
+      if (autoClose) onSessionExit?.(tabId);
     });
 
     const pasteFromClipboard = async () => {
@@ -442,6 +450,8 @@ interface Tab {
   id: string;
   title: string;
   kind: "terminal" | "settings" | "ssh";
+  cwd?: string;
+  launchCommand?: string;
   sshHostId?: string;
   sshHost?: SshHost;  // 临时主机（快速连接），不写入 settings.sshHosts
 }
@@ -480,6 +490,8 @@ export default function TerminalPage({
   const sshBtnRef = useRef<HTMLButtonElement>(null);
   const nextTabIndex = useRef(2);
   const sessionMapRef = useRef<Map<string, { sessionId: string; kind: "terminal" | "ssh" }>>(new Map());
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
   const pendingCommandMapRef = useRef<Map<string, string[]>>(new Map());
   // SearchAddon registry — 每个 tab 创建终端时注册 { xterm, searchAddon }，
   // 卸载时移除。Cmd+F 时从 registry 取当前 tab 的 addon 引用存入 state，
@@ -557,8 +569,15 @@ export default function TerminalPage({
   const handleSessionExit = useCallback((tabId: string) => {
     setTabs((prev) => {
       const tab = prev.find((t) => t.id === tabId);
-      if (tab?.kind !== "ssh") return prev;
-      if (prev.length <= 1) return prev;
+      const autoClose = tab?.kind === "ssh" || Boolean(tab?.launchCommand);
+      if (!autoClose) return prev;
+
+      if (prev.length <= 1) {
+        const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+        setActiveTabId(newId);
+        return [{ id: newId, title: "终端 1", kind: "terminal" as const }];
+      }
+
       const idx = prev.findIndex((t) => t.id === tabId);
       const nextTabs = prev.filter((t) => t.id !== tabId);
       if (activeTabIdRef.current === tabId) {
@@ -718,6 +737,35 @@ export default function TerminalPage({
     return () => window.removeEventListener("terminal:run-command", handler);
   }, [activeTabId, pasteCommandToTab]);
 
+  const openCliTab = useCallback(
+    (detail: { cwd: string; command: string; title?: string }) => {
+      const { cwd, command, title } = detail;
+      if (!cwd || !command) return;
+      const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const newTitle = title?.trim() || `CLI ${nextTabIndex.current++}`;
+      setTabs((prev) => [
+        ...prev,
+        { id: newId, title: newTitle, kind: "terminal" as const, cwd, launchCommand: command },
+      ]);
+      setActiveTabId(newId);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ cwd?: string; command?: string; title?: string }>).detail;
+      if (!detail?.cwd || !detail?.command) return;
+      openCliTab({
+        cwd: detail.cwd,
+        command: detail.command,
+        title: detail.title,
+      });
+    };
+    window.addEventListener("terminal:launch-cli", handler);
+    return () => window.removeEventListener("terminal:launch-cli", handler);
+  }, [openCliTab]);
+
   const handleAddTab = useCallback(() => {
     const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const newTitle = `终端 ${nextTabIndex.current++}`;
@@ -725,33 +773,57 @@ export default function TerminalPage({
     setActiveTabId(newId);
   }, []);
 
+  const closeTabById = useCallback((id: string) => {
+    setTabs((prev) => {
+      if (prev.length <= 1) return prev;
+      const idx = prev.findIndex((t) => t.id === id);
+      const nextTabs = prev.filter((t) => t.id !== id);
+      if (activeTabIdRef.current === id) {
+        setActiveTabId(nextTabs[Math.max(0, idx - 1)].id);
+      }
+      return nextTabs;
+    });
+  }, []);
+
+  const requestCloseTab = useCallback(async (id: string) => {
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (!tab) return;
+    if (tab.kind === "settings") {
+      closeTabById(id);
+      return;
+    }
+    const session = sessionMapRef.current.get(id);
+    if (session) {
+      const channel = session.kind === "ssh" ? "ssh:busy" : "pty:busy";
+      try {
+        const result = (await api.invoke(channel, { sessionId: session.sessionId })) as {
+          busy?: boolean;
+          comm?: string;
+        };
+        if (result?.busy) {
+          const detail = result.comm
+            ? `「${result.comm}」正在运行，`
+            : "有命令正在执行，";
+          if (!window.confirm(`${detail}确定关闭此终端标签页吗？`)) return;
+        }
+      } catch {
+        if (!window.confirm("无法确认终端状态，确定关闭此标签页吗？")) return;
+      }
+    }
+    closeTabById(id);
+  }, [closeTabById]);
+
   const handleCloseTab = useCallback(
     (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      setTabs((prev) => {
-        if (prev.length <= 1) return prev;
-        const idx = prev.findIndex((t) => t.id === id);
-        const nextTabs = prev.filter((t) => t.id !== id);
-        if (activeTabId === id) {
-          const nextActive = nextTabs[Math.max(0, idx - 1)].id;
-          setActiveTabId(nextActive);
-        }
-        return nextTabs;
-      });
+      void requestCloseTab(id);
     },
-    [activeTabId],
+    [requestCloseTab],
   );
 
   const handleCloseActiveTab = useCallback(() => {
-    setTabs((prev) => {
-      if (prev.length <= 1) return prev;
-      const idx = prev.findIndex((t) => t.id === activeTabId);
-      const nextTabs = prev.filter((t) => t.id !== activeTabId);
-      const nextActive = nextTabs[Math.max(0, idx - 1)].id;
-      setActiveTabId(nextActive);
-      return nextTabs;
-    });
-  }, [activeTabId]);
+    void requestCloseTab(activeTabId);
+  }, [activeTabId, requestCloseTab]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -760,9 +832,9 @@ export default function TerminalPage({
       if (e.metaKey && e.key === "t") {
         e.preventDefault();
         handleAddTab();
-      } else if (e.metaKey && e.key === "w") {
+      } else if ((e.metaKey || e.ctrlKey) && e.key === "w") {
         e.preventDefault();
-        handleCloseActiveTab();
+        void handleCloseActiveTab();
       } else if (e.metaKey && e.key === "f") {
         // 仅在当前 tab 是终端/SSH 且已注册 searchAddon 时打开。
         // 设置 tab 为 settings 时无注册项，Cmd+F 不响应。
@@ -811,6 +883,8 @@ export default function TerminalPage({
                 key={tab.id}
                 tabId={tab.id}
                 isActive={tab.id === activeTabId && isActive}
+                cwd={tab.cwd}
+                launchCommand={tab.launchCommand}
                 sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
                 sshCredentials={settings.sshCredentials}
                 terminalSettings={settings.terminal}
@@ -935,6 +1009,26 @@ export default function TerminalPage({
               </svg>
             </button>
           </div>
+          <button
+            type="button"
+            className="terminal-tab-settings"
+            onClick={handleOpenSettings}
+            title="终端设置"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -957,27 +1051,6 @@ export default function TerminalPage({
         getActiveSessionId={getActiveSessionId}
         tabIds={tabs.map((t) => t.id)}
       />
-
-      <button
-        type="button"
-        className="terminal-settings-toggle"
-        onClick={handleOpenSettings}
-        title="终端设置"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-        </svg>
-      </button>
 
       <button
         type="button"

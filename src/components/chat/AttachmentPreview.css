@@ -2,7 +2,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 8px 14px 0;
+  padding: 10px 14px 0;
 }
 
 .attachment-chip {
@@ -10,18 +10,19 @@
   align-items: center;
   gap: 6px;
   max-width: 220px;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  padding: 5px 8px;
+  background: rgba(245, 239, 230, 0.05);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--bone-300);
 }
 
 .attachment-chip-icon {
   display: inline-flex;
-  opacity: 0.7;
+  opacity: 0.75;
   flex-shrink: 0;
+  color: var(--persimmon-bright);
 }
 
 .attachment-chip-name {
@@ -31,7 +32,7 @@
 }
 
 .attachment-chip-size {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--bone-600);
   flex-shrink: 0;
 }
 
@@ -43,9 +44,9 @@
   height: 16px;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 5px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--bone-500);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
@@ -53,6 +54,6 @@
 }
 
 .attachment-chip-remove:hover {
-  background: rgba(255, 100, 100, 0.2);
-  color: #ff9a9a;
+  background: var(--rust-soft);
+  color: var(--rust-bright);
 }

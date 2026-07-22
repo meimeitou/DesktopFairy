@@ -28,6 +28,20 @@ function stripAnsi(str) {
     .replace(/\x1B\][^\x07\x1b]*(?:\x07|\x1B\\)/g, '');
 }
 
+function trackOsc633CommandState(session, text) {
+  if (!text || !session) return;
+  if (START_PATTERN.test(text)) session.commandRunning = true;
+  if (END_PATTERN.test(text)) session.commandRunning = false;
+}
+
+function isSshSessionBusy(sessionId) {
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session) return { busy: false };
+  if (session.capture) return { busy: true, reason: 'agent' };
+  if (session.commandRunning) return { busy: true, reason: 'command' };
+  return { busy: false };
+}
+
 // 展开 ~/ 和 ~ 为 os.homedir()。~user/ 不处理（需要 passwd 查询）。
 // 参考 tabby 第三方插件 tabby-ssh-keymap 的 ~ 展开做法。
 function expandTilde(p) {
@@ -254,15 +268,17 @@ function registerSshHandlers({ ipcMain }) {
           try { jumpConn?.end(); } catch { /* already closed */ }
           return;
         }
-        const session = { conn, stream, sender, jumpConn, capture: null };
+        const session = { conn, stream, sender, jumpConn, capture: null, commandRunning: false };
         sessions.set(sessionId, session);
 
         // Capture hook — coexists with the forward-to-renderer listener.
         // Both fire on every data event; this one buffers for runCommandInSshSession.
         const onCaptureData = (data) => {
+          const text = data.toString('utf8');
+          trackOsc633CommandState(session, text);
           const cap = session.capture;
           if (!cap || cap.done) return;
-          cap.buffer += data.toString('utf8');
+          cap.buffer += text;
           if (!cap.started) {
             const startMatch = cap.buffer.match(START_PATTERN);
             if (startMatch) {
@@ -338,6 +354,10 @@ function registerSshHandlers({ ipcMain }) {
       sessions.delete(sessionId);
     }
     return undefined;
+  });
+
+  ipcMain.handle('ssh:busy', (_event, { sessionId }) => {
+    return { ok: true, ...isSshSessionBusy(sessionId) };
   });
 
   // 测试连接：建立后立即断开，不分配 PTY。返回 { ok: true } 或 { ok: false, error }
@@ -489,4 +509,5 @@ module.exports = {
   killAllSshSessions,
   runCommandInSshSession,
   stopSshActiveCapture,
+  isSshSessionBusy,
 };
