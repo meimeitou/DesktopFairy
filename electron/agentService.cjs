@@ -43,10 +43,19 @@ function persistEnabledSkillId(skillId, getWindows) {
   } catch {
     return;
   }
+  let revision;
+  try {
+    const { setSnapshot } = require('./settingsSnapshot.cjs');
+    revision = setSnapshot(settings);
+  } catch {
+    /* optional */
+  }
+  const payload =
+    typeof revision === 'number' ? { settings, revision } : settings;
   for (const win of getWindows?.() || []) {
     try {
       if (win && !win.isDestroyed()) {
-        win.webContents.send('settings:updated', settings);
+        win.webContents.send('settings:updated', payload);
       }
     } catch {
       /* window gone */
@@ -149,19 +158,25 @@ function registerAgentHandlers(ipcMain, deps) {
     const {
       requestId,
       messages,
-      agentConfig,
-      apiConfig,
       terminalSessionId,
       topicId,
     } = payload || {};
 
-    if (!requestId || !Array.isArray(messages) || !agentConfig || !apiConfig) {
+    if (!requestId || !Array.isArray(messages)) {
       throw new Error('agent:run invalid payload');
     }
 
-    if (!apiConfig.apiHost || !apiConfig.modelName) {
-      throw new Error('agent:run missing API config');
+    const settingsSnapshot = require('./settingsSnapshot.cjs');
+    const resolved = settingsSnapshot.resolveForSend({
+      agentConfig: payload?.agentConfig,
+      apiConfig: payload?.apiConfig,
+      forceAgent: true,
+    });
+    if (!resolved.ok || !resolved.apiConfig || !resolved.agentConfig) {
+      throw new Error(resolved.error || 'agent:run missing API config');
     }
+    const apiConfig = resolved.apiConfig;
+    const agentConfig = resolved.agentConfig;
 
     const controller = new AbortController();
     const agentState = { controller, bypassApproval: false };

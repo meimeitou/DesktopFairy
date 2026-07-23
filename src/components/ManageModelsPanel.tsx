@@ -67,7 +67,12 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
     });
   };
 
-  const selectAll = () => setDraft(new Set(filtered));
+  const selectAll = () =>
+    setDraft((prev) => {
+      const next = new Set(prev);
+      for (const m of filtered) next.add(m);
+      return next;
+    });
   const selectNone = () => {
     setDraft((prev) => {
       const next = new Set(prev);

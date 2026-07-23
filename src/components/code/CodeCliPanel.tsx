@@ -11,7 +11,8 @@ import {
   type CodeCliId,
 } from "../../shared/codeCli";
 import type { CodeCliToolState, CodeProject } from "../../shared/codeProjects";
-import { loadSettings, type LlmProvider } from "../../shared/settings";
+import type { LlmProvider } from "../../shared/settings";
+import { useSettings } from "../../shared/settingsStore";
 import "./CodeCliPanel.css";
 
 const api = window.electronAPI;
@@ -95,14 +96,7 @@ export default function CodeCliPanel({
   const [envVars, setEnvVars] = useState<Record<string, string>>(toolState?.envVars ?? {});
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
-  const [settings, setSettings] = useState(() => loadSettings());
-
-  useEffect(() => {
-    const off = api.onSettingsUpdated?.(() => {
-      setSettings(loadSettings());
-    });
-    return () => off?.();
-  }, []);
+  const settings = useSettings();
 
   const providers = useMemo(
     () => filterProvidersForCliTool(cliTool, settings.providers),
@@ -129,6 +123,11 @@ export default function CodeCliPanel({
     setEnvVars(toolState?.envVars ?? {});
   }, [cliTool, toolState?.selectedModel, toolState?.envVars]);
 
+  const effectiveSelectedModel = useMemo(() => {
+    if (selectedModel && modelKeys.includes(selectedModel)) return selectedModel;
+    return modelKeys[0] ?? "";
+  }, [selectedModel, modelKeys]);
+
   const refreshBinary = useCallback(async () => {
     setCheckingBinary(true);
     try {
@@ -153,9 +152,9 @@ export default function CodeCliPanel({
   }, [refreshBinary]);
 
   const resolvedModel = useMemo(() => {
-    if (!selectedModel) return null;
-    return decodeModelKey(selectedModel);
-  }, [selectedModel]);
+    if (!effectiveSelectedModel) return null;
+    return decodeModelKey(effectiveSelectedModel);
+  }, [effectiveSelectedModel]);
 
   const resolvedProvider = useMemo(() => {
     if (!resolvedModel) return null;
@@ -197,7 +196,7 @@ export default function CodeCliPanel({
         [resolvedProvider.id]: { providerId: resolvedProvider.id, modelId: resolvedModel.modelId },
       },
       current: resolvedProvider.id,
-      selectedModel,
+      selectedModel: effectiveSelectedModel,
       envVars: Object.keys(cleanEnv).length > 0 ? cleanEnv : undefined,
     });
     return true;
@@ -360,7 +359,7 @@ export default function CodeCliPanel({
           <ModelSelector
             models={modelKeys}
             modelLabels={modelLabels}
-            value={selectedModel}
+            value={effectiveSelectedModel}
             onChange={setSelectedModel}
             placeholder="选择模型…"
             allowCustom={false}

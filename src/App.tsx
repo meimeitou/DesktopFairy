@@ -2,7 +2,11 @@ import MainView from "./pages/MainView";
 import ChatApp from "./pages/ChatApp";
 import TipView from "./pages/TipView";
 import BrowserPage from "./pages/BrowserPage";
+import { installSettingsSyncListener } from "./shared/settingsStore";
 import "./App.css";
+
+// One listener per renderer process — pages subscribe via useSettings().
+installSettingsSyncListener();
 
 const params = new URLSearchParams(window.location.search);
 const windowType = params.get("window");

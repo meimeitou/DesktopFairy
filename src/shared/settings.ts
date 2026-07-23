@@ -143,6 +143,29 @@ export const DEFAULT_SETTINGS: AppSettings = {
 
 const STORAGE_KEY = "da_settings";
 
+/**
+ * After any in-session local write, prefer localStorage over disk for the rest
+ * of the session. Cold start still prefers disk (survives force-kill better).
+ */
+let preferLocalSettingsCache = false;
+
+/** Write settings to localStorage without syncing to disk / broadcasting. */
+export function cacheSettingsLocally(settings: AppSettings): void {
+  preferLocalSettingsCache = true;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+function readSettingsFromLocalStorage(): AppSettings | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<AppSettings> & LegacySettings;
+    return migrateFromLegacy(parsed);
+  } catch {
+    return null;
+  }
+}
+
 const MIN_SELECTION_MAX_LENGTH = 50;
 const MAX_SELECTION_MAX_LENGTH = 5000;
 const MIN_SPEECH_BUBBLE_MAX_CHARS = 20;
@@ -333,10 +356,12 @@ function finalizeSettings(settings: AppSettings): AppSettings {
         sshCredentials: migrated.sshCredentials,
       };
     })(),
+    // Keep explicit modelName (including custom IDs not in the curated list).
     modelName: (() => {
-      const provider = getActiveProvider(settings);
-      if (provider.models.length === 0) return settings.modelName;
-      return resolveModelNameForProvider(settings, provider);
+      const named =
+        typeof settings.modelName === "string" ? settings.modelName.trim() : "";
+      if (named) return named;
+      return getActiveProvider(settings).models[0] ?? "";
     })(),
   };
   // Drop legacy temperature if present in saved settings.
@@ -380,11 +405,13 @@ function migrateFromLegacy(parsed: Partial<AppSettings> & LegacySettings): AppSe
 }
 
 export function loadSettings(): AppSettings {
-  // Prefer the disk file (da_settings.json) over localStorage.
-  // settings:sync writes to disk synchronously on every change, so disk is
-  // always up-to-date. localStorage can be stale when the process is
-  // force-killed (e.g. concurrently --kill-others in make dev) before
-  // Chromium's LevelDB has a chance to flush.
+  // In-session: localStorage is updated synchronously on edit (ahead of disk IPC).
+  // Cold start: prefer disk — localStorage may be stale after a force-kill.
+  if (preferLocalSettingsCache) {
+    const local = readSettingsFromLocalStorage();
+    if (local) return local;
+  }
+
   try {
     const api = (window as Window & typeof globalThis).electronAPI;
     const diskRaw = api?.loadSettingsFromDisk?.();
@@ -398,16 +425,8 @@ export function loadSettings(): AppSettings {
     // No Electron API or file unreadable — fall through to localStorage
   }
 
-  // Fallback: localStorage (browser / web context, or disk unavailable).
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<AppSettings> & LegacySettings;
-      return migrateFromLegacy(parsed);
-    }
-  } catch {
-    // localStorage also unreadable
-  }
+  const local = readSettingsFromLocalStorage();
+  if (local) return local;
 
   return { ...DEFAULT_SETTINGS, providers: cloneProviders(SYSTEM_PROVIDERS) };
 }
@@ -417,15 +436,23 @@ export interface SettingsSyncResult {
   error?: string;
 }
 
+/** In-flight saveSettings calls — used to ignore stale settings:updated echoes. */
+let pendingSettingsSaves = 0;
+
+export function hasPendingSettingsSave(): boolean {
+  return pendingSettingsSaves > 0;
+}
+
 export async function saveSettings(
   settings: AppSettings,
 ): Promise<SettingsSyncResult> {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  cacheSettingsLocally(settings);
   const api = (window as Window & typeof globalThis).electronAPI;
   if (!api?.invoke) {
     // Non-Electron (web) context: localStorage is the only store.
     return { persisted: true };
   }
+  pendingSettingsSaves += 1;
   try {
     const result = (await api.invoke(
       "settings:sync",
@@ -438,6 +465,8 @@ export async function saveSettings(
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     return { persisted: false, error };
+  } finally {
+    pendingSettingsSaves = Math.max(0, pendingSettingsSaves - 1);
   }
 }
 
@@ -467,11 +496,9 @@ export function resolveModelNameForProvider(
 
 /** Model used for chat API calls and the chat model selector. */
 export function getActiveModelName(settings: AppSettings): string {
-  const provider = getActiveProvider(settings);
-  if (provider.models.length > 0) {
-    return resolveModelNameForProvider(settings, provider);
-  }
-  return settings.modelName;
+  const named = typeof settings.modelName === "string" ? settings.modelName.trim() : "";
+  if (named) return named;
+  return getActiveProvider(settings).models[0] ?? "";
 }
 
 export function getSelectableModels(settings: AppSettings): string[] {
@@ -643,7 +670,7 @@ export function getSelectableModelItems(settings: AppSettings): ModelItem[] {
     for (const modelName of provider.models) {
       items.push({
         value: `${provider.id}::${modelName}`,
-        label: `${provider.name}/${modelName}`,
+        label: `${provider.name} · ${modelName}`,
         providerId: provider.id,
         modelName,
       });

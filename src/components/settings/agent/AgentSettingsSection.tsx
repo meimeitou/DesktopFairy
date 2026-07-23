@@ -11,7 +11,7 @@ import AgentAdvancedSection from "./AgentAdvancedSection";
 
 interface Props {
   settings: AppSettings;
-  onChange: (patch: Partial<AppSettings>) => void;
+  onChange: (fn: (prev: AppSettings) => AppSettings) => void;
 }
 
 export default function AgentSettingsSection({ settings, onChange }: Props) {
@@ -19,7 +19,10 @@ export default function AgentSettingsSection({ settings, onChange }: Props) {
   const agent = settings.agent;
 
   const updateAgent = (patch: Partial<AgentConfig>) => {
-    onChange({ agent: { ...settings.agent, ...patch } });
+    onChange((prev) => ({
+      ...prev,
+      agent: { ...prev.agent, ...patch },
+    }));
   };
 
   const renderSection = () => {

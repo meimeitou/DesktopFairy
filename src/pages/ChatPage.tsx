@@ -34,8 +34,6 @@ import {
   type ChatTopic,
 } from "../shared/chatSession";
 import {
-  loadSettings,
-  saveSettings,
   getChatBackendItems,
   getActiveChatBackend,
   isAgentBackend,
@@ -43,6 +41,12 @@ import {
   getAgentBackendGuidance,
   type AppSettings,
 } from "../shared/settings";
+import {
+  getSettingsSnapshot,
+  setSettings,
+  useSettings,
+  flushSettingsSave,
+} from "../shared/settingsStore";
 import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
 import type { ReasoningEffort } from "../shared/reasoningEffort";
@@ -123,13 +127,7 @@ async function collectInvalidAttachmentPaths(
 // Persist settings and alert the user if the on-disk write failed — otherwise
 // the renderer would silently assume success (data loss on restart).
 function persistSettingsWithAlert(settings: AppSettings): void {
-  void saveSettings(settings).then((r) => {
-    if (!r.persisted) {
-      alert(
-        `设置未能保存到磁盘${r.error ? `：${r.error}` : "，重启后可能丢失"}`,
-      );
-    }
-  });
+  setSettings(settings);
 }
 
 export default function ChatPage({
@@ -147,7 +145,7 @@ export default function ChatPage({
   const [topicsLoaded, setTopicsLoaded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
-  const [chatSettings, setChatSettings] = useState<AppSettings>(loadSettings);
+  const chatSettings = useSettings();
   // 递增信号：划词预填文本后通知 ChatInputBar 把焦点收回输入框
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
 
@@ -472,13 +470,6 @@ export default function ChatPage({
   }, []);
 
   useEffect(() => {
-    const off = api.onSettingsUpdated?.(() => {
-      setChatSettings(loadSettings());
-    });
-    return () => off?.();
-  }, []);
-
-  useEffect(() => {
     if (!activeTopicId) return;
 
     void (async () => {
@@ -488,7 +479,7 @@ export default function ChatPage({
       }
       replayLegacyStreamEvents(result.legacyEvents, legacyStreamHandlersRef.current);
       if (result.attached && result.status === "streaming" && result.requestId) {
-        const requestBackend = getActiveChatBackend(loadSettings());
+        const requestBackend = getActiveChatBackend(getSettingsSnapshot());
         setTopicStates((prev) => {
           const state = prev[activeTopicId];
           if (!state) return prev;
@@ -863,39 +854,26 @@ export default function ChatPage({
     scrollToBottom();
   }, [activeTopicId, scrollToBottom]);
 
-  const handleBackendChange = useCallback(
-    (backend: string) => {
-      const next = { ...chatSettings, chatBackend: backend };
-      persistSettingsWithAlert(next);
-      setChatSettings(next);
-    },
-    [chatSettings],
-  );
+  const handleBackendChange = useCallback((backend: string) => {
+    persistSettingsWithAlert({ ...getSettingsSnapshot(), chatBackend: backend });
+  }, []);
 
-  const handleChatModeChange = useCallback(
-    (mode: ChatMode) => {
-      const next = {
-        ...chatSettings,
-        chatMode: mode,
-        agent: { ...chatSettings.agent, chatMode: mode },
-      };
-      persistSettingsWithAlert(next);
-      setChatSettings(next);
-    },
-    [chatSettings],
-  );
+  const handleChatModeChange = useCallback((mode: ChatMode) => {
+    const current = getSettingsSnapshot();
+    persistSettingsWithAlert({
+      ...current,
+      chatMode: mode,
+      agent: { ...current.agent, chatMode: mode },
+    });
+  }, []);
 
-  const handleReasoningEffortChange = useCallback(
-    (value: ReasoningEffort) => {
-      const next = {
-        ...chatSettings,
-        agent: { ...chatSettings.agent, reasoningEffort: value },
-      };
-      persistSettingsWithAlert(next);
-      setChatSettings(next);
-    },
-    [chatSettings],
-  );
+  const handleReasoningEffortChange = useCallback((value: ReasoningEffort) => {
+    const current = getSettingsSnapshot();
+    persistSettingsWithAlert({
+      ...current,
+      agent: { ...current.agent, reasoningEffort: value },
+    });
+  }, []);
 
   const {
     submittingApprovalId,
@@ -975,7 +953,9 @@ export default function ChatPage({
         }
       }
 
-      const settings = chatSettings;
+      // Always resolve from the latest store snapshot.
+      await flushSettingsSave();
+      const settings = getSettingsSnapshot();
       const requestBackend = getActiveChatBackend(settings);
       const agentMode = isAgentBackend(requestBackend);
       const apiConfig = getChatApiConfig(settings);
@@ -1215,7 +1195,7 @@ export default function ChatPage({
         flushSessionSave(topicId);
       });
     },
-    [chatSettings, skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave, scrollToBottom, syncStreamingFlag],
+    [skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave, scrollToBottom, syncStreamingFlag],
   );
 
   useEffect(() => {

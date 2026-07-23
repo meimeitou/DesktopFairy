@@ -42,6 +42,7 @@ const {
 } = require('./browserService.cjs');
 const { createCodeProjectService } = require('./codeProjectService.cjs');
 const { registerCodeCliHandlers } = require('./codeCliService.cjs');
+const settingsSnapshot = require('./settingsSnapshot.cjs');
 
 registerLive2DSchemes();
 
@@ -134,6 +135,12 @@ const resolveStartupSettings = () => ({
   ...DEFAULT_SELECTION_SETTINGS,
   ...(loadSettingsFromDisk() || {}),
 });
+
+// Seed main-process snapshot so early sends resolve without waiting for renderer sync.
+{
+  const disk = loadSettingsFromDisk();
+  if (disk) settingsSnapshot.setSnapshot(disk);
+}
 
 
 // In-flight chat completion requests, keyed by requestId
@@ -641,17 +648,19 @@ const setupIPC = () => {
     }
     // Apply in-memory + broadcast even on disk failure so the running session
     // stays consistent; only the on-disk copy is stale.
+    const revision = settingsSnapshot.setSnapshot(settings);
     applySelectionSettings(settings);
     applyChatShortcutSettings(settings);
     // Broadcast to every window, including the sender. Chat / Settings / Code /
     // Terminal share one BrowserWindow (keep-alive tabs); skipping the sender
     // left ChatPage / CodeCliPanel stuck on stale provider model lists.
+    const payload = { settings, revision };
     for (const win of [mainWindow, chatWindow]) {
       if (win && !win.isDestroyed()) {
-        win.webContents.send('settings:updated', settings);
+        win.webContents.send('settings:updated', payload);
       }
     }
-    return { persisted, error };
+    return { persisted, error, revision };
   });
 
   registerLive2DHandlers({
@@ -897,16 +906,23 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('chat:send', async (event, payload) => {
-    const { requestId, messages, apiConfig } = payload || {};
-    if (
-      !requestId ||
-      !Array.isArray(messages) ||
-      !apiConfig?.apiHost ||
-      !apiConfig?.modelName
-    ) {
+    const { requestId, messages } = payload || {};
+    if (!requestId || !Array.isArray(messages)) {
       throw new Error('chat:send invalid payload');
     }
-    assertHttpUrl(apiConfig.apiHost);
+
+    // Authoritative resolve from main snapshot (ignore stale renderer apiConfig).
+    const resolved = settingsSnapshot.resolveForSend({
+      apiConfig: payload?.apiConfig,
+      forceAgent: false,
+    });
+    if (!resolved.ok || !resolved.apiConfig) {
+      throw new Error(resolved.error || 'chat:send invalid apiConfig');
+    }
+    if (settingsSnapshot.isAgentBackend(resolved.backend)) {
+      throw new Error('chat:send does not support agent backend; use ai:stream_open');
+    }
+    assertHttpUrl(resolved.apiConfig.apiHost);
 
     const { streamPlainText } = require('./ai/AiService.cjs');
     const controller = new AbortController();
@@ -922,7 +938,7 @@ const setupIPC = () => {
       const { aborted } = await streamPlainText({
         requestId,
         messages,
-        apiConfig,
+        apiConfig: resolved.apiConfig,
         signal: controller.signal,
         safeSend,
       });

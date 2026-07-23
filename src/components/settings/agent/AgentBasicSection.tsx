@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ModelSelector from "../../ModelSelector";
 import type { AppSettings } from "../../../shared/settings";
 import { getSelectableModelItems } from "../../../shared/settings";
@@ -23,16 +23,31 @@ export default function AgentBasicSection({
 }: Props) {
   const [avatarSrc, setAvatarSrc] = useState<string | null>(null);
   const imageAvatar = isImageAvatar(agent.avatar);
-  const providerItems = getSelectableModelItems(settings);
+
+  const providerItems = useMemo(
+    () => getSelectableModelItems(settings),
+    [settings],
+  );
   const providerOptions = settings.providers.filter((p) => p.enabled);
+
+  const exactCompound =
+    agent.providerId && agent.modelName
+      ? `${agent.providerId}::${agent.modelName}`
+      : "";
+  const selectionValid =
+    Boolean(exactCompound) &&
+    providerItems.some((i) => i.value === exactCompound);
+  // Display a valid option; do not silently rewrite agent config on mount.
+  const compound = selectionValid
+    ? exactCompound
+    : (providerItems[0]?.value ?? "");
+
+  const selectedItem = providerItems.find((i) => i.value === compound);
   const selectedProvider =
+    providerOptions.find((p) => p.id === selectedItem?.providerId) ||
     providerOptions.find((p) => p.id === agent.providerId) ||
     providerOptions[0];
   const modelsForProvider = selectedProvider?.models ?? [];
-  const compound =
-    selectedProvider && agent.modelName
-      ? `${selectedProvider.id}::${agent.modelName}`
-      : (providerItems[0]?.value ?? "");
 
   const providerLabels = Object.fromEntries(
     providerOptions.map((p) => [p.id, p.name]),
@@ -142,12 +157,19 @@ export default function AgentBasicSection({
             )}
           />
         )}
-        {selectedProvider && (
+        {!selectionValid && providerItems.length > 0 ? (
+          <p className="field-hint warn">
+            当前后端模型已失效
+            {agent.modelName ? `（${agent.modelName}）` : ""}
+            ，请重新选择。
+          </p>
+        ) : selectedProvider ? (
           <p className="field-hint">
             当前：{providerLabels[selectedProvider.id] || selectedProvider.id}
+            {selectedItem ? ` · ${selectedItem.modelName}` : ""}
             {modelsForProvider.length === 0 ? "（未配置模型）" : ""}
           </p>
-        )}
+        ) : null}
       </div>
     </section>
   );

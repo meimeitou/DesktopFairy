@@ -13,13 +13,15 @@ import TerminalSearchBar from "../components/terminal/TerminalSearchBar";
 import TerminalSettingsTab from "../components/terminal/TerminalSettingsTab";
 import SshConnectionPicker from "../components/terminal/SshConnectionPicker";
 import {
-  loadSettings,
-  saveSettings,
   type AppSettings,
   type SshHost,
   type SshCredential,
   type TerminalSettings,
 } from "../shared/settings";
+import {
+  setSettings as commitAppSettings,
+  useSettings,
+} from "../shared/settingsStore";
 import { appendSshRecent } from "../shared/terminalSettings";
 import type { CursorStyle } from "../shared/terminalSettings";
 
@@ -477,13 +479,7 @@ export default function TerminalPage({
     y: number;
     tabId: string;
   } | null>(null);
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  // Mirror settings in a ref so handleSettingsChange (stable callback) can
-  // read the latest value without a stale closure or re-creating on every change.
-  const appSettingsRef = useRef(settings);
-  useEffect(() => {
-    appSettingsRef.current = settings;
-  }, [settings]);
+  const settings = useSettings();
   const [sshPickerOpen, setSshPickerOpen] = useState(false);
   const [sshPickerStyle, setSshPickerStyle] = useState<React.CSSProperties>({});
   const [settingsInitialSection, setSettingsInitialSection] = useState<"appearance" | "ssh">("appearance");
@@ -500,24 +496,8 @@ export default function TerminalPage({
   const searchRegistryRef = useRef<Map<string, { xterm: TerminalType; searchAddon: SearchAddon }>>(new Map());
   const [searchEntry, setSearchEntry] = useState<{ xterm: TerminalType; searchAddon: SearchAddon } | null>(null);
 
-  // Cross-window settings sync — chat window changes propagate here.
-  useEffect(() => {
-    const off = api?.onSettingsUpdated?.((incoming) => {
-      setSettings(incoming as unknown as AppSettings);
-    });
-    return () => off?.();
-  }, []);
-
   const handleSettingsChange = useCallback((patch: Partial<AppSettings>) => {
-    const next = { ...appSettingsRef.current, ...patch };
-    setSettings(next);
-    void saveSettings(next).then((r) => {
-      if (!r.persisted) {
-        alert(
-          `设置未能保存到磁盘${r.error ? `：${r.error}` : "，重启后可能丢失"}`,
-        );
-      }
-    });
+    commitAppSettings((prev) => ({ ...prev, ...patch }));
   }, []);
 
   const pasteCommandToTab = useCallback((tabId: string, command: string) => {

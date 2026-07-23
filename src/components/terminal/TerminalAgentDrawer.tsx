@@ -26,11 +26,14 @@ import {
 } from "../../shared/chatMessages";
 import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
-  loadSettings,
   getChatApiConfig,
   getAgentBackendGuidance,
-  type AppSettings,
 } from "../../shared/settings";
+import {
+  getSettingsSnapshot,
+  useSettings,
+  flushSettingsSave,
+} from "../../shared/settingsStore";
 import { COMPACT_PROMPT, parseSlashCommand } from "../../shared/slashCommands";
 import Tooltip from "../Tooltip";
 import {
@@ -185,13 +188,12 @@ export default function TerminalAgentDrawer({
   const [tabStates, setTabStates] = useState<Record<string, DrawerTabState>>(
     {},
   );
-  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const settings = useSettings();
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
 
   const tabStatesRef = useRef(tabStates);
-  const settingsRef = useRef(settings);
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
   const compactRequestIdRef = useRef<string | null>(null);
   const handleClearContextRef = useRef<() => void>(() => {});
@@ -203,17 +205,6 @@ export default function TerminalAgentDrawer({
   useEffect(() => {
     tabStatesRef.current = tabStates;
   }, [tabStates]);
-
-  useEffect(() => {
-    settingsRef.current = settings;
-  }, [settings]);
-
-  useEffect(() => {
-    const off = api.onSettingsUpdated?.(() => {
-      setSettings(loadSettings());
-    });
-    return () => off?.();
-  }, []);
 
   useEffect(() => {
     const onWindowResize = () => {
@@ -639,7 +630,8 @@ export default function TerminalAgentDrawer({
       return;
     }
 
-    const currentSettings = settingsRef.current;
+    await flushSettingsSave();
+    const currentSettings = getSettingsSnapshot();
     const guidance = getAgentBackendGuidance(currentSettings);
     if (guidance) {
       const now = Date.now();

@@ -28,6 +28,27 @@ const {
 const execFileAsync = promisify(execFile);
 const MAX_FETCH_BYTES = 512 * 1024;
 const todosByRequest = new Map();
+
+function broadcastSettingsUpdated(settings, getWindows) {
+  let revision;
+  try {
+    const { setSnapshot } = require('./settingsSnapshot.cjs');
+    revision = setSnapshot(settings);
+  } catch {
+    /* optional */
+  }
+  const payload =
+    typeof revision === 'number' ? { settings, revision } : settings;
+  for (const win of getWindows?.() || []) {
+    try {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('settings:updated', payload);
+      }
+    } catch {
+      /* window gone */
+    }
+  }
+}
 const AGENT_FS_BASE = () => os.homedir();
 
 function ok(data) {
@@ -637,15 +658,7 @@ function toolUpdateProfile(args, deps) {
     return fail('Could not write settings');
   }
 
-  for (const win of deps.getWindows?.() || []) {
-    try {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('settings:updated', settings);
-      }
-    } catch {
-      /* window gone */
-    }
-  }
+  broadcastSettingsUpdated(settings, deps.getWindows);
 
   const label = field === 'soul' ? 'SOUL.md' : 'USER.md';
   const verb = action === 'replace' ? '已替换' : '已追加到';
@@ -719,15 +732,7 @@ function unbindMcpServerFromAgent(serverId, deps) {
   } catch {
     return;
   }
-  for (const win of deps.getWindows?.() || []) {
-    try {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('settings:updated', settings);
-      }
-    } catch {
-      /* window gone */
-    }
-  }
+  broadcastSettingsUpdated(settings, deps.getWindows);
 }
 
 function bindMcpServerToAgent(serverId, deps) {
@@ -748,15 +753,7 @@ function bindMcpServerToAgent(serverId, deps) {
   } catch {
     return;
   }
-  for (const win of deps.getWindows?.() || []) {
-    try {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('settings:updated', settings);
-      }
-    } catch {
-      /* window gone */
-    }
-  }
+  broadcastSettingsUpdated(settings, deps.getWindows);
 }
 
 async function toolMcpManager(args, deps = {}) {

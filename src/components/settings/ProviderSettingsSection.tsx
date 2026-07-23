@@ -133,13 +133,19 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     });
   };
 
-  const modelToCheck = useMemo(() => {
+  const defaultModelValue = useMemo(() => {
     if (!selected) return "";
+    // When editing the active provider, keep the raw modelName so custom IDs work.
+    if (settings.activeProviderId === selected.id) {
+      return settings.modelName;
+    }
     return resolveModelNameForProvider(
       { ...settings, activeProviderId: selected.id },
       selected,
     );
   }, [selected, settings]);
+
+  const modelToCheck = defaultModelValue;
 
   useEffect(() => {
     setCheckStatus("idle");
@@ -367,10 +373,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             <label>默认模型</label>
             <ModelSelector
               models={selectable}
-              value={resolveModelNameForProvider(
-                { ...settings, activeProviderId: selected.id },
-                selected,
-              )}
+              value={defaultModelValue}
               onChange={(modelName) =>
                 onChange({
                   ...settings,
@@ -386,12 +389,18 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                   let next = updateProviderInSettings(settings, selected.id, {
                     models,
                   });
+                  // Only fall back when a previously curated default was unchecked.
+                  // Custom modelName (never in the curated list) stays intact.
                   if (
-                    models.length > 0 &&
-                    !models.includes(settings.modelName) &&
-                    settings.activeProviderId === selected.id
+                    settings.activeProviderId === selected.id &&
+                    settings.modelName &&
+                    selected.models.includes(settings.modelName) &&
+                    !models.includes(settings.modelName)
                   ) {
-                    next = { ...next, modelName: models[0] };
+                    next = {
+                      ...next,
+                      modelName: models[0] ?? settings.modelName,
+                    };
                   }
                   onChange(next);
                 }}

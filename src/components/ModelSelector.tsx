@@ -28,8 +28,12 @@ export default function ModelSelector({
   modelLabels,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [useCustom, setUseCustom] = useState(
-    () => value.length > 0 && !models.includes(value),
+  // null = auto (custom when value is outside the list); explicit overrides from buttons.
+  const [modeOverride, setModeOverride] = useState<"custom" | "list" | null>(
+    () =>
+      allowCustom && value.length > 0 && !models.includes(value)
+        ? "custom"
+        : null,
   );
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
@@ -46,6 +50,14 @@ export default function ModelSelector({
     });
   }, [models, query, modelLabels]);
 
+  const valueOutsideList = value.length > 0 && !models.includes(value);
+  const useCustom =
+    allowCustom &&
+    (models.length === 0 ||
+      modeOverride === "custom" ||
+      (modeOverride !== "list" && valueOutsideList));
+
+  // Display-only fallback when custom entry is disabled — parents own persistence.
   const effectiveValue =
     !allowCustom && value && !models.includes(value)
       ? (models[0] ?? "")
@@ -92,7 +104,7 @@ export default function ModelSelector({
     }
   }, [open]);
 
-  if (allowCustom && (useCustom || models.length === 0)) {
+  if (useCustom) {
     return (
       <div className="model-selector">
         <div className="model-selector-row">
@@ -108,7 +120,7 @@ export default function ModelSelector({
             <button
               type="button"
               className="model-selector-mode-btn"
-              onClick={() => setUseCustom(false)}
+              onClick={() => setModeOverride("list")}
             >
               从列表选择
             </button>
@@ -206,6 +218,7 @@ export default function ModelSelector({
                       title={modelLabels?.[m] ?? m}
                       onClick={() => {
                         onChange(m);
+                        setModeOverride(null);
                         setOpen(false);
                       }}
                     >
@@ -221,7 +234,7 @@ export default function ModelSelector({
           <button
             type="button"
             className="model-selector-mode-btn"
-            onClick={() => setUseCustom(true)}
+            onClick={() => setModeOverride("custom")}
           >
             自定义
           </button>

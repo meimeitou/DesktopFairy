@@ -5,11 +5,12 @@ import SelectionSettingsSection from "../components/settings/SelectionSettingsSe
 import Live2DSettingsSection from "../components/settings/Live2DSettingsSection";
 import WebSearchSettingsSection from "../components/settings/WebSearchSettingsSection";
 import ShortcutSettingsSection from "../components/settings/ShortcutSettingsSection";
+import type { AppSettings } from "../shared/settings";
 import {
-  loadSettings,
-  saveSettings,
-  type AppSettings,
-} from "../shared/settings";
+  setSettings,
+  useSettings,
+  useSettingsPersistError,
+} from "../shared/settingsStore";
 import "./SettingsPage.css";
 
 const api = window.electronAPI;
@@ -224,32 +225,9 @@ export default function SettingsPage({
   standalone = false,
   embedded = false,
 }: Props) {
-  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const settings = useSettings();
+  const persistError = useSettingsPersistError();
   const [activeTab, setActiveTab] = useState<SettingsTab>("model");
-  const [persistError, setPersistError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void saveSettings(settings).then((r) => {
-      if (active) setPersistError(r.persisted ? null : r.error ?? "设置写入磁盘失败");
-    });
-    return () => {
-      active = false;
-    };
-  }, [settings]);
-
-  // Sync when another source (e.g. ChatPage mode switch, UpdateProfile tool) writes to disk
-  useEffect(() => {
-    const off = api.onSettingsUpdated?.((incoming) => {
-      if (!incoming || typeof incoming !== "object") return;
-      setSettings((prev) => {
-        const next = { ...prev, ...incoming } as typeof prev;
-        if (JSON.stringify(next) === JSON.stringify(prev)) return prev;
-        return next;
-      });
-    });
-    return () => off?.();
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -265,8 +243,18 @@ export default function SettingsPage({
     })();
   }, []);
 
+  const commitSettings = (
+    next: AppSettings | ((prev: AppSettings) => AppSettings),
+  ) => {
+    setSettings(next);
+  };
+
   const update = (patch: Partial<AppSettings>) =>
-    setSettings((prev) => ({ ...prev, ...patch }));
+    commitSettings((prev) => ({ ...prev, ...patch }));
+
+  /** Functional updater — avoids stale merges when patching nested agent fields. */
+  const updateSettings = (fn: (prev: AppSettings) => AppSettings) =>
+    commitSettings(fn);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -275,7 +263,7 @@ export default function SettingsPage({
           <>
             <ProviderSettingsSection
               settings={settings}
-              onChange={setSettings}
+              onChange={commitSettings}
             />
             <section className="settings-section">
               <h3>语音 (TTS)</h3>
@@ -294,7 +282,7 @@ export default function SettingsPage({
           </>
         );
       case "agent":
-        return <AgentSettingsSection settings={settings} onChange={update} />;
+        return <AgentSettingsSection settings={settings} onChange={updateSettings} />;
       case "websearch":
         return (
           <WebSearchSettingsSection settings={settings} onChange={update} />

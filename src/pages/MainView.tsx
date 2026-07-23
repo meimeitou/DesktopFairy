@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Live2DCanvas from "../components/Live2DCanvas";
 import {
-  loadSettings,
   normalizeSpeechBubbleMaxChars,
-  type AppSettings,
 } from "../shared/settings";
+import { useSettings, setSettings as commitAppSettings } from "../shared/settingsStore";
 import "./MainView.css";
 
 const DEFAULT_MODEL = "/models/Hiyori/Hiyori.model3.json";
@@ -13,95 +12,33 @@ const DEFAULT_MODEL = "/models/Hiyori/Hiyori.model3.json";
 const api = window.electronAPI;
 
 export default function MainView() {
-  const initial = loadSettings();
-  const [modelPath, setModelPath] = useState<string>(
-    initial.modelPath || DEFAULT_MODEL,
+  const settings = useSettings();
+  const modelPath = settings.modelPath || DEFAULT_MODEL;
+  const modelScale = settings.modelScale ?? 1.0;
+  const modelOffsetX = settings.modelOffsetX ?? 0;
+  const modelOffsetY = settings.modelOffsetY ?? 0;
+  const live2dReactive = settings.live2dReactive !== false;
+  const live2dSpeechBubble = settings.live2dSpeechBubble !== false;
+  const live2dSpeechBubbleMaxChars = normalizeSpeechBubbleMaxChars(
+    settings.live2dSpeechBubbleMaxChars,
   );
-  const [modelScale, setModelScale] = useState<number>(
-    initial.modelScale ?? 1.0,
-  );
-  const [modelOffsetX, setModelOffsetX] = useState<number>(
-    initial.modelOffsetX ?? 0,
-  );
-  const [modelOffsetY, setModelOffsetY] = useState<number>(
-    initial.modelOffsetY ?? 0,
-  );
-  const [live2dReactive, setLive2dReactive] = useState<boolean>(
-    initial.live2dReactive !== false,
-  );
-  const [live2dSpeechBubble, setLive2dSpeechBubble] = useState<boolean>(
-    initial.live2dSpeechBubble !== false,
-  );
-  const [live2dSpeechBubbleMaxChars, setLive2dSpeechBubbleMaxChars] =
-    useState<number>(
-      normalizeSpeechBubbleMaxChars(initial.live2dSpeechBubbleMaxChars),
-    );
   const [isHovered, setIsHovered] = useState(false);
 
-  const applySettings = useCallback((s: Partial<AppSettings>) => {
-    if (typeof s.modelPath === "string") {
-      setModelPath(s.modelPath || DEFAULT_MODEL);
-    }
-    if (typeof s.modelScale === "number") {
-      setModelScale(s.modelScale);
-    }
-    if (typeof s.modelOffsetX === "number") {
-      setModelOffsetX(s.modelOffsetX);
-    }
-    if (typeof s.modelOffsetY === "number") {
-      setModelOffsetY(s.modelOffsetY);
-    }
-    if (typeof s.live2dReactive === "boolean") {
-      setLive2dReactive(s.live2dReactive);
-    }
-    if (typeof s.live2dSpeechBubble === "boolean") {
-      setLive2dSpeechBubble(s.live2dSpeechBubble);
-    }
-    if (typeof s.live2dSpeechBubbleMaxChars === "number") {
-      setLive2dSpeechBubbleMaxChars(
-        normalizeSpeechBubbleMaxChars(s.live2dSpeechBubbleMaxChars),
-      );
-    }
-  }, []);
-
-  // Resize window on mount + re-assert float behavior + sync settings to main
+  // Resize window on mount + re-assert float behavior.
+  // Do NOT commitAppSettings here — that races with the chat window and can
+  // overwrite a newer agent model with this window's stale snapshot.
   useEffect(() => {
-    const s = loadSettings();
-    const w = s.windowWidth ?? 200;
-    const h = s.windowHeight ?? 400;
+    const w = settings.windowWidth ?? 200;
+    const h = settings.windowHeight ?? 400;
     api.windowSetSize(w, h);
     api.invoke("reapply_window_float");
-    api.invoke("settings:sync", s).then((r) => {
-      const res = r as { persisted?: boolean; error?: string } | undefined;
-      if (res && !res.persisted) {
-        console.warn("settings:sync did not persist to disk", res.error);
-      }
-    }).catch((e) => console.warn("settings:sync failed", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only window geometry sync
   }, []);
 
-  // Apply settings pushed from the chat/settings window immediately
-  useEffect(() => {
-    const off = api.onSettingsUpdated?.((settings) => {
-      applySettings(settings as Partial<AppSettings>);
-    });
-    return () => off?.();
-  }, [applySettings]);
-
-  // Fallback when user focuses the model window directly
-  useEffect(() => {
-    const onFocus = () => {
-      applySettings(loadSettings());
-    };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [applySettings]);
-
   // Live2D model path is persisted by the settings UI via settings:sync.
-  // Re-syncing loadSettings() here races with in-flight saves and can
-  // broadcast stale customModels back to the settings window (UI flicker).
   useEffect(() => {
     const unsubscribe = api.onSwitchModel((newPath: string) => {
-      setModelPath(newPath);
+      commitAppSettings((prev) => ({ ...prev, modelPath: newPath }));
     });
     return unsubscribe;
   }, []);

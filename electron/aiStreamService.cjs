@@ -11,6 +11,7 @@ const {
 const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
 const { getServersByIds } = require('./mcpServerService.cjs');
 const { getTerminalForeground } = require('./ptyService.cjs');
+const settingsSnapshot = require('./settingsSnapshot.cjs');
 
 /** @type {Map<string, { bypassApproval: boolean }>} */
 const topicAgentState = new Map();
@@ -36,17 +37,24 @@ function registerAiStreamHandlers(ipcMain, deps) {
       topicId,
       requestId,
       messages,
-      agentConfig,
-      apiConfig,
       terminalSessionId,
     } = payload || {};
 
-    if (!topicId || !requestId || !Array.isArray(messages) || !agentConfig || !apiConfig) {
+    if (!topicId || !requestId || !Array.isArray(messages)) {
       throw new Error('ai:stream_open invalid payload');
     }
-    if (!apiConfig.apiHost || !apiConfig.modelName) {
-      throw new Error('ai:stream_open invalid apiConfig');
+
+    // Authoritative resolve from main snapshot — ignore stale renderer apiConfig/model.
+    const resolved = settingsSnapshot.resolveForSend({
+      agentConfig: payload?.agentConfig,
+      apiConfig: payload?.apiConfig,
+      forceAgent: true,
+    });
+    if (!resolved.ok || !resolved.apiConfig || !resolved.agentConfig) {
+      throw new Error(resolved.error || 'ai:stream_open invalid apiConfig');
     }
+    const apiConfig = resolved.apiConfig;
+    const agentConfig = resolved.agentConfig;
     assertHttpUrl(apiConfig.apiHost);
 
     if (manager.isTopicStreaming(topicId)) {
