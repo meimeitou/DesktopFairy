@@ -20,8 +20,9 @@ import {
   buildAgentApiMessages,
   filterForAgentHistory,
   findLastAssistantReplyIndex,
+  pruneEmptyAssistantMessages,
   reconcileToolMessages,
-  shouldApplyToolStatus,
+  upsertAgentToolMessage,
   trimMessagesForApi,
 } from "../../shared/chatMessages";
 import type { ToolTerminalState } from "../../shared/ai/stream";
@@ -326,58 +327,18 @@ export default function TerminalAgentDrawer({
 
   const mergeToolMessage = useCallback(
     (tabId: string, event: AgentStreamToolEvent) => {
-      updateTabState(tabId, (state) => {
-        const msgs = state.messages;
-        // 仅按 toolCallId 精确匹配 — 避免并发同名工具（如两个 Read）误合并。
-        // readSseResponse 已为缺失 id 的情况提供 call_${index} 兜底，
-        // 所以缺失 toolCallId 时直接走新建路径（existingIdx = -1）。
-        const existingIdx = event.toolCallId
-          ? msgs.findIndex(
-              (m) => m.type === "tool" && m.toolCallId === event.toolCallId,
-            )
-          : -1;
-        const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
-        const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, event.status)
-          ? event.status
-          : prevTool?.toolStatus;
-        const toolMsg: ChatMsg = {
-          id: prevTool?.id || genId(),
-          role: "assistant",
-          type: "tool",
-          content: "",
-          toolCallId: event.toolCallId || prevTool?.toolCallId,
+      updateTabState(tabId, (state) => ({
+        ...state,
+        messages: upsertAgentToolMessage(state.messages, {
+          toolCallId: event.toolCallId,
           toolName: event.toolName,
-          toolArgs: event.toolArgs ?? prevTool?.toolArgs,
-          toolApprovalId: event.approvalId ?? prevTool?.toolApprovalId,
-          toolStatus: nextStatus,
-          toolMessage: event.message ?? prevTool?.toolMessage,
-          toolResultPreview: event.resultPreview ?? prevTool?.toolResultPreview,
-          timestamp: prevTool?.timestamp || Date.now(),
-        };
-        let nextMessages: ChatMsg[];
-        if (existingIdx >= 0) {
-          nextMessages = msgs.slice();
-          nextMessages[existingIdx] = toolMsg;
-        } else {
-          const assistantIdx = findLastAssistantReplyIndex(msgs);
-          if (assistantIdx < 0) {
-            nextMessages = [...msgs, toolMsg];
-          } else {
-            nextMessages = msgs.slice();
-            // 始终把工具消息插入到 assistant 占位之后，并在其后追加新的空 assistant
-            // 占位 — 保证工具卡片出现在模型回复之后，符合"模型调用工具"的语义。
-            // （之前的 else 分支会插入到空 assistant 占位之前，导致视觉时序错乱。）
-            nextMessages.splice(assistantIdx + 1, 0, toolMsg);
-            nextMessages.push({
-              id: genId(),
-              role: "assistant",
-              content: "",
-              timestamp: Date.now(),
-            });
-          }
-        }
-        return { ...state, messages: nextMessages };
-      });
+          toolArgs: event.toolArgs,
+          toolApprovalId: event.approvalId,
+          toolStatus: event.status,
+          toolMessage: event.message,
+          toolResultPreview: event.resultPreview,
+        }),
+      }));
     },
     [updateTabState],
   );
@@ -465,10 +426,12 @@ export default function TerminalAgentDrawer({
       const isCompact = compactRequestIdRef.current === requestId;
       compactRequestIdRef.current = null;
       updateTabState(tabId, (state) => {
-        const reconciled = reconcileToolMessages(
-          state.messages,
-          tools,
-          Boolean(aborted),
+        const reconciled = pruneEmptyAssistantMessages(
+          reconcileToolMessages(
+            state.messages,
+            tools,
+            Boolean(aborted),
+          ),
         );
         const next = {
           ...state,

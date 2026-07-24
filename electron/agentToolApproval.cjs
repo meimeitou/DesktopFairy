@@ -102,6 +102,24 @@ function dispatchUserAnswer(answerId, answers) {
   return true;
 }
 
+/**
+ * Approve every tool still waiting on this request.
+ * Used by "始终允许"/bypass so parallel tools that already entered
+ * waitForToolApproval (UI may still show 准备中) are not left hanging.
+ * Does not touch AskUserQuestion answer waits.
+ */
+function approveRequestApprovals(requestId) {
+  if (!requestId) return 0;
+  const prefix = `${requestId}::`;
+  let count = 0;
+  for (const [id, entry] of [...pending.entries()]) {
+    if (!id.startsWith(prefix)) continue;
+    entry.resolve('approved');
+    count += 1;
+  }
+  return count;
+}
+
 function abortRequestApprovals(requestId) {
   const prefix = `${requestId}::`;
   let count = 0;
@@ -139,6 +157,7 @@ module.exports = {
   waitForUserAnswer,
   dispatchToolApproval,
   dispatchUserAnswer,
+  approveRequestApprovals,
   abortRequestApprovals,
   clearAllToolApprovals,
 };

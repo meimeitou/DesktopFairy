@@ -6,7 +6,10 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  type PointerEvent,
   type ReactNode,
+  type TouchEvent,
+  type WheelEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ChatMsg } from "../../shared/chatMessages";
@@ -22,6 +25,8 @@ import {
 } from "./messageListItems";
 
 const BOTTOM_THRESHOLD = 48;
+/** Must be near the true end to resume following after the user scrolled away. */
+const REATTACH_THRESHOLD = 8;
 const EMPTY_SET = new Set<string>();
 
 function ContextClearDivider() {
@@ -73,9 +78,41 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     ref,
   ) {
     const parentRef = useRef<HTMLDivElement>(null);
-    const isAtBottomRef = useRef(true);
+    /** When true, streaming/layout growth may pin the viewport to the bottom. */
+    const stickToBottomRef = useRef(true);
+    const pinRafRef = useRef<number | null>(null);
+    /** After wheel/touch up, block re-stick until the user scrolls down again. */
+    const suppressReattachRef = useRef(false);
+    const userScrollIntentRef = useRef(false);
+    const userScrollIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
+    const lastTouchYRef = useRef<number | null>(null);
     const lastApprovalKeyRef = useRef<string | null>(null);
     const prevItemsRef = useRef<MessageListItem[] | null>(null);
+
+    const cancelPendingPin = useCallback(() => {
+      if (pinRafRef.current == null) return;
+      cancelAnimationFrame(pinRafRef.current);
+      pinRafRef.current = null;
+    }, []);
+
+    const detachFromBottom = useCallback(() => {
+      stickToBottomRef.current = false;
+      suppressReattachRef.current = true;
+      cancelPendingPin();
+    }, [cancelPendingPin]);
+
+    const markUserScrollIntent = useCallback(() => {
+      userScrollIntentRef.current = true;
+      if (userScrollIntentTimerRef.current != null) {
+        clearTimeout(userScrollIntentTimerRef.current);
+      }
+      userScrollIntentTimerRef.current = setTimeout(() => {
+        userScrollIntentRef.current = false;
+        userScrollIntentTimerRef.current = null;
+      }, 180);
+    }, []);
 
     const items = useMemo(() => {
       const built = buildMessageListItems(messages);
@@ -130,25 +167,31 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
 
     const pinToBottom = useCallback(() => {
       const el = parentRef.current;
-      if (!el || items.length === 0) return;
+      if (!el || items.length === 0 || !stickToBottomRef.current) return;
       virtualizer.scrollToIndex(items.length - 1, { align: "end" });
       // Estimate may be short; pin again after layout/measure.
-      requestAnimationFrame(() => {
+      // Cancel any prior frame so scroll-away is not overridden by a stale pin.
+      cancelPendingPin();
+      pinRafRef.current = requestAnimationFrame(() => {
+        pinRafRef.current = null;
+        if (!stickToBottomRef.current) return;
         const node = parentRef.current;
         if (node) node.scrollTop = node.scrollHeight;
       });
-    }, [items.length, virtualizer]);
+    }, [cancelPendingPin, items.length, virtualizer]);
 
     const scrollToBottom = useCallback(() => {
-      isAtBottomRef.current = true;
+      stickToBottomRef.current = true;
+      suppressReattachRef.current = false;
       const el = parentRef.current;
       if (!el) return;
       if (items.length === 0) {
+        cancelPendingPin();
         el.scrollTop = el.scrollHeight;
         return;
       }
       pinToBottom();
-    }, [items.length, pinToBottom]);
+    }, [cancelPendingPin, items.length, pinToBottom]);
 
     useImperativeHandle(
       ref,
@@ -162,14 +205,99 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const handleScroll = useCallback(() => {
       const el = parentRef.current;
       if (!el) return;
-      isAtBottomRef.current =
-        el.scrollTop + el.clientHeight >= el.scrollHeight - BOTTOM_THRESHOLD;
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+
+      // Resume following only when the user has returned to the true bottom
+      // (not the loose 48px band — that re-stuck after a small wheel-up).
+      if (distance <= REATTACH_THRESHOLD && !suppressReattachRef.current) {
+        stickToBottomRef.current = true;
+        return;
+      }
+
+      // Scrollbar / keyboard leave-bottom: detach when clearly away.
+      if (userScrollIntentRef.current && distance > BOTTOM_THRESHOLD) {
+        detachFromBottom();
+      }
+    }, [detachFromBottom]);
+
+    const handleWheel = useCallback(
+      (e: WheelEvent<HTMLDivElement>) => {
+        markUserScrollIntent();
+        // deltaY < 0 → user scrolling toward older messages. Detach immediately
+        // so the next stream chunk cannot pin before the scroll event settles.
+        if (e.deltaY < 0) {
+          detachFromBottom();
+          return;
+        }
+        if (e.deltaY > 0) {
+          // Allow re-stick once they reach the bottom again.
+          suppressReattachRef.current = false;
+        }
+      },
+      [detachFromBottom, markUserScrollIntent],
+    );
+
+    const handleTouchStart = useCallback((e: TouchEvent<HTMLDivElement>) => {
+      lastTouchYRef.current = e.touches[0]?.clientY ?? null;
     }, []);
 
+    const handleTouchMove = useCallback(
+      (e: TouchEvent<HTMLDivElement>) => {
+        markUserScrollIntent();
+        const y = e.touches[0]?.clientY;
+        const prev = lastTouchYRef.current;
+        lastTouchYRef.current = y ?? null;
+        // Finger moving down → content scrolls up (toward older messages).
+        if (prev != null && y != null && y > prev + 2) {
+          detachFromBottom();
+          return;
+        }
+        if (prev != null && y != null && y < prev - 2) {
+          suppressReattachRef.current = false;
+        }
+      },
+      [detachFromBottom, markUserScrollIntent],
+    );
+
+    const handlePointerDown = useCallback(
+      (e: PointerEvent<HTMLDivElement>) => {
+        // Scrollbar drag starts on the container gutter (outside client width).
+        const el = parentRef.current;
+        if (!el) return;
+        if (e.offsetX >= el.clientWidth) markUserScrollIntent();
+      },
+      [markUserScrollIntent],
+    );
+
+    useEffect(
+      () => () => {
+        cancelPendingPin();
+        if (userScrollIntentTimerRef.current != null) {
+          clearTimeout(userScrollIntentTimerRef.current);
+        }
+      },
+      [cancelPendingPin],
+    );
+
     useEffect(() => {
-      if (!isAtBottomRef.current || items.length === 0) return;
+      if (!stickToBottomRef.current || items.length === 0) return;
       pinToBottom();
     }, [stickKey, items.length, pinToBottom]);
+
+    // Tool cards auto-expand/collapse without changing stickKey text length;
+    // re-pin when content height changes while we still intend to stick.
+    useEffect(() => {
+      const el = parentRef.current;
+      if (!el || messages.length === 0) return;
+      const inner = el.firstElementChild;
+      if (!inner) return;
+      const ro = new ResizeObserver(() => {
+        if (!stickToBottomRef.current) return;
+        pinToBottom();
+      });
+      ro.observe(inner);
+      return () => ro.disconnect();
+    }, [messages.length, pinToBottom]);
 
     // Scroll awaiting-approval cards into view (virtual rows must be scrolled first).
     useEffect(() => {
@@ -179,7 +307,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       }
       if (lastApprovalKeyRef.current === approvalInfo.key) return;
       lastApprovalKeyRef.current = approvalInfo.key;
-      isAtBottomRef.current = false;
+      detachFromBottom();
       virtualizer.scrollToIndex(approvalInfo.index, { align: "center" });
       // Large tool groups: ensure the permission card itself is centered, not just the row.
       requestAnimationFrame(() => {
@@ -188,11 +316,19 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         );
         card?.scrollIntoView({ block: "center", behavior: "smooth" });
       });
-    }, [approvalInfo, virtualizer]);
+    }, [approvalInfo, detachFromBottom, virtualizer]);
+
+    const scrollProps = {
+      onScroll: handleScroll,
+      onWheel: handleWheel,
+      onTouchStart: handleTouchStart,
+      onTouchMove: handleTouchMove,
+      onPointerDown: handlePointerDown,
+    } as const;
 
     if (messages.length === 0) {
       return (
-        <div className={className} ref={parentRef} onScroll={handleScroll}>
+        <div className={className} ref={parentRef} {...scrollProps}>
           {emptyContent}
         </div>
       );
@@ -201,7 +337,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const virtualItems = virtualizer.getVirtualItems();
 
     return (
-      <div className={className} ref={parentRef} onScroll={handleScroll}>
+      <div className={className} ref={parentRef} {...scrollProps}>
         <div
           className="chat-messages-virtual-inner"
           style={{

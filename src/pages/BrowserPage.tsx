@@ -187,6 +187,11 @@ export default function BrowserPage() {
     }
   };
 
+  const handleOpenExternal = () => {
+    if (!displayUrl) return;
+    void api.invoke("selection:open_url", displayUrl);
+  };
+
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
@@ -245,12 +250,21 @@ export default function BrowserPage() {
         />
         <button
           type="button"
-          className="browser-url-copy"
+          className="browser-url-action"
           onClick={handleCopyUrl}
           disabled={!displayUrl}
           title="复制链接"
         >
           {copied ? "已复制" : "复制"}
+        </button>
+        <button
+          type="button"
+          className="browser-url-action"
+          onClick={handleOpenExternal}
+          disabled={!displayUrl}
+          title="在默认浏览器打开"
+        >
+          浏览器打开
         </button>
       </div>
 

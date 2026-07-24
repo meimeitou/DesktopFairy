@@ -3,7 +3,6 @@ const path = require('path');
 
 let browserWindow = null;
 let loadURLFn = null;
-let getIsQuitting = () => false;
 let shouldOpenDevTools = () => false;
 let getDevToolsMode = () => 'detach';
 
@@ -32,6 +31,26 @@ function isBrowserGuestWebContents(contents) {
   if (!browserWindow || browserWindow.isDestroyed()) return false;
   const host = contents.hostWebContents;
   return host && !host.isDestroyed() && host.id === browserWindow.webContents.id;
+}
+
+function closeBrowserWindow() {
+  if (!browserWindow || browserWindow.isDestroyed()) return;
+  browserWindow.close();
+}
+
+function bindBrowserCloseShortcut(contents) {
+  if (!contents || contents.isDestroyed()) return;
+  if (contents.__dfBrowserCloseShortcutBound) return;
+  contents.__dfBrowserCloseShortcutBound = true;
+
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+    const mod = process.platform === 'darwin' ? input.meta : input.control;
+    if (!mod || input.alt || input.shift) return;
+    if (String(input.key || '').toLowerCase() !== 'w') return;
+    event.preventDefault();
+    closeBrowserWindow();
+  });
 }
 
 function sendOpenTab(payload) {
@@ -86,6 +105,10 @@ function createBrowserWindow() {
   });
 
   loadURLFn(browserWindow, '?window=browser');
+  bindBrowserCloseShortcut(browserWindow.webContents);
+  browserWindow.webContents.on('did-attach-webview', (_event, guestContents) => {
+    bindBrowserCloseShortcut(guestContents);
+  });
 
   if (shouldOpenDevTools()) {
     browserWindow.webContents.openDevTools({ mode: getDevToolsMode() });
@@ -95,13 +118,6 @@ function createBrowserWindow() {
     if (!browserWindow || browserWindow.isDestroyed()) return;
     browserWindow.show();
     browserWindow.focus();
-  });
-
-  browserWindow.on('close', (e) => {
-    if (!getIsQuitting()) {
-      e.preventDefault();
-      browserWindow.hide();
-    }
   });
 
   browserWindow.on('closed', () => {
@@ -153,7 +169,6 @@ function attachWindowOpenHandler(contents) {
 
 function registerBrowserHandlers(ipcMain, deps = {}) {
   loadURLFn = deps.loadURL;
-  getIsQuitting = deps.getIsQuitting || (() => false);
   shouldOpenDevTools = deps.shouldOpenDevTools || (() => false);
   getDevToolsMode = deps.getDevToolsMode || (() => 'detach');
 

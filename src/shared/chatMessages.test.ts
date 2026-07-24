@@ -4,7 +4,10 @@ import {
   filterForApi,
   trimMessagesForApi,
   findLastAssistantReplyIndex,
+  isEmptyAssistantPlaceholder,
   isSupportedFileName,
+  pruneEmptyAssistantMessages,
+  upsertAgentToolMessage,
   type ChatMsg,
 } from './chatMessages'
 
@@ -197,6 +200,99 @@ describe('chatMessages', () => {
     it('should be case insensitive', () => {
       expect(isSupportedFileName('README.MD')).toBe(true)
       expect(isSupportedFileName('CONFIG.JSON')).toBe(true)
+    })
+  })
+
+  describe('upsertAgentToolMessage', () => {
+    it('reuses empty assistant placeholder for consecutive new tools', () => {
+      const empty = makeMsg('assistant', '')
+      const msgs = [makeMsg('user', 'q'), empty]
+      const after1 = upsertAgentToolMessage(msgs, {
+        toolCallId: 'c1',
+        toolName: 'Read',
+        toolStatus: 'running',
+      })
+      const after2 = upsertAgentToolMessage(after1, {
+        toolCallId: 'c2',
+        toolName: 'Bash',
+        toolStatus: 'running',
+      })
+      expect(after2.filter((m) => m.type === 'tool')).toHaveLength(2)
+      expect(after2.filter((m) => isEmptyAssistantPlaceholder(m))).toHaveLength(1)
+      expect(after2[after2.length - 1]).toBe(empty)
+      expect(after2.map((m) => m.type ?? m.role)).toEqual([
+        'user',
+        'tool',
+        'tool',
+        'assistant',
+      ])
+    })
+
+    it('inserts tool after contentful assistant and adds at most one empty placeholder', () => {
+      const msgs = [makeMsg('user', 'q'), makeMsg('assistant', 'checking…')]
+      const after = upsertAgentToolMessage(msgs, {
+        toolCallId: 'c1',
+        toolName: 'Read',
+        toolStatus: 'streaming',
+      })
+      expect(after.map((m) => (m.type === 'tool' ? 'tool' : m.content || '(empty)'))).toEqual([
+        'q',
+        'checking…',
+        'tool',
+        '(empty)',
+      ])
+      const after2 = upsertAgentToolMessage(after, {
+        toolCallId: 'c2',
+        toolName: 'Bash',
+        toolStatus: 'running',
+      })
+      expect(after2.filter((m) => m.type !== 'tool' && m.role === 'assistant' && !m.content)).toHaveLength(1)
+      expect(after2.filter((m) => m.type === 'tool')).toHaveLength(2)
+    })
+
+    it('updates existing tool by toolCallId without adding rows', () => {
+      const msgs = [
+        makeMsg('user', 'q'),
+        makeMsg('assistant', '', {
+          type: 'tool',
+          toolCallId: 'c1',
+          toolName: 'Read',
+          toolStatus: 'streaming',
+        }),
+        makeMsg('assistant', ''),
+      ]
+      const after = upsertAgentToolMessage(msgs, {
+        toolCallId: 'c1',
+        toolName: 'Read',
+        toolStatus: 'done',
+        toolResultPreview: 'ok',
+      })
+      expect(after).toHaveLength(3)
+      expect(after[1].toolStatus).toBe('done')
+      expect(after[1].toolResultPreview).toBe('ok')
+    })
+  })
+
+  describe('pruneEmptyAssistantMessages', () => {
+    it('removes empty assistants and keeps content, reasoning, tool, and error', () => {
+      const msgs = [
+        makeMsg('user', 'q'),
+        makeMsg('assistant', ''),
+        makeMsg('assistant', '', { type: 'tool', toolName: 'Read', toolCallId: 'c1' }),
+        makeMsg('assistant', 'answer'),
+        makeMsg('assistant', '', { reasoning: 'think' }),
+        makeMsg('assistant', 'boom', { error: true }),
+        makeMsg('assistant', ''),
+      ]
+      const pruned = pruneEmptyAssistantMessages(msgs)
+      expect(pruned).toHaveLength(5)
+      expect(pruned.map((m) => m.content || m.reasoning || m.type || 'err')).toEqual([
+        'q',
+        'tool',
+        'answer',
+        'think',
+        'boom',
+      ])
     })
   })
 })

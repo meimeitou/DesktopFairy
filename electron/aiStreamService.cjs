@@ -182,12 +182,9 @@ function registerAiStreamHandlers(ipcMain, deps) {
   ipcMain.handle('ai:tool:bypass_approval', async (_event, payload) => {
     const { topicId } = payload || {};
     if (!topicId) return false;
-    const state = topicAgentState.get(topicId);
-    if (state) {
-      state.bypassApproval = true;
-      return true;
-    }
-    return false;
+    // Only bypass when this topic already has agent state (active/recent stream).
+    if (!topicAgentState.has(topicId)) return false;
+    return setTopicBypassApproval(topicId);
   });
 }
 
@@ -196,6 +193,15 @@ function setTopicBypassApproval(topicId) {
   const state = topicAgentState.get(topicId) || { bypassApproval: false };
   state.bypassApproval = true;
   topicAgentState.set(topicId, state);
+  const entry = manager.activeStreams.get(topicId);
+  if (entry?.requestId) {
+    try {
+      const { approveRequestApprovals } = require('./agentToolApproval.cjs');
+      approveRequestApprovals(entry.requestId);
+    } catch {
+      /* optional */
+    }
+  }
   return true;
 }
 
@@ -205,6 +211,13 @@ function setBypassApprovalByRequestId(requestId) {
     if (entry.requestId === requestId) {
       return setTopicBypassApproval(topicId);
     }
+  }
+  // No active stream row — still flush any hung approvals for this request.
+  try {
+    const { approveRequestApprovals } = require('./agentToolApproval.cjs');
+    if (approveRequestApprovals(requestId) > 0) return true;
+  } catch {
+    /* optional */
   }
   return false;
 }

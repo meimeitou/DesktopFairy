@@ -713,7 +713,6 @@ const setupIPC = () => {
 
   registerBrowserHandlers(ipcMain, {
     loadURL,
-    getIsQuitting: () => isQuitting,
     shouldOpenDevTools,
     getDevToolsMode,
   });

@@ -298,10 +298,22 @@ function registerAgentHandlers(ipcMain, deps) {
 
     try {
       const { setTopicBypassApproval, setBypassApprovalByRequestId } = require('./aiStreamService.cjs');
+      // setTopicBypassApproval / setBypassApprovalByRequestId also flush any
+      // tools already blocked in waitForToolApproval for this request.
       if (topicId && setTopicBypassApproval(topicId)) ok = true;
       if (requestId && setBypassApprovalByRequestId(requestId)) ok = true;
     } catch {
       /* stream manager optional */
+    }
+
+    // Legacy agent:run may have no stream row — still release hung approvals.
+    if (requestId) {
+      try {
+        const { approveRequestApprovals } = require('./agentToolApproval.cjs');
+        if (approveRequestApprovals(requestId) > 0) ok = true;
+      } catch {
+        /* optional */
+      }
     }
 
     return ok;

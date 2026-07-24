@@ -167,7 +167,7 @@ html.browser-window-shell body {
   background: rgba(255, 255, 255, 0.06);
 }
 
-.browser-url-copy {
+.browser-url-action {
   flex-shrink: 0;
   height: 26px;
   padding: 0 10px;
@@ -182,12 +182,12 @@ html.browser-window-shell body {
   transition: background 0.15s, color 0.15s;
 }
 
-.browser-url-copy:hover:not(:disabled) {
+.browser-url-action:hover:not(:disabled) {
   background: var(--hairline, rgba(255, 255, 255, 0.08));
   color: var(--bone-200, #e8e4dc);
 }
 
-.browser-url-copy:disabled {
+.browser-url-action:disabled {
   opacity: 0.4;
   cursor: default;
 }

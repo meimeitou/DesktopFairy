@@ -95,6 +95,108 @@ export function findLastAssistantReplyIndex(messages: ChatMsg[]): number {
   return -1;
 }
 
+function newChatMsgId(): string {
+  return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** True when the bubble is a reusable streaming placeholder (no text yet). */
+export function isEmptyAssistantPlaceholder(m: ChatMsg): boolean {
+  return (
+    m.role === "assistant" &&
+    m.type !== "tool" &&
+    m.type !== "clear" &&
+    !m.error &&
+    !m.content?.trim() &&
+    !m.reasoning?.trim()
+  );
+}
+
+/** Drop leftover empty assistant shells (e.g. after tools with no follow-up text). */
+export function pruneEmptyAssistantMessages(messages: ChatMsg[]): ChatMsg[] {
+  return messages.filter((m) => !isEmptyAssistantPlaceholder(m));
+}
+
+export type AgentToolUpsertFields = {
+  toolCallId?: string;
+  toolName?: string;
+  toolArgs?: string;
+  toolApprovalId?: string;
+  toolStatus?: ChatMsg["toolStatus"];
+  toolMessage?: string;
+  toolResultPreview?: string;
+};
+
+/**
+ * Insert or update a tool row in the chat message list.
+ * Reuses a trailing empty assistant placeholder so tool cards do not orphan empty bubbles.
+ */
+export function upsertAgentToolMessage(
+  messages: ChatMsg[],
+  fields: AgentToolUpsertFields,
+): ChatMsg[] {
+  const { toolCallId, toolName } = fields;
+  const existingIdx = toolCallId
+    ? messages.findIndex(
+        (m) => m.type === "tool" && m.toolCallId === toolCallId,
+      )
+    : messages.findIndex(
+        (m) =>
+          m.type === "tool" &&
+          m.toolName === toolName &&
+          (m.toolStatus === "running" ||
+            m.toolStatus === "streaming" ||
+            m.toolStatus === "awaiting_input"),
+      );
+  const prevTool = existingIdx >= 0 ? messages[existingIdx] : null;
+  const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, fields.toolStatus)
+    ? fields.toolStatus
+    : prevTool?.toolStatus;
+  const toolMsg: ChatMsg = {
+    id: prevTool?.id || newChatMsgId(),
+    role: "assistant",
+    type: "tool",
+    content: "",
+    toolCallId: toolCallId || prevTool?.toolCallId,
+    toolName: toolName ?? prevTool?.toolName,
+    toolArgs: fields.toolArgs ?? prevTool?.toolArgs,
+    toolApprovalId: fields.toolApprovalId ?? prevTool?.toolApprovalId,
+    toolStatus: nextStatus,
+    toolMessage: fields.toolMessage ?? prevTool?.toolMessage,
+    toolResultPreview: fields.toolResultPreview ?? prevTool?.toolResultPreview,
+    timestamp: prevTool?.timestamp || Date.now(),
+  };
+
+  if (existingIdx >= 0) {
+    const next = messages.slice();
+    next[existingIdx] = toolMsg;
+    return next;
+  }
+
+  const assistantIdx = findLastAssistantReplyIndex(messages);
+  if (assistantIdx < 0) {
+    return [...messages, toolMsg];
+  }
+
+  const assistant = messages[assistantIdx];
+  const next = messages.slice();
+  if (isEmptyAssistantPlaceholder(assistant)) {
+    next.splice(assistantIdx, 0, toolMsg);
+    return next;
+  }
+
+  next.splice(assistantIdx + 1, 0, toolMsg);
+  const last = next[next.length - 1];
+  if (!last || !isEmptyAssistantPlaceholder(last)) {
+    next.push({
+      id: newChatMsgId(),
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
+    });
+  }
+  return next;
+}
+
 export const DEFAULT_API_MAX_MESSAGES = 40;
 export const DEFAULT_API_MAX_CHARS = 24_000;
 

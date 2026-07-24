@@ -66,8 +66,26 @@ describe("buildMessageListItems", () => {
     const messages: ChatMsg[] = [
       { id: "a1", role: "assistant", content: "hello", timestamp: 1 },
     ];
-    expect(messageListStickKey(messages)).toBe("a1:5:0:1");
+    expect(messageListStickKey(messages)).toBe("a1:5:0:1:");
     expect(messageListStickKey([])).toBe("empty");
+  });
+
+  it("includes recent tool statuses in the stick key", () => {
+    const messages: ChatMsg[] = [
+      {
+        id: "t1",
+        role: "assistant",
+        type: "tool",
+        content: "",
+        toolName: "Bash",
+        toolStatus: "running",
+        timestamp: 1,
+      },
+      { id: "a1", role: "assistant", content: "", timestamp: 2 },
+    ];
+    expect(messageListStickKey(messages)).toBe("a1:0:0:2:t1:running;");
+    messages[0] = { ...messages[0], toolStatus: "done" };
+    expect(messageListStickKey(messages)).toBe("a1:0:0:2:t1:done;");
   });
 });
 

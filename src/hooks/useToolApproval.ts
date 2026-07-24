@@ -75,8 +75,20 @@ export function useToolApproval(
   // _originApprovalId 是触发此操作的卡片 id，但批量批准所有待审工具是"始终允许"
   // 的预期行为（而非仅批准单个），因此该参数被有意忽略。
   // 不处理 awaiting_input：问答卡必须由用户明确作答。
+  //
+  // 先走 bypass（主进程会按 requestId/topicId 放行所有已挂起的审批），
+  // 再补发 UI 已知的 approve — 避免并行工具仍停在「准备中」却已在等审批的竞态。
   const handleAlwaysAllowTool = useCallback(
     (_originApprovalId: string) => {
+      const requestId = requestIdRef.current;
+      if (requestId) {
+        void api.invoke("agent:tool:bypass_approval", { requestId });
+      }
+      const topicId = topicIdRef?.current;
+      if (topicId) {
+        void api.invoke("ai:tool:bypass_approval", { topicId });
+      }
+
       const pendingIds = chatMessagesRef.current
         .filter(
           (m) =>
@@ -92,15 +104,6 @@ export function useToolApproval(
           approvalId: id,
           approved: true,
         });
-      }
-
-      const requestId = requestIdRef.current;
-      if (requestId) {
-        void api.invoke("agent:tool:bypass_approval", { requestId });
-      }
-      const topicId = topicIdRef?.current;
-      if (topicId) {
-        void api.invoke("ai:tool:bypass_approval", { topicId });
       }
 
       onSwitchToFullAuto();

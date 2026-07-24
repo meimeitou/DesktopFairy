@@ -80,5 +80,14 @@ export function reuseStableMessageListItems(
 export function messageListStickKey(messages: ChatMsg[]): string {
   const last = messages[messages.length - 1];
   if (!last) return "empty";
-  return `${last.id}:${last.content.length}:${(last.reasoning ?? "").length}:${messages.length}`;
+  // Tool status changes drive expand/collapse height even when the trailing
+  // assistant placeholder text is still empty — include a short tool signature.
+  let toolSig = "";
+  const from = Math.max(0, messages.length - 12);
+  for (let i = from; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.type !== "tool") continue;
+    toolSig += `${m.id}:${m.toolStatus ?? ""};`;
+  }
+  return `${last.id}:${last.content.length}:${(last.reasoning ?? "").length}:${messages.length}:${toolSig}`;
 }

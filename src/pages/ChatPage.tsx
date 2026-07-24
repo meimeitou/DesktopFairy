@@ -22,8 +22,9 @@ import {
   filterAfterContextClear,
   filterForApi,
   findLastAssistantReplyIndex,
+  pruneEmptyAssistantMessages,
   reconcileToolMessages,
-  shouldApplyToolStatus,
+  upsertAgentToolMessage,
   trimMessagesForApi,
 } from "../shared/chatMessages";
 import {
@@ -633,10 +634,12 @@ export default function ChatPage({
           streaming: false,
           requestId: null,
           requestBackend: null,
-          messages: reconcileToolMessages(
-            state.messages,
-            tools,
-            Boolean(aborted),
+          messages: pruneEmptyAssistantMessages(
+            reconcileToolMessages(
+              state.messages,
+              tools,
+              Boolean(aborted),
+            ),
           ),
         }),
         { forceReact: true },
@@ -765,64 +768,18 @@ export default function ChatPage({
     }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
-      patchTopicState(topicId, (state) => {
-        const msgs = state.messages;
-        const existingIdx = toolCallId
-          ? msgs.findIndex(
-              (m) => m.type === "tool" && m.toolCallId === toolCallId,
-            )
-          : msgs.findIndex(
-              (m) =>
-                m.type === "tool" &&
-                m.toolName === toolName &&
-                (m.toolStatus === "running" ||
-                  m.toolStatus === "streaming" ||
-                  m.toolStatus === "awaiting_input"),
-            );
-        const prevTool = existingIdx >= 0 ? msgs[existingIdx] : null;
-        const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, status)
-          ? status
-          : prevTool?.toolStatus;
-        const toolMsg: ChatMsg = {
-          id: prevTool?.id || genId(),
-          role: "assistant",
-          type: "tool",
-          content: "",
-          toolCallId: toolCallId || prevTool?.toolCallId,
+      patchTopicState(topicId, (state) => ({
+        ...state,
+        messages: upsertAgentToolMessage(state.messages, {
+          toolCallId,
           toolName,
-          toolArgs: toolArgs ?? prevTool?.toolArgs,
-          toolApprovalId: approvalId ?? prevTool?.toolApprovalId,
-          toolStatus: nextStatus,
-          toolMessage: message ?? prevTool?.toolMessage,
-          toolResultPreview: resultPreview ?? prevTool?.toolResultPreview,
-          timestamp: prevTool?.timestamp || Date.now(),
-        };
-        let nextMessages: ChatMsg[];
-        if (existingIdx >= 0) {
-          nextMessages = msgs.slice();
-          nextMessages[existingIdx] = toolMsg;
-        } else {
-          const assistantIdx = findLastAssistantReplyIndex(msgs);
-          if (assistantIdx < 0) {
-            nextMessages = [...msgs, toolMsg];
-          } else {
-            const assistant = msgs[assistantIdx];
-            nextMessages = msgs.slice();
-            if (assistant.content && !assistant.error) {
-              nextMessages.splice(assistantIdx + 1, 0, toolMsg);
-              nextMessages.push({
-                id: genId(),
-                role: "assistant",
-                content: "",
-                timestamp: Date.now(),
-              });
-            } else {
-              nextMessages.splice(assistantIdx, 0, toolMsg);
-            }
-          }
-        }
-        return { ...state, messages: nextMessages };
-      });
+          toolArgs,
+          toolApprovalId: approvalId,
+          toolStatus: status,
+          toolMessage: message,
+          toolResultPreview: resultPreview,
+        }),
+      }));
       scheduleTopicSave(topicId);
       const isActive = topicId === activeTopicIdRef.current;
       if (status === "running" && isActive) notifyLive2DScene("toolRunning");
