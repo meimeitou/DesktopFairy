@@ -6,9 +6,7 @@ import {
   useState,
   type PointerEvent,
 } from "react";
-import MessageList, {
-  type MessageListHandle,
-} from "../chat/MessageList";
+import MessageList, { type MessageListHandle } from "../chat/MessageList";
 import { TerminalStopContext } from "../chat/agentTools/TerminalStopContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
 import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
@@ -20,6 +18,7 @@ import {
   buildAgentApiMessages,
   filterForAgentHistory,
   findLastAssistantReplyIndex,
+  findFirstAssistantReplyIndex,
   pruneEmptyAssistantMessages,
   reconcileToolMessages,
   upsertAgentToolMessage,
@@ -352,8 +351,15 @@ export default function TerminalAgentDrawer({
       if (result.requestId) {
         requestIdToTabIdRef.current.set(result.requestId, activeTabId);
       }
-      replayLegacyStreamEvents(result.legacyEvents, legacyStreamHandlersRef.current);
-      if (result.attached && result.status === "streaming" && result.requestId) {
+      replayLegacyStreamEvents(
+        result.legacyEvents,
+        legacyStreamHandlersRef.current,
+      );
+      if (
+        result.attached &&
+        result.status === "streaming" &&
+        result.requestId
+      ) {
         updateTabState(activeTabId, (state) => ({
           ...state,
           streaming: true,
@@ -380,14 +386,16 @@ export default function TerminalAgentDrawer({
         const idx = findLastAssistantReplyIndex(state.messages);
         if (idx < 0) return state;
         const next = state.messages.slice();
-        const target = next[idx];
-        next[idx] = {
-          ...target,
-          ...(delta ? { content: target.content + delta } : {}),
-          ...(reasoning
-            ? { reasoning: (target.reasoning ?? "") + reasoning }
-            : {}),
-        };
+        if (delta) {
+          next[idx] = { ...next[idx], content: next[idx].content + delta };
+        }
+        if (reasoning) {
+          const ri = Math.max(0, findFirstAssistantReplyIndex(state.messages));
+          next[ri] = {
+            ...next[ri],
+            reasoning: (next[ri].reasoning ?? "") + reasoning,
+          };
+        }
         return { ...state, messages: next };
       });
     };
@@ -427,11 +435,7 @@ export default function TerminalAgentDrawer({
       compactRequestIdRef.current = null;
       updateTabState(tabId, (state) => {
         const reconciled = pruneEmptyAssistantMessages(
-          reconcileToolMessages(
-            state.messages,
-            tools,
-            Boolean(aborted),
-          ),
+          reconcileToolMessages(state.messages, tools, Boolean(aborted)),
         );
         const next = {
           ...state,
@@ -580,108 +584,126 @@ export default function TerminalAgentDrawer({
     scrollToBottom();
   }, [activeTabId, scrollToBottom]);
 
-  const handleSend = useCallback(async (overrideText?: string) => {
-    const state = tabStatesRef.current[activeTabId];
-    if (!state || state.streaming) return;
-    const isCompactRequest = overrideText === COMPACT_PROMPT;
-    const text = (overrideText ?? state.input).trim();
-    if (!isCompactRequest && !text) return;
+  const handleSend = useCallback(
+    async (overrideText?: string) => {
+      const state = tabStatesRef.current[activeTabId];
+      if (!state || state.streaming) return;
+      const isCompactRequest = overrideText === COMPACT_PROMPT;
+      const text = (overrideText ?? state.input).trim();
+      if (!isCompactRequest && !text) return;
 
-    if (!overrideText && parseSlashCommand(text)?.command === "clear") {
-      handleClearContextRef.current();
-      updateTabState(activeTabId, (s) => ({ ...s, input: "" }));
-      return;
-    }
+      if (!overrideText && parseSlashCommand(text)?.command === "clear") {
+        handleClearContextRef.current();
+        updateTabState(activeTabId, (s) => ({ ...s, input: "" }));
+        return;
+      }
 
-    await flushSettingsSave();
-    const currentSettings = getSettingsSnapshot();
-    const guidance = getAgentBackendGuidance(currentSettings);
-    if (guidance) {
+      await flushSettingsSave();
+      const currentSettings = getSettingsSnapshot();
+      const guidance = getAgentBackendGuidance(currentSettings);
+      if (guidance) {
+        const now = Date.now();
+        updateTabState(activeTabId, (s) => ({
+          ...s,
+          messages: [
+            ...s.messages,
+            { id: genId(), role: "user", content: text, timestamp: now },
+            {
+              id: genId(),
+              role: "assistant",
+              content: guidance,
+              error: true,
+              timestamp: now,
+            },
+          ],
+          input: "",
+          streaming: false,
+          requestId: null,
+        }));
+        scrollToBottom();
+        return;
+      }
+
+      const apiConfig = getChatApiConfig(currentSettings);
+      if (!apiConfig?.apiHost || !apiConfig.modelName) {
+        alert("请先在设置中配置 Agent 后端 Provider 与模型。");
+        return;
+      }
+
+      const sessionId = getActiveSessionId();
+      if (!sessionId) {
+        alert("当前终端会话尚未就绪，请稍后再试。");
+        return;
+      }
+
+      const history = trimMessagesForApi(filterForAgentHistory(state.messages));
+      const payloadMessages = buildAgentApiMessages(
+        history,
+        text,
+        { textFiles: [], images: [] },
+        undefined,
+      );
+
+      const requestId = genId();
+      const topicId = `terminal:${activeTabId}`;
+      topicIdRef.current = topicId;
+      requestIdToTabIdRef.current.set(requestId, activeTabId);
+      if (isCompactRequest) {
+        compactRequestIdRef.current = requestId;
+      }
       const now = Date.now();
+
+      const agentConfig: AgentConfig = {
+        ...currentSettings.agent,
+        chatMode,
+      };
+
       updateTabState(activeTabId, (s) => ({
         ...s,
         messages: [
           ...s.messages,
           { id: genId(), role: "user", content: text, timestamp: now },
-          {
-            id: genId(),
-            role: "assistant",
-            content: guidance,
-            error: true,
-            timestamp: now,
-          },
+          { id: genId(), role: "assistant", content: "", timestamp: now },
         ],
         input: "",
-        streaming: false,
-        requestId: null,
+        streaming: true,
+        requestId,
       }));
       scrollToBottom();
-      return;
-    }
 
-    const apiConfig = getChatApiConfig(currentSettings);
-    if (!apiConfig?.apiHost || !apiConfig.modelName) {
-      alert("请先在设置中配置 Agent 后端 Provider 与模型。");
-      return;
-    }
-
-    const sessionId = getActiveSessionId();
-    if (!sessionId) {
-      alert("当前终端会话尚未就绪，请稍后再试。");
-      return;
-    }
-
-    const history = trimMessagesForApi(filterForAgentHistory(state.messages));
-    const payloadMessages = buildAgentApiMessages(
-      history,
-      text,
-      { textFiles: [], images: [] },
-      undefined,
-    );
-
-    const requestId = genId();
-    const topicId = `terminal:${activeTabId}`;
-    topicIdRef.current = topicId;
-    requestIdToTabIdRef.current.set(requestId, activeTabId);
-    if (isCompactRequest) {
-      compactRequestIdRef.current = requestId;
-    }
-    const now = Date.now();
-
-    const agentConfig: AgentConfig = {
-      ...currentSettings.agent,
-      chatMode,
-    };
-
-    updateTabState(activeTabId, (s) => ({
-      ...s,
-      messages: [
-        ...s.messages,
-        { id: genId(), role: "user", content: text, timestamp: now },
-        { id: genId(), role: "assistant", content: "", timestamp: now },
-      ],
-      input: "",
-      streaming: true,
-      requestId,
-    }));
-    scrollToBottom();
-
-
-    try {
-      const result = await openAgentStream({
-        topicId,
-        requestId,
-        messages: payloadMessages,
-        apiConfig: {
-          apiHost: apiConfig.apiHost,
-          apiKey: apiConfig.apiKey,
-          providerType: apiConfig.providerType,
-          modelName: apiConfig.modelName,
-        },
-        agentConfig,
-        terminalSessionId: sessionId,
-      });
-      if (result.mode === "blocked") {
+      try {
+        const result = await openAgentStream({
+          topicId,
+          requestId,
+          messages: payloadMessages,
+          apiConfig: {
+            apiHost: apiConfig.apiHost,
+            apiKey: apiConfig.apiKey,
+            providerType: apiConfig.providerType,
+            modelName: apiConfig.modelName,
+          },
+          agentConfig,
+          terminalSessionId: sessionId,
+        });
+        if (result.mode === "blocked") {
+          if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
+            return;
+          requestIdToTabIdRef.current.delete(requestId);
+          updateTabState(activeTabId, (s) => {
+            const idx = findLastAssistantReplyIndex(s.messages);
+            if (idx < 0) {
+              return { ...s, streaming: false, requestId: null };
+            }
+            const next = s.messages.slice();
+            next[idx] = {
+              ...next[idx],
+              content: "该终端已有进行中的会话，请等待完成或先停止。",
+              error: true,
+            };
+            return { ...s, messages: next, streaming: false, requestId: null };
+          });
+        }
+      } catch (e) {
         if (requestIdToTabIdRef.current.get(requestId) !== activeTabId) return;
         requestIdToTabIdRef.current.delete(requestId);
         updateTabState(activeTabId, (s) => {
@@ -692,30 +714,15 @@ export default function TerminalAgentDrawer({
           const next = s.messages.slice();
           next[idx] = {
             ...next[idx],
-            content: "该终端已有进行中的会话，请等待完成或先停止。",
+            content: `请求失败：${e instanceof Error ? e.message : String(e)}`,
             error: true,
           };
           return { ...s, messages: next, streaming: false, requestId: null };
         });
       }
-    } catch (e) {
-      if (requestIdToTabIdRef.current.get(requestId) !== activeTabId) return;
-      requestIdToTabIdRef.current.delete(requestId);
-      updateTabState(activeTabId, (s) => {
-        const idx = findLastAssistantReplyIndex(s.messages);
-        if (idx < 0) {
-          return { ...s, streaming: false, requestId: null };
-        }
-        const next = s.messages.slice();
-        next[idx] = {
-          ...next[idx],
-          content: `请求失败：${e instanceof Error ? e.message : String(e)}`,
-          error: true,
-        };
-        return { ...s, messages: next, streaming: false, requestId: null };
-      });
-    }
-  }, [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom]);
+    },
+    [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom],
+  );
 
   const handleStop = useCallback(() => {
     const state = tabStatesRef.current[activeTabId];
@@ -764,7 +771,12 @@ export default function TerminalAgentDrawer({
             ];
       return { ...s, messages: nextMessages };
     });
-  }, [activeState.streaming, activeState.messages.length, activeTabId, updateTabState]);
+  }, [
+    activeState.streaming,
+    activeState.messages.length,
+    activeTabId,
+    updateTabState,
+  ]);
 
   useEffect(() => {
     handleClearContextRef.current = handleClearContext;
@@ -785,7 +797,12 @@ export default function TerminalAgentDrawer({
       messages: [],
       input: "",
     }));
-  }, [activeState.streaming, activeState.messages.length, activeTabId, updateTabState]);
+  }, [
+    activeState.streaming,
+    activeState.messages.length,
+    activeTabId,
+    updateTabState,
+  ]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -795,7 +812,9 @@ export default function TerminalAgentDrawer({
         const block = `\`\`\`\n${text}\n\`\`\``;
         return {
           ...s,
-          input: s.input ? `${s.input}\n\n终端选区：\n${block}` : `终端选区：\n${block}`,
+          input: s.input
+            ? `${s.input}\n\n终端选区：\n${block}`
+            : `终端选区：\n${block}`,
         };
       });
       // 等 React 提交 input 更新、抽屉打开后再聚焦，光标落在末尾

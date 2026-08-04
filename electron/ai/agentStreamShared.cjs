@@ -58,6 +58,7 @@ function buildAgentToolDeps({
       signal,
       registerMcpCall,
     }),
+    mcpConnectedServerIds: new Set(mcpRuntime?.connectedServerIds || []),
     safeSend,
     requestId,
     signal,

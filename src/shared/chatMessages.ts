@@ -95,6 +95,25 @@ export function findLastAssistantReplyIndex(messages: ChatMsg[]): number {
   return -1;
 }
 
+/** First assistant reply after the last user message — reasoning for all turns accumulates here. */
+export function findFirstAssistantReplyIndex(messages: ChatMsg[]): number {
+  let lastUserIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "user" && m.type !== "clear" && m.type !== "tool") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  for (let i = lastUserIdx + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.type !== "tool" && m.type !== "clear" && !m.error) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function newChatMsgId(): string {
   return `msg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -440,6 +459,11 @@ export function shouldApplyToolStatus(
   // 必须允许 awaiting_approval → running，否则停止按钮永远不会显示。
   if (current === "awaiting_approval" && incoming === "running") {
     return true;
+  }
+  // Block regression: running → awaiting_approval would re-show permission
+  // card for a tool already executing (e.g. during re-attach event replay).
+  if (current === "running" && incoming === "awaiting_approval") {
+    return false;
   }
   // Approval / input prompt must not be masked by pre-execute streaming events.
   if (

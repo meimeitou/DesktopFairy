@@ -774,10 +774,12 @@ async function toolMcpManager(args, deps = {}) {
 
   const agentConfig = deps.agentConfig || {};
   const boundIds = new Set(agentConfig.mcpServerIds || []);
+  const connectedIds = deps.mcpConnectedServerIds || null;
 
   function summarize(server) {
     if (!server) return null;
     const status = getStatus(server.id) || { state: 'disabled' };
+    const isBound = boundIds.has(server.id);
     return {
       id: server.id,
       name: server.name,
@@ -789,7 +791,9 @@ async function toolMcpManager(args, deps = {}) {
       baseUrl: server.baseUrl || '',
       description: server.description || '',
       reference: server.reference || '',
-      bound: boundIds.has(server.id),
+      bound: isBound,
+      // Whether tools from this server can be called in the current session.
+      sessionAvailable: connectedIds ? (isBound && connectedIds.has(server.id)) : undefined,
       status: status.state,
       lastError: status.lastError || undefined,
     };
@@ -821,14 +825,24 @@ async function toolMcpManager(args, deps = {}) {
     const server = getServerById(serverId);
     if (!server) return fail(`MCP server ${serverId} not found`);
     if (server.isActive === false) return fail(`MCP server ${server.name} is disabled`);
+    // Whether this server's tools are registered in the current agent session.
+    const sessionAvailable = deps.mcpConnectedServerIds
+      ? deps.mcpConnectedServerIds.has(serverId)
+      : undefined;
     try {
       const client = await getOrCreateClient(server);
       const { tools } = await client.listTools();
       return ok({
         serverId: server.id,
         serverName: server.name,
+        sessionAvailable,
+        ...(sessionAvailable === false && {
+          sessionNote:
+            `Server connected now but was unavailable at session start — tools like mcp__${serverId}__<name> are NOT callable this turn. Use McpManager restart then retry your request.`,
+        }),
         tools: (tools || []).map((t) => ({
           name: t.name,
+          fullToolName: `mcp__${serverId}__${t.name}`,
           description: t.description || '',
           inputSchema: t.inputSchema || { type: 'object', properties: {} },
         })),

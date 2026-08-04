@@ -22,6 +22,7 @@ import {
   filterAfterContextClear,
   filterForApi,
   findLastAssistantReplyIndex,
+  findFirstAssistantReplyIndex,
   pruneEmptyAssistantMessages,
   reconcileToolMessages,
   upsertAgentToolMessage,
@@ -140,7 +141,9 @@ export default function ChatPage({
   clearRef?: MutableRefObject<(() => void) | null>;
   onMetaChange?: (meta: { streaming: boolean; hasMessages: boolean }) => void;
 }) {
-  const [topicStates, setTopicStates] = useState<Record<string, TopicPageState>>({});
+  const [topicStates, setTopicStates] = useState<
+    Record<string, TopicPageState>
+  >({});
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [topics, setTopics] = useState<ChatTopic[]>([]);
   const [topicsLoaded, setTopicsLoaded] = useState(false);
@@ -151,7 +154,8 @@ export default function ChatPage({
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
 
   const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
-  const { messages, input, attachments, streaming, invalidAttachmentPaths } = activeState;
+  const { messages, input, attachments, streaming, invalidAttachmentPaths } =
+    activeState;
 
   const messageListRef = useRef<MessageListHandle>(null);
   const scrollToBottom = useCallback(() => {
@@ -162,7 +166,9 @@ export default function ChatPage({
   const activeTopicIdRef = useRef<string | null>(null);
   const topicStatesRef = useRef(topicStates);
   const requestIdToTopicIdRef = useRef<Map<string, string>>(new Map());
-  const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
   const handleSendRef = useRef<(text?: string) => void>(() => {});
   const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
@@ -203,16 +209,19 @@ export default function ChatPage({
     () => new Set(),
   );
 
-  const syncStreamingFlag = useCallback((topicId: string, streaming: boolean) => {
-    setStreamingTopicIds((prev) => {
-      const has = prev.has(topicId);
-      if (streaming === has) return prev;
-      const next = new Set(prev);
-      if (streaming) next.add(topicId);
-      else next.delete(topicId);
-      return next;
-    });
-  }, []);
+  const syncStreamingFlag = useCallback(
+    (topicId: string, streaming: boolean) => {
+      setStreamingTopicIds((prev) => {
+        const has = prev.has(topicId);
+        if (streaming === has) return prev;
+        const next = new Set(prev);
+        if (streaming) next.add(topicId);
+        else next.delete(topicId);
+        return next;
+      });
+    },
+    [],
+  );
 
   /** Patch topic state; background streams update the ref only (no React re-render). */
   const patchTopicState = useCallback(
@@ -306,7 +315,10 @@ export default function ChatPage({
   const loadSessionForTopic = useCallback(async (topicId: string) => {
     setTopicStates((prev) => ({
       ...prev,
-      [topicId]: { ...(prev[topicId] ?? emptyTopicState()), sessionReady: false },
+      [topicId]: {
+        ...(prev[topicId] ?? emptyTopicState()),
+        sessionReady: false,
+      },
     }));
     try {
       const raw = (await api.invoke("chat:session:load", topicId)) as unknown;
@@ -478,8 +490,15 @@ export default function ChatPage({
       if (result.requestId) {
         requestIdToTopicIdRef.current.set(result.requestId, activeTopicId);
       }
-      replayLegacyStreamEvents(result.legacyEvents, legacyStreamHandlersRef.current);
-      if (result.attached && result.status === "streaming" && result.requestId) {
+      replayLegacyStreamEvents(
+        result.legacyEvents,
+        legacyStreamHandlersRef.current,
+      );
+      if (
+        result.attached &&
+        result.status === "streaming" &&
+        result.requestId
+      ) {
         const requestBackend = getActiveChatBackend(getSettingsSnapshot());
         setTopicStates((prev) => {
           const state = prev[activeTopicId];
@@ -522,7 +541,10 @@ export default function ChatPage({
       if (!topicId) return;
       setTopicStates((prev) => ({
         ...prev,
-        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), attachments: value },
+        [topicId]: {
+          ...(prev[topicId] ?? emptyTopicState()),
+          attachments: value,
+        },
       }));
       scheduleTopicSave(topicId);
     },
@@ -544,7 +566,9 @@ export default function ChatPage({
           [topicId]: {
             ...state,
             input: typeof p.text === "string" ? p.text : state.input,
-            attachments: p.attachments?.length ? p.attachments : state.attachments,
+            attachments: p.attachments?.length
+              ? p.attachments
+              : state.attachments,
           },
         };
       });
@@ -585,14 +609,16 @@ export default function ChatPage({
         const idx = findLastAssistantReplyIndex(state.messages);
         if (idx < 0) return state;
         const next = state.messages.slice();
-        const target = next[idx];
-        next[idx] = {
-          ...target,
-          ...(delta ? { content: target.content + delta } : {}),
-          ...(reasoning
-            ? { reasoning: (target.reasoning ?? "") + reasoning }
-            : {}),
-        };
+        if (delta) {
+          next[idx] = { ...next[idx], content: next[idx].content + delta };
+        }
+        if (reasoning) {
+          const ri = Math.max(0, findFirstAssistantReplyIndex(state.messages));
+          next[ri] = {
+            ...next[ri],
+            reasoning: (next[ri].reasoning ?? "") + reasoning,
+          };
+        }
         return { ...state, messages: next };
       });
       // Do not persist on every chunk — flush on done/error/tool events.
@@ -614,7 +640,11 @@ export default function ChatPage({
       chunkBuffer.push(requestId, delta, reasoning);
     };
 
-    const handleChatDone = ({ requestId, aborted, tools }: {
+    const handleChatDone = ({
+      requestId,
+      aborted,
+      tools,
+    }: {
       requestId: string;
       aborted?: boolean;
       tools?: ToolTerminalState[];
@@ -635,11 +665,7 @@ export default function ChatPage({
           requestId: null,
           requestBackend: null,
           messages: pruneEmptyAssistantMessages(
-            reconcileToolMessages(
-              state.messages,
-              tools,
-              Boolean(aborted),
-            ),
+            reconcileToolMessages(state.messages, tools, Boolean(aborted)),
           ),
         }),
         { forceReact: true },
@@ -706,7 +732,13 @@ export default function ChatPage({
       flushSessionSave(topicId);
     };
 
-    const handleChatError = ({ requestId, message }: { requestId: string; message: string }) => {
+    const handleChatError = ({
+      requestId,
+      message,
+    }: {
+      requestId: string;
+      message: string;
+    }) => {
       chunkBuffer.flushRequest(requestId);
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
@@ -789,7 +821,8 @@ export default function ChatPage({
       onChatChunk: handleChatChunk,
       onChatDone: handleChatDone,
       onChatError: handleChatError,
-      onAgentTool: (data) => handleAgentTool(data as Parameters<typeof handleAgentTool>[0]),
+      onAgentTool: (data) =>
+        handleAgentTool(data as Parameters<typeof handleAgentTool>[0]),
     };
 
     const offChunk = api.onChatStreamChunk(handleChatChunk);
@@ -812,7 +845,10 @@ export default function ChatPage({
   }, [activeTopicId, scrollToBottom]);
 
   const handleBackendChange = useCallback((backend: string) => {
-    persistSettingsWithAlert({ ...getSettingsSnapshot(), chatBackend: backend });
+    persistSettingsWithAlert({
+      ...getSettingsSnapshot(),
+      chatBackend: backend,
+    });
   }, []);
 
   const handleChatModeChange = useCallback((mode: ChatMode) => {
@@ -999,15 +1035,26 @@ export default function ChatPage({
       const history = trimMessagesForApi(filterForApi(state.messages));
       const systemPrompt = agentMode ? agent.soul : undefined;
       const payloadMessages = agentMode
-        ? buildAgentApiMessages(agentHistory, finalText, attachmentPayloads, systemPrompt)
-        : buildApiMessages(history, finalText, attachmentPayloads, systemPrompt);
+        ? buildAgentApiMessages(
+            agentHistory,
+            finalText,
+            attachmentPayloads,
+            systemPrompt,
+          )
+        : buildApiMessages(
+            history,
+            finalText,
+            attachmentPayloads,
+            systemPrompt,
+          );
 
       const now = Date.now();
       const userMsg: ChatMsg = {
         id: genId(),
         role: "user",
         content: finalText,
-        attachments: state.attachments.length > 0 ? [...state.attachments] : undefined,
+        attachments:
+          state.attachments.length > 0 ? [...state.attachments] : undefined,
         timestamp: now,
       };
 
@@ -1025,7 +1072,11 @@ export default function ChatPage({
           ...prev,
           [topicId]: {
             ...s,
-            messages: [...s.messages, userMsg, { id: genId(), role: "assistant", content: "", timestamp: now }],
+            messages: [
+              ...s.messages,
+              userMsg,
+              { id: genId(), role: "assistant", content: "", timestamp: now },
+            ],
             input: "",
             attachments: [],
             streaming: true,
@@ -1119,40 +1170,47 @@ export default function ChatPage({
           flushSessionSave(topicId);
         })
         .catch((e: Error) => {
-        if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
-        requestIdToTopicIdRef.current.delete(requestId);
-        setTopicStates((prev) => {
-          const s = prev[topicId];
-          if (!s) return prev;
-          return {
-            ...prev,
-            [topicId]: {
-              ...s,
-              streaming: false,
-              requestId: null,
-              requestBackend: null,
-            },
-          };
+          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
+          requestIdToTopicIdRef.current.delete(requestId);
+          setTopicStates((prev) => {
+            const s = prev[topicId];
+            if (!s) return prev;
+            return {
+              ...prev,
+              [topicId]: {
+                ...s,
+                streaming: false,
+                requestId: null,
+                requestBackend: null,
+              },
+            };
+          });
+          syncStreamingFlag(topicId, false);
+          notifyLive2DScene("replyError");
+          setTopicStates((prev) => {
+            const s = prev[topicId];
+            if (!s) return prev;
+            const idx = findLastAssistantReplyIndex(s.messages);
+            if (idx < 0) return prev;
+            const next = s.messages.slice();
+            next[idx] = {
+              ...next[idx],
+              content: `请求失败：${e.message || e}`,
+              error: true,
+            };
+            return { ...prev, [topicId]: { ...s, messages: next } };
+          });
+          flushSessionSave(topicId);
         });
-        syncStreamingFlag(topicId, false);
-        notifyLive2DScene("replyError");
-        setTopicStates((prev) => {
-          const s = prev[topicId];
-          if (!s) return prev;
-          const idx = findLastAssistantReplyIndex(s.messages);
-          if (idx < 0) return prev;
-          const next = s.messages.slice();
-          next[idx] = {
-            ...next[idx],
-            content: `请求失败：${e.message || e}`,
-            error: true,
-          };
-          return { ...prev, [topicId]: { ...s, messages: next } };
-        });
-        flushSessionSave(topicId);
-      });
     },
-    [skills, loadAttachmentPayloads, flushSessionSave, scheduleTopicSave, scrollToBottom, syncStreamingFlag],
+    [
+      skills,
+      loadAttachmentPayloads,
+      flushSessionSave,
+      scheduleTopicSave,
+      scrollToBottom,
+      syncStreamingFlag,
+    ],
   );
 
   useEffect(() => {
@@ -1250,27 +1308,24 @@ export default function ChatPage({
   }, [flushSessionSave]);
 
   // 重试用户消息：删除该消息及其后所有消息，用原始文本重新发送
-  const handleRetry = useCallback(
-    (msgId: string) => {
-      const topicId = activeTopicIdRef.current;
-      if (!topicId) return;
-      const state = topicStatesRef.current[topicId];
-      if (!state || state.streaming) return;
-      const idx = state.messages.findIndex((m) => m.id === msgId);
-      if (idx === -1) return;
-      const target = state.messages[idx];
-      if (target.role !== "user") return;
-      const text = target.content;
-      const kept = state.messages.slice(0, idx);
-      setTopicStates((prev) => ({
-        ...prev,
-        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
-      }));
-      // 在下一帧用截断后的消息重新发送
-      setTimeout(() => handleSendRef.current(text), 0);
-    },
-    [],
-  );
+  const handleRetry = useCallback((msgId: string) => {
+    const topicId = activeTopicIdRef.current;
+    if (!topicId) return;
+    const state = topicStatesRef.current[topicId];
+    if (!state || state.streaming) return;
+    const idx = state.messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+    const target = state.messages[idx];
+    if (target.role !== "user") return;
+    const text = target.content;
+    const kept = state.messages.slice(0, idx);
+    setTopicStates((prev) => ({
+      ...prev,
+      [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
+    }));
+    // 在下一帧用截断后的消息重新发送
+    setTimeout(() => handleSendRef.current(text), 0);
+  }, []);
 
   // 删除消息：删除该消息；若是用户消息，同时删除紧跟其后的助手回复
   const handleDeleteMessage = useCallback(
@@ -1284,11 +1339,17 @@ export default function ChatPage({
       const target = state.messages[idx];
       let end = idx + 1;
       if (target.role === "user") {
-        while (end < state.messages.length && state.messages[end].role !== "user") {
+        while (
+          end < state.messages.length &&
+          state.messages[end].role !== "user"
+        ) {
           end++;
         }
       } else if (target.role === "assistant") {
-        while (end < state.messages.length && state.messages[end].type === "tool") {
+        while (
+          end < state.messages.length &&
+          state.messages[end].type === "tool"
+        ) {
           end++;
         }
       }
@@ -1297,7 +1358,10 @@ export default function ChatPage({
         .concat(state.messages.slice(end));
       setTopicStates((prev) => ({
         ...prev,
-        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: nextMessages },
+        [topicId]: {
+          ...(prev[topicId] ?? emptyTopicState()),
+          messages: nextMessages,
+        },
       }));
       scheduleTopicSave(topicId);
     },
