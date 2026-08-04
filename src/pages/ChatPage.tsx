@@ -747,16 +747,22 @@ export default function ChatPage({
       patchTopicState(
         topicId,
         (state) => {
-          const idx = findLastAssistantReplyIndex(state.messages);
+          const reconciled = reconcileToolMessages(
+            state.messages,
+            undefined,
+            false,
+          );
+          const idx = findLastAssistantReplyIndex(reconciled);
           if (idx < 0) {
             return {
               ...state,
               streaming: false,
               requestId: null,
               requestBackend: null,
+              messages: reconciled,
             };
           }
-          const next = state.messages.slice();
+          const next = reconciled.slice();
           const target = next[idx];
           next[idx] = {
             ...target,
