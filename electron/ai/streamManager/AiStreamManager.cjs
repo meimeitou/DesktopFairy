@@ -167,7 +167,7 @@ class AiStreamManager {
       const { stream: idleStream, idle } = withIdleTimeout(rawStream, controller, idleTimeoutMs);
       entry.idle = idle;
 
-      const { streamErrorText, threw } = await pipeStreamLoop(idleStream, controller.signal, {
+      const { streamErrorText, threw, lastFinishReason } = await pipeStreamLoop(idleStream, controller.signal, {
         onChunk: safeOnChunk,
       });
 
@@ -180,6 +180,8 @@ class AiStreamManager {
         requestId,
         status: entry.status === 'aborted' ? 'aborted' : 'success',
         isTopicDone: true,
+        // agent stopped mid-loop because stopWhen fired while the LLM still wanted to call tools
+        maxTurnsReached: !controller.signal.aborted && lastFinishReason === 'tool-calls',
       };
       onDone?.(donePayload);
       broadcast('ai:stream:done', donePayload);

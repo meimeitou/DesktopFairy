@@ -11,6 +11,7 @@ async function pipeStreamLoop(stream, signal, { onChunk }) {
 
   let streamErrorText;
   let threw;
+  let lastFinishReason;
   const broadcastCompletedAt = { value: 0 };
 
   try {
@@ -18,6 +19,8 @@ async function pipeStreamLoop(stream, signal, { onChunk }) {
       const { done, value } = await reader.read();
       if (done) break;
       if (value?.type === 'error') streamErrorText ??= value.errorText;
+      // track why the last LLM step ended — 'tool-calls' means the agent was cut off mid-loop
+      if (value?.type === 'finish-step') lastFinishReason = value.finishReason;
       onChunk(value);
     }
     broadcastCompletedAt.value = Date.now();
@@ -29,7 +32,7 @@ async function pipeStreamLoop(stream, signal, { onChunk }) {
     reader.releaseLock();
   }
 
-  return { streamErrorText, threw, broadcastCompletedAt: broadcastCompletedAt.value };
+  return { streamErrorText, threw, broadcastCompletedAt: broadcastCompletedAt.value, lastFinishReason };
 }
 
 module.exports = { pipeStreamLoop };

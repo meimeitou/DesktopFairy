@@ -78,7 +78,11 @@
   flex-direction: column;
   gap: 12px;
   background:
-    radial-gradient(ellipse 80% 40% at 50% -10%, rgba(232, 98, 74, 0.05), transparent 55%),
+    radial-gradient(
+      ellipse 80% 40% at 50% -10%,
+      rgba(232, 98, 74, 0.05),
+      transparent 55%
+    ),
     var(--ink-900);
 }
 
@@ -143,7 +147,9 @@
   max-width: 88%;
   min-height: 20px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  transition:
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 .msg-bubble:hover {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
@@ -726,7 +732,9 @@
   font-size: 14px;
   line-height: 1;
   color: rgba(255, 255, 255, 0.35);
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
 }
 
 .agent-tool-header-collapsible:hover .agent-tool-chevron {
@@ -1036,7 +1044,9 @@
   color: inherit;
   font-family: inherit;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .agent-tool-ask-option:hover:not(:disabled) {
@@ -1127,7 +1137,11 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: background 0.15s, opacity 0.15s, border-color 0.15s, transform 0.12s ease;
+  transition:
+    background 0.15s,
+    opacity 0.15s,
+    border-color 0.15s,
+    transform 0.12s ease;
 }
 
 .agent-tool-btn:disabled {
@@ -1174,4 +1188,42 @@
 
 .chat-input-area {
   border-top: none;
+}
+
+.max-turns-card {
+  margin: 0 16px 8px;
+  border: 1px solid rgba(120, 180, 255, 0.3);
+  border-radius: 10px;
+  background: rgba(120, 180, 255, 0.06);
+  overflow: hidden;
+}
+
+.max-turns-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.max-turns-card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.max-turns-card-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(120, 180, 255, 0.18);
+  color: rgba(180, 210, 255, 0.95);
+}
+
+.max-turns-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--hairline);
+  background: rgba(0, 0, 0, 0.14);
 }

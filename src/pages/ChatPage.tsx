@@ -15,10 +15,12 @@ import { useToolApproval } from "../hooks/useToolApproval";
 import { createStreamChunkBuffer } from "../hooks/createStreamChunkBuffer";
 import type { ToolTerminalState } from "../shared/ai/stream";
 import type { ChatAttachment } from "../shared/chatAttachments";
+import MaxTurnsCard from "../components/chat/MaxTurnsCard";
 import {
   type ChatMsg,
   buildApiMessages,
   buildAgentApiMessages,
+  buildAgentHistoryMessages,
   filterAfterContextClear,
   filterForApi,
   findLastAssistantReplyIndex,
@@ -208,6 +210,9 @@ export default function ChatPage({
   const [streamingTopicIds, setStreamingTopicIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [maxTurnsPendingTopics, setMaxTurnsPendingTopics] = useState<
+    Set<string>
+  >(() => new Set());
 
   const syncStreamingFlag = useCallback(
     (topicId: string, streaming: boolean) => {
@@ -643,10 +648,12 @@ export default function ChatPage({
     const handleChatDone = ({
       requestId,
       aborted,
+      maxTurnsReached,
       tools,
     }: {
       requestId: string;
       aborted?: boolean;
+      maxTurnsReached?: boolean;
       tools?: ToolTerminalState[];
     }) => {
       chunkBuffer.flushRequest(requestId);
@@ -718,6 +725,10 @@ export default function ChatPage({
         if (isActive) notifyLive2DScene("replyDone");
         flushSessionSave(topicId);
         return;
+      }
+
+      if (maxTurnsReached) {
+        setMaxTurnsPendingTopics((prev) => new Set([...prev, topicId]));
       }
 
       if (isActive) {
@@ -916,6 +927,142 @@ export default function ChatPage({
       return { textFiles, images };
     },
     [],
+  );
+
+  const handleContinue = useCallback(
+    async (topicId: string) => {
+      setMaxTurnsPendingTopics((prev) => {
+        const next = new Set(prev);
+        next.delete(topicId);
+        return next;
+      });
+
+      const state = topicStatesRef.current[topicId];
+      if (!state || state.streaming) return;
+
+      await flushSettingsSave();
+      const settings = getSettingsSnapshot();
+      const apiConfig = getChatApiConfig(settings);
+      if (!apiConfig?.apiHost || !apiConfig.modelName) return;
+
+      const agent = settings.agent;
+
+      const agentHistory = trimMessagesForApi(
+        filterAfterContextClear(state.messages).filter(
+          (m) =>
+            m.type !== "clear" &&
+            !m.error &&
+            (m.type === "tool" ||
+              !(m.role === "assistant" && !m.content?.trim())),
+        ),
+      );
+      const payloadMessages = buildAgentHistoryMessages(agentHistory);
+
+      const requestId = genId();
+      requestIdToTopicIdRef.current.set(requestId, topicId);
+
+      const now = Date.now();
+      setTopicStates((prev) => {
+        const s = prev[topicId] ?? emptyTopicState();
+        return {
+          ...prev,
+          [topicId]: {
+            ...s,
+            messages: [
+              ...s.messages,
+              {
+                id: genId(),
+                role: "assistant" as const,
+                content: "",
+                timestamp: now,
+              },
+            ],
+            streaming: true,
+            requestId,
+            requestBackend: getActiveChatBackend(settings),
+          },
+        };
+      });
+      syncStreamingFlag(topicId, true);
+      scrollToBottom();
+      notifyLive2DScene("thinking");
+
+      openAgentStream({
+        topicId,
+        requestId,
+        messages: payloadMessages,
+        apiConfig: {
+          apiHost: apiConfig.apiHost,
+          apiKey: apiConfig.apiKey,
+          providerType: apiConfig.providerType,
+          modelName: apiConfig.modelName,
+        },
+        agentConfig: agent,
+      })
+        .then((result) => {
+          if (!result || typeof result !== "object") return;
+          if ((result as { mode?: string }).mode !== "blocked") return;
+          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
+          requestIdToTopicIdRef.current.delete(requestId);
+          setTopicStates((prev) => {
+            const s = prev[topicId];
+            if (!s) return prev;
+            const idx = findLastAssistantReplyIndex(s.messages);
+            const next = s.messages.slice();
+            if (idx >= 0) {
+              next[idx] = {
+                ...next[idx],
+                content: "该话题已有进行中的会话，请等待完成或先停止。",
+                error: true,
+              };
+            }
+            return {
+              ...prev,
+              [topicId]: {
+                ...s,
+                messages: next,
+                streaming: false,
+                requestId: null,
+                requestBackend: null,
+              },
+            };
+          });
+          syncStreamingFlag(topicId, false);
+          notifyLive2DScene("replyError");
+          flushSessionSave(topicId);
+        })
+        .catch((e: Error) => {
+          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
+          requestIdToTopicIdRef.current.delete(requestId);
+          setTopicStates((prev) => {
+            const s = prev[topicId];
+            if (!s) return prev;
+            const idx = findLastAssistantReplyIndex(s.messages);
+            const next = s.messages.slice();
+            if (idx >= 0) {
+              next[idx] = {
+                ...next[idx],
+                content: `请求失败：${e.message || e}`,
+                error: true,
+              };
+            }
+            return {
+              ...prev,
+              [topicId]: {
+                ...s,
+                messages: next,
+                streaming: false,
+                requestId: null,
+                requestBackend: null,
+              },
+            };
+          });
+          syncStreamingFlag(topicId, false);
+          notifyLive2DScene("replyError");
+          flushSessionSave(topicId);
+        });
+    },
+    [flushSettingsSave, scrollToBottom, syncStreamingFlag, flushSessionSave],
   );
 
   const handleSend = useCallback(
@@ -1439,6 +1586,22 @@ export default function ChatPage({
           onDelete={handleDeleteMessage}
           emptyContent={emptyContent}
         />
+
+        {activeTopicId &&
+          maxTurnsPendingTopics.has(activeTopicId) &&
+          !streaming && (
+            <MaxTurnsCard
+              maxTurns={chatSettings.agent.maxTurns}
+              onContinue={() => void handleContinue(activeTopicId)}
+              onCancel={() =>
+                setMaxTurnsPendingTopics((prev) => {
+                  const next = new Set(prev);
+                  next.delete(activeTopicId);
+                  return next;
+                })
+              }
+            />
+          )}
 
         <ChatInputBar
           input={input}

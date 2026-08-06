@@ -124,9 +124,10 @@ function registerAiStreamHandlers(ipcMain, deps) {
         });
       },
       onChunk: (chunk) => bridge.handleChunk(chunk),
-      onDone: () => {
+      onDone: (donePayload) => {
         legacySend('chat:stream:done', {
           requestId,
+          maxTurnsReached: donePayload.maxTurnsReached || undefined,
           tools: bridge.getToolSnapshot(),
         });
         topicAgentState.delete(topicId);

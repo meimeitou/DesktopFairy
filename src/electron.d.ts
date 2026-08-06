@@ -52,6 +52,7 @@ declare global {
         callback: (payload: {
           requestId: string;
           aborted?: boolean;
+          maxTurnsReached?: boolean;
           tools?: Array<{
             toolCallId: string;
             toolName?: string;
