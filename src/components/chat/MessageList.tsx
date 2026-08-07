@@ -264,8 +264,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         // Scrollbar drag starts on the container gutter (outside client width).
         const el = parentRef.current;
         if (!el) return;
-        if ((e.nativeEvent as PointerEvent).offsetX >= el.clientWidth)
-          markUserScrollIntent();
+        if (e.nativeEvent.offsetX >= el.clientWidth) markUserScrollIntent();
       },
       [markUserScrollIntent],
     );
