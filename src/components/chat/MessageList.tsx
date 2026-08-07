@@ -84,9 +84,9 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     /** After wheel/touch up, block re-stick until the user scrolls down again. */
     const suppressReattachRef = useRef(false);
     const userScrollIntentRef = useRef(false);
-    const userScrollIntentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-      null,
-    );
+    const userScrollIntentTimerRef = useRef<ReturnType<
+      typeof setTimeout
+    > | null>(null);
     const lastTouchYRef = useRef<number | null>(null);
     const lastApprovalKeyRef = useRef<string | null>(null);
     const prevItemsRef = useRef<MessageListItem[] | null>(null);
@@ -264,7 +264,8 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         // Scrollbar drag starts on the container gutter (outside client width).
         const el = parentRef.current;
         if (!el) return;
-        if ((e.nativeEvent as PointerEvent).offsetX >= el.clientWidth) markUserScrollIntent();
+        if ((e.nativeEvent as PointerEvent).offsetX >= el.clientWidth)
+          markUserScrollIntent();
       },
       [markUserScrollIntent],
     );
@@ -392,9 +393,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     msg={item.msg}
                     isStreamingTarget={item.msg.id === streamingAssistantId}
                     invalidAttachmentPaths={invalidAttachmentPaths}
-                    onRetry={
-                      item.msg.role === "user" ? onRetry : undefined
-                    }
+                    onRetry={item.msg.role === "user" ? onRetry : undefined}
                     onDelete={onDelete}
                   />
                 )}
