@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build ad-hoc DMG
+        run: make build-adhoc
+
+      - name: Get version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "DesktopFairy v${{ steps.version.outputs.version }}"
+          body: |
+            ## Install via Homebrew
+
+            ```bash
+            brew tap meimeitou/tap
+            brew install --cask desktopfairy
+            ```
+
+            ## Manual install
+
+            Download the DMG below, open it, and drag DesktopFairy.app to Applications.
+
+            > **Note**: This build is ad-hoc signed (no Apple Developer certificate).
+            > If macOS blocks the app, run:
+            > ```
+            > sudo xattr -dr com.apple.quarantine /Applications/DesktopFairy.app
+            > ```
+          files: release/DesktopFairy-${{ steps.version.outputs.version }}-arm64.dmg
+          draft: false
+          prerelease: false
+
+      - name: Update homebrew tap
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG="release/DesktopFairy-${VERSION}-arm64.dmg"
+          SHA256=$(shasum -a 256 "$DMG" | awk '{print $1}')
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/meimeitou/homebrew-tap.git" tap
+          cd tap
+          sed -i '' \
+            -e "s/^  version \".*\"/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 .*/  sha256 \"${SHA256}\"/" \
+            Casks/desktopfairy.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/desktopfairy.rb
+          git commit -m "desktopfairy: bump to ${VERSION}"
+          git push
