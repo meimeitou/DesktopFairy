@@ -716,36 +716,6 @@ export default function TerminalPage({
     window.addEventListener("terminal:run-command", handler);
     return () => window.removeEventListener("terminal:run-command", handler);
   }, [activeTabId, pasteCommandToTab]);
-
-  const openCliTab = useCallback(
-    (detail: { cwd: string; command: string; title?: string }) => {
-      const { cwd, command, title } = detail;
-      if (!cwd || !command) return;
-      const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      const newTitle = title?.trim() || `CLI ${nextTabIndex.current++}`;
-      setTabs((prev) => [
-        ...prev,
-        { id: newId, title: newTitle, kind: "terminal" as const, cwd, launchCommand: command },
-      ]);
-      setActiveTabId(newId);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ cwd?: string; command?: string; title?: string }>).detail;
-      if (!detail?.cwd || !detail?.command) return;
-      openCliTab({
-        cwd: detail.cwd,
-        command: detail.command,
-        title: detail.title,
-      });
-    };
-    window.addEventListener("terminal:launch-cli", handler);
-    return () => window.removeEventListener("terminal:launch-cli", handler);
-  }, [openCliTab]);
-
   const handleAddTab = useCallback(() => {
     const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const newTitle = `终端 ${nextTabIndex.current++}`;

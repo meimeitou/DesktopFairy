@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import ChatPage from "./ChatPage";
 import SettingsPage from "./SettingsPage";
 import TerminalPage from "./TerminalPage";
-import CodePage, { type CodePageAction } from "./CodePage";
+import OmpPage from "./OmpPage";
 import "./ChatApp.css";
 
-type AppView = "chat" | "terminal" | "code" | "settings";
+type AppView = "chat" | "pi" | "terminal" | "settings";
 
 const api = window.electronAPI;
 const isMac =
@@ -17,41 +17,70 @@ const viewParam = params.get("view");
 const initialView: AppView =
   viewParam === "settings"
     ? "settings"
-    : viewParam === "terminal"
-      ? "terminal"
-      : viewParam === "code"
-        ? "code"
+    : viewParam === "pi"
+      ? "pi"
+      : viewParam === "terminal"
+        ? "terminal"
         : "chat";
 
 function ChatIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
+function PiIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M12 2a10 10 0 1 0 10 10" />
+      <path d="M12 8v8M8 12h8" />
     </svg>
   );
 }
 
 function TerminalIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <polyline points="4 17 10 11 4 5" />
       <line x1="12" y1="19" x2="20" y2="19" />
     </svg>
   );
 }
 
-function CodeIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <polyline points="16 18 22 12 16 6" />
-      <polyline points="8 6 2 12 8 18" />
-    </svg>
-  );
-}
 
 function SettingsIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
@@ -60,7 +89,14 @@ function SettingsIcon() {
 
 function CloseIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+    >
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
@@ -70,19 +106,23 @@ function CloseIcon() {
 export default function ChatApp() {
   const [view, setView] = useState<AppView>(initialView);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [codeAction, setCodeAction] = useState<CodePageAction>(null);
 
   useEffect(() => {
     document.title = " ";
     document.documentElement.classList.add("chat-window-shell");
     if (isMac) document.documentElement.classList.add("chat-window-mac");
     return () => {
-      document.documentElement.classList.remove("chat-window-shell", "chat-window-mac");
+      document.documentElement.classList.remove(
+        "chat-window-shell",
+        "chat-window-mac",
+      );
     };
   }, []);
 
   useEffect(() => {
-    const off = api.onChatWindowFullscreenChanged?.((value) => setIsFullscreen(Boolean(value)));
+    const off = api.onChatWindowFullscreenChanged?.((value) =>
+      setIsFullscreen(Boolean(value)),
+    );
     return () => off?.();
   }, []);
 
@@ -90,16 +130,7 @@ export default function ChatApp() {
     const off = api.onChatNavigate?.((nextView) => {
       if (nextView === "terminal") setView("terminal");
       else if (nextView === "settings") setView("settings");
-      else if (nextView === "code") setView("code");
       else setView("chat");
-    });
-    return () => off?.();
-  }, []);
-
-  useEffect(() => {
-    const off = api.onCodeAction?.((action) => {
-      setView("code");
-      setCodeAction(action as CodePageAction);
     });
     return () => off?.();
   }, []);
@@ -107,10 +138,8 @@ export default function ChatApp() {
   useEffect(() => {
     const switchTerminal = () => setView("terminal");
     window.addEventListener("terminal:run-command", switchTerminal);
-    window.addEventListener("terminal:launch-cli", switchTerminal);
     return () => {
       window.removeEventListener("terminal:run-command", switchTerminal);
-      window.removeEventListener("terminal:launch-cli", switchTerminal);
     };
   }, []);
 
@@ -130,11 +159,11 @@ export default function ChatApp() {
           </button>
           <button
             type="button"
-            className={`chat-tab${view === "code" ? " active" : ""}`}
-            onClick={() => setView("code")}
+            className={`chat-tab${view === "pi" ? " active" : ""}`}
+            onClick={() => setView("pi")}
           >
-            <CodeIcon />
-            <span>代码</span>
+            <PiIcon />
+            <span>PI</span>
           </button>
           <button
             type="button"
@@ -176,13 +205,10 @@ export default function ChatApp() {
           <ChatPage embedded />
         </div>
         <div
-          className={`chat-app-panel${view === "code" ? "" : " chat-app-panel-hidden"}`}
-          aria-hidden={view !== "code"}
+          className={`chat-app-panel${view === "pi" ? "" : " chat-app-panel-hidden"}`}
+          aria-hidden={view !== "pi"}
         >
-          <CodePage
-            initialAction={codeAction}
-            onActionConsumed={() => setCodeAction(null)}
-          />
+          <OmpPage isActive={view === "pi"} />
         </div>
         <div
           className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}

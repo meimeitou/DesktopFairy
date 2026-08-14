@@ -40,8 +40,7 @@ const {
   attachWindowOpenHandler,
   registerBrowserHandlers,
 } = require('./browserService.cjs');
-const { createCodeProjectService } = require('./codeProjectService.cjs');
-const { registerCodeCliHandlers } = require('./codeCliService.cjs');
+const { registerOmpHandlers, stopOmp } = require('./ompService.cjs');
 const settingsSnapshot = require('./settingsSnapshot.cjs');
 
 registerLive2DSchemes();
@@ -59,6 +58,12 @@ const shouldOpenDevTools = () =>
 const getDevToolsMode = () => {
   const mode = process.env.ELECTRON_DEVTOOLS_MODE || 'detach';
   return ['detach', 'right', 'bottom', 'undocked'].includes(mode) ? mode : 'detach';
+};
+
+const openDevToolsForWindow = (win) => {
+  if (!win || win.isDestroyed() || !shouldOpenDevTools()) return;
+  if (win.webContents.isDevToolsOpened()) return;
+  win.webContents.openDevTools({ mode: getDevToolsMode() });
 };
 
 // Scan public/models for model subdirectories
@@ -109,11 +114,6 @@ const CHAT_TOPICS_INDEX_PATH = () => path.join(app.getPath('userData'), 'da_chat
 const CHAT_SESSIONS_DIR = () => path.join(app.getPath('userData'), 'chat_sessions');
 const CHAT_TOOL_RESULTS_DIR = () => path.join(app.getPath('userData'), 'chat_tool_results');
 const CHAT_LOGS_DIR = () => path.join(app.getPath('userData'), 'chat_session_logs');
-const CODE_PROJECTS_STORE_PATH = () => path.join(app.getPath('userData'), 'da_code_projects.json');
-
-/** @type {ReturnType<createCodeProjectService> | null} */
-let codeProjectService = null;
-
 const loadSettingsFromDisk = () => {
   try {
     return JSON.parse(fs.readFileSync(SETTINGS_PATH(), 'utf8'));
@@ -146,33 +146,19 @@ const resolveStartupSettings = () => ({
 // In-flight chat completion requests, keyed by requestId
 const inflightChats = new Map();
 
-const TRAY_ICON_PATH = () => path.join(PUBLIC_ROOT, 'trayIconTemplate.png');
 const TRAY_GUID = 'com.desktop.fairy.status';
-
-// Fallback: 16x16 black circle PNG (template image)
-const FALLBACK_TRAY_ICON_B64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAKUlEQVQ4T2NkYGD4z0ABYBw1gGE0DBQUGigwUGBooMBAgYECAwC5FQX+pR8CzQAAAABJRU5ErkJggg==';
 
 const getTrayIcon = () => {
   if (process.platform === 'darwin') {
-    const img = nativeImage.createFromPath(TRAY_ICON_PATH());
-    if (!img.isEmpty()) {
-      const sized = img.resize({ width: 16, height: 16 });
-      sized.setTemplateImage(true);
-      return sized;
-    }
-  } else {
-    const legacyPath = path.join(PUBLIC_ROOT, 'trayTemplate.png');
-    const legacy = nativeImage.createFromPath(legacyPath);
-    if (!legacy.isEmpty()) return legacy.resize({ width: 22, height: 22 });
+    // Empty image: no icon width, only the emoji title (tray.setTitle) shows.
+    return nativeImage.createEmpty();
   }
 
-  const fallback = nativeImage.createFromDataURL('data:image/png;base64,' + FALLBACK_TRAY_ICON_B64);
-  if (process.platform === 'darwin') {
-    const sized = fallback.resize({ width: 16, height: 16 });
-    sized.setTemplateImage(true);
-    return sized;
-  }
-  return fallback.resize({ width: 22, height: 22 });
+  const legacyPath = path.join(PUBLIC_ROOT, 'trayTemplate.png');
+  const legacy = nativeImage.createFromPath(legacyPath);
+  if (!legacy.isEmpty()) return legacy.resize({ width: 22, height: 22 });
+
+  return nativeImage.createEmpty();
 };
 
 /** Hide Dock after Tray is registered (menu-bar-only app). */
@@ -247,46 +233,6 @@ const navigateChatWindow = (win, view = 'chat') => {
   } else {
     send();
   }
-};
-
-const sendCodeAction = (win, action) => {
-  if (!win || win.isDestroyed()) return;
-  const send = () => win.webContents.send('code:action', action);
-  if (win.webContents.isLoading()) {
-    win.webContents.once('did-finish-load', send);
-  } else {
-    send();
-  }
-};
-
-const openCodeView = (action = null) => {
-  const win = createChatWindow({ view: 'code' });
-  if (action) sendCodeAction(win, action);
-  return win;
-};
-
-const activateProjectAndOpenCode = (projectId) => {
-  if (codeProjectService) {
-    const store = codeProjectService.readStore();
-    const project = store.projects.find((p) => p.id === projectId);
-    if (project) {
-      store.activeProjectId = projectId;
-      project.lastOpenedAt = Date.now();
-      codeProjectService.writeStore(store);
-    }
-  }
-  openCodeView(null);
-};
-
-const buildProjectListSubmenu = () => {
-  const store = codeProjectService?.readStore?.() ?? { projects: [] };
-  if (!store.projects.length) {
-    return [{ label: '（无项目）', enabled: false }];
-  }
-  return store.projects.map((project) => ({
-    label: project.name,
-    click: () => activateProjectAndOpenCode(project.id),
-  }));
 };
 
 const getSelectionChatAnchor = () => {
@@ -370,11 +316,10 @@ const createChatWindow = (options = {}) => {
       ? 'view=settings'
       : view === 'terminal'
         ? 'view=terminal'
-        : view === 'code'
-          ? 'view=code'
-          : '';
+        : '';
   const query = viewSuffix ? `?window=chat&${viewSuffix}` : '?window=chat';
   loadURL(chatWindow, query);
+  openDevToolsForWindow(chatWindow);
 
   chatWindow.once('ready-to-show', () => {
     if (!chatWindow || chatWindow.isDestroyed()) return;
@@ -536,10 +481,7 @@ const createMainWindow = () => {
   }
 
   loadURL(mainWindow);
-
-  if (shouldOpenDevTools()) {
-    mainWindow.webContents.openDevTools({ mode: getDevToolsMode() });
-  }
+  openDevToolsForWindow(mainWindow);
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
@@ -651,9 +593,9 @@ const setupIPC = () => {
     const revision = settingsSnapshot.setSnapshot(settings);
     applySelectionSettings(settings);
     applyChatShortcutSettings(settings);
-    // Broadcast to every window, including the sender. Chat / Settings / Code /
+    // Broadcast to every window, including the sender. Chat / Settings /
     // Terminal share one BrowserWindow (keep-alive tabs); skipping the sender
-    // left ChatPage / CodeCliPanel stuck on stale provider model lists.
+    // left ChatPage stuck on stale provider model lists.
     const payload = { settings, revision };
     for (const win of [mainWindow, chatWindow]) {
       if (win && !win.isDestroyed()) {
@@ -679,10 +621,6 @@ const setupIPC = () => {
     toolResultsDir: CHAT_TOOL_RESULTS_DIR,
     chatLogsDir: CHAT_LOGS_DIR,
   });
-
-  codeProjectService = createCodeProjectService({ storePath: CODE_PROJECTS_STORE_PATH });
-  codeProjectService.registerHandlers(ipcMain);
-  registerCodeCliHandlers({ ipcMain });
 
   registerPtyHandlers({ ipcMain });
 
@@ -710,6 +648,8 @@ const setupIPC = () => {
       return null;
     },
   });
+
+  registerOmpHandlers(ipcMain);
 
   registerBrowserHandlers(ipcMain, {
     loadURL,
@@ -1084,13 +1024,12 @@ const refreshMenus = () => {
       ],
     },
     {
-      label: 'Code',
+      label: '视图',
       submenu: [
-        { label: '新建项目…', click: () => openCodeView('new-project') },
-        { label: '打开项目…', click: () => openCodeView('open-project') },
-        { label: '编辑项目…', click: () => openCodeView('edit-project') },
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
         { type: 'separator' },
-        { label: '项目列表', submenu: buildProjectListSubmenu() },
+        { role: 'toggleDevTools', label: '切换开发者工具' },
       ],
     },
     {
@@ -1128,8 +1067,8 @@ const setupTray = () => {
   destroyTray();
   try {
     const icon = getTrayIcon();
-    if (icon.isEmpty()) {
-      console.error('[tray] icon is empty, path:', TRAY_ICON_PATH());
+    if (icon.isEmpty() && process.platform !== 'darwin') {
+      console.error('[tray] icon is empty');
       return null;
     }
     tray = process.platform === 'darwin'
@@ -1137,8 +1076,8 @@ const setupTray = () => {
       : new Tray(icon);
     tray.setToolTip('DesktopFairy');
     if (process.platform === 'darwin') {
-      // Text label stays visible when tiny template icons are hidden by macOS.
-      tray.setTitle('Fairy');
+      // Emoji title is the only visible element (icon is empty).
+      tray.setTitle('🧚‍♀️');
     }
     tray.on('click', () => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1176,6 +1115,28 @@ app.whenReady().then(() => {
 
   app.on('web-contents-created', (_event, contents) => {
     attachWindowOpenHandler(contents);
+    contents.on('context-menu', (_event, params) => {
+      if (!isDev) return;
+      const menu = Menu.buildFromTemplate([
+        {
+          label: '检查元素',
+          click: () => {
+            contents.inspectElement(params.x, params.y);
+            if (!contents.isDevToolsOpened()) {
+              contents.openDevTools({ mode: getDevToolsMode() });
+            }
+          },
+        },
+        {
+          label: '切换开发者工具',
+          click: () => {
+            if (contents.isDevToolsOpened()) contents.closeDevTools();
+            else contents.openDevTools({ mode: getDevToolsMode() });
+          },
+        },
+      ]);
+      menu.popup({ window: BrowserWindow.fromWebContents(contents) ?? undefined });
+    });
   });
 
   if (process.platform === 'darwin') {
@@ -1265,6 +1226,7 @@ app.on('before-quit', () => {
   killAllSshSessions();
   abortAllAgentRuns();
   abortAllAiStreams();
+  stopOmp();
   disposeAllMcpClients();
   selectionService.stopAll();
   chatShortcutService.stopChatShortcut();
