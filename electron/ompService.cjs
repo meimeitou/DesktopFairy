@@ -379,9 +379,13 @@ async function listSessions() {
 // ─── IPC registration ───────────────────────────────────────────────────────
 
 function registerOmpHandlers(ipcMain) {
-  ipcMain.handle('omp:start', (_event, { cwd } = {}) => {
-    // Idempotent: only start if no live process exists
-    if (!ompProcess || ompProcess.killed) {
+  ipcMain.handle('omp:start', (_event, { cwd, force } = {}) => {
+    // Idempotent: only start if no live process exists.
+    // force: kill and restart even when omp is running (needed to reload
+    // ~/.omp/agent/models.yml after writing a new provider config).
+    if (force) {
+      startOmp(cwd || currentCwd || os.homedir());
+    } else if (!ompProcess || ompProcess.killed) {
       startOmp(cwd || os.homedir());
     }
   });

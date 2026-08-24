@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createStreamChunkBuffer } from "../hooks/createStreamChunkBuffer";
 import ChatMarkdown from "../components/chat/ChatMarkdown";
 import hljs from "highlight.js";
 import OmpSettingsPage from "./OmpSettingsPage";
@@ -616,6 +617,8 @@ interface OmpPageProps {
 }
 
 export default function OmpPage({ isActive }: OmpPageProps) {
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sessions, setSessions] = useState<OmpSession[]>([]);
   const [collapsedCwds, setCollapsedCwds] = useState<Set<string>>(new Set());
@@ -696,8 +699,10 @@ export default function OmpPage({ isActive }: OmpPageProps) {
   // Track pending assistant message across chunk events
   const pendingMsgId = useRef<string | null>(null);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: smooth ? "smooth" : "auto",
+    });
   }, []);
 
   const refreshSessions = useCallback(async () => {
@@ -738,7 +743,7 @@ export default function OmpPage({ isActive }: OmpPageProps) {
     return slashCommandsCache.current;
   }, []);
 
-  // omp:start is idempotent — safe to call on every activation, handles crash recovery
+  // omp:start is idempotent (force:false) — safe to call on every activation, handles crash recovery. force:true restarts to reload config.
   useEffect(() => {
     if (!isActive) return;
     api.invoke("omp:start", {}).catch(() => {});
@@ -761,6 +766,41 @@ export default function OmpPage({ isActive }: OmpPageProps) {
   }, []);
 
   useEffect(() => {
+    const applyOmpChunk = (
+      _requestId: string,
+      delta: string,
+      thinking: string,
+    ) => {
+      setMessages((prev) => {
+        const id = pendingMsgId.current;
+        if (!id) return prev;
+        return prev.map((m) => {
+          if (m.id !== id) return m;
+          let items = m.items;
+          if (delta) {
+            const last = items[items.length - 1];
+            if (last?.kind === "text") {
+              items = [
+                ...items.slice(0, -1),
+                { kind: "text" as const, text: last.text + delta },
+              ];
+            } else {
+              items = [...items, { kind: "text" as const, text: delta }];
+            }
+          }
+          return {
+            ...m,
+            text: m.text + delta,
+            thinking: thinking ? (m.thinking ?? "") + thinking : m.thinking,
+            items,
+          };
+        });
+      });
+      if (isActiveRef.current) scrollToBottom(false);
+    };
+
+    const chunkBuffer = createStreamChunkBuffer(applyOmpChunk);
+
     const offs = [
       api.onOmpReady(() => {
         setOmpReady(true);
@@ -820,33 +860,9 @@ export default function OmpPage({ isActive }: OmpPageProps) {
       }),
 
       api.onOmpChunk(({ delta, thinking }) => {
-        setMessages((prev) => {
-          const id = pendingMsgId.current;
-          if (!id) return prev;
-          return prev.map((m) => {
-            if (m.id !== id) return m;
-            // Append delta to the last text item, or push a new one
-            let items = m.items;
-            if (delta) {
-              const last = items[items.length - 1];
-              if (last?.kind === "text") {
-                items = [
-                  ...items.slice(0, -1),
-                  { kind: "text" as const, text: last.text + delta },
-                ];
-              } else {
-                items = [...items, { kind: "text" as const, text: delta }];
-              }
-            }
-            return {
-              ...m,
-              text: m.text + (delta ?? ""),
-              thinking: thinking ? (m.thinking ?? "") + thinking : m.thinking,
-              items,
-            };
-          });
-        });
-        scrollToBottom();
+        const id = pendingMsgId.current;
+        if (!id) return;
+        chunkBuffer.push(id, delta, thinking);
       }),
 
       api.onOmpTool((payload) => {
@@ -917,6 +933,7 @@ export default function OmpPage({ isActive }: OmpPageProps) {
       }),
 
       api.onOmpDone(({ messages: doneMessages }) => {
+        if (pendingMsgId.current) chunkBuffer.flushRequest(pendingMsgId.current);
         setIsStreaming(false);
         pendingMsgId.current = null;
         setMessages((prev) =>
@@ -938,6 +955,7 @@ export default function OmpPage({ isActive }: OmpPageProps) {
       }),
 
       api.onOmpError(({ message }) => {
+        if (pendingMsgId.current) chunkBuffer.flushRequest(pendingMsgId.current);
         setIsStreaming(false);
         pendingMsgId.current = null;
         setOmpReady(false);
@@ -1029,7 +1047,10 @@ export default function OmpPage({ isActive }: OmpPageProps) {
       ),
     ];
 
-    return () => offs.forEach((off) => off?.());
+    return () => {
+      chunkBuffer.dispose();
+      offs.forEach((off) => off?.());
+    };
   }, [refreshSessions, scrollToBottom, activeSessionPath]);
 
   const handleSend = useCallback(() => {
@@ -2176,11 +2197,82 @@ export default function OmpPage({ isActive }: OmpPageProps) {
                     ))}
                   </div>
                 )}
-                {/* Composer toolbar: model + thinking + image (left) | send/abort (right) */}
+                {/* Composer toolbar: image (left) | model + thinking + send/abort (right) */}
                 <div
                   className={`omp-composer-toolbar${modelPickerOpen ? " model-menu-open" : ""}`}
                 >
                   <div className="omp-composer-toolbar-left">
+                    {/* Image attachment */}
+                    <button
+                      type="button"
+                      className="omp-input-icon-btn"
+                      title="附加图片"
+                      disabled={!ompReady}
+                      onClick={() => imageInputRef.current?.click()}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <rect
+                          x="3"
+                          y="3"
+                          width="18"
+                          height="18"
+                          rx="2"
+                          ry="2"
+                        />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                    </button>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      style={{ display: "none" }}
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        const results = await Promise.all(
+                          files.map(
+                            (f) =>
+                              new Promise<{
+                                dataUrl: string;
+                                name: string;
+                                mediaType: string;
+                                data: string;
+                              }>((resolve) => {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  const dataUrl = reader.result as string;
+                                  const [header, data] = dataUrl.split(",");
+                                  const mediaType =
+                                    header.match(/data:([^;]+)/)?.[1] ??
+                                    "image/png";
+                                  resolve({
+                                    dataUrl,
+                                    name: f.name,
+                                    mediaType,
+                                    data: data ?? "",
+                                  });
+                                };
+                                reader.readAsDataURL(f);
+                              }),
+                          ),
+                        );
+                        setAttachedImages((prev) => [...prev, ...results]);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                  <div className="omp-composer-toolbar-right">
                     {/* Model picker — opens upward */}
                     <div style={{ position: "relative" }}>
                       <button
@@ -2271,6 +2363,13 @@ export default function OmpPage({ isActive }: OmpPageProps) {
                                         })
                                         .catch(() => {});
                                     } else {
+                                      // Model not known to omp yet: write the
+                                      // provider into ~/.omp/agent/models.yml,
+                                      // then force-restart omp so it reloads
+                                      // the config.  pendingModelSwitch is
+                                      // applied on the next omp:ready event.
+                                      setOmpModel(item.modelId);
+                                      setOmpReady(false);
                                       type PE = {
                                         id: string;
                                         name: string;
@@ -2292,19 +2391,32 @@ export default function OmpPage({ isActive }: OmpPageProps) {
                                       const prov = s?.providers?.find(
                                         (p) => p.id === item.provider,
                                       );
-                                      if (prov)
-                                        await api
+                                      // write_provider_to_models returns
+                                      // { safeName } — the sanitized key used
+                                      // in models.yml.  omp's set_model RPC
+                                      // expects this key, not the raw id.
+                                      let providerKey = item.provider;
+                                      if (prov) {
+                                        const writeResult = (await api
                                           .invoke(
                                             "omp:write_provider_to_models",
                                             { provider: prov },
                                           )
-                                          .catch(() => {});
+                                          .catch(() => null)) as {
+                                          safeName?: string;
+                                        } | null;
+                                        if (writeResult?.safeName)
+                                          providerKey = writeResult.safeName;
+                                      }
                                       pendingModelSwitch.current = {
-                                        provider: item.provider,
+                                        provider: providerKey,
                                         modelId: item.modelId,
                                       };
+                                      // force: true restarts omp even when
+                                      // already running, so models.yml is
+                                      // reloaded and omp:ready fires again.
                                       await api
-                                        .invoke("omp:start", {})
+                                        .invoke("omp:start", { force: true })
                                         .catch(() => {});
                                     }
                                   }}
@@ -2342,77 +2454,6 @@ export default function OmpPage({ isActive }: OmpPageProps) {
                       <option value="medium">思考: 中</option>
                       <option value="high">思考: 高</option>
                     </select>
-                    {/* Image attachment */}
-                    <button
-                      type="button"
-                      className="omp-input-icon-btn"
-                      title="附加图片"
-                      disabled={!ompReady}
-                      onClick={() => imageInputRef.current?.click()}
-                    >
-                      <svg
-                        width="15"
-                        height="15"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <rect
-                          x="3"
-                          y="3"
-                          width="18"
-                          height="18"
-                          rx="2"
-                          ry="2"
-                        />
-                        <circle cx="8.5" cy="8.5" r="1.5" />
-                        <polyline points="21 15 16 10 5 21" />
-                      </svg>
-                    </button>
-                    <input
-                      ref={imageInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      style={{ display: "none" }}
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files ?? []);
-                        const results = await Promise.all(
-                          files.map(
-                            (f) =>
-                              new Promise<{
-                                dataUrl: string;
-                                name: string;
-                                mediaType: string;
-                                data: string;
-                              }>((resolve) => {
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  const dataUrl = reader.result as string;
-                                  const [header, data] = dataUrl.split(",");
-                                  const mediaType =
-                                    header.match(/data:([^;]+)/)?.[1] ??
-                                    "image/png";
-                                  resolve({
-                                    dataUrl,
-                                    name: f.name,
-                                    mediaType,
-                                    data: data ?? "",
-                                  });
-                                };
-                                reader.readAsDataURL(f);
-                              }),
-                          ),
-                        );
-                        setAttachedImages((prev) => [...prev, ...results]);
-                        e.target.value = "";
-                      }}
-                    />
-                  </div>
-                  <div className="omp-composer-toolbar-right">
                     {isStreaming ? (
                       <button
                         type="button"

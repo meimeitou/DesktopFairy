@@ -453,6 +453,12 @@ const screenshotMenuItems = () => {
   return items;
 };
 
+const notifyMainWindowVisibility = (visible) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('main-window:visibility-changed', visible);
+  }
+};
+
 const createMainWindow = () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     return mainWindow;
@@ -472,7 +478,7 @@ const createMainWindow = () => {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   });
 
@@ -494,8 +500,14 @@ const createMainWindow = () => {
   });
 
   // Rebuild menus when visibility changes
-  mainWindow.on('show', () => refreshMenus());
-  mainWindow.on('hide', () => refreshMenus());
+  mainWindow.on('show', () => {
+    refreshMenus();
+    notifyMainWindowVisibility(true);
+  });
+  mainWindow.on('hide', () => {
+    refreshMenus();
+    notifyMainWindowVisibility(false);
+  });
 
   // Re-assert float behavior after macOS Space moves or focus changes
   mainWindow.on('moved', () => {
@@ -541,12 +553,14 @@ const setupIPC = () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
       mainWindow.focus();
+      notifyMainWindowVisibility(true);
     }
   });
 
   ipcMain.handle('hide_main_window', async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.hide();
+      notifyMainWindowVisibility(false);
     }
   });
 
@@ -971,10 +985,12 @@ const toggleMainWindow = () => {
   if (mainWindow.isVisible()) {
     mainWindow.hide();
     modelHiddenByUser = true;
+    notifyMainWindowVisibility(false);
   } else {
     mainWindow.show();
     mainWindow.focus();
     modelHiddenByUser = false;
+    notifyMainWindowVisibility(true);
   }
 };
 

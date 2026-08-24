@@ -76,6 +76,9 @@ function TerminalInstance({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string>("");
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isActiveRef = useRef(isActive);
+  const pendingOutputRef = useRef("");
+  isActiveRef.current = isActive;
   // Bracketed paste mode tracking — shell emits \x1b[?2004h on prompt entry
   // and \x1b[?2004l on exit. When active, pasted input must be wrapped in
   // \x1b[200~...\x1b[201~ so the shell treats it as literal text.
@@ -231,6 +234,10 @@ function TerminalInstance({
       // Track bracketed paste mode toggles emitted by the shell.
       if (data.includes("\x1b[?2004h")) bracketedPasteRef.current = true;
       if (data.includes("\x1b[?2004l")) bracketedPasteRef.current = false;
+      if (!isActiveRef.current) {
+        pendingOutputRef.current += data;
+        return;
+      }
       xterm.write(data);
     });
 
@@ -402,6 +409,12 @@ function TerminalInstance({
 
   useEffect(() => {
     if (!isActive || !terminalRef.current || !fitAddonRef.current) return;
+
+    const xterm = xtermRef.current;
+    if (xterm && pendingOutputRef.current) {
+      xterm.write(pendingOutputRef.current);
+      pendingOutputRef.current = "";
+    }
 
     const el = terminalRef.current;
 

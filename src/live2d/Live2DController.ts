@@ -124,6 +124,16 @@ export class Live2DController {
     this._resizeCanvas();
   }
 
+  /** Pause the render loop without releasing resources. */
+  pause(): void {
+    if (!this._running) return;
+    this._running = false;
+    if (this._rafId !== null) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = null;
+    }
+  }
+
   /** Start (or resume) the requestAnimationFrame render loop. */
   run(): void {
     if (this._released || !this._gl || this._running) return;

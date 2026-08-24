@@ -25,6 +25,7 @@ interface Props {
 type Status = "loading" | "ready" | "error";
 
 const api = window.electronAPI;
+const EYE_TRACK_INTERVAL_MS = 200;
 
 export default function Live2DCanvas({
   modelPath,
@@ -37,6 +38,11 @@ export default function Live2DCanvas({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const controllerRef = useRef<Live2DController | null>(null);
+  const visibleRef = useRef(true);
+  const trackingControlRef = useRef<{
+    start: () => void;
+    stop: () => void;
+  } | null>(null);
   const layoutRef = useRef({ modelScale, modelOffsetX, modelOffsetY });
   const bubbleSettingsRef = useRef({
     live2dSpeechBubble,
@@ -148,6 +154,30 @@ export default function Live2DCanvas({
   }, [refreshCanvasLayout]);
 
   useEffect(() => {
+    const applyVisibility = (visible: boolean) => {
+      visibleRef.current = visible;
+      const controller = controllerRef.current;
+      if (controller) {
+        if (visible) controller.run();
+        else controller.pause();
+      }
+      if (visible) trackingControlRef.current?.start();
+      else trackingControlRef.current?.stop();
+    };
+
+    applyVisibility(document.visibilityState !== "hidden");
+    const onDocumentVisibility = () => {
+      applyVisibility(document.visibilityState !== "hidden");
+    };
+    document.addEventListener("visibilitychange", onDocumentVisibility);
+    const offMainWindow = api.onMainWindowVisibilityChanged?.(applyVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onDocumentVisibility);
+      offMainWindow?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -157,6 +187,8 @@ export default function Live2DCanvas({
 
     let cancelled = false;
     let trackingTimer: ReturnType<typeof setInterval> | null = null;
+    let lastCursor: { x: number; y: number } | null = null;
+    let lastWinPos: { x: number; y: number } | null = null;
     // Holds the controller created by *this* effect run, so the cleanup
     // function can release exactly it (and avoid clobbering a controller
     // installed by a newer run when this async load resolves late).
@@ -203,23 +235,32 @@ export default function Live2DCanvas({
     const startTracking = () => {
       if (trackingTimer) return;
       trackingTimer = setInterval(async () => {
-        if (!controllerRef.current) return;
+        if (!visibleRef.current || !controllerRef.current) return;
         try {
           const [cursor, winPos] = await Promise.all([
             api.screenGetCursorPoint(),
             api.windowGetPosition(),
           ]);
-          if (cursor && winPos) {
-            controllerRef.current.setDraggingFromScreen(
-              cursor.x,
-              cursor.y,
-              winPos
-            );
+          if (!cursor || !winPos) return;
+          if (
+            lastCursor?.x === cursor.x &&
+            lastCursor?.y === cursor.y &&
+            lastWinPos?.x === winPos.x &&
+            lastWinPos?.y === winPos.y
+          ) {
+            return;
           }
+          lastCursor = cursor;
+          lastWinPos = winPos;
+          controllerRef.current.setDraggingFromScreen(
+            cursor.x,
+            cursor.y,
+            winPos,
+          );
         } catch {
           /* ignore IPC errors during tracking */
         }
-      }, 50);
+      }, EYE_TRACK_INTERVAL_MS);
     };
 
     const stopTracking = () => {
@@ -227,13 +268,17 @@ export default function Live2DCanvas({
         clearInterval(trackingTimer);
         trackingTimer = null;
       }
+      lastCursor = null;
+      lastWinPos = null;
     };
 
-    startTracking();
+    trackingControlRef.current = { start: startTracking, stop: stopTracking };
+    if (visibleRef.current) startTracking();
 
     return () => {
       cancelled = true;
       stopTracking();
+      trackingControlRef.current = null;
       controller?.release();
       // Don't clobber a controller installed by a newer effect run.
       if (controllerRef.current === controller) controllerRef.current = null;

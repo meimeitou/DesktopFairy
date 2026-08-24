@@ -176,6 +176,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('chat:window:maximized_changed', listener);
   },
 
+  onMainWindowLayoutChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('main-window:layout-changed', listener);
+    return () => ipcRenderer.removeListener('main-window:layout-changed', listener);
+  },
+
+  onMainWindowVisibilityChanged: (callback) => {
+    const listener = (_event, visible) => callback(visible);
+    ipcRenderer.on('main-window:visibility-changed', listener);
+    return () => ipcRenderer.removeListener('main-window:visibility-changed', listener);
+  },
+
   // Load settings from disk synchronously (used as localStorage fallback on startup)
   loadSettingsFromDisk: () => ipcRenderer.sendSync('settings:load:sync'),
 
