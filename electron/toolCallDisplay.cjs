@@ -6,8 +6,6 @@ const TOOL_LABELS = {
   MultiEdit: '批量编辑',
   Glob: '查找文件',
   Grep: '搜索内容',
-  NotebookRead: '读取 Notebook',
-  NotebookEdit: '编辑 Notebook',
   WebFetch: '获取网页',
   WebSearch: '网页搜索',
   Task: '子任务',
@@ -128,7 +126,7 @@ function formatToolApprovalDetail(toolName, rawArgs, parsedArgs) {
     case 'NotebookRead':
     case 'NotebookEdit': {
       const notebook = pickString(args, ['notebook_path', 'path', 'file_path']);
-      if (notebook) return `Notebook：\n${notebook}`;
+      if (notebook) return `Notebook:\n${notebook}`;
       break;
     }
     case 'WebFetch': {

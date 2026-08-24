@@ -85,20 +85,6 @@ const CHERRY_ALIGNED_BUILTIN_TOOLS = [
     defaultPrompt: true,
   },
   {
-    id: 'NotebookEdit',
-    name: 'NotebookEdit',
-    description: 'Modifies Jupyter notebook cells',
-    category: 'file',
-    defaultPrompt: true,
-  },
-  {
-    id: 'NotebookRead',
-    name: 'NotebookRead',
-    description: 'Reads and displays Jupyter notebook contents',
-    category: 'file',
-    defaultPrompt: false,
-  },
-  {
     id: 'Read',
     name: 'Read',
     description: `Reads a file from the local filesystem.
@@ -380,24 +366,6 @@ function getOpenAiToolParameters(toolId) {
           subagent_type: { type: 'string' },
         },
         required: ['description', 'prompt', 'subagent_type'],
-      };
-    case 'NotebookRead':
-      return {
-        type: 'object',
-        properties: { notebook_path: { type: 'string' } },
-        required: ['notebook_path'],
-      };
-    case 'NotebookEdit':
-      return {
-        type: 'object',
-        properties: {
-          notebook_path: { type: 'string' },
-          cell_id: { type: 'string' },
-          new_source: { type: 'string' },
-          cell_type: { type: 'string', enum: ['code', 'markdown'] },
-          edit_mode: { type: 'string', enum: ['replace', 'insert', 'delete'] },
-        },
-        required: ['notebook_path', 'new_source'],
       };
     case 'Skill':
       return {

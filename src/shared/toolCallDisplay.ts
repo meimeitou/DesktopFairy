@@ -6,8 +6,6 @@ const TOOL_LABELS: Record<string, string> = {
   MultiEdit: "批量编辑",
   Glob: "查找文件",
   Grep: "搜索内容",
-  NotebookRead: "读取 Notebook",
-  NotebookEdit: "编辑 Notebook",
   WebFetch: "获取网页",
   WebSearch: "网页搜索",
   Task: "子任务",
@@ -26,8 +24,6 @@ const TOOL_ICONS: Record<string, string> = {
   MultiEdit: "✎",
   Glob: "🔍",
   Grep: "🔎",
-  NotebookRead: "📓",
-  NotebookEdit: "📓",
   WebFetch: "🌐",
   WebSearch: "🌐",
   Task: "🤖",
@@ -42,7 +38,7 @@ type ToolCategory = "shell" | "file" | "search" | "web" | "other";
 
 function getToolCategory(name: string): ToolCategory {
   if (name === "Bash") return "shell";
-  if (["Read", "Write", "Edit", "MultiEdit", "NotebookRead", "NotebookEdit"].includes(name)) {
+  if (["Read", "Write", "Edit", "MultiEdit"].includes(name)) {
     return "file";
   }
   if (["Glob", "Grep"].includes(name)) return "search";
@@ -168,7 +164,6 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
   const command = pickString(args, ["command", "cmd", "script"]);
   const url = pickString(args, ["url"]);
   const query = pickString(args, ["query"]);
-  const notebook = pickString(args, ["notebook_path", "path", "file_path"]);
   const description = pickString(args, ["description", "prompt"]);
 
   switch (toolName) {
@@ -192,9 +187,6 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
       if (pattern && grepPath) return truncate(`${pattern} · ${basename(grepPath)}`, 160);
       return pattern ? truncate(pattern, 120) : grepPath ? truncate(grepPath, 160) : "";
     }
-    case "NotebookRead":
-    case "NotebookEdit":
-      return notebook ? truncate(notebook, 160) : "";
     case "WebFetch":
       return url ? truncate(url, 160) : "";
     case "WebSearch":

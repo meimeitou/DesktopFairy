@@ -263,8 +263,8 @@ interface LlmProvider {
 
 | 工具 | 类别 | 审批 | 说明 |
 |------|------|------|------|
-| Read / Glob / Grep / NotebookRead | 搜索/文件 | 自动 | 只读 |
-| Write / Edit / MultiEdit / NotebookEdit | 文件 | 确认 | 写操作 |
+| Read / Glob / Grep | 搜索/文件 | 自动 | 只读 |
+| Write / Edit / MultiEdit | 文件 | 确认 | 写操作 |
 | Bash | Shell | 确认 | 命令执行 |
 | WebFetch / WebSearch | 网络 | 确认 | URL 抓取 / 搜索 |
 | TodoWrite | 编排 | 自动 | 任务列表 |

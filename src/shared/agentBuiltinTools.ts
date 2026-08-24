@@ -33,8 +33,6 @@ const CHERRY_ALIGNED_TOOL_IDS = new Set([
   "Glob",
   "Grep",
   "MultiEdit",
-  "NotebookEdit",
-  "NotebookRead",
   "Read",
   "Task",
   "TodoWrite",
@@ -74,13 +72,6 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "Performs multiple edits on a single file atomically",
     "file",
     true,
-  ),
-  builtinTool("NotebookEdit", "Modifies Jupyter notebook cells", "file", true),
-  builtinTool(
-    "NotebookRead",
-    "Reads and displays Jupyter notebook contents",
-    "file",
-    false,
   ),
   builtinTool(
     "Read",
@@ -155,7 +146,6 @@ const DEFAULT_SAFE_TOOLS = new Set([
   "Read",
   "Glob",
   "Grep",
-  "NotebookRead",
   "Task",
   "TodoWrite",
   "Skill",
@@ -370,29 +360,6 @@ function getOpenAiToolParameters(toolId: string) {
           subagent_type: { type: "string" },
         },
         required: ["description", "prompt", "subagent_type"],
-      };
-    case "NotebookRead":
-      return {
-        type: "object",
-        properties: {
-          notebook_path: { type: "string" },
-        },
-        required: ["notebook_path"],
-      };
-    case "NotebookEdit":
-      return {
-        type: "object",
-        properties: {
-          notebook_path: { type: "string" },
-          cell_id: { type: "string" },
-          new_source: { type: "string" },
-          cell_type: { type: "string", enum: ["code", "markdown"] },
-          edit_mode: {
-            type: "string",
-            enum: ["replace", "insert", "delete"],
-          },
-        },
-        required: ["notebook_path", "new_source"],
       };
     case "Skill":
       return {

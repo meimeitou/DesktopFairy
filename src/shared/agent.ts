@@ -126,8 +126,6 @@ export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
   "Write",
   "Edit",
   "MultiEdit",
-  "NotebookRead",
-  "NotebookEdit",
   "Glob",
   "Grep",
 ];
@@ -279,7 +277,6 @@ export function getEnabledAgentBuiltinTools(
       "Write",
       "Edit",
       "MultiEdit",
-      "NotebookEdit",
       "Bash",
       "WebFetch",
       "WebSearch",

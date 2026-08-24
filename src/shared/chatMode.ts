@@ -32,7 +32,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
     description: "只读不写。助手只分析现状并输出执行计划，不会改文件或跑命令。",
     icon: "chat-mode-plan",
     promptSuffix:
-      "\n\n## 计划模式\n当前处于【计划模式】。你只能使用 Read / Glob / Grep / TodoWrite / Skill / Skills 等只读工具来理解现状并输出执行计划。严禁调用 Write / Edit / MultiEdit / NotebookEdit / Bash / WebFetch / WebSearch / Task 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。",
+      "\n\n## 计划模式\n当前处于【计划模式】。你只能使用 Read / Glob / Grep / TodoWrite / Skill / Skills 等只读工具来理解现状并输出执行计划。严禁调用 Write / Edit / MultiEdit / Bash / WebFetch / WebSearch / Task 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。",
     readOnly: true,
     toolApprovalOverride: "confirm",
     accent: "#e8b84a",

@@ -665,55 +665,6 @@ function toolUpdateProfile(args, deps) {
   return ok({ message: `${verb} ${label}`, field, action });
 }
 
-async function toolNotebookRead(args) {
-  const notebookPath = resolveAgentPath(args?.notebook_path, AGENT_FS_BASE());
-  if (!notebookPath || !fs.existsSync(notebookPath)) return fail('Notebook not found');
-  try {
-    const raw = await fs.promises.readFile(notebookPath, 'utf8');
-    const nb = JSON.parse(raw);
-    const cells = (nb?.cells || []).map((cell, index) => ({
-      index,
-      id: cell?.id || String(index),
-      cell_type: cell?.cell_type,
-      source: Array.isArray(cell?.source) ? cell.source.join('') : String(cell?.source || ''),
-    }));
-    return ok({ notebook_path: notebookPath, cells });
-  } catch (e) {
-    return fail(String(e?.message || e));
-  }
-}
-
-async function toolNotebookEdit(args) {
-  const notebookPath = resolveAgentPath(args?.notebook_path, AGENT_FS_BASE());
-  if (!notebookPath || !fs.existsSync(notebookPath)) return fail('Notebook not found');
-  const editMode = args?.edit_mode || 'replace';
-  try {
-    const raw = await fs.promises.readFile(notebookPath, 'utf8');
-    const nb = JSON.parse(raw);
-    if (!Array.isArray(nb.cells)) nb.cells = [];
-    const cellType = args?.cell_type || 'code';
-    const newSource = String(args?.new_source ?? '');
-
-    if (editMode === 'insert') {
-      nb.cells.push({ cell_type: cellType, source: newSource, metadata: {} });
-    } else if (editMode === 'delete') {
-      const idx = nb.cells.findIndex((c, i) => String(c?.id || i) === String(args?.cell_id ?? ''));
-      if (idx >= 0) nb.cells.splice(idx, 1);
-      else return fail('cell not found');
-    } else {
-      const idx = nb.cells.findIndex((c, i) => String(c?.id || i) === String(args?.cell_id ?? '0'));
-      const target = idx >= 0 ? nb.cells[idx] : nb.cells[0];
-      if (!target) return fail('cell not found');
-      target.source = newSource;
-      if (args?.cell_type) target.cell_type = cellType;
-    }
-
-    await fs.promises.writeFile(notebookPath, `${JSON.stringify(nb, null, 2)}\n`, 'utf8');
-    return ok({ notebook_path: notebookPath });
-  } catch (e) {
-    return fail(String(e?.message || e));
-  }
-}
 
 function unbindMcpServerFromAgent(serverId, deps) {
   const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
@@ -1102,10 +1053,6 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
       return toolTodoWrite(args, deps.requestId);
     case 'Task':
       return toolTask(args);
-    case 'NotebookRead':
-      return toolNotebookRead(args);
-    case 'NotebookEdit':
-      return toolNotebookEdit(args);
     case 'UpdateProfile':
       return toolUpdateProfile(args, deps);
     case 'McpManager':
