@@ -1,3 +1,12 @@
+// 退出时 stdout/stderr 管道会先于 pending async 回调关闭（如 tip window 的
+// loadTipContent reject），写 console 会抛 EPIPE 并升级成 uncaughtException。
+// 静音这类 EPIPE，避免退出竞态报错。其他错误照常抛出。
+for (const _s of [process.stdout, process.stderr]) {
+  _s?.on?.('error', (_err) => {
+    if (_err?.code === 'EPIPE') return;
+    throw _err;
+  });
+}
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, globalShortcut, clipboard, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
