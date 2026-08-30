@@ -16,22 +16,26 @@ help: ## Show available targets
 	@echo "  DEVTOOLS_MODE=detach  detach | right | bottom | undocked (default: $(DEVTOOLS_MODE))"
 	@echo "  ELECTRON_HOT_RELOAD=0 Disable main-process hot-reload (default: on in dev)"
 
-install: ## Install npm dependencies
-	npm install
+install: node_modules ## Install npm dependencies
 
-dev: ## Start dev (Vite + Electron); DevTools detached by default
+node_modules: package-lock.json
+	npm install
+	@chmod +x node_modules/node-pty/prebuilds/*/spawn-helper 2>/dev/null || true
+	@touch node_modules
+
+dev: node_modules ## Start dev (Vite + Electron); DevTools detached by default
 	ELECTRON_OPEN_DEVTOOLS=$(DEVTOOLS) ELECTRON_DEVTOOLS_MODE=$(DEVTOOLS_MODE) npm run dev
 
 dev-quiet: ## Start dev without opening DevTools
 	$(MAKE) dev DEVTOOLS=0
 
-build: ## Production build (dmg installer)
+build: node_modules ## Production build (dmg installer)
 	npm run build
 
-build-dir: ## Build app directory only (faster, for testing)
+build-dir: node_modules ## Build app directory only (faster, for testing)
 	npm run build:dir
 
-build-adhoc: ## Build ad-hoc signed DMG (no Apple Developer account needed)
+build-adhoc: node_modules ## Build ad-hoc signed DMG (no Apple Developer account needed)
 	$(eval VERSION := $(shell node -p "require('./package.json').version"))
 	CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:dir
 	codesign --deep --force --sign - --entitlements build/entitlements.mac.plist release/mac-arm64/DesktopFairy.app
@@ -39,10 +43,10 @@ build-adhoc: ## Build ad-hoc signed DMG (no Apple Developer account needed)
 		-ov -format UDZO release/DesktopFairy-$(VERSION)-arm64.dmg
 	@echo "DMG: release/DesktopFairy-$(VERSION)-arm64.dmg"
 
-lint: ## Run ESLint
+lint: node_modules ## Run ESLint
 	npm run lint
 
-preview: ## Preview production build
+preview: node_modules ## Preview production build
 	npm run preview
 
 clean: ## Remove dist/ and release/

@@ -231,6 +231,49 @@ function buildEnv() {
   return env;
 }
 
+// node-pty's darwin prebuild ships spawn-helper as 0644 in the npm tarball.
+// posix_spawnp then fails with "posix_spawnp failed" because the helper is
+// not executable. Fix it in-place before the first spawn (dev + packaged).
+function ensureSpawnHelperExecutable() {
+  let ptyRoot;
+  try {
+    ptyRoot = path.dirname(require.resolve('node-pty/package.json'));
+  } catch {
+    return;
+  }
+  const candidates = [
+    path.join(ptyRoot, 'build', 'Release', 'spawn-helper'),
+    path.join(ptyRoot, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'),
+  ];
+  for (const helper of candidates) {
+    try {
+      if (!fs.existsSync(helper)) continue;
+      const st = fs.statSync(helper);
+      if ((st.mode & 0o111) === 0) fs.chmodSync(helper, st.mode | 0o755);
+    } catch { /* read-only / asar */ }
+  }
+}
+
+function firstExistingDir(...dirs) {
+  for (const dir of dirs) {
+    if (!dir) continue;
+    try {
+      if (fs.statSync(dir).isDirectory()) return dir;
+    } catch { /* try next */ }
+  }
+  return os.tmpdir();
+}
+
+function firstExistingFile(...files) {
+  for (const file of files) {
+    if (!file) continue;
+    try {
+      if (fs.existsSync(file)) return file;
+    } catch { /* try next */ }
+  }
+  return '/bin/sh';
+}
+
 // Create a temporary shell integration script that sets up preexec/precmd
 // hooks to emit OSC 633 sequences. This mirrors VS Code's approach:
 // the shell itself emits the markers around every command, so the agent
@@ -382,18 +425,31 @@ function stopActiveCapture(sessionId) {
 function registerPtyHandlers({ ipcMain }) {
   ipcMain.handle('pty:create', async (event, { cols, rows, shell, cwd, initialCommand }) => {
     const sessionId = `pty_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const defaultShell = process.env.SHELL || '/bin/zsh';
-    const shellName = shell || defaultShell;
+    const shellName = firstExistingFile(shell, process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh');
+    const spawnCwd = firstExistingDir(cwd, process.env.HOME, os.homedir());
 
     const integration = setupShellIntegration(shellName);
-
-    const ptyProcess = pty.spawn(shellName, integration.args, {
+    const spawnOpts = {
       name: 'xterm-256color',
       cols: cols || 80,
       rows: rows || 24,
-      cwd: cwd || process.env.HOME,
+      cwd: spawnCwd,
       env: { ...buildEnv(), ...integration.env },
-    });
+    };
+    ensureSpawnHelperExecutable();
+
+    let ptyProcess;
+    try {
+      ptyProcess = pty.spawn(shellName, integration.args, spawnOpts);
+    } catch {
+      ensureSpawnHelperExecutable();
+      try {
+        ptyProcess = pty.spawn(shellName, integration.args, spawnOpts);
+      } catch (err2) {
+        const detail = err2 && err2.message ? err2.message : String(err2);
+        throw new Error(`无法启动终端 (${shellName} @ ${spawnCwd}): ${detail}`);
+      }
+    }
 
     const sender = event.sender;
     const safeSend = (channel, data) => {
