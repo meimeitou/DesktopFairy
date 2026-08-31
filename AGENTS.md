@@ -33,13 +33,6 @@ No tests in CI, but `npm test` runs vitest (renderer/shared unit tests). `lint` 
 - **`src/live2d/framework/` is read-only**: Unmodified Cubism SDK. Import via `@framework` alias (configured in both `vite.config.ts` and `tsconfig.app.json`). Never edit framework files.
 - **Zustand is in package.json but unused**: State is React `useState` + `localStorage` + IPC. Do not introduce Zustand stores without explicit request.
 
-## Recent Friction To Avoid
-
-- **OMP / picot alignment tasks**: When the user asks to "参考 picot" or to fully align OMP UI with picot, inspect the corresponding picot implementation first, then adjust the local OMP page. Do not approximate from memory when the request is about layout, wording, status pills, or popovers.
-- **OMP context usage is message-derived**: For OMP status/context UI, do not rely only on a live `omp:usage` push. Also derive usage from the latest assistant message in `omp:done` payloads and session history, and support `usage.input`, `usage.cacheRead`, and `contextSnapshot.promptTokens` fallbacks.
-- **Status-bar controls should degrade visibly**: On OMP pages, workspace/open-in-app/context controls should prefer disabled placeholders over disappearing entirely when data is absent. Recent sessions showed repeated confusion when controls were conditionally hidden.
-- **Check owning data source before styling fixes**: Recent OMP work repeatedly failed because UI patches were applied before verifying the actual RPC/session payload shape. For renderer bugs involving status, usage, or tool events, inspect `electron/ompService.cjs`, `preload.cjs`, and a real session JSONL before changing presentation logic.
-
 ## IPC: Adding a New Channel
 
 Must update **two** places or the channel will be silently rejected at runtime:
@@ -126,13 +119,6 @@ Prompt assembly order: `soul` → `user` (wrapped under `# 用户档案` header)
 ## Chat Context
 
 `trimMessagesForApi` caps at 40 messages / 24k chars. `filterForApi` strips `type: 'clear'` markers. These run before every API call.
-
-## OMP Integration Notes
-
-- OMP runtime state flows through `electron/ompService.cjs`; the renderer surface is `src/pages/OmpPage.tsx` and related OMP components.
-- `omp:sessions:read_history` reads JSONL directly from `~/.omp/agent/sessions`. Use it when you need the real stored assistant/tool message shape instead of guessing from live UI state.
-- OMP session files can contain assistant usage in multiple shapes: `usage.input*`, `usage.cacheRead*`, and `contextSnapshot.promptTokens`. Normalize all of them before computing context pills or usage views.
-- For OMP file/workspace affordances, prefer the current session cwd from OMP state or session history over transient UI-only state.
 
 ## Live2D
 

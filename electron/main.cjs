@@ -49,7 +49,6 @@ const {
   attachWindowOpenHandler,
   registerBrowserHandlers,
 } = require('./browserService.cjs');
-const { registerOmpHandlers, stopOmp } = require('./ompService.cjs');
 const settingsSnapshot = require('./settingsSnapshot.cjs');
 
 registerLive2DSchemes();
@@ -672,8 +671,6 @@ const setupIPC = () => {
     },
   });
 
-  registerOmpHandlers(ipcMain);
-
   registerBrowserHandlers(ipcMain, {
     loadURL,
     shouldOpenDevTools,
@@ -1251,7 +1248,6 @@ app.on('before-quit', () => {
   killAllSshSessions();
   abortAllAgentRuns();
   abortAllAiStreams();
-  stopOmp();
   disposeAllMcpClients();
   selectionService.stopAll();
   chatShortcutService.stopChatShortcut();

@@ -2,10 +2,9 @@ import { useState, useEffect } from "react";
 import ChatPage from "./ChatPage";
 import SettingsPage from "./SettingsPage";
 import TerminalPage from "./TerminalPage";
-import OmpPage from "./OmpPage";
 import "./ChatApp.css";
 
-type AppView = "chat" | "pi" | "terminal" | "settings";
+type AppView = "chat" | "terminal" | "settings";
 
 const api = window.electronAPI;
 const isMac =
@@ -17,11 +16,9 @@ const viewParam = params.get("view");
 const initialView: AppView =
   viewParam === "settings"
     ? "settings"
-    : viewParam === "pi"
-      ? "pi"
-      : viewParam === "terminal"
-        ? "terminal"
-        : "chat";
+    : viewParam === "terminal"
+      ? "terminal"
+      : "chat";
 
 function ChatIcon() {
   return (
@@ -34,22 +31,6 @@ function ChatIcon() {
       strokeWidth="2"
     >
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function PiIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M12 2a10 10 0 1 0 10 10" />
-      <path d="M12 8v8M8 12h8" />
     </svg>
   );
 }
@@ -159,14 +140,6 @@ export default function ChatApp() {
           </button>
           <button
             type="button"
-            className={`chat-tab${view === "pi" ? " active" : ""}`}
-            onClick={() => setView("pi")}
-          >
-            <PiIcon />
-            <span>PI</span>
-          </button>
-          <button
-            type="button"
             className={`chat-tab${view === "terminal" ? " active" : ""}`}
             onClick={() => setView("terminal")}
           >
@@ -203,12 +176,6 @@ export default function ChatApp() {
           aria-hidden={view !== "chat"}
         >
           <ChatPage embedded />
-        </div>
-        <div
-          className={`chat-app-panel${view === "pi" ? "" : " chat-app-panel-hidden"}`}
-          aria-hidden={view !== "pi"}
-        >
-          <OmpPage isActive={view === "pi"} />
         </div>
         <div
           className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}

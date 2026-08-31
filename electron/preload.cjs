@@ -96,40 +96,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'terminal:agent:stop',
       'websearch:test',
       'browser:open',
-      'omp:start',
-      'omp:stop',
-      'omp:prompt',
-      'omp:abort',
-      'omp:get_state',
-      'omp:sessions:list',
-      'omp:new_session',
-      'omp:switch_session',
-      'omp:get_messages',
-      'omp:sessions:read_history',
-      'omp:sessions:delete',
-      'omp:pick_directory',
-      'omp:set_thinking_level',
-      'omp:set_auto_compaction',
-      'omp:compact',
-      'omp:get_version',
-      'omp:get_home_dir',
-      'omp:open_in_app',
-      'omp:list_auth_status',
-      'omp:set_api_key',
-      'omp:remove_api_key',
-      'omp:get_agent_config',
-      'omp:save_agent_config',
-      'omp:list_extensions',
-      'omp:get_available_models',
-      'omp:set_model',
-      'omp:write_provider_to_models',
-      'omp:get_models_config',
-      'omp:save_models_config',
-      'omp:list_skills',
-      'omp:set_skill_enabled',
-      'omp:extension_install',
-      'omp:extension_uninstall',
-      'omp:list_files',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -312,56 +278,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('browser:open_tab', listener);
     return () => ipcRenderer.removeListener('browser:open_tab', listener);
-  },
-
-  onOmpReady: (callback) => {
-    const listener = () => callback();
-    ipcRenderer.on('omp:ready', listener);
-    return () => ipcRenderer.removeListener('omp:ready', listener);
-  },
-  onOmpChunk: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:chunk', listener);
-    return () => ipcRenderer.removeListener('omp:chunk', listener);
-  },
-  onOmpTool: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:tool', listener);
-    return () => ipcRenderer.removeListener('omp:tool', listener);
-  },
-  onOmpDone: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:done', listener);
-    return () => ipcRenderer.removeListener('omp:done', listener);
-  },
-  onOmpError: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:error', listener);
-    return () => ipcRenderer.removeListener('omp:error', listener);
-  },
-  onOmpSessionName: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:session_name', listener);
-    return () => ipcRenderer.removeListener('omp:session_name', listener);
-  },
-  onOmpModelChanged: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:model_changed', listener);
-    return () => ipcRenderer.removeListener('omp:model_changed', listener);
-  },
-  onOmpCommandOutput: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:command_output', listener);
-    return () => ipcRenderer.removeListener('omp:command_output', listener);
-  },
-  onOmpNotice: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:notice', listener);
-    return () => ipcRenderer.removeListener('omp:notice', listener);
-  },
-  onOmpUsage: (callback) => {
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('omp:usage', listener);
-    return () => ipcRenderer.removeListener('omp:usage', listener);
   },
 });

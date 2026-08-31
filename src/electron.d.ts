@@ -129,31 +129,6 @@ declare global {
       onBrowserOpenTab?: (
         callback: (payload: { url: string; tabId?: string }) => void
       ) => () => void;
-
-      // omp RPC push events
-      onOmpReady: (callback: () => void) => () => void;
-      onOmpChunk: (callback: (payload: { delta?: string; thinking?: string }) => void) => () => void;
-      onOmpTool: (callback: (payload: {
-        phase: 'start' | 'update' | 'end';
-        toolCallId?: string;
-        toolName?: string;
-        args?: Record<string, unknown> | null;
-        intent?: string | null;
-        output?: string | null;
-        isError?: boolean;
-      }) => void) => () => void;
-      onOmpDone: (callback: (payload: { messages: unknown[] }) => void) => () => void;
-      onOmpError: (callback: (payload: { message: string }) => void) => () => void;
-      onOmpSessionName: (callback: (payload: { name: string }) => void) => () => void;
-      onOmpModelChanged?: (callback: (payload: { model: { provider: string; id: string } }) => void) => () => void;
-      onOmpCommandOutput?: (callback: (payload: { text: string }) => void) => () => void;
-      onOmpNotice?: (callback: (payload: { kind: string; text?: string; summary?: string | null }) => void) => () => void;
-      onOmpUsage?: (callback: (payload: { inputTokens: number | null; outputTokens: number | null; cacheReadTokens: number | null; contextWindow: number | null }) => void) => () => void;
-      // Parameterised invoke aliases for omp session ops (for TypeScript convenience)
-      invoke(channel: 'omp:sessions:delete', args: { filePath: string }): Promise<void>;
-      invoke(channel: 'omp:sessions:read_history', args: { filePath: string }): Promise<{ messages: Array<{ role: string; content: unknown }> }>;
-      invoke(channel: 'omp:pick_directory'): Promise<{ ok: boolean; path?: string }>;
-      invoke(channel: 'omp:new_session', args?: { cwd?: string }): Promise<void>;
     };
   }
 
