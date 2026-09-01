@@ -894,14 +894,18 @@ const setupIPC = () => {
     };
 
     try {
-      const { aborted } = await streamPlainText({
+      const { aborted, usage } = await streamPlainText({
         requestId,
         messages,
         apiConfig: resolved.apiConfig,
         signal: controller.signal,
         safeSend,
       });
-      safeSend('chat:stream:done', { requestId, aborted: Boolean(aborted) });
+      safeSend('chat:stream:done', {
+        requestId,
+        aborted: Boolean(aborted),
+        usage: usage || undefined,
+      });
     } catch (e) {
       if (e && e.name === 'AbortError') {
         safeSend('chat:stream:done', { requestId, aborted: true });

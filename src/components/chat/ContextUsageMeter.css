@@ -1,0 +1,145 @@
+.context-usage-meter {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.context-usage-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--bone-500);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.context-usage-btn:hover:not(:disabled),
+.context-usage-btn.open {
+  background: var(--ink-700);
+  color: var(--bone-300);
+}
+
+.context-usage-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.context-usage-track {
+  stroke: var(--ink-650);
+}
+
+.context-usage-fill {
+  transition:
+    stroke-dashoffset 0.25s ease,
+    stroke 0.2s ease;
+}
+
+.context-usage-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  width: 240px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ink-800);
+  border: 0.5px solid var(--hairline-strong);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(245, 239, 230, 0.04);
+}
+
+.context-usage-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bone-200);
+}
+
+.context-usage-estimate {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--bone-600);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--ink-700);
+}
+
+.context-usage-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.context-usage-percent {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--persimmon-bright);
+  line-height: 1;
+}
+
+.context-usage-total {
+  font-size: 11px;
+  color: var(--bone-500);
+}
+
+.context-usage-breakdown {
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.context-usage-breakdown div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 11px;
+  border-bottom: 0.5px solid var(--hairline);
+}
+
+.context-usage-breakdown div:last-child {
+  border-bottom: none;
+}
+
+.context-usage-breakdown dt {
+  margin: 0;
+  color: var(--bone-500);
+}
+
+.context-usage-breakdown dd {
+  margin: 0;
+  color: var(--bone-300);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-usage-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--bone-600);
+}
+
+.context-usage-warn {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--rust-bright);
+  line-height: 1.4;
+}
+
+.context-usage-server {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--bone-500);
+  line-height: 1.4;
+}

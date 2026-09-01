@@ -9,12 +9,20 @@ export const MAX_SESSION_BYTES = 4 * 1024 * 1024;
 export const TOOL_RESULT_INLINE_PREVIEW_MAX = 16 * 1024;
 export const TOOL_RESULT_STORAGE_PREVIEW_MAX = 4 * 1024;
 
+export interface ChatSessionServerUsage {
+  promptTokens: number;
+  completionTokens?: number;
+  messageCount: number;
+}
+
 export interface ChatSession {
   version: ChatSessionVersion;
   updatedAt: number;
   messages: ChatMsg[];
   draftInput?: string;
   draftAttachments?: ChatAttachment[];
+  /** Last API usage snapshot for context meter calibration (not sent to model). */
+  lastServerUsage?: ChatSessionServerUsage;
 }
 
 export const CHAT_TOPICS_VERSION = 1 as const;
@@ -186,6 +194,29 @@ export function normalizeChatSession(raw: unknown): ChatSession {
     data.version === CHAT_SESSION_VERSION || data.version === 1
       ? data.version
       : CHAT_SESSION_VERSION;
+  let lastServerUsage: ChatSessionServerUsage | undefined;
+  const rawUsage = (data as { lastServerUsage?: unknown }).lastServerUsage;
+  if (rawUsage && typeof rawUsage === "object") {
+    const u = rawUsage as Partial<ChatSessionServerUsage>;
+    const promptTokens = Number(u.promptTokens);
+    const messageCount = Number(u.messageCount);
+    if (
+      Number.isFinite(promptTokens) &&
+      promptTokens > 0 &&
+      Number.isFinite(messageCount) &&
+      messageCount >= 0
+    ) {
+      const completionTokens = Number(u.completionTokens);
+      lastServerUsage = {
+        promptTokens,
+        messageCount,
+        ...(Number.isFinite(completionTokens) && completionTokens >= 0
+          ? { completionTokens }
+          : {}),
+      };
+    }
+  }
+
   return {
     version,
     updatedAt:
@@ -195,13 +226,15 @@ export function normalizeChatSession(raw: unknown): ChatSession {
     messages,
     draftInput: typeof data.draftInput === "string" ? data.draftInput : "",
     draftAttachments: normalizeAttachments(data.draftAttachments),
+    lastServerUsage,
   };
 }
 
 export function buildChatSession(
   messages: ChatMsg[],
   draftInput: string,
-  draftAttachments: ChatAttachment[]
+  draftAttachments: ChatAttachment[],
+  lastServerUsage?: ChatSessionServerUsage,
 ): ChatSession {
   return {
     version: CHAT_SESSION_VERSION,
@@ -209,6 +242,7 @@ export function buildChatSession(
     messages,
     draftInput,
     draftAttachments,
+    ...(lastServerUsage ? { lastServerUsage } : {}),
   };
 }
 

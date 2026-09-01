@@ -55,6 +55,10 @@ export interface MessageListProps {
   onAnswer?: (answerId: string, answers: AskUserAnswers) => void;
   submittingApprovalId?: string | null;
   onRetry?: (msgId: string) => void;
+  onStartEdit?: (msgId: string) => void;
+  onConfirmEdit?: (msgId: string, newText: string) => void;
+  onCancelEdit?: () => void;
+  editingMsgId?: string | null;
   onDelete?: (msgId: string) => void;
 }
 
@@ -73,6 +77,10 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       onAnswer,
       submittingApprovalId,
       onRetry,
+      onStartEdit,
+      onConfirmEdit,
+      onCancelEdit,
+      editingMsgId = null,
       onDelete,
     },
     ref,
@@ -392,7 +400,11 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     msg={item.msg}
                     isStreamingTarget={item.msg.id === streamingAssistantId}
                     invalidAttachmentPaths={invalidAttachmentPaths}
+                    isEditing={item.msg.id === editingMsgId}
                     onRetry={item.msg.role === "user" ? onRetry : undefined}
+                    onStartEdit={item.msg.role === "user" ? onStartEdit : undefined}
+                    onConfirmEdit={onConfirmEdit}
+                    onCancelEdit={onCancelEdit}
                     onDelete={onDelete}
                   />
                 )}

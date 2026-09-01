@@ -11,6 +11,7 @@ import ModelSelector from "../ModelSelector";
 import Tooltip from "../Tooltip";
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
+import ContextUsageMeter from "./ContextUsageMeter";
 import ReasoningEffortSelector from "./ReasoningEffortSelector";
 import SlashCommandMenu from "./SlashCommandMenu";
 import type { ChatAttachment } from "../../shared/chatAttachments";
@@ -23,6 +24,7 @@ import {
   isImageExt,
 } from "../../shared/chatAttachments";
 import { isSupportedFileName } from "../../shared/chatMessages";
+import type { ContextUsageResult } from "../../shared/contextUsage";
 import "./ChatInputBar.css";
 
 const api = window.electronAPI;
@@ -170,6 +172,10 @@ interface Props {
   onSlashCommand?: (cmd: SlashCommand) => void;
   /** 递增时把焦点收回输入框（划词预填后使用） */
   focusSignal?: number;
+  /** 正在编辑上方用户消息时锁定输入栏 */
+  editingMessage?: boolean;
+  /** Context window usage for the meter left of model selector */
+  contextUsage?: ContextUsageResult | null;
 }
 
 function ChatInputBar({
@@ -196,14 +202,18 @@ function ChatInputBar({
   slashCommands,
   onSlashCommand,
   focusSignal,
+  editingMessage = false,
+  contextUsage,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectingRef = useRef(false);
   const capturingRef = useRef(false);
   const slashHostRef = useRef<HTMLDivElement>(null);
 
+  const composerDisabled = streaming || editingMessage;
+
   const showSlashMenu =
-    !streaming &&
+    !composerDisabled &&
     input.trimStart().startsWith("/") &&
     !input.includes("\n") &&
     !!slashCommands?.length;
@@ -264,7 +274,7 @@ function ChatInputBar({
   );
 
   const handleSelectFiles = useCallback(async () => {
-    if (selectingRef.current || streaming) return;
+    if (selectingRef.current || composerDisabled) return;
     selectingRef.current = true;
     try {
       const picked = (await api.invoke("file:select")) as
@@ -276,10 +286,10 @@ function ChatInputBar({
     } finally {
       selectingRef.current = false;
     }
-  }, [addAttachments, streaming]);
+  }, [addAttachments, composerDisabled]);
 
   const handleScreenshot = useCallback(async () => {
-    if (capturingRef.current || streaming) return;
+    if (capturingRef.current || composerDisabled) return;
     capturingRef.current = true;
     try {
       await api.invoke("screenshot:capture_to_chat");
@@ -288,7 +298,7 @@ function ChatInputBar({
     } finally {
       capturingRef.current = false;
     }
-  }, [streaming]);
+  }, [composerDisabled]);
 
   const pathFromFile = (file: File): string | null => {
     const f = file as File & { path?: string };
@@ -347,7 +357,7 @@ function ChatInputBar({
     async (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
-      if (streaming) return;
+      if (composerDisabled) return;
 
       const paths: string[] = [];
       if (e.dataTransfer.files?.length) {
@@ -379,7 +389,7 @@ function ChatInputBar({
         alert(err instanceof Error ? err.message : "无法读取拖拽的文件");
       }
     },
-    [addAttachments, streaming],
+    [addAttachments, composerDisabled],
   );
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
@@ -396,12 +406,18 @@ function ChatInputBar({
     }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (!streaming) onSend();
+      if (!composerDisabled) onSend();
     }
   };
 
   const canSend =
-    !streaming && (input.trim().length > 0 || attachments.length > 0);
+    !composerDisabled && (input.trim().length > 0 || attachments.length > 0);
+
+  const placeholder = editingMessage
+    ? "正在编辑上方消息…"
+    : streaming
+      ? "生成中…"
+      : "输入消息，可拖拽或粘贴文件…";
 
   return (
     <div
@@ -429,12 +445,12 @@ function ChatInputBar({
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={streaming ? "生成中…" : "输入消息，可拖拽或粘贴文件…"}
+            placeholder={placeholder}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            disabled={streaming}
+            disabled={composerDisabled}
             autoFocus
           />
         </div>
@@ -446,7 +462,7 @@ function ChatInputBar({
                 type="button"
                 className="chat-tool-btn"
                 onClick={handleSelectFiles}
-                disabled={streaming}
+                disabled={composerDisabled}
               >
                 <PaperclipIcon />
               </button>
@@ -456,7 +472,7 @@ function ChatInputBar({
                 type="button"
                 className="chat-tool-btn"
                 onClick={handleScreenshot}
-                disabled={streaming}
+                disabled={composerDisabled}
               >
                 <CameraIcon />
               </button>
@@ -466,7 +482,7 @@ function ChatInputBar({
                 type="button"
                 className="chat-tool-btn"
                 onClick={onClearContext}
-                disabled={streaming || !hasMessages}
+                disabled={composerDisabled || !hasMessages}
               >
                 <EraserIcon />
               </button>
@@ -476,7 +492,7 @@ function ChatInputBar({
                 type="button"
                 className="chat-tool-btn"
                 onClick={onCompact}
-                disabled={streaming || !hasMessages}
+                disabled={composerDisabled || !hasMessages}
               >
                 <CompactIcon />
               </button>
@@ -486,7 +502,7 @@ function ChatInputBar({
                 type="button"
                 className="chat-tool-btn chat-tool-btn-danger"
                 onClick={onClearMessages}
-                disabled={streaming || !hasMessages}
+                disabled={composerDisabled || !hasMessages}
               >
                 <ClearIcon />
               </button>
@@ -495,19 +511,25 @@ function ChatInputBar({
               <ChatModeSelector
                 mode={chatMode}
                 onChange={onChatModeChange}
-                disabled={streaming}
+                disabled={composerDisabled}
               />
             )}
             {showModeSelector && (
               <ReasoningEffortSelector
                 value={reasoningEffort}
                 onChange={onReasoningEffortChange}
-                disabled={streaming}
+                disabled={composerDisabled}
               />
             )}
           </div>
 
           <div className="chat-input-toolbar-right">
+            {contextUsage && (
+              <ContextUsageMeter
+                usage={contextUsage}
+                disabled={composerDisabled}
+              />
+            )}
             <div className="chat-input-model">
               <ModelSelector
                 models={models}
@@ -515,7 +537,7 @@ function ChatInputBar({
                 onChange={onModelChange}
                 allowCustom={false}
                 modelLabels={modelLabels}
-                disabled={streaming}
+                disabled={composerDisabled}
               />
             </div>
             {streaming ? (

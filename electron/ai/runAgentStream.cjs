@@ -3,6 +3,7 @@ const { resolveProviderModel } = require('./providerModel.cjs');
 const { toCoreMessages } = require('./messages.cjs');
 const { buildToolSet } = require('./buildToolSet.cjs');
 const { createChunkBridge } = require('./chunkBridge.cjs');
+const { resolveStreamUsage } = require('./extractUsage.cjs');
 
 /**
  * Run agent via AI SDK ToolLoopAgent (Cherry Studio pattern).
@@ -63,9 +64,11 @@ async function runAgentStream({
     reader.releaseLock();
   }
 
+  const usage = await resolveStreamUsage(result);
   return {
     toolSnapshot: bridge.getToolSnapshot(),
     aborted: Boolean(signal?.aborted),
+    usage,
   };
 }
 

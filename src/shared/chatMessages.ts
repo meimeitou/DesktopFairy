@@ -1,6 +1,7 @@
 import type { ChatAttachment } from "./chatAttachments";
 import { isImageExt } from "./chatAttachments";
 import type { ToolTerminalState } from "./ai/stream";
+import { estimateMessageTokens } from "./contextUsage";
 import { formatToolEvidenceForApi } from "./toolEvidence";
 
 export type ChatRole = "user" | "assistant";
@@ -216,38 +217,31 @@ export function upsertAgentToolMessage(
   return next;
 }
 
-export const DEFAULT_API_MAX_MESSAGES = 40;
-export const DEFAULT_API_MAX_CHARS = 24_000;
-
-function messageCharLength(msg: ChatMsg): number {
-  if (msg.type === "tool") {
-    const preview = msg.toolResultPreview || "";
-    const hint = msg.toolMessage || "";
-    const summary = formatToolEvidenceForApi(msg);
-    return Math.max(preview.length, hint.length, summary.length, msg.content.length);
-  }
-  return msg.content.length;
-}
-
-/** Keep newest messages within count/char budget for API requests. */
+/** Keep newest messages within a token budget for API requests. */
 export function trimMessagesForApi(
   messages: ChatMsg[],
-  options?: { maxMessages?: number; maxChars?: number }
+  options: {
+    maxTokens: number;
+    reserveTokens?: number;
+  },
 ): ChatMsg[] {
-  const maxMessages = options?.maxMessages ?? DEFAULT_API_MAX_MESSAGES;
-  const maxChars = options?.maxChars ?? DEFAULT_API_MAX_CHARS;
+  const reserve = Math.max(0, options.reserveTokens ?? 0);
+  const budget = Math.max(0, options.maxTokens - reserve);
   if (messages.length === 0) return messages;
 
   const kept: ChatMsg[] = [];
-  let totalChars = 0;
+  let totalTokens = 0;
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    const len = messageCharLength(msg);
-    if (kept.length >= maxMessages) break;
-    if (kept.length > 0 && totalChars + len > maxChars) break;
+    const len = estimateMessageTokens(msg);
+    if (kept.length > 0 && totalTokens + len > budget) break;
     kept.unshift(msg);
-    totalChars += len;
+    totalTokens += len;
+  }
+
+  if (kept.length === 0) {
+    kept.push(messages[messages.length - 1]);
   }
 
   return kept;

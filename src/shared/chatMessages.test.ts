@@ -92,53 +92,29 @@ describe('chatMessages', () => {
   })
 
   describe('trimMessagesForApi', () => {
-    it('should return all messages when under limits', () => {
+    it('should return all messages when under token budget', () => {
       const msgs = [makeMsg('user', 'hello'), makeMsg('assistant', 'hi')]
-      expect(trimMessagesForApi(msgs)).toHaveLength(2)
+      expect(trimMessagesForApi(msgs, { maxTokens: 10_000 })).toHaveLength(2)
     })
 
-    it('should trim to maxMessages', () => {
+    it('should trim oldest when over token budget', () => {
       const msgs: ChatMsg[] = []
-      for (let i = 0; i < 50; i++) {
-        msgs.push(makeMsg('user', `msg ${i}`))
+      for (let i = 0; i < 30; i++) {
+        msgs.push(makeMsg('user', `msg ${i} `.repeat(40)))
       }
-      const result = trimMessagesForApi(msgs, { maxMessages: 10 })
-      expect(result).toHaveLength(10)
-      // Should keep the last 10
-      expect(result[0].content).toBe('msg 40')
-      expect(result[9].content).toBe('msg 49')
-    })
-
-    it('should trim to maxChars', () => {
-      const msgs: ChatMsg[] = []
-      for (let i = 0; i < 10; i++) {
-        msgs.push(makeMsg('user', 'x'.repeat(1000)))
-      }
-      const result = trimMessagesForApi(msgs, { maxChars: 3000 })
-      // Each message is 1000 chars, so max 3 messages (first one doesn't count toward budget)
-      expect(result.length).toBeLessThanOrEqual(4)
+      const result = trimMessagesForApi(msgs, { maxTokens: 800 })
+      expect(result.length).toBeLessThan(msgs.length)
+      expect(result[result.length - 1].content).toContain('29')
     })
 
     it('should always keep at least one message', () => {
       const msgs = [makeMsg('user', 'x'.repeat(100000))]
-      const result = trimMessagesForApi(msgs, { maxChars: 100 })
+      const result = trimMessagesForApi(msgs, { maxTokens: 50 })
       expect(result).toHaveLength(1)
     })
 
     it('should handle empty array', () => {
-      expect(trimMessagesForApi([])).toHaveLength(0)
-    })
-
-    it('first message (from end) should not count toward char budget', () => {
-      const msgs = [
-        makeMsg('user', 'x'.repeat(5000)),
-        makeMsg('assistant', 'short'),
-      ]
-      const result = trimMessagesForApi(msgs, { maxChars: 100 })
-      // The last message (assistant, 5 chars) is always kept (doesn't count toward budget)
-      // The first message (user, 5000 chars) exceeds remaining budget → trimmed
-      expect(result).toHaveLength(1)
-      expect(result[0].content).toBe('short')
+      expect(trimMessagesForApi([], { maxTokens: 1000 })).toHaveLength(0)
     })
   })
 

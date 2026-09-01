@@ -31,6 +31,13 @@ import {
   trimMessagesForApi,
 } from "../shared/chatMessages";
 import {
+  buildTrimOptions,
+  estimateAgentSystemPromptTokens,
+  estimateContextUsage,
+  resolveActiveModelName,
+  resolveContextWindow,
+} from "../shared/contextUsage";
+import {
   buildChatSession,
   normalizeChatSession,
   trimSessionForStorage,
@@ -71,6 +78,10 @@ import {
   type LegacyStreamHandlers,
 } from "../services/aiTransport/IpcChatTransport";
 
+type SendResendOptions = {
+  resendAttachments?: ChatAttachment[];
+};
+
 const api = window.electronAPI;
 const SESSION_SAVE_DEBOUNCE_MS = 400;
 
@@ -83,6 +94,9 @@ type TopicPageState = {
   requestBackend: string | null;
   sessionReady: boolean;
   invalidAttachmentPaths: Set<string>;
+  lastPromptTokens?: number;
+  lastCompletionTokens?: number;
+  lastUsageMessageCount?: number;
 };
 
 function emptyTopicState(): TopicPageState {
@@ -154,6 +168,7 @@ export default function ChatPage({
   const chatSettings = useSettings();
   // 递增信号：划词预填文本后通知 ChatInputBar 把焦点收回输入框
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
 
   const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
   const { messages, input, attachments, streaming, invalidAttachmentPaths } =
@@ -171,7 +186,9 @@ export default function ChatPage({
   const saveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
-  const handleSendRef = useRef<(text?: string) => void>(() => {});
+  const handleSendRef = useRef<
+    (text?: string, options?: SendResendOptions) => void
+  >(() => {});
   const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
   const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
@@ -264,13 +281,67 @@ export default function ChatPage({
   const activeBackend = getActiveChatBackend(chatSettings);
   const usingAgent = isAgentBackend(activeBackend);
 
+  const contextMessages = useMemo(() => {
+    if (usingAgent) {
+      return filterAfterContextClear(messages).filter(
+        (m) =>
+          m.type !== "clear" &&
+          !m.error &&
+          (m.type === "tool" ||
+            !(m.role === "assistant" && !m.content?.trim())),
+      );
+    }
+    return filterForApi(messages);
+  }, [messages, usingAgent]);
+
+  const contextUsage = useMemo(() => {
+    const modelName = resolveActiveModelName(chatSettings, activeBackend);
+    const contextWindow = resolveContextWindow(modelName);
+    const systemTokens = usingAgent
+      ? estimateAgentSystemPromptTokens(chatSettings.agent)
+      : 0;
+    return estimateContextUsage({
+      messages: contextMessages,
+      input,
+      attachments,
+      systemTokens,
+      contextWindow,
+      lastPromptTokens: activeState.lastPromptTokens,
+      lastCompletionTokens: activeState.lastCompletionTokens,
+      lastUsageMessageCount: activeState.lastUsageMessageCount,
+    });
+  }, [
+    chatSettings,
+    activeBackend,
+    usingAgent,
+    contextMessages,
+    input,
+    attachments,
+    activeState.lastPromptTokens,
+    activeState.lastCompletionTokens,
+    activeState.lastUsageMessageCount,
+  ]);
+
   const persistSession = useCallback(async (topicId?: string) => {
     const tid = topicId ?? activeTopicIdRef.current;
     if (!tid) return;
     const state = topicStatesRef.current[tid];
     if (!state?.sessionReady) return;
     const session = trimSessionForStorage(
-      buildChatSession(state.messages, state.input, state.attachments),
+      buildChatSession(
+        state.messages,
+        state.input,
+        state.attachments,
+        state.lastPromptTokens != null &&
+          state.lastPromptTokens > 0 &&
+          state.lastUsageMessageCount != null
+          ? {
+              promptTokens: state.lastPromptTokens,
+              completionTokens: state.lastCompletionTokens,
+              messageCount: state.lastUsageMessageCount,
+            }
+          : undefined,
+      ),
     );
     await api.invoke("chat:session:save", { topicId: tid, session });
   }, []);
@@ -340,6 +411,9 @@ export default function ChatPage({
           requestBackend: null,
           sessionReady: true,
           invalidAttachmentPaths: invalid,
+          lastPromptTokens: session.lastServerUsage?.promptTokens,
+          lastCompletionTokens: session.lastServerUsage?.completionTokens,
+          lastUsageMessageCount: session.lastServerUsage?.messageCount,
         },
       }));
     } catch {
@@ -383,6 +457,7 @@ export default function ChatPage({
         flushSessionSave(oldTopicId);
       }
       setActiveTopicId(topicId);
+      setEditingMsgId(null);
       const latest = topicStatesRef.current[topicId];
       if (latest) {
         // Hydrate React state from ref (may be ahead after background streaming).
@@ -650,11 +725,13 @@ export default function ChatPage({
       aborted,
       maxTurnsReached,
       tools,
+      usage,
     }: {
       requestId: string;
       aborted?: boolean;
       maxTurnsReached?: boolean;
       tools?: ToolTerminalState[];
+      usage?: { promptTokens?: number; completionTokens?: number };
     }) => {
       chunkBuffer.flushRequest(requestId);
       const topicId = requestIdToTopicIdRef.current.get(requestId);
@@ -666,15 +743,25 @@ export default function ChatPage({
 
       patchTopicState(
         topicId,
-        (state) => ({
-          ...state,
-          streaming: false,
-          requestId: null,
-          requestBackend: null,
-          messages: pruneEmptyAssistantMessages(
+        (state) => {
+          const messages = pruneEmptyAssistantMessages(
             reconcileToolMessages(state.messages, tools, Boolean(aborted)),
-          ),
-        }),
+          );
+          return {
+            ...state,
+            streaming: false,
+            requestId: null,
+            requestBackend: null,
+            messages,
+            ...(usage?.promptTokens != null && usage.promptTokens > 0
+              ? {
+                  lastPromptTokens: usage.promptTokens,
+                  lastCompletionTokens: usage.completionTokens,
+                  lastUsageMessageCount: messages.length,
+                }
+              : {}),
+          };
+        },
         { forceReact: true },
       );
 
@@ -946,6 +1033,13 @@ export default function ChatPage({
       if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
       const agent = settings.agent;
+      const backend = getActiveChatBackend(settings);
+      const trimOpts = buildTrimOptions({
+        contextWindow: resolveContextWindow(
+          resolveActiveModelName(settings, backend),
+        ),
+        systemTokens: estimateAgentSystemPromptTokens(agent),
+      });
 
       const agentHistory = trimMessagesForApi(
         filterAfterContextClear(state.messages).filter(
@@ -955,6 +1049,7 @@ export default function ChatPage({
             (m.type === "tool" ||
               !(m.role === "assistant" && !m.content?.trim())),
         ),
+        trimOpts,
       );
       const payloadMessages = buildAgentHistoryMessages(agentHistory);
 
@@ -1066,14 +1161,19 @@ export default function ChatPage({
   );
 
   const handleSend = useCallback(
-    async (overrideText?: string) => {
+    async (overrideText?: string, options?: SendResendOptions) => {
       const topicId = activeTopicIdRef.current;
       if (!topicId) return;
       const state = topicStatesRef.current[topicId];
       if (!state || state.streaming) return;
 
+      const isResend = overrideText !== undefined;
+      const sendAttachments = isResend
+        ? (options?.resendAttachments ?? [])
+        : state.attachments;
+
       const text = (overrideText ?? state.input).trim();
-      if (!text && state.attachments.length === 0) return;
+      if (!text && sendAttachments.length === 0) return;
 
       const isCompactRequest = overrideText === COMPACT_PROMPT;
 
@@ -1115,7 +1215,7 @@ export default function ChatPage({
             role: "user",
             content: finalText,
             attachments:
-              state.attachments.length > 0 ? [...state.attachments] : undefined,
+              sendAttachments.length > 0 ? [...sendAttachments] : undefined,
             timestamp: now,
           };
           setTopicStates((prev) => {
@@ -1135,8 +1235,8 @@ export default function ChatPage({
                     timestamp: now,
                   },
                 ],
-                input: "",
-                attachments: [],
+                input: isResend ? s.input : "",
+                attachments: isResend ? s.attachments : [],
                 streaming: false,
                 requestId: null,
                 requestBackend: null,
@@ -1168,13 +1268,25 @@ export default function ChatPage({
         images: [] as { name: string; dataUrl: string }[],
       };
       try {
-        if (state.attachments.length > 0) {
-          attachmentPayloads = await loadAttachmentPayloads(state.attachments);
+        if (sendAttachments.length > 0) {
+          attachmentPayloads = await loadAttachmentPayloads(sendAttachments);
         }
       } catch (e) {
         alert(e instanceof Error ? e.message : "读取附件失败");
         return;
       }
+
+      const backend = getActiveChatBackend(settings);
+      const trimOpts = buildTrimOptions({
+        contextWindow: resolveContextWindow(
+          resolveActiveModelName(settings, backend),
+        ),
+        systemTokens: agentMode
+          ? estimateAgentSystemPromptTokens(agent)
+          : 0,
+        draftInput: finalText,
+        draftAttachments: sendAttachments,
+      });
 
       const agentHistory = trimMessagesForApi(
         filterAfterContextClear(state.messages).filter(
@@ -1184,8 +1296,9 @@ export default function ChatPage({
             (m.type === "tool" ||
               !(m.role === "assistant" && !m.content?.trim())),
         ),
+        trimOpts,
       );
-      const history = trimMessagesForApi(filterForApi(state.messages));
+      const history = trimMessagesForApi(filterForApi(state.messages), trimOpts);
       const systemPrompt = agentMode ? agent.soul : undefined;
       const payloadMessages = agentMode
         ? buildAgentApiMessages(
@@ -1207,7 +1320,7 @@ export default function ChatPage({
         role: "user",
         content: finalText,
         attachments:
-          state.attachments.length > 0 ? [...state.attachments] : undefined,
+          sendAttachments.length > 0 ? [...sendAttachments] : undefined,
         timestamp: now,
       };
 
@@ -1230,8 +1343,8 @@ export default function ChatPage({
               userMsg,
               { id: genId(), role: "assistant", content: "", timestamp: now },
             ],
-            input: "",
-            attachments: [],
+            input: isResend ? s.input : "",
+            attachments: isResend ? s.attachments : [],
             streaming: true,
             requestId,
             requestBackend,
@@ -1367,8 +1480,8 @@ export default function ChatPage({
   );
 
   useEffect(() => {
-    handleSendRef.current = (text?: string) => {
-      void handleSend(text);
+    handleSendRef.current = (text?: string, options?: SendResendOptions) => {
+      void handleSend(text, options);
     };
   }, [handleSend]);
 
@@ -1408,7 +1521,16 @@ export default function ChatPage({
 
     setTopicStates((prev) => {
       const s = prev[topicId] ?? emptyTopicState();
-      return { ...prev, [topicId]: { ...s, messages: nextMessages } };
+      return {
+        ...prev,
+        [topicId]: {
+          ...s,
+          messages: nextMessages,
+          lastPromptTokens: undefined,
+          lastCompletionTokens: undefined,
+          lastUsageMessageCount: undefined,
+        },
+      };
     });
     scheduleTopicSave(topicId);
   }, [scheduleTopicSave]);
@@ -1455,10 +1577,41 @@ export default function ChatPage({
         input: "",
         attachments: [],
         invalidAttachmentPaths: new Set(),
+        lastPromptTokens: undefined,
+        lastCompletionTokens: undefined,
+        lastUsageMessageCount: undefined,
       },
     }));
     flushSessionSave(topicId);
   }, [flushSessionSave]);
+
+  const resendFromUserMessage = useCallback(
+    (msgId: string, newText: string) => {
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      const state = topicStatesRef.current[topicId];
+      if (!state || state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === msgId);
+      if (idx === -1) return;
+      const target = state.messages[idx];
+      if (target.role !== "user") return;
+      const trimmed = newText.trim();
+      const resendAttachments = target.attachments ?? [];
+      if (!trimmed && resendAttachments.length === 0) return;
+      const kept = state.messages.slice(0, idx);
+      setEditingMsgId(null);
+      setTopicStates((prev) => ({
+        ...prev,
+        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
+      }));
+      setTimeout(
+        () =>
+          handleSendRef.current(trimmed, { resendAttachments }),
+        0,
+      );
+    },
+    [],
+  );
 
   // 重试用户消息：删除该消息及其后所有消息，用原始文本重新发送
   const handleRetry = useCallback((msgId: string) => {
@@ -1470,15 +1623,23 @@ export default function ChatPage({
     if (idx === -1) return;
     const target = state.messages[idx];
     if (target.role !== "user") return;
-    const text = target.content;
-    const kept = state.messages.slice(0, idx);
-    setTopicStates((prev) => ({
-      ...prev,
-      [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
-    }));
-    // 在下一帧用截断后的消息重新发送
-    setTimeout(() => handleSendRef.current(text), 0);
+    resendFromUserMessage(msgId, target.content);
+  }, [resendFromUserMessage]);
+
+  const handleStartEdit = useCallback((msgId: string) => {
+    setEditingMsgId(msgId);
   }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMsgId(null);
+  }, []);
+
+  const handleConfirmEdit = useCallback(
+    (msgId: string, newText: string) => {
+      resendFromUserMessage(msgId, newText);
+    },
+    [resendFromUserMessage],
+  );
 
   // 删除消息：删除该消息；若是用户消息，同时删除紧跟其后的助手回复
   const handleDeleteMessage = useCallback(
@@ -1582,7 +1743,11 @@ export default function ChatPage({
           onAlwaysAllow={handleAlwaysAllowTool}
           onAnswer={submitToolAnswer}
           submittingApprovalId={submittingApprovalId}
-          onRetry={handleRetry}
+          onRetry={streaming ? undefined : handleRetry}
+          onStartEdit={streaming ? undefined : handleStartEdit}
+          onConfirmEdit={handleConfirmEdit}
+          onCancelEdit={handleCancelEdit}
+          editingMsgId={editingMsgId}
           onDelete={handleDeleteMessage}
           emptyContent={emptyContent}
         />
@@ -1609,6 +1774,7 @@ export default function ChatPage({
           attachments={attachments}
           onAttachmentsChange={setActiveAttachments}
           streaming={streaming}
+          editingMessage={!!editingMsgId}
           hasMessages={messages.length > 0}
           focusSignal={inputFocusSignal}
           models={selectableModels}
@@ -1627,6 +1793,7 @@ export default function ChatPage({
           onCompact={handleCompactClick}
           slashCommands={slashCommands}
           onSlashCommand={handleSlashCommand}
+          contextUsage={contextUsage}
         />
       </div>
     </div>

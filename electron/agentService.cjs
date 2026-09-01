@@ -233,7 +233,7 @@ function registerAgentHandlers(ipcMain, deps) {
       });
       toolDeps.persistEnabledSkillId = (skillId) => persistEnabledSkillId(skillId, getWindows);
 
-      const { toolSnapshot, aborted } = await runAgentStream({
+      const { toolSnapshot, aborted, usage } = await runAgentStream({
         requestId,
         messages: apiMessages,
         systemPrompt,
@@ -250,6 +250,7 @@ function registerAgentHandlers(ipcMain, deps) {
         requestId,
         ...(aborted || controller.signal.aborted ? { aborted: true } : {}),
         tools: toolSnapshot,
+        usage: usage || undefined,
       });
     } catch (e) {
       if (e && e.name === 'AbortError') {

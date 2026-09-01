@@ -129,6 +129,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
           requestId,
           maxTurnsReached: donePayload.maxTurnsReached || undefined,
           tools: bridge.getToolSnapshot(),
+          usage: donePayload.usage || undefined,
         });
         topicAgentState.delete(topicId);
         mcpRuntime?.dispose?.();

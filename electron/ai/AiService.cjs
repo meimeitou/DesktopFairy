@@ -3,6 +3,7 @@ const { resolveProviderModel } = require('./providerModel.cjs');
 const { toCoreMessages } = require('./messages.cjs');
 const { buildToolSet } = require('./buildToolSet.cjs');
 const { createChunkBridge } = require('./chunkBridge.cjs');
+const { resolveStreamUsage } = require('./extractUsage.cjs');
 
 /**
  * AiService.streamText — Cherry Studio pattern (agent-session branch omitted).
@@ -44,7 +45,10 @@ async function streamText({
     abortSignal: signal,
   });
 
-  return result.toUIMessageStream();
+  return {
+    stream: result.toUIMessageStream(),
+    usagePromise: resolveStreamUsage(result),
+  };
 }
 
 /**
@@ -59,14 +63,13 @@ async function streamPlainText({
 }) {
   const model = resolveProviderModel(apiConfig);
   const coreMessages = toCoreMessages(messages);
-  const bridge = createChunkBridge({ requestId, safeSend });
-
   const result = aiStreamText({
     model,
     messages: coreMessages,
     abortSignal: signal,
   });
 
+  const bridge = createChunkBridge({ requestId, safeSend });
   const uiStream = result.toUIMessageStream();
   const reader = uiStream.getReader();
 
@@ -80,7 +83,8 @@ async function streamPlainText({
     reader.releaseLock();
   }
 
-  return { aborted: Boolean(signal?.aborted) };
+  const usage = await resolveStreamUsage(result);
+  return { aborted: Boolean(signal?.aborted), usage };
 }
 
 /**

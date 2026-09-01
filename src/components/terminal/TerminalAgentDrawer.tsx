@@ -24,6 +24,11 @@ import {
   upsertAgentToolMessage,
   trimMessagesForApi,
 } from "../../shared/chatMessages";
+import {
+  buildTrimOptions,
+  estimateAgentSystemPromptTokens,
+  resolveContextWindow,
+} from "../../shared/contextUsage";
 import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
   getChatApiConfig,
@@ -192,11 +197,13 @@ export default function TerminalAgentDrawer({
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
 
   const tabStatesRef = useRef(tabStates);
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
   const compactRequestIdRef = useRef<string | null>(null);
   const handleClearContextRef = useRef<() => void>(() => {});
+  const handleSendRef = useRef<(text?: string) => void>(() => {});
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(
     null,
   );
@@ -581,6 +588,7 @@ export default function TerminalAgentDrawer({
 
   // Switching tabs returns to that session's bottom.
   useEffect(() => {
+    setEditingMsgId(null);
     scrollToBottom();
   }, [activeTabId, scrollToBottom]);
 
@@ -588,6 +596,7 @@ export default function TerminalAgentDrawer({
     async (overrideText?: string) => {
       const state = tabStatesRef.current[activeTabId];
       if (!state || state.streaming) return;
+      const isResend = overrideText !== undefined;
       const isCompactRequest = overrideText === COMPACT_PROMPT;
       const text = (overrideText ?? state.input).trim();
       if (!isCompactRequest && !text) return;
@@ -616,7 +625,7 @@ export default function TerminalAgentDrawer({
               timestamp: now,
             },
           ],
-          input: "",
+          input: isResend ? s.input : "",
           streaming: false,
           requestId: null,
         }));
@@ -636,7 +645,14 @@ export default function TerminalAgentDrawer({
         return;
       }
 
-      const history = trimMessagesForApi(filterForAgentHistory(state.messages));
+      const history = trimMessagesForApi(
+        filterForAgentHistory(state.messages),
+        buildTrimOptions({
+          contextWindow: resolveContextWindow(apiConfig.modelName),
+          systemTokens: estimateAgentSystemPromptTokens(currentSettings.agent),
+          draftInput: text,
+        }),
+      );
       const payloadMessages = buildAgentApiMessages(
         history,
         text,
@@ -665,7 +681,7 @@ export default function TerminalAgentDrawer({
           { id: genId(), role: "user", content: text, timestamp: now },
           { id: genId(), role: "assistant", content: "", timestamp: now },
         ],
-        input: "",
+        input: isResend ? s.input : "",
         streaming: true,
         requestId,
       }));
@@ -724,6 +740,60 @@ export default function TerminalAgentDrawer({
     [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom],
   );
 
+  useEffect(() => {
+    handleSendRef.current = (text?: string) => {
+      void handleSend(text);
+    };
+  }, [handleSend]);
+
+  const resendFromUserMessage = useCallback(
+    (msgId: string, newText: string) => {
+      const state = tabStatesRef.current[activeTabId];
+      if (!state || state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === msgId);
+      if (idx === -1) return;
+      const target = state.messages[idx];
+      if (target.role !== "user") return;
+      const trimmed = newText.trim();
+      if (!trimmed) return;
+      const kept = state.messages.slice(0, idx);
+      setEditingMsgId(null);
+      updateTabState(activeTabId, (s) => ({ ...s, messages: kept }));
+      setTimeout(() => handleSendRef.current(trimmed), 0);
+    },
+    [activeTabId, updateTabState],
+  );
+
+  const handleRetry = useCallback(
+    (msgId: string) => {
+      const state = tabStatesRef.current[activeTabId];
+      if (!state || state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === msgId);
+      if (idx === -1) return;
+      const target = state.messages[idx];
+      if (target.role !== "user") return;
+      resendFromUserMessage(msgId, target.content);
+    },
+    [activeTabId, resendFromUserMessage],
+  );
+
+  const handleStartEdit = useCallback((msgId: string) => {
+    setEditingMsgId(msgId);
+  }, []);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMsgId(null);
+  }, []);
+
+  const handleConfirmEdit = useCallback(
+    (msgId: string, newText: string) => {
+      resendFromUserMessage(msgId, newText);
+    },
+    [resendFromUserMessage],
+  );
+
+  const composerDisabled = activeState.streaming || !!editingMsgId;
+
   const handleStop = useCallback(() => {
     const state = tabStatesRef.current[activeTabId];
     if (state?.requestId) {
@@ -743,12 +813,12 @@ export default function TerminalAgentDrawer({
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
-        if (!activeState.streaming) {
+        if (!composerDisabled) {
           void handleSend();
         }
       }
     },
-    [activeState.streaming, handleSend],
+    [composerDisabled, handleSend],
   );
 
   const handleClearContext = useCallback(() => {
@@ -906,6 +976,11 @@ export default function TerminalAgentDrawer({
             onAnswer={submitToolAnswer}
             submittingApprovalId={submittingApprovalId}
             alwaysAllowLabel="本次全部允许"
+            onRetry={activeState.streaming ? undefined : handleRetry}
+            onStartEdit={activeState.streaming ? undefined : handleStartEdit}
+            onConfirmEdit={handleConfirmEdit}
+            onCancelEdit={handleCancelEdit}
+            editingMsgId={editingMsgId}
             emptyContent={emptyContent}
           />
         </TerminalStopContext.Provider>
@@ -917,12 +992,16 @@ export default function TerminalAgentDrawer({
                 ref={textareaRef}
                 rows={1}
                 placeholder={
-                  activeState.streaming ? "生成中…" : "输入消息，Enter 发送…"
+                  composerDisabled
+                    ? editingMsgId
+                      ? "正在编辑上方消息…"
+                      : "生成中…"
+                    : "输入消息，Enter 发送…"
                 }
                 value={activeState.input}
                 onChange={(e) => setActiveInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                disabled={activeState.streaming}
+                disabled={composerDisabled}
               />
             </div>
             <div className="chat-input-toolbar">
@@ -930,7 +1009,7 @@ export default function TerminalAgentDrawer({
                 <ChatModeSelector
                   mode={chatMode}
                   onChange={setChatMode}
-                  disabled={activeState.streaming}
+                  disabled={composerDisabled}
                 />
                 <Tooltip tip={"清空上下文\n后续消息不再引用此前对话"}>
                   <button
@@ -938,7 +1017,7 @@ export default function TerminalAgentDrawer({
                     className="chat-tool-btn"
                     onClick={handleClearContext}
                     disabled={
-                      activeState.streaming || activeState.messages.length === 0
+                      composerDisabled || activeState.messages.length === 0
                     }
                   >
                     <EraserIcon />
@@ -950,7 +1029,7 @@ export default function TerminalAgentDrawer({
                     className="chat-tool-btn"
                     onClick={handleCompact}
                     disabled={
-                      activeState.streaming || activeState.messages.length === 0
+                      composerDisabled || activeState.messages.length === 0
                     }
                   >
                     <CompactIcon />
@@ -962,7 +1041,7 @@ export default function TerminalAgentDrawer({
                     className="chat-tool-btn chat-tool-btn-danger"
                     onClick={handleClearMessages}
                     disabled={
-                      activeState.streaming || activeState.messages.length === 0
+                      composerDisabled || activeState.messages.length === 0
                     }
                   >
                     <TrashIcon />
@@ -985,7 +1064,7 @@ export default function TerminalAgentDrawer({
                     type="button"
                     className="chat-send-btn"
                     onClick={() => void handleSend()}
-                    disabled={!activeState.input.trim()}
+                    disabled={composerDisabled || !activeState.input.trim()}
                     aria-label="发送消息"
                     title="发送消息 (Enter)"
                   >

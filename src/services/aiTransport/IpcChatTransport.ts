@@ -63,6 +63,7 @@ export interface LegacyStreamHandlers {
     requestId: string;
     aborted?: boolean;
     tools?: ToolTerminalState[];
+    usage?: { promptTokens?: number; completionTokens?: number };
   }) => void;
   onChatError?: (data: { requestId: string; message: string }) => void;
   onAgentTool?: (data: Record<string, unknown>) => void;
@@ -80,7 +81,12 @@ export function replayLegacyStreamEvents(
         break;
       case "chat:stream:done":
         handlers.onChatDone?.(
-          data as { requestId: string; aborted?: boolean; tools?: ToolTerminalState[] },
+          data as {
+            requestId: string;
+            aborted?: boolean;
+            tools?: ToolTerminalState[];
+            usage?: { promptTokens?: number; completionTokens?: number };
+          },
         );
         break;
       case "chat:stream:error":

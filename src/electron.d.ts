@@ -51,6 +51,7 @@ declare global {
           requestId: string;
           aborted?: boolean;
           maxTurnsReached?: boolean;
+          usage?: { promptTokens?: number; completionTokens?: number };
           tools?: Array<{
             toolCallId: string;
             toolName?: string;

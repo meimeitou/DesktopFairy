@@ -163,7 +163,9 @@ class AiStreamManager {
     };
 
     try {
-      const rawStream = await createStream();
+      const streamResult = await createStream();
+      const rawStream = streamResult?.stream ?? streamResult;
+      const usagePromise = streamResult?.usagePromise;
       const { stream: idleStream, idle } = withIdleTimeout(rawStream, controller, idleTimeoutMs);
       entry.idle = idle;
 
@@ -174,6 +176,15 @@ class AiStreamManager {
       if (threw && threw.name !== 'AbortError') throw threw;
       if (streamErrorText) throw new Error(streamErrorText);
 
+      let usage = null;
+      if (usagePromise) {
+        try {
+          usage = await usagePromise;
+        } catch {
+          usage = null;
+        }
+      }
+
       entry.status = controller.signal.aborted ? 'aborted' : 'done';
       const donePayload = {
         topicId,
@@ -182,6 +193,7 @@ class AiStreamManager {
         isTopicDone: true,
         // agent stopped mid-loop because stopWhen fired while the LLM still wanted to call tools
         maxTurnsReached: !controller.signal.aborted && lastFinishReason === 'tool-calls',
+        usage: usage || undefined,
       };
       onDone?.(donePayload);
       broadcast('ai:stream:done', donePayload);
