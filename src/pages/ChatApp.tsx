@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import ChatPage from "./ChatPage";
 import SettingsPage from "./SettingsPage";
 import TerminalPage from "./TerminalPage";
+import KnowledgePage from "./KnowledgePage";
 import "./ChatApp.css";
 
-type AppView = "chat" | "terminal" | "settings";
+type AppView = "chat" | "terminal" | "settings" | "knowledge";
 
 const api = window.electronAPI;
 const isMac =
@@ -18,7 +19,9 @@ const initialView: AppView =
     ? "settings"
     : viewParam === "terminal"
       ? "terminal"
-      : "chat";
+      : viewParam === "knowledge"
+        ? "knowledge"
+        : "chat";
 
 function ChatIcon() {
   return (
@@ -51,6 +54,22 @@ function TerminalIcon() {
   );
 }
 
+
+function KnowledgeIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+  );
+}
 
 function SettingsIcon() {
   return (
@@ -111,6 +130,7 @@ export default function ChatApp() {
     const off = api.onChatNavigate?.((nextView) => {
       if (nextView === "terminal") setView("terminal");
       else if (nextView === "settings") setView("settings");
+      else if (nextView === "knowledge") setView("knowledge");
       else setView("chat");
     });
     return () => off?.();
@@ -122,6 +142,12 @@ export default function ChatApp() {
     return () => {
       window.removeEventListener("terminal:run-command", switchTerminal);
     };
+  }, []);
+
+  useEffect(() => {
+    const reveal = () => setView("knowledge");
+    window.addEventListener("knowledge:reveal", reveal);
+    return () => window.removeEventListener("knowledge:reveal", reveal);
   }, []);
 
   return (
@@ -145,6 +171,14 @@ export default function ChatApp() {
           >
             <TerminalIcon />
             <span>终端</span>
+          </button>
+          <button
+            type="button"
+            className={`chat-tab${view === "knowledge" ? " active" : ""}`}
+            onClick={() => setView("knowledge")}
+          >
+            <KnowledgeIcon />
+            <span>知识库</span>
           </button>
           <button
             type="button"
@@ -182,6 +216,12 @@ export default function ChatApp() {
           aria-hidden={view !== "terminal"}
         >
           <TerminalPage isActive={view === "terminal"} />
+        </div>
+        <div
+          className={`chat-app-panel${view === "knowledge" ? "" : " chat-app-panel-hidden"}`}
+          aria-hidden={view !== "knowledge"}
+        >
+          <KnowledgePage isActive={view === "knowledge"} />
         </div>
         <div
           className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}

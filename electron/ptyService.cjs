@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
+const { createUtf8BoundaryMiddleware, toBuffer } = require('./utf8Boundary.cjs');
 
 const sessions = new Map();
 
@@ -25,31 +26,6 @@ const END_PATTERN = /\x1b\]633;D;(-?\d+)\x07/;
 // boundary) keep state in closure. OSC 633 capture state machine is NOT a
 // middleware — it controls whether output flows to the renderer, so it stays
 // in flushBatch.
-
-// UTF-8 boundary fixup. node-pty may split a multi-byte character across
-// onData calls; without this the join('') would produce U+FFFD for CJK/emoji.
-function createUtf8BoundaryMiddleware() {
-  let pending = Buffer.alloc(0);
-  return (chunk) => {
-    const combined = Buffer.concat([pending, chunk]);
-    let cutAt = combined.length;
-    while (cutAt > 0) {
-      const byte = combined[cutAt - 1];
-      if (byte < 0x80) break;             // ASCII, complete
-      if (byte >= 0xC0) {                  // leading byte, check completeness
-        const need = byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : 2;
-        if (combined.length - (cutAt - 1) < need) {
-          cutAt -= 1;                      // incomplete, retain
-        }
-        break;
-      }
-      cutAt -= 1;                          // continuation byte, keep scanning
-    }
-    const complete = combined.slice(0, cutAt);
-    pending = combined.slice(cutAt);
-    return complete;
-  };
-}
 
 // Strip residual OSC 633 markers so they never reach xterm (avoids visible
 // noise in fallback scenarios where a manual printf emits duplicate end markers).
@@ -209,10 +185,38 @@ function stripAnsi(str) {
     .replace(/\x1B\][^\x07\x1b]*(?:\x07|\x1B\\)/g, '');
 }
 
+function isUtf8Locale(value) {
+  return typeof value === 'string' && /utf-?8/i.test(value);
+}
+
+/** Electron GUI apps launched from Finder often have LANG=C / empty, which
+ *  makes `ls`/git/python emit `?` or octal for CJK. Prefer the OS locale. */
+function defaultUtf8Lang() {
+  try {
+    const loc = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
+    const [lang, region] = loc.replace(/-/g, '_').split('_');
+    const langCode = lang || 'en';
+    const regionCode = (region || langCode).toUpperCase();
+    return `${langCode}_${regionCode}.UTF-8`;
+  } catch {
+    return 'en_US.UTF-8';
+  }
+}
+
+function ensureUtf8Locale(env) {
+  if (isUtf8Locale(env.LC_ALL) || isUtf8Locale(env.LC_CTYPE) || isUtf8Locale(env.LANG)) {
+    return;
+  }
+  // LC_ALL=C would override LANG; drop a non-UTF-8 LC_ALL so LANG can take effect.
+  if (env.LC_ALL && !isUtf8Locale(env.LC_ALL)) delete env.LC_ALL;
+  env.LANG = defaultUtf8Lang();
+}
+
 function buildEnv() {
   const env = {};
   const keepKeys = [
-    'HOME', 'USER', 'LOGNAME', 'LANG', 'TERM', 'TERM_PROGRAM',
+    'HOME', 'USER', 'LOGNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'LC_MESSAGES',
+    'TERM', 'TERM_PROGRAM',
     'TERM_PROGRAM_VERSION', 'COLORTERM', 'COLORFGBG', 'ITERM_SESSION_ID',
     'SSH_AUTH_SOCK', 'DISPLAY', 'EDITOR', 'VISUAL', 'PAGER', 'LESS',
     'LSCOLORS', 'CLICOLOR', 'NODE_REPL_HISTORY',
@@ -228,6 +232,8 @@ function buildEnv() {
   if (process.env.SHELL) env.SHELL = process.env.SHELL;
   if (process.env.XDG_CONFIG_HOME) env.XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
   if (process.env.HOMEBREW_PREFIX) env.HOMEBREW_PREFIX = process.env.HOMEBREW_PREFIX;
+  ensureUtf8Locale(env);
+  env.COLORTERM = env.COLORTERM || 'truecolor';
   return env;
 }
 
@@ -435,6 +441,9 @@ function registerPtyHandlers({ ipcMain }) {
       rows: rows || 24,
       cwd: spawnCwd,
       env: { ...buildEnv(), ...integration.env },
+      // Raw bytes so UTF-8 boundary middleware can reassemble CJK/emoji
+      // split across onData calls. Default 'utf8' would already insert U+FFFD.
+      encoding: null,
     };
     ensureSpawnHelperExecutable();
 
@@ -499,13 +508,13 @@ function registerPtyHandlers({ ipcMain }) {
 
     const flushBatch = () => {
       if (!batchBuffer.length) return;
-      const rawBatch = batchBuffer.join('');
-      batchBuffer.length = 0;
 
       // UTF-8 boundary fixup first — cap.buffer string and pipeline both need
       // complete characters, otherwise CJK/emoji would render as U+FFFD when
       // node-pty splits a multi-byte sequence across onData calls.
-      const completeBuf = session.pipeline.fixUtf8(Buffer.from(rawBatch, 'utf8'));
+      const completeBuf = session.pipeline.fixUtf8(Buffer.concat(batchBuffer));
+      batchBuffer.length = 0;
+      if (completeBuf.length === 0) return;
       const batch = completeBuf.toString('utf8');
       trackOsc633CommandState(session, batch);
 
@@ -551,7 +560,7 @@ function registerPtyHandlers({ ipcMain }) {
       // First output from the shell = it's ready. Flush the initial command
       // (if any) now so it runs against a live prompt.
       flushInitial();
-      batchBuffer.push(data);
+      batchBuffer.push(toBuffer(data));
       if (!flushTimer) {
         flushTimer = setTimeout(() => {
           flushTimer = null;

@@ -3,6 +3,8 @@ import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
 import ChatMarkdown from "./ChatMarkdown";
 import ThinkingBlock from "./ThinkingBlock";
+import { KnowledgeCitations } from "../knowledge/KnowledgePicker";
+import type { KnowledgeCitation } from "../../shared/knowledge";
 
 function CopyIcon({ size = 14 }: { size?: number }) {
   return (
@@ -67,6 +69,7 @@ export interface MessageBubbleProps {
   onConfirmEdit?: (msgId: string, newText: string) => void;
   onCancelEdit?: () => void;
   onDelete?: (msgId: string) => void;
+  onOpenCitation?: (citation: KnowledgeCitation) => void;
 }
 
 function MessageBubble({
@@ -79,6 +82,7 @@ function MessageBubble({
   onConfirmEdit,
   onCancelEdit,
   onDelete,
+  onOpenCitation,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [editDraft, setEditDraft] = useState(msg.content);
@@ -185,6 +189,12 @@ function MessageBubble({
           <ChatMarkdown
             content={msg.content}
             streaming={isStreamingAssistant}
+          />
+        )}
+        {!isUser && !isEditing && (
+          <KnowledgeCitations
+            citations={msg.knowledgeCitations}
+            onOpen={onOpenCitation}
           />
         )}
         {isEditing ? (

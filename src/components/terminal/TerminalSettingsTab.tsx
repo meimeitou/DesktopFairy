@@ -544,6 +544,8 @@ export default function TerminalSettingsTab({
                   type="text"
                   value={terminal.fontFamily}
                   onChange={(e) => updateTerminal({ fontFamily: e.target.value })}
+                  placeholder='Menlo, "PingFang SC", "Apple Color Emoji", monospace'
+                  spellCheck={false}
                 />
               </div>
 

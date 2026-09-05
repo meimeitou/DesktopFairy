@@ -59,5 +59,43 @@ export function parseSlashCommand(
   };
 }
 
+/**
+ * Query string for the slash popup, or `null` when the menu should stay closed.
+ * Closes after a space so selecting `/skill-id ` can send on the next Enter.
+ */
+export function slashMenuQuery(input: string): string | null {
+  const token = input.trimStart();
+  if (!token.startsWith("/") || input.includes("\n")) return null;
+  const after = token.slice(1);
+  if (/\s/.test(after)) return null;
+  return after;
+}
+
+/** Rewrites `/<skill-id> …` into a Skill-tool instruction. */
+export function applySkillSlashCommand(
+  text: string,
+  skillIds: Iterable<string>,
+): { text: string; skillId: string } | null {
+  const parsed = parseSlashCommand(text);
+  if (!parsed) return null;
+  const idSet = skillIds instanceof Set ? skillIds : new Set(skillIds);
+  if (!idSet.has(parsed.command)) return null;
+  const { command: skillId, rest } = parsed;
+  return {
+    skillId,
+    text: rest
+      ? `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据以下要求完成任务：\n\n${rest}`
+      : `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据用户的后续要求完成任务。`,
+  };
+}
+
+export function withEnabledSkillId(
+  enabledSkillIds: string[] | undefined,
+  skillId: string,
+): string[] {
+  const ids = Array.isArray(enabledSkillIds) ? enabledSkillIds : [];
+  return ids.includes(skillId) ? ids : [...ids, skillId];
+}
+
 export const COMPACT_PROMPT =
   "请总结此前的对话内容，提取关键信息、用户意图、已完成的操作和待办事项，生成一段简洁的上下文摘要。后续对话将基于此摘要继续。";

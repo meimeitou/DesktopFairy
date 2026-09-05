@@ -60,7 +60,7 @@
     color 0.15s;
 }
 .chat-clear-btn:hover:not(:disabled) {
-  background: rgba(245, 239, 230, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   border-color: var(--hairline-bold);
   color: var(--bone-200);
 }
@@ -80,7 +80,7 @@
   background:
     radial-gradient(
       ellipse 80% 40% at 50% -10%,
-      rgba(232, 98, 74, 0.05),
+      rgba(0, 185, 107, 0.05),
       transparent 55%
     ),
     var(--ink-900);
@@ -108,7 +108,7 @@
 
 .chat-empty-icon {
   font-size: 44px;
-  filter: drop-shadow(0 6px 18px rgba(232, 98, 74, 0.22));
+  filter: drop-shadow(0 6px 18px rgba(0, 185, 107, 0.22));
 }
 
 .chat-empty p {
@@ -158,9 +158,9 @@
   white-space: pre-wrap;
 }
 .msg-user .msg-bubble {
-  background: rgba(232, 98, 74, 0.22);
+  background: rgba(0, 185, 107, 0.22);
   color: var(--bone-100);
-  border: 1px solid rgba(232, 98, 74, 0.32);
+  border: 1px solid rgba(0, 185, 107, 0.32);
   border-bottom-right-radius: 5px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
 }
@@ -172,7 +172,7 @@
   max-width: 92%;
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.16),
-    inset 0 1px 0 rgba(245, 239, 230, 0.03);
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 .msg-error .msg-bubble {
   background: rgba(199, 90, 79, 0.14);
@@ -194,7 +194,7 @@
   letter-spacing: 0.02em;
 }
 .msg-user .msg-header-time {
-  color: rgba(245, 239, 230, 0.72);
+  color: rgba(255, 255, 255, 0.72);
 }
 .msg-assistant .msg-header-time {
   color: var(--bone-600);
@@ -241,7 +241,7 @@
     transform 0.12s ease;
 }
 .msg-action-btn:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-100);
   border-color: var(--hairline-bold);
 }
@@ -250,7 +250,7 @@
 }
 .msg-user .msg-action-btn {
   border-color: rgba(255, 255, 255, 0.22);
-  color: rgba(245, 239, 230, 0.72);
+  color: rgba(255, 255, 255, 0.72);
 }
 .msg-user .msg-action-btn:hover {
   background: rgba(0, 0, 0, 0.14);
@@ -426,7 +426,7 @@
   color: var(--bone-500);
 }
 .msg-edit-cancel:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-100);
 }
 .msg-edit-save {
@@ -512,7 +512,7 @@
 }
 
 .msg-tool-step-running {
-  border-color: rgba(232, 98, 74, 0.22);
+  border-color: rgba(0, 185, 107, 0.22);
   background: var(--persimmon-softer);
 }
 
@@ -589,7 +589,7 @@
 .msg-tool-spinner {
   width: 10px;
   height: 10px;
-  border: 1.5px solid rgba(232, 98, 74, 0.25);
+  border: 1.5px solid rgba(0, 185, 107, 0.25);
   border-top-color: var(--persimmon-bright);
   border-radius: 50%;
   animation: msg-tool-spin 0.8s linear infinite;
@@ -643,7 +643,7 @@
 .msg-tool-bubble {
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px dashed rgba(232, 98, 74, 0.35);
+  border: 1px dashed rgba(0, 185, 107, 0.35);
   border-radius: 10px;
 }
 
@@ -713,7 +713,7 @@
 
 .agent-tool-card-running,
 .agent-tool-card-streaming {
-  border-color: rgba(232, 98, 74, 0.28);
+  border-color: rgba(0, 185, 107, 0.28);
 }
 
 .agent-tool-card-done {
@@ -1045,55 +1045,6 @@
   line-height: 1.4;
 }
 
-.agent-tool-ask-options {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.agent-tool-ask-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.18);
-  color: inherit;
-  font-family: inherit;
-  cursor: pointer;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-}
-
-.agent-tool-ask-option:hover:not(:disabled) {
-  border-color: rgba(120, 180, 255, 0.45);
-}
-
-.agent-tool-ask-option.active {
-  border-color: rgba(120, 180, 255, 0.65);
-  background: rgba(120, 180, 255, 0.14);
-}
-
-.agent-tool-ask-option:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.agent-tool-ask-option-label {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.agent-tool-ask-option-desc {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-  line-height: 1.35;
-}
-
 .agent-tool-ask-other-input {
   margin-top: 8px;
   width: 100%;
@@ -1109,7 +1060,8 @@
 
 .agent-tool-ask-other-input:focus {
   outline: none;
-  border-color: rgba(120, 180, 255, 0.55);
+  border-color: var(--persimmon-focus);
+  background: var(--persimmon-softer);
 }
 
 .agent-tool-ask-actions {
@@ -1193,7 +1145,7 @@
 }
 
 .agent-tool-btn-deny:hover:not(:disabled) {
-  background: rgba(245, 239, 230, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--bone-100);
 }
 

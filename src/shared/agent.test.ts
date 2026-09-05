@@ -30,8 +30,8 @@ describe('agent', () => {
       expect(DEFAULT_AGENT_CONFIG.terminalDisabledToolIds).toEqual(TERMINAL_DEFAULT_DISABLED_TOOL_IDS)
     })
 
-    it('should have maxTurns >= 1', () => {
-      expect(DEFAULT_AGENT_CONFIG.maxTurns).toBeGreaterThanOrEqual(1)
+    it('should have maxTurns 30', () => {
+      expect(DEFAULT_AGENT_CONFIG.maxTurns).toBe(30)
     })
   })
 

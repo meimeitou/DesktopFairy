@@ -1,0 +1,202 @@
+/* 砚台单选：外圈是砚池，选中时柿色印泥落入池心。 */
+
+.df-radio {
+  --df-radio-size: 16px;
+  --df-radio-well: 7px;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  cursor: pointer;
+  color: var(--bone-400);
+  font-weight: 400;
+  user-select: none;
+}
+
+.df-radio-group--stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.df-radio-group--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 18px;
+}
+
+.df-radio-group--stack .df-radio {
+  padding: 9px 2px 9px 0;
+}
+
+.df-radio-group--stack .df-radio + .df-radio {
+  border-top: 1px solid var(--hairline);
+}
+
+.df-radio-group--inline .df-radio {
+  align-items: center;
+  padding: 4px 0;
+}
+
+.df-radio input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.df-radio-mark {
+  position: relative;
+  flex-shrink: 0;
+  width: var(--df-radio-size);
+  height: var(--df-radio-size);
+  margin-top: 1px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--bone-500);
+  background: rgba(0, 0, 0, 0.22);
+  transition: box-shadow 0.16s ease;
+}
+
+.df-radio-group--inline .df-radio-mark {
+  margin-top: 0;
+}
+
+.df-radio-well {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--df-radio-well);
+  height: var(--df-radio-well);
+  border-radius: 50%;
+  background: var(--persimmon);
+  box-shadow: inset 1px 1px 0 rgba(210, 255, 230, 0.45);
+  transform: translate(-50%, -50%) scale(0);
+  opacity: 0;
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1.4, 0.36, 1),
+    opacity 0.12s ease;
+}
+
+.df-radio:hover:not(.is-disabled) .df-radio-mark {
+  box-shadow: inset 0 0 0 1.5px var(--bone-300);
+}
+
+.df-radio.is-checked {
+  color: var(--bone-100);
+}
+
+.df-radio.is-checked .df-radio-mark {
+  box-shadow: inset 0 0 0 1.5px var(--persimmon);
+  background: var(--persimmon-softer);
+}
+
+.df-radio.is-checked .df-radio-well {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+.df-radio-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.df-radio-label {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: inherit;
+}
+
+.df-radio.is-checked .df-radio-label {
+  color: var(--bone-100);
+}
+
+.df-radio-desc {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--bone-600);
+}
+
+.df-radio.is-checked .df-radio-desc {
+  color: var(--bone-500);
+}
+
+.df-radio.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.df-radio input:focus-visible + .df-radio-mark {
+  outline: 2px solid var(--persimmon-focus);
+  outline-offset: 3px;
+}
+
+/* 角印：方池，与圆砚单选成对。选中时印泥落入，不用打勾。 */
+.df-radio--check .df-radio-mark {
+  border-radius: 3px;
+}
+
+.df-radio--check .df-radio-well {
+  border-radius: 1px;
+}
+
+.df-radio--compact {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  gap: 0;
+}
+
+.df-radio--compact .df-radio-mark {
+  margin-top: 0;
+  width: 14px;
+  height: 14px;
+}
+
+.df-radio--compact .df-radio-well {
+  width: 6px;
+  height: 6px;
+}
+
+.df-radio.is-indeterminate .df-radio-mark {
+  box-shadow: inset 0 0 0 1.5px var(--persimmon);
+  background: var(--persimmon-softer);
+}
+
+.df-radio.is-indeterminate .df-radio-well {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+}
+
+.df-radio--compact.is-indeterminate .df-radio-well {
+  width: 7px;
+}
+
+/* 作为 .field 唯一子标签时，盖过 .field > label 的块级样式 */
+.field > label.df-radio {
+  display: flex;
+  margin-bottom: 0;
+  font-weight: 400;
+  color: var(--bone-400);
+}
+
+.field > label.df-radio.is-checked,
+.field > label.df-radio.is-indeterminate {
+  color: var(--bone-100);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-radio-mark,
+  .df-radio-well {
+    transition: none;
+  }
+}

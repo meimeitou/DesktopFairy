@@ -60,6 +60,7 @@ export interface MessageListProps {
   onCancelEdit?: () => void;
   editingMsgId?: string | null;
   onDelete?: (msgId: string) => void;
+  onOpenCitation?: (citation: import("../../shared/knowledge").KnowledgeCitation) => void;
 }
 
 const MessageList = forwardRef<MessageListHandle, MessageListProps>(
@@ -82,6 +83,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       onCancelEdit,
       editingMsgId = null,
       onDelete,
+      onOpenCitation,
     },
     ref,
   ) {
@@ -406,6 +408,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     onConfirmEdit={onConfirmEdit}
                     onCancelEdit={onCancelEdit}
                     onDelete={onDelete}
+                    onOpenCitation={onOpenCitation}
                   />
                 )}
               </div>

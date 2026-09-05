@@ -3,26 +3,54 @@ import {
   getModelsListEndpointLabel,
   type LlmProvider,
 } from "../shared/providers";
+import {
+  displayModelKind,
+  enabledModelCount,
+  MODEL_KIND_FILTERS,
+  MODEL_KIND_LABELS,
+  partitionDraftToArrays,
+  type CatalogModel,
+  type CuratedModelKind,
+  type ProviderModelLists,
+} from "../shared/modelKind";
 import "./ManageModelsPanel.css";
 
 const api = window.electronAPI;
 
 interface Props {
   provider: LlmProvider;
-  onChange: (models: string[]) => void;
+  onChange: (lists: ProviderModelLists) => void;
 }
 
 export default function ManageModelsPanel({ provider, onChange }: Props) {
   const [open, setOpen] = useState(false);
-  const [remoteModels, setRemoteModels] = useState<string[]>([]);
+  const [remoteModels, setRemoteModels] = useState<CatalogModel[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | CuratedModelKind>("all");
   const [draft, setDraft] = useState<Set<string>>(new Set());
 
-  const cachedModels = provider.models;
+  const originalLists: ProviderModelLists = useMemo(
+    () => ({
+      models: provider.models ?? [],
+      embeddingModels: provider.embeddingModels ?? [],
+      rerankModels: provider.rerankModels ?? [],
+    }),
+    [provider.models, provider.embeddingModels, provider.rerankModels]
+  );
+
+  const enabledCount = enabledModelCount(originalLists);
 
   const openPanel = () => {
-    setDraft(new Set(cachedModels));
+    setDraft(
+      new Set([
+        ...(provider.models ?? []),
+        ...(provider.embeddingModels ?? []),
+        ...(provider.rerankModels ?? []),
+      ])
+    );
+    setKindFilter("all");
+    setSearch("");
     setOpen(true);
   };
 
@@ -37,9 +65,21 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
         apiHost: provider.apiHost,
         apiKey: provider.apiKey,
         providerType: provider.type,
-      })) as string[];
-      setRemoteModels(list);
-      if (list.length === 0) alert("未返回任何模型");
+      })) as CatalogModel[];
+      const catalog = Array.isArray(list)
+        ? list.filter(
+            (m): m is CatalogModel =>
+              !!m &&
+              typeof m.id === "string" &&
+              (m.kind === "chat" ||
+                m.kind === "embedding" ||
+                m.kind === "rerank")
+          )
+        : [];
+      setRemoteModels(catalog);
+      if (catalog.length === 0) {
+        alert("未返回可用的对话 / Embedding / Rerank 模型");
+      }
     } catch (e) {
       alert(`拉取失败：${(e as Error).message || e}`);
     } finally {
@@ -47,16 +87,32 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
     }
   };
 
+  const remoteKind = useMemo(() => {
+    const map = new Map<string, CuratedModelKind>();
+    for (const m of remoteModels) map.set(m.id, m.kind);
+    return map;
+  }, [remoteModels]);
+
   const allModels = useMemo(() => {
-    const set = new Set([...remoteModels, ...cachedModels, ...Array.from(draft)]);
-    return [...set].sort((a, b) => a.localeCompare(b));
-  }, [remoteModels, cachedModels, draft]);
+    const ids = new Set([
+      ...remoteModels.map((m) => m.id),
+      ...originalLists.models,
+      ...originalLists.embeddingModels,
+      ...originalLists.rerankModels,
+      ...Array.from(draft),
+    ]);
+    return [...ids].sort((a, b) => a.localeCompare(b));
+  }, [remoteModels, originalLists, draft]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return allModels;
-    return allModels.filter((m) => m.toLowerCase().includes(q));
-  }, [allModels, search]);
+    return allModels.filter((id) => {
+      const kind = displayModelKind(id, originalLists, remoteKind);
+      if (kindFilter !== "all" && kind !== kindFilter) return false;
+      if (q && !id.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allModels, search, kindFilter, originalLists, remoteKind]);
 
   const toggle = (id: string) => {
     setDraft((prev) => {
@@ -82,7 +138,7 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
   };
 
   const save = () => {
-    onChange([...draft].sort((a, b) => a.localeCompare(b)));
+    onChange(partitionDraftToArrays(draft, originalLists, remoteKind));
     setOpen(false);
   };
 
@@ -91,13 +147,18 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
       <div className="manage-models-trigger">
         <button type="button" className="manage-models-open-btn" onClick={openPanel}>
           管理模型
-          {cachedModels.length > 0 && (
-            <span className="manage-models-count">{cachedModels.length}</span>
+          {enabledCount > 0 && (
+            <span className="manage-models-count">{enabledCount}</span>
           )}
         </button>
       </div>
     );
   }
+
+  const emptyMessage =
+    allModels.length === 0
+      ? "点击「拉取模型」获取列表"
+      : "没有符合筛选的模型";
 
   return (
     <div className="manage-models-overlay" onClick={() => setOpen(false)}>
@@ -110,7 +171,8 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
         </div>
         <p className="manage-models-desc">
           从 {getModelsListEndpointLabel(provider.type)}{" "}
-          拉取列表，勾选要在下拉框中显示的模型
+          拉取列表，点选要启用的模型。对话模型会出现在下拉框中，Embedding / Rerank
+          供后续知识库使用
         </p>
         <div className="manage-models-toolbar">
           <input
@@ -129,20 +191,43 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
             取消
           </button>
         </div>
-        <div className="manage-models-list">
+        <div className="manage-models-filters" role="tablist" aria-label="按类型筛选">
+          {MODEL_KIND_FILTERS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={kindFilter === tab.id}
+              className={kindFilter === tab.id ? "active" : ""}
+              onClick={() => setKindFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="manage-models-list" role="listbox" aria-multiselectable="true" aria-label="模型列表">
           {filtered.length === 0 ? (
-            <p className="manage-models-empty">点击「拉取模型」获取列表</p>
+            <p className="manage-models-empty">{emptyMessage}</p>
           ) : (
-            filtered.map((m) => (
-              <label key={m} className="manage-models-item">
-                <input
-                  type="checkbox"
-                  checked={draft.has(m)}
-                  onChange={() => toggle(m)}
-                />
-                <span>{m}</span>
-              </label>
-            ))
+            filtered.map((id) => {
+              const kind = displayModelKind(id, originalLists, remoteKind);
+              const selected = draft.has(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={`manage-models-item${selected ? " selected" : ""}`}
+                  onClick={() => toggle(id)}
+                >
+                  <span className="manage-models-id">{id}</span>
+                  <span className={`manage-models-kind kind-${kind}`}>
+                    {MODEL_KIND_LABELS[kind]}
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
         <div className="manage-models-footer">

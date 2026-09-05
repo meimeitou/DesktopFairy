@@ -56,9 +56,16 @@ export interface SshRecentEntry {
   connectedAt: number;
 }
 
+export const DEFAULT_TERMINAL_FONT_FAMILY =
+  'Menlo, Monaco, "Courier New", "PingFang SC", "Hiragino Sans GB", "Apple Color Emoji", monospace';
+
+const LEGACY_TERMINAL_FONT_FAMILIES = new Set([
+  'Menlo, Monaco, "Courier New", monospace',
+]);
+
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   fontSize: 13,
-  fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+  fontFamily: DEFAULT_TERMINAL_FONT_FAMILY,
   scrollback: 10000,
   cursorStyle: "block",
 };
@@ -69,6 +76,17 @@ const MIN_SCROLLBACK = 1000;
 const MAX_SCROLLBACK = 100000;
 const VALID_CURSOR_STYLES: CursorStyle[] = ["block", "beam", "underline"];
 
+function normalizeTerminalFontFamily(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    return DEFAULT_TERMINAL_FONT_FAMILY;
+  }
+  const trimmed = value.trim();
+  if (LEGACY_TERMINAL_FONT_FAMILIES.has(trimmed)) {
+    return DEFAULT_TERMINAL_FONT_FAMILY;
+  }
+  return trimmed;
+}
+
 export function normalizeTerminalSettings(value: unknown): TerminalSettings {
   const v = (value ?? {}) as Partial<TerminalSettings>;
   const fontSize = Number(v.fontSize);
@@ -77,10 +95,7 @@ export function normalizeTerminalSettings(value: unknown): TerminalSettings {
     fontSize: Number.isFinite(fontSize)
       ? Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(fontSize)))
       : DEFAULT_TERMINAL_SETTINGS.fontSize,
-    fontFamily:
-      typeof v.fontFamily === "string" && v.fontFamily.trim()
-        ? v.fontFamily.trim()
-        : DEFAULT_TERMINAL_SETTINGS.fontFamily,
+    fontFamily: normalizeTerminalFontFamily(v.fontFamily),
     scrollback: Number.isFinite(scrollback)
       ? Math.min(MAX_SCROLLBACK, Math.max(MIN_SCROLLBACK, Math.round(scrollback)))
       : DEFAULT_TERMINAL_SETTINGS.scrollback,

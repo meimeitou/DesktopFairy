@@ -10,9 +10,15 @@ import MessageList, { type MessageListHandle } from "../chat/MessageList";
 import { TerminalStopContext } from "../chat/agentTools/TerminalStopContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
 import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
-import { getAgentBackendLabel, type AgentConfig } from "../../shared/agent";
+import {
+  getAgentBackendLabel,
+  type AgentConfig,
+  type AgentSkillDescriptor,
+} from "../../shared/agent";
 import type { ChatMode } from "../../shared/chatMode";
 import ChatModeSelector from "../chat/ChatModeSelector";
+import SlashCommandMenu from "../chat/SlashCommandMenu";
+import KnowledgePicker from "../knowledge/KnowledgePicker";
 import {
   type ChatMsg,
   buildAgentApiMessages,
@@ -39,7 +45,16 @@ import {
   useSettings,
   flushSettingsSave,
 } from "../../shared/settingsStore";
-import { COMPACT_PROMPT, parseSlashCommand } from "../../shared/slashCommands";
+import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
+import {
+  COMPACT_PROMPT,
+  parseSlashCommand,
+  getBuiltinCommands,
+  buildSkillCommands,
+  applySkillSlashCommand,
+  withEnabledSkillId,
+  type SlashCommand,
+} from "../../shared/slashCommands";
 import Tooltip from "../Tooltip";
 import {
   attachTopicStream,
@@ -198,6 +213,11 @@ export default function TerminalAgentDrawer({
   const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [knowledgeIdsByTab, setKnowledgeIdsByTab] = useState<
+    Record<string, string[]>
+  >({});
+  const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
+  const knowledgeIdsByTabRef = useRef(knowledgeIdsByTab);
 
   const tabStatesRef = useRef(tabStates);
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
@@ -212,6 +232,10 @@ export default function TerminalAgentDrawer({
   useEffect(() => {
     tabStatesRef.current = tabStates;
   }, [tabStates]);
+
+  useEffect(() => {
+    knowledgeIdsByTabRef.current = knowledgeIdsByTab;
+  }, [knowledgeIdsByTab]);
 
   useEffect(() => {
     const onWindowResize = () => {
@@ -274,6 +298,39 @@ export default function TerminalAgentDrawer({
   }, [activeTabId]);
 
   const activeState = tabStates[activeTabId] ?? emptyTabState();
+  const composerDisabled = activeState.streaming || !!editingMsgId;
+
+  const slashCommands = useMemo(
+    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
+    [skills],
+  );
+  const {
+    open: showSlashMenu,
+    query: slashQuery,
+    hostRef: slashHostRef,
+    close: closeSlashMenu,
+  } = useSlashCommandMenu(
+    activeState.input,
+    composerDisabled,
+    slashCommands,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = (await api.invoke(
+          "agent:skills:scan",
+        )) as AgentSkillDescriptor[];
+        if (!cancelled) setSkills(Array.isArray(list) ? list : []);
+      } catch {
+        /* no skills */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -607,6 +664,19 @@ export default function TerminalAgentDrawer({
         return;
       }
 
+      let finalText = text;
+      let invokedSkillId: string | undefined;
+      if (!overrideText) {
+        const applied = applySkillSlashCommand(
+          text,
+          skills.map((s) => s.id),
+        );
+        if (applied) {
+          finalText = applied.text;
+          invokedSkillId = applied.skillId;
+        }
+      }
+
       await flushSettingsSave();
       const currentSettings = getSettingsSnapshot();
       const guidance = getAgentBackendGuidance(currentSettings);
@@ -616,7 +686,7 @@ export default function TerminalAgentDrawer({
           ...s,
           messages: [
             ...s.messages,
-            { id: genId(), role: "user", content: text, timestamp: now },
+            { id: genId(), role: "user", content: finalText, timestamp: now },
             {
               id: genId(),
               role: "assistant",
@@ -650,12 +720,12 @@ export default function TerminalAgentDrawer({
         buildTrimOptions({
           contextWindow: resolveContextWindow(apiConfig.modelName),
           systemTokens: estimateAgentSystemPromptTokens(currentSettings.agent),
-          draftInput: text,
+          draftInput: finalText,
         }),
       );
       const payloadMessages = buildAgentApiMessages(
         history,
-        text,
+        finalText,
         { textFiles: [], images: [] },
         undefined,
       );
@@ -672,13 +742,19 @@ export default function TerminalAgentDrawer({
       const agentConfig: AgentConfig = {
         ...currentSettings.agent,
         chatMode,
+        enabledSkillIds: invokedSkillId
+          ? withEnabledSkillId(
+              currentSettings.agent.enabledSkillIds,
+              invokedSkillId,
+            )
+          : currentSettings.agent.enabledSkillIds,
       };
 
       updateTabState(activeTabId, (s) => ({
         ...s,
         messages: [
           ...s.messages,
-          { id: genId(), role: "user", content: text, timestamp: now },
+          { id: genId(), role: "user", content: finalText, timestamp: now },
           { id: genId(), role: "assistant", content: "", timestamp: now },
         ],
         input: isResend ? s.input : "",
@@ -700,6 +776,7 @@ export default function TerminalAgentDrawer({
           },
           agentConfig,
           terminalSessionId: sessionId,
+          knowledgeBaseIds: knowledgeIdsByTabRef.current[activeTabId] || [],
         });
         if (result.mode === "blocked") {
           if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
@@ -737,7 +814,7 @@ export default function TerminalAgentDrawer({
         });
       }
     },
-    [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom],
+    [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom, skills],
   );
 
   useEffect(() => {
@@ -792,8 +869,6 @@ export default function TerminalAgentDrawer({
     [resendFromUserMessage],
   );
 
-  const composerDisabled = activeState.streaming || !!editingMsgId;
-
   const handleStop = useCallback(() => {
     const state = tabStatesRef.current[activeTabId];
     if (state?.requestId) {
@@ -811,6 +886,18 @@ export default function TerminalAgentDrawer({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (showSlashMenu) {
+        if (
+          e.key === "ArrowDown" ||
+          e.key === "ArrowUp" ||
+          e.key === "Enter" ||
+          e.key === "Escape" ||
+          e.key === "Tab"
+        ) {
+          e.preventDefault();
+        }
+        return;
+      }
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         if (!composerDisabled) {
@@ -818,7 +905,7 @@ export default function TerminalAgentDrawer({
         }
       }
     },
-    [composerDisabled, handleSend],
+    [composerDisabled, handleSend, showSlashMenu],
   );
 
   const handleClearContext = useCallback(() => {
@@ -841,16 +928,37 @@ export default function TerminalAgentDrawer({
             ];
       return { ...s, messages: nextMessages };
     });
+    scrollToBottom();
   }, [
     activeState.streaming,
     activeState.messages.length,
     activeTabId,
     updateTabState,
+    scrollToBottom,
   ]);
 
   useEffect(() => {
     handleClearContextRef.current = handleClearContext;
   }, [handleClearContext]);
+
+  const handleSlashCommand = useCallback(
+    (cmd: SlashCommand) => {
+      if (cmd.group === "skill" && cmd.insertText) {
+        setActiveInput(cmd.insertText);
+        return;
+      }
+      if (cmd.group === "builtin" && cmd.id === "clear") {
+        setActiveInput("");
+        handleClearContext();
+        return;
+      }
+      if (cmd.group === "builtin" && cmd.id === "compact") {
+        setActiveInput("");
+        void handleSend(COMPACT_PROMPT);
+      }
+    },
+    [setActiveInput, handleClearContext, handleSend],
+  );
 
   const handleCompact = useCallback(() => {
     if (activeState.streaming) return;
@@ -987,7 +1095,15 @@ export default function TerminalAgentDrawer({
 
         <div className="terminal-agent-input-shell">
           <div className="terminal-agent-dock">
-            <div className="terminal-agent-editor">
+            <div className="terminal-agent-editor" ref={slashHostRef}>
+              {showSlashMenu && (
+                <SlashCommandMenu
+                  commands={slashCommands}
+                  query={slashQuery}
+                  onSelect={handleSlashCommand}
+                  onClose={closeSlashMenu}
+                />
+              )}
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -1006,12 +1122,22 @@ export default function TerminalAgentDrawer({
             </div>
             <div className="chat-input-toolbar">
               <div className="chat-input-tools-left">
+                <KnowledgePicker
+                  selectedIds={knowledgeIdsByTab[activeTabId] || []}
+                  onChange={(ids) =>
+                    setKnowledgeIdsByTab((prev) => ({
+                      ...prev,
+                      [activeTabId]: ids,
+                    }))
+                  }
+                  disabled={composerDisabled}
+                />
                 <ChatModeSelector
                   mode={chatMode}
                   onChange={setChatMode}
                   disabled={composerDisabled}
                 />
-                <Tooltip tip={"清空上下文\n后续消息不再引用此前对话"}>
+                <Tooltip tip={"清空上下文"}>
                   <button
                     type="button"
                     className="chat-tool-btn"
@@ -1023,7 +1149,7 @@ export default function TerminalAgentDrawer({
                     <EraserIcon />
                   </button>
                 </Tooltip>
-                <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
+                <Tooltip tip={"压缩上下文"}>
                   <button
                     type="button"
                     className="chat-tool-btn"
@@ -1035,7 +1161,7 @@ export default function TerminalAgentDrawer({
                     <CompactIcon />
                   </button>
                 </Tooltip>
-                <Tooltip tip={"删除上下文\n删除当前会话全部消息"}>
+                <Tooltip tip={"删除上下文"}>
                   <button
                     type="button"
                     className="chat-tool-btn chat-tool-btn-danger"

@@ -58,6 +58,7 @@ import {
   useSettings,
   flushSettingsSave,
 } from "../shared/settingsStore";
+import type { KnowledgeCitation } from "../shared/knowledge";
 import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
 import type { ReasoningEffort } from "../shared/reasoningEffort";
@@ -67,6 +68,8 @@ import {
   getBuiltinCommands,
   buildSkillCommands,
   parseSlashCommand,
+  applySkillSlashCommand,
+  withEnabledSkillId,
   COMPACT_PROMPT,
 } from "../shared/slashCommands";
 import {
@@ -162,6 +165,7 @@ export default function ChatPage({
   >({});
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [topics, setTopics] = useState<ChatTopic[]>([]);
+  const topicsRef = useRef<ChatTopic[]>([]);
   const [topicsLoaded, setTopicsLoaded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
@@ -211,6 +215,10 @@ export default function ChatPage({
     }
     topicStatesRef.current = next;
   }, [topicStates, activeTopicId]);
+
+  useEffect(() => {
+    topicsRef.current = topics;
+  }, [topics]);
 
   useEffect(() => {
     activeTopicIdRef.current = activeTopicId;
@@ -921,6 +929,24 @@ export default function ChatPage({
       if (status === "running" && isActive) notifyLive2DScene("toolRunning");
     };
 
+    const handleCitations = ({
+      requestId,
+      citations,
+    }: {
+      requestId: string;
+      citations?: KnowledgeCitation[];
+    }) => {
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId || !citations?.length) return;
+      patchTopicState(topicId, (state) => {
+        const idx = findLastAssistantReplyIndex(state.messages);
+        if (idx < 0) return state;
+        const next = state.messages.slice();
+        next[idx] = { ...next[idx], knowledgeCitations: citations };
+        return { ...state, messages: next };
+      });
+    };
+
     legacyStreamHandlersRef.current = {
       onChatChunk: handleChatChunk,
       onChatDone: handleChatDone,
@@ -933,6 +959,7 @@ export default function ChatPage({
     const offDone = api.onChatStreamDone(handleChatDone);
     const offError = api.onChatStreamError(handleChatError);
     const offTool = api.onAgentStreamTool?.(handleAgentTool);
+    const offCitations = api.onChatStreamCitations?.(handleCitations);
 
     return () => {
       chunkBuffer.dispose();
@@ -940,6 +967,7 @@ export default function ChatPage({
       offDone?.();
       offError?.();
       offTool?.();
+      offCitations?.();
     };
   }, [flushSessionSave, scheduleTopicSave, patchTopicState]);
 
@@ -986,8 +1014,11 @@ export default function ChatPage({
   );
 
   const slashCommands = useMemo(
-    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
-    [skills],
+    () => [
+      ...getBuiltinCommands(),
+      ...(usingAgent ? buildSkillCommands(skills) : []),
+    ],
+    [skills, usingAgent],
   );
 
   const loadAttachmentPayloads = useCallback(
@@ -1093,6 +1124,8 @@ export default function ChatPage({
           modelName: apiConfig.modelName,
         },
         agentConfig: agent,
+        knowledgeBaseIds:
+          topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds || [],
       })
         .then((result) => {
           if (!result || typeof result !== "object") return;
@@ -1180,13 +1213,7 @@ export default function ChatPage({
       let finalText = text;
       if (!isCompactRequest && !overrideText) {
         const parsed = parseSlashCommand(text);
-        if (parsed && skills.some((s) => s.id === parsed.command)) {
-          const skillId = parsed.command;
-          const userMsg = parsed.rest;
-          finalText = userMsg
-            ? `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据以下要求完成任务：\n\n${userMsg}`
-            : `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据用户的后续要求完成任务。`;
-        } else if (parsed?.command === "clear") {
+        if (parsed?.command === "clear") {
           handleClearContextRef.current();
           const tid = activeTopicIdRef.current;
           if (tid) {
@@ -1205,6 +1232,18 @@ export default function ChatPage({
       const requestBackend = getActiveChatBackend(settings);
       const agentMode = isAgentBackend(requestBackend);
       const apiConfig = getChatApiConfig(settings);
+
+      let invokedSkillId: string | undefined;
+      if (agentMode && !isCompactRequest && !overrideText) {
+        const applied = applySkillSlashCommand(
+          text,
+          skills.map((s) => s.id),
+        );
+        if (applied) {
+          finalText = applied.text;
+          invokedSkillId = applied.skillId;
+        }
+      }
 
       if (agentMode) {
         const guidance = getAgentBackendGuidance(settings);
@@ -1261,7 +1300,15 @@ export default function ChatPage({
         return;
       }
 
-      const agent = settings.agent;
+      const agent = invokedSkillId
+        ? {
+            ...settings.agent,
+            enabledSkillIds: withEnabledSkillId(
+              settings.agent.enabledSkillIds,
+              invokedSkillId,
+            ),
+          }
+        : settings.agent;
 
       let attachmentPayloads = {
         textFiles: [] as { name: string; text: string }[],
@@ -1390,10 +1437,16 @@ export default function ChatPage({
               modelName: apiConfig.modelName,
             },
             agentConfig: agent,
+            knowledgeBaseIds:
+              topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
+              [],
           })
         : api.invoke("chat:send", {
             requestId,
             messages: payloadMessages,
+            knowledgeBaseIds:
+              topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
+              [],
             apiConfig: {
               apiHost: apiConfig.apiHost,
               apiKey: apiConfig.apiKey,
@@ -1533,18 +1586,15 @@ export default function ChatPage({
       };
     });
     scheduleTopicSave(topicId);
-  }, [scheduleTopicSave]);
+    scrollToBottom();
+  }, [scheduleTopicSave, scrollToBottom]);
 
   useEffect(() => {
     handleClearContextRef.current = handleClearContext;
   }, [handleClearContext]);
 
   const handleSlashCommand = useCallback(
-    (cmd: SlashCommand | null) => {
-      if (!cmd) {
-        setActiveInput("");
-        return;
-      }
+    (cmd: SlashCommand) => {
       if (cmd.group === "skill" && cmd.insertText) {
         setActiveInput(cmd.insertText);
         return;
@@ -1749,6 +1799,13 @@ export default function ChatPage({
           onCancelEdit={handleCancelEdit}
           editingMsgId={editingMsgId}
           onDelete={handleDeleteMessage}
+          onOpenCitation={(citation) => {
+            window.dispatchEvent(
+              new CustomEvent("knowledge:reveal", {
+                detail: { baseId: citation.baseId, itemId: citation.itemId },
+              }),
+            );
+          }}
           emptyContent={emptyContent}
         />
 
@@ -1794,6 +1851,21 @@ export default function ChatPage({
           slashCommands={slashCommands}
           onSlashCommand={handleSlashCommand}
           contextUsage={contextUsage}
+          knowledgeBaseIds={
+            topics.find((t) => t.id === activeTopicId)?.knowledgeBaseIds || []
+          }
+          onKnowledgeBaseIdsChange={(ids) => {
+            if (!activeTopicId) return;
+            setTopics((prev) =>
+              prev.map((t) =>
+                t.id === activeTopicId ? { ...t, knowledgeBaseIds: ids } : t,
+              ),
+            );
+            void api.invoke("chat:topics:updateMeta", {
+              topicId: activeTopicId,
+              knowledgeBaseIds: ids,
+            });
+          }}
         />
       </div>
     </div>

@@ -142,7 +142,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   terminalDisabledToolIds: TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   mcpServerIds: [],
   enabledSkillIds: ["find-skills", "skill-creator"],
-  maxTurns: 10,
+  maxTurns: 30,
   toolApprovalMode: "confirm",
   envVars: {},
   chatMode: DEFAULT_CHAT_MODE,

@@ -20,7 +20,7 @@
   border: 0.5px solid var(--hairline-strong);
   box-shadow:
     0 1px 5px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 rgba(245, 239, 230, 0.04);
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
   padding-top: 8px;
   overflow: visible;
   transition:
@@ -32,8 +32,8 @@
   border-color: var(--persimmon-focus);
   box-shadow:
     0 1px 5px rgba(0, 0, 0, 0.2),
-    0 0 0 1px rgba(232, 98, 74, 0.16),
-    inset 0 1px 0 rgba(245, 239, 230, 0.05);
+    0 0 0 1px rgba(0, 185, 107, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .chat-input-dock .attachment-preview {
@@ -42,6 +42,7 @@
 
 .chat-input-editor {
   position: relative;
+  z-index: 2;
   min-width: 0;
   padding: 0 14px 2px;
 }
@@ -125,7 +126,7 @@
 }
 
 .chat-tool-btn:hover:not(:disabled) {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-100);
 }
 
@@ -226,13 +227,13 @@
 }
 
 .chat-input-shell .model-selector-trigger:hover:not(:disabled) {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   border-color: transparent;
 }
 
 .chat-input-shell .model-selector-combo.open .model-selector-trigger,
 .chat-input-shell .model-selector-trigger:focus {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   border-color: transparent;
 }
 

@@ -96,6 +96,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'terminal:agent:stop',
       'websearch:test',
       'browser:open',
+      'knowledge:list_bases',
+      'knowledge:create_base',
+      'knowledge:update_base',
+      'knowledge:delete_base',
+      'knowledge:select_files',
+      'knowledge:add_files',
+      'knowledge:add_note',
+      'knowledge:update_note',
+      'knowledge:delete_item',
+      'knowledge:reindex_item',
+      'knowledge:rebuild_all',
+      'knowledge:search',
+      'knowledge:read_item',
+      'knowledge:test_processor',
+      'chat:topics:updateMeta',
     ];
 
     if (allowedChannels.includes(channel)) {
@@ -204,6 +219,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('chat:stream:error', listener);
     return () => ipcRenderer.removeListener('chat:stream:error', listener);
+  },
+  onChatStreamCitations: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:stream:citations', listener);
+    return () => ipcRenderer.removeListener('chat:stream:citations', listener);
   },
 
   onAgentStreamTool: (callback) => {

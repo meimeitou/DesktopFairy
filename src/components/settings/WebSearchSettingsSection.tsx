@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import RadioGroup from "../RadioGroup";
 import {
   WEB_SEARCH_PROVIDERS,
   getWebSearchProviderMeta,
@@ -20,22 +21,6 @@ const RESET_ICON = (
   >
     <polyline points="1 4 1 10 7 10" />
     <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-  </svg>
-);
-
-const TEST_ICON = (
-  <svg
-    width="12"
-    height="12"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-    <polyline points="22 4 12 14.01 9 11.01" />
   </svg>
 );
 
@@ -111,34 +96,31 @@ export default function WebSearchSettingsSection({
   return (
     <section className="settings-section">
       <p className="field-hint">
-        选择智能体调用 WebSearch 工具时使用的网络搜索服务。当前选择：
-        <strong> {meta.label}</strong>
+        智能体调用 WebSearch 工具时使用的网络搜索服务。
       </p>
 
       <div className="field">
         <label>提供商</label>
-        <select
+        <RadioGroup
+          name="webSearchProvider"
+          ariaLabel="网络搜索提供商"
           value={cfg.provider}
-          onChange={(e) => {
-            updateCfg({
-              provider: e.target.value as WebSearchProviderId,
-            });
+          options={WEB_SEARCH_PROVIDERS.map((p) => ({
+            value: p.id,
+            label: p.label,
+            description: p.description,
+          }))}
+          onChange={(provider) => {
+            updateCfg({ provider });
             setTestResult({ status: "idle" });
           }}
-        >
-          {WEB_SEARCH_PROVIDERS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <p className="field-hint">{meta.description}</p>
+        />
       </div>
 
       {meta.requiresApiKey && meta.apiKeyLabel && (
         <div className="field">
           <label>{meta.apiKeyLabel}</label>
-          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+          <div className="field-with-action">
             <input
               type="password"
               value={cfg[getApiKeyFieldName(cfg.provider)] || ""}
@@ -152,44 +134,12 @@ export default function WebSearchSettingsSection({
             />
             <button
               type="button"
-              onClick={handleTest}
+              className={`settings-check-btn${testResult.status === "success" ? " success" : ""}${testResult.status === "error" ? " failed" : ""}`}
+              onClick={() => void handleTest()}
               disabled={!isTestable || testResult.status === "loading"}
               title="检测 API Key 是否可用"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 4,
-                padding: "0 12px",
-                minWidth: 72,
-                height: 32,
-                border: "1px solid var(--border, #e5e5e5)",
-                borderRadius: 7,
-                background:
-                  testResult.status === "success"
-                    ? "rgba(16, 185, 129, 0.12)"
-                    : testResult.status === "error"
-                    ? "rgba(239, 68, 68, 0.12)"
-                    : "rgba(120, 100, 255, 0.1)",
-                color:
-                  testResult.status === "success"
-                    ? "#10b981"
-                    : testResult.status === "error"
-                    ? "#ef4444"
-                    : "var(--fg, #333)",
-                cursor:
-                  !isTestable || testResult.status === "loading"
-                    ? "not-allowed"
-                    : "pointer",
-                fontSize: 12,
-                fontWeight: 500,
-                whiteSpace: "nowrap",
-              }}
             >
-              {TEST_ICON}
-              {testResult.status === "loading"
-                ? "检测中..."
-                : "检测"}
+              {testResult.status === "loading" ? "检测中…" : "检测"}
             </button>
           </div>
           {testResult.status === "success" && (
@@ -299,7 +249,7 @@ function ApiUrlField({ label, value, defaultValue, placeholder, onChange, onRese
           </span>
         )}
       </label>
-      <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+      <div className="field-with-action">
         <input
           type="url"
           value={value || ""}
@@ -308,22 +258,11 @@ function ApiUrlField({ label, value, defaultValue, placeholder, onChange, onRese
         />
         <button
           type="button"
+          className="field-icon-btn"
           onClick={onReset}
           title={`恢复默认值 ${defaultValue}`}
           disabled={!isCustom}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 32,
-            height: 32,
-            padding: 0,
-            border: "1px solid var(--border, #e5e5e5)",
-            borderRadius: 6,
-            background: "transparent",
-            color: isCustom ? "var(--fg, #333)" : "var(--fg-muted, #bbb)",
-            cursor: isCustom ? "pointer" : "not-allowed",
-          }}
+          aria-label="恢复默认 URL"
         >
           {RESET_ICON}
         </button>

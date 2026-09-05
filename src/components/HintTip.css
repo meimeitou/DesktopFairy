@@ -1,0 +1,58 @@
+.hint-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 1px solid var(--hairline-bold);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--bone-500);
+  font-size: 10px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1;
+  cursor: help;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.hint-tip:hover {
+  color: var(--bone-200);
+  border-color: var(--bone-400);
+}
+
+.hint-tip:focus-visible {
+  outline: 2px solid var(--persimmon-focus);
+  outline-offset: 2px;
+  color: var(--bone-100);
+  border-color: var(--persimmon);
+}
+
+.field-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.field-head:hover,
+.field-head:focus-within {
+  z-index: 20;
+}
+
+.field-head > label,
+.field-head > span {
+  display: inline;
+  margin-bottom: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-300);
+}
+
+.field > .field-head:first-child {
+  margin-top: 0;
+}

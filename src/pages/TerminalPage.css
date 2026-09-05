@@ -69,7 +69,7 @@
   height: 24px;
   padding: 0 8px;
   border-radius: 4px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--bone-500);
   font-size: 12px;
   cursor: pointer;
@@ -79,7 +79,7 @@
 }
 
 .terminal-tab-item:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-300);
 }
 
@@ -125,7 +125,7 @@
 }
 
 .terminal-tab-add:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-100);
 }
 
@@ -152,7 +152,7 @@
 
 .terminal-tab-ssh:hover,
 .terminal-tab-ssh.active {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-100);
 }
 
@@ -172,7 +172,7 @@
 }
 
 .terminal-tab-settings:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--bone-100);
 }
 
@@ -226,7 +226,7 @@
   width: 100%;
   height: 32px;
   padding: 0 10px 0 30px;
-  background: rgba(245, 239, 230, 0.05);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   color: var(--bone-100);
@@ -242,6 +242,7 @@
 
 .ssh-picker-search:focus {
   border-color: var(--persimmon-focus);
+  background: var(--persimmon-softer);
 }
 
 .ssh-picker-list {
@@ -355,7 +356,7 @@
   color: var(--bone-100);
   box-shadow:
     0 6px 18px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(245, 239, 230, 0.06);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -376,8 +377,8 @@
   color: var(--persimmon-bright);
   border-color: var(--persimmon-focus);
   box-shadow:
-    0 8px 22px rgba(232, 98, 74, 0.22),
-    inset 0 1px 0 rgba(245, 239, 230, 0.08);
+    0 8px 22px rgba(0, 185, 107, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .terminal-agent-toggle:active {
@@ -444,7 +445,7 @@
 }
 
 .terminal-selection-tooltip-btn.primary:hover {
-  background: rgba(232, 98, 74, 0.28);
+  background: rgba(0, 185, 107, 0.28);
 }
 
 .terminal-selection-tooltip-divider {
@@ -785,7 +786,7 @@
   max-width: 320px;
   height: 30px;
   padding: 0 8px;
-  background: rgba(245, 239, 230, 0.05);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--hairline-strong);
   border-radius: 6px;
   color: var(--bone-100);
@@ -797,6 +798,7 @@
 .terminal-settings-tab .field-row input:focus,
 .terminal-settings-tab .field-row select:focus {
   border-color: var(--persimmon-focus);
+  background: var(--persimmon-softer);
 }
 
 .terminal-settings-tab .link-btn {
@@ -835,7 +837,7 @@
   justify-content: space-between;
   padding: 10px 12px;
   margin-bottom: 8px;
-  background: rgba(245, 239, 230, 0.03);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   transition: border-color 0.12s, background 0.12s;
@@ -843,7 +845,7 @@
 
 .ssh-host-item:hover {
   border-color: var(--hairline-strong);
-  background: rgba(245, 239, 230, 0.05);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .ssh-host-info {
@@ -873,7 +875,7 @@
 
 .ssh-host-connect-btn {
   padding: 4px 12px;
-  border: 1px solid rgba(232, 98, 74, 0.4);
+  border: 1px solid rgba(0, 185, 107, 0.4);
   border-radius: 6px;
   background: var(--persimmon-soft);
   color: var(--persimmon-bright);
@@ -886,8 +888,8 @@
 }
 
 .ssh-host-connect-btn:hover {
-  background: rgba(232, 98, 74, 0.22);
-  border-color: rgba(232, 98, 74, 0.6);
+  background: rgba(0, 185, 107, 0.22);
+  border-color: rgba(0, 185, 107, 0.6);
 }
 
 .ssh-host-icon-btn {
@@ -1100,7 +1102,7 @@
   flex: 1;
   height: 22px;
   padding: 0 6px;
-  background: rgba(245, 239, 230, 0.06);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--persimmon-focus);
   border-radius: 4px;
   color: var(--bone-100);
@@ -1186,7 +1188,7 @@
 /* SSH 主操作按钮(添加主机) */
 .ssh-primary-btn {
   padding: 6px 14px;
-  border: 1px solid rgba(232, 98, 74, 0.4);
+  border: 1px solid rgba(0, 185, 107, 0.4);
   border-radius: 7px;
   background: var(--persimmon-soft);
   color: var(--persimmon-bright);
@@ -1198,8 +1200,8 @@
 }
 
 .ssh-primary-btn:hover {
-  background: rgba(232, 98, 74, 0.22);
-  border-color: rgba(232, 98, 74, 0.6);
+  background: rgba(0, 185, 107, 0.22);
+  border-color: rgba(0, 185, 107, 0.6);
 }
 
 /* SSH 表单弹窗:分组 + 主机/端口并排 */

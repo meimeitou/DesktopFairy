@@ -20,6 +20,7 @@ const chatShortcutService = require('./chatShortcutService.cjs');
 const tipWindow = require('./tipWindow.cjs');
 const { isOverlayElevated } = require('./tipWindowMacPolicy.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
+const { registerKnowledgeHandlers, retrieveForChat } = require('./knowledge/knowledgeService.cjs');
 const { registerScreenshotHandlers, captureRegion, screenshotCopyText, isOcrAvailable } = require('./screenshotService.cjs');
 const {
   registerLive2DSchemes,
@@ -28,6 +29,7 @@ const {
   pushLive2DBubble,
 } = require('./live2dService.cjs');
 const { registerChatSessionHandlers } = require('./chatSessionService.cjs');
+const { classifyCatalog } = require('./modelKind.cjs');
 const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require('./ptyService.cjs');
 const { registerSshHandlers, killAllSshSessions } = require('./sshService.cjs');
 const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
@@ -894,6 +896,34 @@ const setupIPC = () => {
     };
 
     try {
+      const knowledgeBaseIds = Array.isArray(payload?.knowledgeBaseIds)
+        ? payload.knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
+        : [];
+      let messages = payload.messages;
+      if (knowledgeBaseIds.length > 0) {
+        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+        const query = typeof lastUser?.content === 'string'
+          ? lastUser.content
+          : Array.isArray(lastUser?.content)
+            ? lastUser.content.filter((p) => p?.type === 'text').map((p) => p.text).join('\n')
+            : '';
+        if (query.trim()) {
+          try {
+            const retrieved = await retrieveForChat({ query, baseIds: knowledgeBaseIds });
+            if (retrieved.context) {
+              messages = [{ role: 'system', content: retrieved.context }, ...messages];
+            }
+            if (retrieved.citations?.length) {
+              safeSend('chat:stream:citations', {
+                requestId,
+                citations: retrieved.citations,
+              });
+            }
+          } catch (e) {
+            console.warn('[knowledge] pre-retrieve failed:', e?.message || e);
+          }
+        }
+      }
       const { aborted, usage } = await streamPlainText({
         requestId,
         messages,
@@ -939,9 +969,7 @@ const setupIPC = () => {
         throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
       }
       const json = await res.json();
-      return (Array.isArray(json?.models) ? json.models : [])
-        .map((m) => (typeof m === 'string' ? m : m?.name))
-        .filter(Boolean);
+      return classifyCatalog(Array.isArray(json?.models) ? json.models : []);
     }
 
     if (providerType === 'anthropic') {
@@ -956,9 +984,7 @@ const setupIPC = () => {
         if (!res.ok) return [];
         const json = await res.json();
         const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
-        return list
-          .map((m) => (typeof m === 'string' ? m : m?.id || m?.name))
-          .filter(Boolean);
+        return classifyCatalog(list);
       } catch {
         return [];
       }
@@ -975,12 +1001,11 @@ const setupIPC = () => {
     }
     const json = await res.json();
     const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
-    return list
-      .map((m) => (typeof m === 'string' ? m : m?.id || m?.name))
-      .filter(Boolean);
+    return classifyCatalog(list);
   });
 
   registerFileHandlers(ipcMain);
+  registerKnowledgeHandlers(ipcMain);
   registerScreenshotHandlers(ipcMain, {
     getWindows: getScreenshotWindows,
     captureToChat: sendChatPrefill,

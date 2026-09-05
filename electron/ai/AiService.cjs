@@ -15,7 +15,7 @@ async function streamText({
   apiConfig,
   toolDefinitions,
   toolDeps,
-  maxTurns = 10,
+  maxTurns = 30,
   reasoningEffort,
   signal,
 }) {

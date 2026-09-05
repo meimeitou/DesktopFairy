@@ -14,6 +14,8 @@ const DEFAULT_SAFE_TOOLS = new Set([
   'Skill',
   'UpdateProfile',
   'AskUserQuestion',
+  'kb_search',
+  'kb_read',
 ]);
 
 /** Enabled by default; only chatMode rules (full-auto) may hide from the model. */

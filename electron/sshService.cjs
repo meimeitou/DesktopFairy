@@ -12,6 +12,7 @@ const { Client } = require('ssh2');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { createUtf8BoundaryMiddleware, toBuffer } = require('./utf8Boundary.cjs');
 
 const sessions = new Map();
 
@@ -273,8 +274,7 @@ function registerSshHandlers({ ipcMain }) {
 
         // Capture hook — coexists with the forward-to-renderer listener.
         // Both fire on every data event; this one buffers for runCommandInSshSession.
-        const onCaptureData = (data) => {
-          const text = data.toString('utf8');
+        const onCaptureData = (text) => {
           trackOsc633CommandState(session, text);
           const cap = session.capture;
           if (!cap || cap.done) return;
@@ -299,14 +299,20 @@ function registerSshHandlers({ ipcMain }) {
             cap.resolve({ output: stripAnsi(output), exitCode, remote: true, remoteNote: cap.remoteNote });
           }
         };
-        stream.on('data', onCaptureData);
-        stream.stderr.on('data', onCaptureData);
-        stream.on('data', (data) => {
-          safeSend('ssh:output', { sessionId, data: data.toString('utf8') });
-        });
-        stream.stderr.on('data', (data) => {
-          safeSend('ssh:output', { sessionId, data: data.toString('utf8') });
-        });
+        // Independent UTF-8 decoders per stream so interleaved stdout/stderr
+        // bytes cannot splice a CJK/emoji sequence.
+        const attachUtf8 = (readable) => {
+          const fixUtf8 = createUtf8BoundaryMiddleware();
+          readable.on('data', (data) => {
+            const complete = fixUtf8(toBuffer(data));
+            if (!complete.length) return;
+            const text = complete.toString('utf8');
+            onCaptureData(text);
+            safeSend('ssh:output', { sessionId, data: text });
+          });
+        };
+        attachUtf8(stream);
+        if (stream.stderr) attachUtf8(stream.stderr);
         stream.on('close', () => {
           if (session.capture) {
             const cap = session.capture;

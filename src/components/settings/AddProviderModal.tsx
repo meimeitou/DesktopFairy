@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { FieldHead } from "../HintTip";
+import RadioGroup from "../RadioGroup";
 import type { ProviderType } from "../../shared/providers";
 
 interface Props {
@@ -25,8 +27,9 @@ export default function AddProviderModal({ onClose, onConfirm }: Props) {
       >
         <h4>添加服务商</h4>
         <div className="field">
-          <label>名称</label>
+          <FieldHead htmlFor="add-provider-name">名称</FieldHead>
           <input
+            id="add-provider-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -35,16 +38,21 @@ export default function AddProviderModal({ onClose, onConfirm }: Props) {
           />
         </div>
         <div className="field">
-          <label>类型</label>
-          <select
+          <FieldHead hint="决定请求怎么拼、模型列表从哪拉。多数第三方选 OpenAI 兼容。">
+            类型
+          </FieldHead>
+          <RadioGroup
+            name="providerType"
+            ariaLabel="服务商类型"
             value={type}
-            onChange={(e) => setType(e.target.value as ProviderType)}
-          >
-            <option value="openai">OpenAI 兼容 API</option>
-            <option value="openai-response">OpenAI Responses API</option>
-            <option value="anthropic">Anthropic Messages API</option>
-            <option value="ollama">Ollama</option>
-          </select>
+            options={[
+              { value: "openai", label: "OpenAI 兼容 API" },
+              { value: "openai-response", label: "OpenAI Responses API" },
+              { value: "anthropic", label: "Anthropic Messages API" },
+              { value: "ollama", label: "Ollama" },
+            ]}
+            onChange={setType}
+          />
         </div>
         <div className="provider-modal-footer">
           <button type="button" onClick={onClose}>

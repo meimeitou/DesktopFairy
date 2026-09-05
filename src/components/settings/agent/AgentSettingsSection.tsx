@@ -37,9 +37,21 @@ export default function AgentSettingsSection({ settings, onChange }: Props) {
         );
       case "prompt":
         return <AgentPromptSection agent={agent} onChange={updateAgent} />;
-      case "tools":
+      case "builtin":
         return (
-          <AgentToolsSection agent={agent} onAgentChange={updateAgent} />
+          <AgentToolsSection
+            panel="builtin"
+            agent={agent}
+            onAgentChange={updateAgent}
+          />
+        );
+      case "mcp":
+        return (
+          <AgentToolsSection
+            panel="mcp"
+            agent={agent}
+            onAgentChange={updateAgent}
+          />
         );
       case "skills":
         return (
@@ -60,6 +72,7 @@ export default function AgentSettingsSection({ settings, onChange }: Props) {
             key={item.id}
             type="button"
             className={`agent-section-nav-item${section === item.id ? " active" : ""}`}
+            aria-current={section === item.id ? "page" : undefined}
             onClick={() => setSection(item.id)}
           >
             {item.label}

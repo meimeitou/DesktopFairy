@@ -7,6 +7,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from "react";
+import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import ModelSelector from "../ModelSelector";
 import Tooltip from "../Tooltip";
 import AttachmentPreview from "./AttachmentPreview";
@@ -25,6 +26,7 @@ import {
 } from "../../shared/chatAttachments";
 import { isSupportedFileName } from "../../shared/chatMessages";
 import type { ContextUsageResult } from "../../shared/contextUsage";
+import KnowledgePicker from "../knowledge/KnowledgePicker";
 import "./ChatInputBar.css";
 
 const api = window.electronAPI;
@@ -176,6 +178,8 @@ interface Props {
   editingMessage?: boolean;
   /** Context window usage for the meter left of model selector */
   contextUsage?: ContextUsageResult | null;
+  knowledgeBaseIds?: string[];
+  onKnowledgeBaseIdsChange?: (ids: string[]) => void;
 }
 
 function ChatInputBar({
@@ -204,32 +208,24 @@ function ChatInputBar({
   focusSignal,
   editingMessage = false,
   contextUsage,
+  knowledgeBaseIds,
+  onKnowledgeBaseIdsChange,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectingRef = useRef(false);
   const capturingRef = useRef(false);
-  const slashHostRef = useRef<HTMLDivElement>(null);
 
   const composerDisabled = streaming || editingMessage;
-
-  const showSlashMenu =
-    !composerDisabled &&
-    input.trimStart().startsWith("/") &&
-    !input.includes("\n") &&
-    !!slashCommands?.length;
-
-  const slashQuery = showSlashMenu ? input.trimStart().slice(1) : "";
-
-  useEffect(() => {
-    if (!showSlashMenu) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (slashHostRef.current && !slashHostRef.current.contains(e.target as Node)) {
-        onSlashCommand?.(null as unknown as SlashCommand);
-      }
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [showSlashMenu, onSlashCommand]);
+  const {
+    open: showSlashMenu,
+    query: slashQuery,
+    hostRef: slashHostRef,
+    close: closeSlashMenu,
+  } = useSlashCommandMenu(
+    input,
+    composerDisabled || !onSlashCommand,
+    slashCommands,
+  );
 
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -439,7 +435,7 @@ function ChatInputBar({
               commands={slashCommands}
               query={slashQuery}
               onSelect={onSlashCommand}
-              onClose={() => onSlashCommand(null as unknown as SlashCommand)}
+              onClose={closeSlashMenu}
             />
           )}
           <textarea
@@ -467,7 +463,7 @@ function ChatInputBar({
                 <PaperclipIcon />
               </button>
             </Tooltip>
-            <Tooltip tip={"区域截图\nEsc 取消"}>
+            <Tooltip tip={"区域截图"}>
               <button
                 type="button"
                 className="chat-tool-btn"
@@ -477,7 +473,14 @@ function ChatInputBar({
                 <CameraIcon />
               </button>
             </Tooltip>
-            <Tooltip tip={"清除上下文\n后续消息不再引用此前对话"}>
+            {onKnowledgeBaseIdsChange && (
+              <KnowledgePicker
+                selectedIds={knowledgeBaseIds || []}
+                onChange={onKnowledgeBaseIdsChange}
+                disabled={composerDisabled}
+              />
+            )}
+            <Tooltip tip={"清除上下文"}>
               <button
                 type="button"
                 className="chat-tool-btn"
@@ -487,7 +490,7 @@ function ChatInputBar({
                 <EraserIcon />
               </button>
             </Tooltip>
-            <Tooltip tip={"压缩上下文\nAI 总结摘要后自动清除旧对话"}>
+            <Tooltip tip={"压缩上下文"}>
               <button
                 type="button"
                 className="chat-tool-btn"
@@ -497,7 +500,7 @@ function ChatInputBar({
                 <CompactIcon />
               </button>
             </Tooltip>
-            <Tooltip tip={"清空消息\n删除当前会话全部消息"}>
+            <Tooltip tip={"清空消息"}>
               <button
                 type="button"
                 className="chat-tool-btn chat-tool-btn-danger"

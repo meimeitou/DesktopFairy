@@ -33,6 +33,7 @@ export interface ChatTopic {
   createdAt: number;
   updatedAt: number;
   orderKey: number;
+  knowledgeBaseIds?: string[];
 }
 
 export interface ChatTopicsStore {
@@ -53,12 +54,19 @@ export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
   if (!raw || typeof raw !== "object") return emptyChatTopicsStore();
   const data = raw as Partial<ChatTopicsStore>;
   const topics = Array.isArray(data.topics)
-    ? data.topics.filter(
-        (t): t is ChatTopic =>
-          !!t &&
-          typeof (t as ChatTopic).id === "string" &&
-          typeof (t as ChatTopic).createdAt === "number",
-      )
+    ? data.topics
+        .filter(
+          (t): t is ChatTopic =>
+            !!t &&
+            typeof (t as ChatTopic).id === "string" &&
+            typeof (t as ChatTopic).createdAt === "number",
+        )
+        .map((t) => ({
+          ...t,
+          knowledgeBaseIds: Array.isArray(t.knowledgeBaseIds)
+            ? t.knowledgeBaseIds.filter((id): id is string => typeof id === "string")
+            : undefined,
+        }))
     : [];
   return {
     version: CHAT_TOPICS_VERSION,
@@ -167,6 +175,9 @@ function normalizeChatMessage(raw: unknown): ChatMsg | null {
     error: m.error === true,
     attachments: m.attachments,
     timestamp: m.timestamp,
+    knowledgeCitations: Array.isArray(m.knowledgeCitations)
+      ? m.knowledgeCitations
+      : undefined,
   };
 }
 

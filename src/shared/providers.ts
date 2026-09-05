@@ -12,8 +12,12 @@ export interface LlmProvider {
   apiKey: string;
   enabled: boolean;
   isSystem: boolean;
-  /** Curated model ids shown in selectors */
+  /** Curated chat / completion model ids shown in selectors */
   models: string[];
+  /** Enabled embedding models for future knowledge-base use */
+  embeddingModels: string[];
+  /** Enabled rerank models for future knowledge-base use */
+  rerankModels: string[];
 }
 
 export const SYSTEM_PROVIDERS: LlmProvider[] = [
@@ -26,6 +30,8 @@ export const SYSTEM_PROVIDERS: LlmProvider[] = [
     enabled: false,
     isSystem: true,
     models: ["gpt-4o-mini"],
+    embeddingModels: [],
+    rerankModels: [],
   },
   {
     id: "ollama",
@@ -36,6 +42,8 @@ export const SYSTEM_PROVIDERS: LlmProvider[] = [
     enabled: false,
     isSystem: true,
     models: [],
+    embeddingModels: [],
+    rerankModels: [],
   },
   {
     id: "hermes",
@@ -46,6 +54,8 @@ export const SYSTEM_PROVIDERS: LlmProvider[] = [
     enabled: false,
     isSystem: true,
     models: ["hermes-agent"],
+    embeddingModels: [],
+    rerankModels: [],
   },
 ];
 
@@ -76,6 +86,31 @@ export function createCustomProvider(
     enabled: true,
     isSystem: false,
     models: [],
+    embeddingModels: [],
+    rerankModels: [],
+  };
+}
+
+function normalizeIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+export function normalizeProvider(provider: LlmProvider): LlmProvider {
+  return {
+    ...provider,
+    models: normalizeIdList(provider.models),
+    embeddingModels: normalizeIdList(provider.embeddingModels),
+    rerankModels: normalizeIdList(provider.rerankModels),
   };
 }
 
@@ -174,7 +209,7 @@ export function getProviderTypeLabel(type: ProviderType): string {
 }
 
 export function cloneProviders(providers: LlmProvider[]): LlmProvider[] {
-  return providers.map((p) => ({ ...p, models: [...p.models] }));
+  return providers.map((p) => normalizeProvider(p));
 }
 
 export function mergeSystemProviders(
@@ -188,19 +223,22 @@ export function mergeSystemProviders(
     if (deleted.has(sys.id)) continue;
     const existing = byId.get(sys.id);
     if (!existing) {
-      merged.push({ ...sys, models: [...sys.models] });
+      merged.push(normalizeProvider(sys));
     } else {
-      merged.push({
-        ...sys,
-        ...existing,
-        isSystem: true,
-        models: existing.models.length > 0 ? existing.models : [...sys.models],
-      });
+      const existingModels = normalizeIdList(existing.models);
+      merged.push(
+        normalizeProvider({
+          ...sys,
+          ...existing,
+          isSystem: true,
+          models: existingModels.length > 0 ? existingModels : [...sys.models],
+        })
+      );
     }
   }
   for (const p of providers) {
     if (!p.isSystem && !merged.some((m) => m.id === p.id)) {
-      merged.push({ ...p, models: [...p.models] });
+      merged.push(normalizeProvider(p));
     }
   }
   return merged;

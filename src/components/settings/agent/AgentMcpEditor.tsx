@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import Checkbox from "../../Checkbox";
+import HintTip, { FieldHead } from "../../HintTip";
 import type { McpServer, McpServerType } from "../../../shared/mcpServer";
 import {
   formatArgsMultiline,
@@ -166,7 +168,9 @@ export default function AgentMcpEditor({
       </div>
 
       <div className="field">
-        <label>传输类型</label>
+        <FieldHead hint="远程 MCP 暂不支持智能体运行时，请先使用 stdio。">
+          传输类型
+        </FieldHead>
         <select
           value={type}
           onChange={(e) => setType(e.target.value as McpServerType)}
@@ -176,7 +180,9 @@ export default function AgentMcpEditor({
           <option value="streamableHttp">Streamable HTTP（远程）</option>
         </select>
         {type !== "stdio" && (
-          <p className="field-hint">远程 MCP 暂不支持智能体运行时，请先使用 stdio。</p>
+          <p className="field-hint field-hint--after warn">
+            远程 MCP 暂不支持智能体运行时，请改用 stdio。
+          </p>
         )}
       </div>
 
@@ -192,8 +198,11 @@ export default function AgentMcpEditor({
             />
           </div>
           <div className="field">
-            <label>参数（每行一个）</label>
+            <FieldHead htmlFor="mcp-args" hint="每行一个参数。需要目录时，点下方按钮写入最后一行。">
+              参数
+            </FieldHead>
             <textarea
+              id="mcp-args"
               className="agent-mcp-textarea"
               value={argsText}
               onChange={(e) => setArgsText(e.target.value)}
@@ -211,8 +220,11 @@ export default function AgentMcpEditor({
             )}
           </div>
           <div className="field">
-            <label>环境变量（每行 KEY=value）</label>
+            <FieldHead htmlFor="mcp-env" hint="每行一个 KEY=value。">
+              环境变量
+            </FieldHead>
             <textarea
+              id="mcp-env"
               className="agent-mcp-textarea"
               value={envText}
               onChange={(e) => setEnvText(e.target.value)}
@@ -233,8 +245,11 @@ export default function AgentMcpEditor({
             />
           </div>
           <div className="field">
-            <label>Headers（每行 KEY=value）</label>
+            <FieldHead htmlFor="mcp-headers" hint="每行一个 KEY=value。">
+              Headers
+            </FieldHead>
             <textarea
+              id="mcp-headers"
               className="agent-mcp-textarea"
               value={headersText}
               onChange={(e) => setHeadersText(e.target.value)}
@@ -246,25 +261,31 @@ export default function AgentMcpEditor({
       )}
 
       <div className="field">
-        <label>工具超时（秒）</label>
-        <input
-          type="number"
-          min={1}
-          value={timeoutSec}
-          onChange={(e) => setTimeoutSec(e.target.value)}
-          placeholder="默认 60"
-        />
+        <FieldHead htmlFor="mcp-timeout" hint="单个工具调用的超时秒数。留空则使用 60 秒。">
+          工具超时
+        </FieldHead>
+        <div className="field-number-row">
+          <input
+            id="mcp-timeout"
+            type="number"
+            min={1}
+            value={timeoutSec}
+            onChange={(e) => setTimeoutSec(e.target.value)}
+            placeholder="60"
+          />
+          <span className="field-number-suffix">秒</span>
+        </div>
       </div>
 
       <div className="field">
-        <label>
-          <input
-            type="checkbox"
+        <div className="agent-inline-check">
+          <Checkbox
             checked={longRunning}
-            onChange={(e) => setLongRunning(e.target.checked)}
-          />{" "}
-          长时间运行模式（收到 MCP 进度时重置超时，最长 10 分钟）
-        </label>
+            onChange={setLongRunning}
+            label="长时间运行"
+          />
+          <HintTip tip="收到 MCP 进度时重置超时，最长 10 分钟。" />
+        </div>
       </div>
 
       <div className="agent-mcp-preview">

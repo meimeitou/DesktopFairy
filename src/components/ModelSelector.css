@@ -15,7 +15,7 @@
   flex: 1;
   min-width: 0;
   padding: 8px 11px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   font-size: 13px;
@@ -29,11 +29,11 @@
 
 .model-selector-input:focus {
   border-color: var(--persimmon-focus);
-  background: rgba(245, 239, 230, 0.07);
+  background: var(--persimmon-softer);
 }
 
 .model-selector-input::placeholder {
-  color: rgba(245, 239, 230, 0.2);
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .model-selector-combo {
@@ -50,7 +50,7 @@
   gap: 8px;
   width: 100%;
   padding: 8px 11px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   font-size: 13px;
@@ -65,14 +65,14 @@
 }
 
 .model-selector-trigger:hover:not(:disabled) {
-  background: rgba(245, 239, 230, 0.07);
+  background: rgba(255, 255, 255, 0.07);
   border-color: var(--hairline-bold);
 }
 
 .model-selector-trigger:focus,
 .model-selector-combo.open .model-selector-trigger {
   border-color: var(--persimmon-focus);
-  background: rgba(245, 239, 230, 0.07);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .model-selector-trigger:disabled {
@@ -168,7 +168,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 6px 10px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline);
   border-radius: 6px;
   font-size: 12px;
@@ -180,10 +180,11 @@
 
 .model-selector-search:focus {
   border-color: var(--persimmon-focus);
+  background: var(--persimmon-softer);
 }
 
 .model-selector-search::placeholder {
-  color: rgba(245, 239, 230, 0.2);
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .model-selector-list {
@@ -234,7 +235,7 @@
 
 .model-selector-mode-btn {
   padding: 0 10px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   color: var(--bone-500);

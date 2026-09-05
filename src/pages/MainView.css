@@ -28,7 +28,7 @@
   font-size: 80px;
   line-height: 1;
   user-select: none;
-  filter: drop-shadow(0 4px 24px rgba(120, 100, 255, 0.5));
+  filter: drop-shadow(0 4px 24px rgba(0, 185, 107, 0.35));
 }
 
 /* Hover overlay — pill buttons at bottom center */
@@ -61,7 +61,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  background: rgba(20, 15, 40, 0.85);
+  background: rgba(28, 28, 28, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(10px);
@@ -73,7 +73,7 @@
     transform 0.1s;
 }
 .hover-btn:hover {
-  background: rgba(40, 30, 70, 0.9);
+  background: rgba(42, 42, 42, 0.94);
   color: rgba(255, 255, 255, 0.95);
   transform: translateY(-1px);
 }
@@ -81,12 +81,12 @@
   transform: translateY(0);
 }
 .hover-btn.primary {
-  background: rgba(90, 70, 200, 0.85);
-  border-color: rgba(120, 100, 255, 0.4);
+  background: rgba(0, 185, 107, 0.88);
+  border-color: rgba(34, 209, 122, 0.45);
   color: #fff;
 }
 .hover-btn.primary:hover {
-  background: rgba(110, 90, 220, 0.9);
+  background: rgba(34, 209, 122, 0.92);
 }
 
 /* Live2D loading/error overlays (used by Live2DCanvas) */
@@ -101,7 +101,7 @@
   pointer-events: none;
 }
 .live2d-status > * {
-  background: rgba(10, 8, 20, 0.75);
+  background: rgba(28, 28, 28, 0.75);
   color: rgba(255, 255, 255, 0.7);
   font-size: 13px;
   padding: 6px 14px;

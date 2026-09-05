@@ -9,15 +9,14 @@ interface Props {
 }
 
 // 装饰颜色必须用 #RRGGBB 字面值（SearchAddon 类型要求），不能用 CSS 变量。
-// ink-600 #3a332c 用于所有匹配项的淡底；persimmon #e8624a 用于当前活跃匹配。
-// overviewRuler 字段在未加载 overview ruler addon 时无视觉效果，但类型必填。
+// ink-600 用于所有匹配项的淡底；品牌绿用于当前活跃匹配。
 const DECORATIONS = {
-  matchBackground: "#3a332c",
-  matchBorder: "#4a423a",
-  matchOverviewRuler: "#3a332c",
-  activeMatchBackground: "#e8624a",
-  activeMatchBorder: "#f07558",
-  activeMatchColorOverviewRuler: "#e8624a",
+  matchBackground: "#3f3f3f",
+  matchBorder: "#525252",
+  matchOverviewRuler: "#3f3f3f",
+  activeMatchBackground: "#00b96b",
+  activeMatchBorder: "#22d17a",
+  activeMatchColorOverviewRuler: "#00b96b",
 };
 
 export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props) {

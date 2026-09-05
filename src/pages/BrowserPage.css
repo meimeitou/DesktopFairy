@@ -65,12 +65,12 @@ html.browser-window-shell body {
 
 .browser-tab:hover {
   background: var(--hairline, rgba(255, 255, 255, 0.08));
-  color: var(--bone-200, #e8e4dc);
+  color: var(--bone-200);
 }
 
 .browser-tab.active {
-  background: var(--persimmon-softer, rgba(232, 120, 80, 0.18));
-  color: var(--bone-100, #f5f2ec);
+  background: var(--persimmon-softer);
+  color: var(--bone-100);
 }
 
 .browser-tab-label {
@@ -118,7 +118,7 @@ html.browser-window-shell body {
 
 .browser-tab-add:hover {
   background: var(--hairline, rgba(255, 255, 255, 0.08));
-  color: var(--bone-200, #e8e4dc);
+  color: var(--bone-200);
 }
 
 .browser-topbar-drag {
@@ -151,7 +151,7 @@ html.browser-window-shell body {
   border: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
-  color: var(--bone-200, #e8e4dc);
+  color: var(--bone-200);
   font-size: 12px;
   font-family: Menlo, Monaco, "Courier New", monospace;
   outline: none;
@@ -159,12 +159,12 @@ html.browser-window-shell body {
 }
 
 .browser-url-input::placeholder {
-  color: var(--bone-600, #6b665e);
+  color: var(--bone-600);
 }
 
 .browser-url-input:focus {
-  border-color: rgba(232, 120, 80, 0.45);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--persimmon-focus);
+  background: var(--persimmon-softer);
 }
 
 .browser-url-action {
@@ -184,7 +184,7 @@ html.browser-window-shell body {
 
 .browser-url-action:hover:not(:disabled) {
   background: var(--hairline, rgba(255, 255, 255, 0.08));
-  color: var(--bone-200, #e8e4dc);
+  color: var(--bone-200);
 }
 
 .browser-url-action:disabled {
@@ -217,7 +217,7 @@ html.browser-window-shell body {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--bone-600, #6b665e);
+  color: var(--bone-600);
   font-size: 13px;
   background: #0f0f19;
 }

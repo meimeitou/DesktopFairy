@@ -37,6 +37,7 @@ export async function openAgentStream(payload: {
     modelName: string;
   };
   terminalSessionId?: string;
+  knowledgeBaseIds?: string[];
 }) {
   return api.invoke("ai:stream_open", payload) as Promise<AgentStreamOpenResult>;
 }

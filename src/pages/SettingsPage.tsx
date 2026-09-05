@@ -5,6 +5,7 @@ import SelectionSettingsSection from "../components/settings/SelectionSettingsSe
 import Live2DSettingsSection from "../components/settings/Live2DSettingsSection";
 import WebSearchSettingsSection from "../components/settings/WebSearchSettingsSection";
 import ShortcutSettingsSection from "../components/settings/ShortcutSettingsSection";
+import FileProcessingSettingsSection from "../components/settings/FileProcessingSettingsSection";
 import type { AppSettings } from "../shared/settings";
 import {
   setSettings,
@@ -19,6 +20,7 @@ type SettingsTab =
   | "model"
   | "agent"
   | "websearch"
+  | "fileProcessing"
   | "selection"
   | "character"
   | "shortcut"
@@ -160,10 +162,31 @@ function EarthIcon() {
   );
 }
 
+function FileProcIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+    </svg>
+  );
+}
+
 const MENU_PRIMARY: MenuItem[] = [
   { id: "model", label: "AI 模型", icon: <CloudIcon /> },
   { id: "agent", label: "智能体", icon: <SparkleIcon /> },
   { id: "websearch", label: "网络搜索", icon: <EarthIcon /> },
+  { id: "fileProcessing", label: "文档处理", icon: <FileProcIcon /> },
   { id: "selection", label: "划词助手", icon: <ScissorsIcon /> },
 ];
 
@@ -177,6 +200,7 @@ const TAB_META: Record<SettingsTab, { title: string; desc: string }> = {
   model: { title: "AI 模型", desc: "配置模型服务商、API 密钥与默认模型" },
   agent: { title: "智能体", desc: "定义人格、技能、工具与执行策略" },
   websearch: { title: "网络搜索", desc: "让智能体在回答时检索网络资料" },
+  fileProcessing: { title: "文档处理", desc: "选择处理器并配置凭证" },
   selection: { title: "划词助手", desc: "选中文本后弹出的快捷操作工具栏" },
   character: { title: "Live2D 配置", desc: "桌宠模型、窗口尺寸与表现" },
   shortcut: { title: "快捷键", desc: "全局唤起应用的按键" },
@@ -260,32 +284,20 @@ export default function SettingsPage({
     switch (activeTab) {
       case "model":
         return (
-          <>
-            <ProviderSettingsSection
-              settings={settings}
-              onChange={commitSettings}
-            />
-            <section className="settings-section">
-              <h3>语音 (TTS)</h3>
-              <div className="field field-row">
-                <label>启用语音播报</label>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={settings.ttsEnabled}
-                    onChange={(e) => update({ ttsEnabled: e.target.checked })}
-                  />
-                  <span className="toggle-track" />
-                </label>
-              </div>
-            </section>
-          </>
+          <ProviderSettingsSection
+            settings={settings}
+            onChange={commitSettings}
+          />
         );
       case "agent":
         return <AgentSettingsSection settings={settings} onChange={updateSettings} />;
       case "websearch":
         return (
           <WebSearchSettingsSection settings={settings} onChange={update} />
+        );
+      case "fileProcessing":
+        return (
+          <FileProcessingSettingsSection settings={settings} onChange={update} />
         );
       case "selection":
         return (
@@ -310,6 +322,7 @@ export default function SettingsPage({
               <li className="done">快捷键</li>
               <li className="done">智能体</li>
               <li className="done">AI 模型</li>
+              <li className="done">知识库</li>
               <li className="done">语音播报</li>
             </ul>
           </section>
@@ -324,7 +337,22 @@ export default function SettingsPage({
       <SettingsSidebar active={activeTab} onSelect={setActiveTab} />
       <main className="settings-content">
         <header className="settings-page-header">
-          <h1 className="settings-page-title">{TAB_META[activeTab].title}</h1>
+          <div className="settings-page-title-row">
+            <h1 className="settings-page-title">{TAB_META[activeTab].title}</h1>
+            {activeTab === "selection" && (
+              <label className="toggle" title="启用划词助手">
+                <input
+                  type="checkbox"
+                  checked={settings.selectionEnabled}
+                  onChange={(e) =>
+                    update({ selectionEnabled: e.target.checked })
+                  }
+                  aria-label="启用划词助手"
+                />
+                <span className="toggle-track" />
+              </label>
+            )}
+          </div>
           <p className="settings-page-desc">{TAB_META[activeTab].desc}</p>
         </header>
         {persistError && (

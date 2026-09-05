@@ -21,7 +21,7 @@ declare global {
         }) => void
       ) => () => void;
       onChatNavigate: (
-        callback: (view: "chat" | "settings" | "terminal") => void
+        callback: (view: "chat" | "settings" | "terminal" | "knowledge") => void
       ) => () => void;
       onSettingsUpdated: (
         callback: (settings: Record<string, unknown>) => void
@@ -64,6 +64,18 @@ declare global {
       ) => () => void;
       onChatStreamError: (
         callback: (payload: { requestId: string; message: string }) => void
+      ) => () => void;
+      onChatStreamCitations?: (
+        callback: (payload: {
+          requestId: string;
+          citations: Array<{
+            baseId: string;
+            baseName: string;
+            itemId: string;
+            sourceName: string;
+            text: string;
+          }>;
+        }) => void
       ) => () => void;
       onAgentStreamTool: (
         callback: (payload: {

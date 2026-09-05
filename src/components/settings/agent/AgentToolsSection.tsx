@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import HintTip from "../../HintTip";
 import {
   getBuiltinToolCatalog,
   getEnabledAgentBuiltinTools,
@@ -16,7 +17,7 @@ import AgentMcpEditor from "./AgentMcpEditor";
 
 const api = window.electronAPI;
 
-type ToolTab = "builtin" | "mcp";
+type ToolPanel = "builtin" | "mcp";
 
 interface McpPreset {
   id: string;
@@ -27,6 +28,7 @@ interface McpPreset {
 }
 
 interface Props {
+  panel: ToolPanel;
   agent: AgentConfig;
   onAgentChange: (patch: Partial<AgentConfig>) => void;
 }
@@ -53,10 +55,10 @@ function McpStatusDot({ state, title }: { state: McpRuntimeState; title?: string
 }
 
 export default function AgentToolsSection({
+  panel,
   agent,
   onAgentChange,
 }: Props) {
-  const [tab, setTab] = useState<ToolTab>("builtin");
   const [search, setSearch] = useState("");
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpPresets, setMcpPresets] = useState<McpPreset[]>([]);
@@ -113,10 +115,12 @@ export default function AgentToolsSection({
   }, []);
 
   useEffect(() => {
+    if (panel !== "mcp") return;
     void loadMcp();
-  }, [loadMcp]);
+  }, [panel, loadMcp]);
 
   useEffect(() => {
+    if (panel !== "mcp") return;
     const off = api.onMcpStatusChanged?.((payload) => {
       setMcpStatuses((prev) => ({
         ...prev,
@@ -128,7 +132,7 @@ export default function AgentToolsSection({
       }));
     });
     return () => off?.();
-  }, []);
+  }, [panel]);
 
   const toggleLocalTool = (id: string, enabled: boolean) => {
     if (id === "Terminal") return; // Terminal is never available in the local context.
@@ -296,78 +300,62 @@ export default function AgentToolsSection({
 
   return (
     <section className="settings-section agent-subsection">
-      <h4>工具</h4>
-      <p className="agent-subsection-intro">
-        内置工具与 MCP 只能启用/禁用。参数每行一个、环境变量 KEY=value；保存前可「测试连接」。
-      </p>
-
-      <div className="agent-tool-tabs">
-        <button
-          type="button"
-          className={`agent-tool-tab${tab === "builtin" ? " active" : ""}`}
-          onClick={() => setTab("builtin")}
-        >
-          内置工具
-        </button>
-        <button
-          type="button"
-          className={`agent-tool-tab${tab === "mcp" ? " active" : ""}`}
-          onClick={() => setTab("mcp")}
-        >
-          MCP
-        </button>
-      </div>
-
-      {tab === "builtin" && (
-        <div className="field agent-tool-search">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索…"
+      {panel === "builtin" && (
+        <>
+          <div className="agent-tool-search-row">
+            <div className="field agent-tool-search">
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜索…"
+                aria-label="搜索内置工具"
+              />
+            </div>
+            <HintTip tip="按本地对话与终端分别开关。Terminal 仅终端可用，Bash 仅本地可用。" />
+          </div>
+          <AgentContextualToolList
+            items={builtinCatalogItems}
+            contexts={[
+              {
+                key: "local",
+                label: "本地",
+                enabledIds: localEnabledIds,
+                forcedOffIds: new Set([
+                  "Terminal",
+                  ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
+                ]),
+                onToggle: toggleLocalTool,
+              },
+              {
+                key: "terminal",
+                label: "终端",
+                enabledIds: terminalEnabledIds,
+                forcedOffIds: new Set([
+                  "Bash",
+                  ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
+                ]),
+                onToggle: toggleTerminalTool,
+              },
+            ]}
+            search={search}
+            emptyLabel="无匹配的内置工具"
           />
-        </div>
+        </>
       )}
 
-      {tab === "builtin" && (
-        <AgentContextualToolList
-          items={builtinCatalogItems}
-          contexts={[
-            {
-              key: "local",
-              label: "本地",
-              enabledIds: localEnabledIds,
-              forcedOffIds: new Set([
-                "Terminal",
-                ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
-              ]),
-              onToggle: toggleLocalTool,
-            },
-            {
-              key: "terminal",
-              label: "终端",
-              enabledIds: terminalEnabledIds,
-              forcedOffIds: new Set([
-                "Bash",
-                ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
-              ]),
-              onToggle: toggleTerminalTool,
-            },
-          ]}
-          search={search}
-          emptyLabel="无匹配的内置工具"
-        />
-      )}
-
-      {tab === "mcp" && (
+      {panel === "mcp" && (
         <div className="agent-mcp-panel">
           {loadingMcp ? (
-            <p className="field-hint">正在加载 MCP 服务器…</p>
+            <p className="agent-status-line">正在加载 MCP 服务器…</p>
           ) : (
             <>
               <div className="agent-catalog-block">
                 <div className="agent-catalog-head">
-                  <span>绑定到智能体</span>
+                  <span className="agent-catalog-head-label">
+                    绑定到智能体
+                    <HintTip tip="仅已启用的 MCP 会出现在这里。打开开关后，智能体即可调用该服务器的工具。" />
+                  </span>
                 </div>
                 <div className="agent-catalog-body">
                   {mcpBindItems.length === 0 ? (
@@ -386,7 +374,10 @@ export default function AgentToolsSection({
               {inactivePresets.length > 0 && (
                 <div className="agent-catalog-block">
                   <div className="agent-catalog-head">
-                    <span>内置 MCP 预设</span>
+                    <span className="agent-catalog-head-label">
+                      内置预设
+                      <HintTip tip="安装后可在下方编辑启动参数，例如目录路径。" />
+                    </span>
                   </div>
                   <ul className="agent-toggle-list">
                     {inactivePresets.map((preset) => (
@@ -394,9 +385,6 @@ export default function AgentToolsSection({
                         <div className="agent-toggle-main">
                           <strong>{preset.name}</strong>
                           {preset.description && <p>{preset.description}</p>}
-                          {preset.shouldConfig && (
-                            <p className="field-hint">安装后可在下方编辑启动参数（如目录路径）。</p>
-                          )}
                         </div>
                         <button
                           type="button"
@@ -413,7 +401,10 @@ export default function AgentToolsSection({
 
               <div className="agent-catalog-block">
                 <div className="agent-catalog-head">
-                  <span>管理 MCP 服务器</span>
+                  <span className="agent-catalog-head-label">
+                    服务器
+                    <HintTip tip="全局启停 MCP 进程。绑定到智能体与此处开关相互独立。" />
+                  </span>
                   <button
                     type="button"
                     className="agent-catalog-add-btn"

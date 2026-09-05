@@ -1,13 +1,28 @@
 import { useMemo, useState } from "react";
+import RadioGroup, { CheckGroup } from "../../RadioGroup";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import { getToolDisplayName } from "../../../shared/toolCallDisplay";
 import {
   canSubmitAskUserAnswer,
   parseAskUserQuestions,
   type AskUserAnswers,
+  type QuestionItem,
 } from "./askUserQuestionParse";
 
 export type { AskUserAnswers };
+
+const OTHER_VALUE = "__other__";
+
+function questionChoiceOptions(q: QuestionItem) {
+  return [
+    ...q.options.map((opt) => ({
+      value: opt.label,
+      label: opt.label,
+      description: opt.description,
+    })),
+    { value: OTHER_VALUE, label: "其他", description: "自行输入" },
+  ];
+}
 
 interface Props {
   msg: ChatMsg;
@@ -32,33 +47,6 @@ export default function AskUserQuestionCard({
   const [otherSelected, setOtherSelected] = useState<Record<string, boolean>>({});
   const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
-
-  const toggleOption = (question: string, label: string, multi: boolean) => {
-    if (!multi) {
-      setOtherSelected((prev) => ({ ...prev, [question]: false }));
-    }
-    setSelected((prev) => {
-      const current = prev[question] || [];
-      if (multi) {
-        const has = current.includes(label);
-        return {
-          ...prev,
-          [question]: has ? current.filter((x) => x !== label) : [...current, label],
-        };
-      }
-      return { ...prev, [question]: [label] };
-    });
-  };
-
-  const toggleOther = (question: string, multi: boolean) => {
-    setOtherSelected((prev) => {
-      const next = !prev[question];
-      if (!multi && next) {
-        setSelected((s) => ({ ...s, [question]: [] }));
-      }
-      return { ...prev, [question]: next };
-    });
-  };
 
   const canSubmit =
     answerReady &&
@@ -115,36 +103,47 @@ export default function AskUserQuestionCard({
                 <div className="agent-tool-ask-question-header">{q.header}</div>
               )}
               <div className="agent-tool-ask-question-text">{q.question}</div>
-              <div className="agent-tool-ask-options">
-                {q.options.map((opt) => {
-                  const active = (selected[q.question] || []).includes(opt.label);
-                  return (
-                    <button
-                      key={opt.label}
-                      type="button"
-                      className={`agent-tool-ask-option${active ? " active" : ""}`}
-                      disabled={submitting || submitted || !answerReady}
-                      onClick={() => toggleOption(q.question, opt.label, !!q.multiSelect)}
-                    >
-                      <span className="agent-tool-ask-option-label">{opt.label}</span>
-                      {opt.description && (
-                        <span className="agent-tool-ask-option-desc">{opt.description}</span>
-                      )}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  className={`agent-tool-ask-option agent-tool-ask-option-other${
-                    otherSelected[q.question] ? " active" : ""
-                  }`}
+              {q.multiSelect ? (
+                <CheckGroup
+                  name={`ask-${msg.id}-${q.question}`}
+                  ariaLabel={q.question}
                   disabled={submitting || submitted || !answerReady}
-                  onClick={() => toggleOther(q.question, !!q.multiSelect)}
-                >
-                  <span className="agent-tool-ask-option-label">其他</span>
-                  <span className="agent-tool-ask-option-desc">自行输入</span>
-                </button>
-              </div>
+                  values={[
+                    ...(selected[q.question] || []),
+                    ...(otherSelected[q.question] ? [OTHER_VALUE] : []),
+                  ]}
+                  options={questionChoiceOptions(q)}
+                  onChange={(next) => {
+                    const useOther = next.includes(OTHER_VALUE);
+                    setOtherSelected((prev) => ({ ...prev, [q.question]: useOther }));
+                    setSelected((prev) => ({
+                      ...prev,
+                      [q.question]: next.filter((v) => v !== OTHER_VALUE),
+                    }));
+                  }}
+                />
+              ) : (
+                <RadioGroup
+                  name={`ask-${msg.id}-${q.question}`}
+                  ariaLabel={q.question}
+                  disabled={submitting || submitted || !answerReady}
+                  value={
+                    otherSelected[q.question]
+                      ? OTHER_VALUE
+                      : (selected[q.question]?.[0] ?? null)
+                  }
+                  options={questionChoiceOptions(q)}
+                  onChange={(next) => {
+                    if (next === OTHER_VALUE) {
+                      setOtherSelected((prev) => ({ ...prev, [q.question]: true }));
+                      setSelected((prev) => ({ ...prev, [q.question]: [] }));
+                      return;
+                    }
+                    setOtherSelected((prev) => ({ ...prev, [q.question]: false }));
+                    setSelected((prev) => ({ ...prev, [q.question]: [next] }));
+                  }}
+                />
+              )}
               {otherSelected[q.question] && (
                 <input
                   className="agent-tool-ask-other-input"

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import HintTip from "../../HintTip";
 import type { AgentConfig, AgentSkillDescriptor } from "../../../shared/agent";
 import AgentCatalogToggleList from "./AgentCatalogToggleList";
 
@@ -89,39 +90,35 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
 
   return (
     <section className="settings-section agent-subsection">
-      <h4>技能</h4>
-      <p className="agent-subsection-intro">
-        启用后通过 <code>Skill</code> / <code>Skills</code> 按需加载与管理。可导入含{" "}
-        <code>SKILL.md</code> 的本地文件夹，或直接编辑{" "}
-        <code>~/.agents/skills/</code>。
-      </p>
-
       <div className="agent-skills-toolbar">
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled={importingSkill}
-          onClick={() => void importLocalSkill()}
-        >
-          {importingSkill ? "导入中…" : "导入本地技能"}
-        </button>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() => void openSkillsDir()}
-        >
-          打开目录
-        </button>
-        <button
-          type="button"
-          className="btn-ghost"
-          onClick={() => void loadSkills()}
-        >
-          刷新
-        </button>
+        <div className="agent-skills-toolbar-actions">
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={importingSkill}
+            onClick={() => void importLocalSkill()}
+          >
+            {importingSkill ? "导入中…" : "导入本地技能"}
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => void openSkillsDir()}
+          >
+            打开目录
+          </button>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => void loadSkills()}
+          >
+            刷新
+          </button>
+        </div>
+        <HintTip tip="启用后通过 Skill 工具按需加载。可导入含 SKILL.md 的本地文件夹，或直接编辑 ~/.agents/skills/。" />
       </div>
       {skillImportError && (
-        <p className="field-hint warn">{skillImportError}</p>
+        <p className="field-hint field-hint--after warn">{skillImportError}</p>
       )}
 
       <div className="field agent-tool-search">
@@ -130,18 +127,19 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="搜索技能…"
+          aria-label="搜索技能"
         />
       </div>
 
       {loadingSkills ? (
-        <p className="field-hint">正在扫描技能…</p>
+        <p className="agent-status-line">正在扫描技能…</p>
       ) : (
         <AgentCatalogToggleList
           items={skillItems}
           enabledIds={enabledSkillIds}
           onToggle={toggleSkill}
           search={search}
-          emptyLabel="暂无技能。可在 ~/.agents/skills/ 下添加 SKILL.md。"
+          emptyLabel="暂无技能。导入含 SKILL.md 的文件夹，或放到 ~/.agents/skills/。"
         />
       )}
     </section>

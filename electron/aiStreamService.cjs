@@ -38,6 +38,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
       requestId,
       messages,
       terminalSessionId,
+      knowledgeBaseIds: rawKnowledgeBaseIds,
     } = payload || {};
 
     if (!topicId || !requestId || !Array.isArray(messages)) {
@@ -73,13 +74,18 @@ function registerAiStreamHandlers(ipcMain, deps) {
 
     const mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
     const context = terminalSessionId ? 'terminal' : 'local';
+    const knowledgeBaseIds = Array.isArray(rawKnowledgeBaseIds)
+      ? rawKnowledgeBaseIds.filter((id) => typeof id === 'string' && id)
+      : [];
     const builtinTools = getBuiltinTools(agentConfig, context);
-    const toolDefinitions = [...builtinTools, ...(mcpRuntime.definitions || [])];
+    const { knowledgeToolDefinitions } = require('./knowledge/tools.cjs');
+    const kbTools = knowledgeBaseIds.length > 0 ? knowledgeToolDefinitions() : [];
+    const toolDefinitions = [...builtinTools, ...kbTools, ...(mcpRuntime.definitions || [])];
     const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-    const enabledToolNames = builtinTools.map((t) => t.function.name);
+    const enabledToolNames = [...builtinTools, ...kbTools].map((t) => t.function.name);
     const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
     const apiMessages = (messages || []).filter((m) => m.role !== 'system');
-    const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 10);
+    const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
 
     const bridge = createChunkBridge({ requestId, safeSend: legacySend });
 
@@ -109,6 +115,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
           webSearchConfig: getCurrentWebSearchConfig(),
           terminalSessionId,
           suppressToolDoneEvent: true,
+          knowledgeBaseIds,
         });
         toolDeps.persistEnabledSkillId = (skillId) => persistEnabledSkillId(skillId, getWindows);
 

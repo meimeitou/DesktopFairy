@@ -3,6 +3,7 @@ import { isImageExt } from "./chatAttachments";
 import type { ToolTerminalState } from "./ai/stream";
 import { estimateMessageTokens } from "./contextUsage";
 import { formatToolEvidenceForApi } from "./toolEvidence";
+import type { KnowledgeCitation } from "./knowledge";
 
 export type ChatRole = "user" | "assistant";
 
@@ -33,6 +34,8 @@ export interface ChatMsg {
   /** Relative path under chat_tool_results/{topicId}/ */
   toolResultRef?: string;
   toolResultBytes?: number;
+  /** Display-only knowledge citations for plain-chat RAG. Not replayed to the model. */
+  knowledgeCitations?: KnowledgeCitation[];
 }
 
 export type ApiContentPart =

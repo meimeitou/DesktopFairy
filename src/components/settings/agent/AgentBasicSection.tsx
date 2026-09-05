@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { FieldHead } from "../../HintTip";
 import ModelSelector from "../../ModelSelector";
 import type { AppSettings } from "../../../shared/settings";
 import { getSelectableModelItems } from "../../../shared/settings";
@@ -37,7 +38,6 @@ export default function AgentBasicSection({
   const selectionValid =
     Boolean(exactCompound) &&
     providerItems.some((i) => i.value === exactCompound);
-  // Display a valid option; do not silently rewrite agent config on mount.
   const compound = selectionValid
     ? exactCompound
     : (providerItems[0]?.value ?? "");
@@ -48,10 +48,6 @@ export default function AgentBasicSection({
     providerOptions.find((p) => p.id === agent.providerId) ||
     providerOptions[0];
   const modelsForProvider = selectedProvider?.models ?? [];
-
-  const providerLabels = Object.fromEntries(
-    providerOptions.map((p) => [p.id, p.name]),
-  );
 
   useEffect(() => {
     if (!imageAvatar) return;
@@ -92,14 +88,8 @@ export default function AgentBasicSection({
 
   return (
     <section className="settings-section agent-subsection">
-      <h4>基础设置</h4>
-      <p className="agent-subsection-intro">
-        名称、头像与后端模型。智能体模式使用此处配置的 Provider。
-      </p>
-
-      <div className="field">
-        <label>头像</label>
-        <div className="agent-avatar-row">
+      <div className="agent-identity">
+        <div className="agent-identity-portrait">
           <span className="agent-avatar-preview" aria-hidden>
             {imageAvatar && avatarSrc ? (
               <img src={avatarSrc} alt="" />
@@ -109,41 +99,44 @@ export default function AgentBasicSection({
           </span>
           <button
             type="button"
-            className="btn-secondary agent-avatar-upload"
+            className="btn-ghost agent-avatar-upload"
             onClick={() => void selectAvatarImage()}
           >
-            上传图片
+            更换头像
           </button>
+        </div>
+
+        <div className="agent-identity-fields">
+          <div className="field">
+            <FieldHead htmlFor="agent-name">名称</FieldHead>
+            <input
+              id="agent-name"
+              type="text"
+              value={agent.name}
+              onChange={(e) => onChange({ name: e.target.value })}
+              placeholder="个人助手"
+            />
+          </div>
+
+          <div className="field">
+            <FieldHead htmlFor="agent-desc">描述</FieldHead>
+            <textarea
+              id="agent-desc"
+              rows={2}
+              value={agent.description}
+              onChange={(e) => onChange({ description: e.target.value })}
+              placeholder="简短描述智能体的用途"
+            />
+          </div>
         </div>
       </div>
 
-      <div className="field">
-        <label>名称</label>
-        <input
-          type="text"
-          value={agent.name}
-          onChange={(e) => onChange({ name: e.target.value })}
-          placeholder="个人助手"
-        />
-      </div>
-
-      <div className="field">
-        <label>描述</label>
-        <textarea
-          rows={2}
-          value={agent.description}
-          onChange={(e) => onChange({ description: e.target.value })}
-          placeholder="简短描述智能体的用途"
-        />
-      </div>
-
-      <div className="field">
-        <label>后端模型</label>
-        <p className="field-hint">
-          智能体对话与工具循环使用的模型（需在 AI 模型页配置 Provider）。
-        </p>
+      <div className="field agent-backend-field">
+        <FieldHead hint="智能体对话与工具循环使用的模型。需先在「AI 模型」页配置 Provider。">
+          后端模型
+        </FieldHead>
         {providerItems.length === 0 ? (
-          <p className="field-hint warn">
+          <p className="field-hint field-hint--after warn">
             请先在「AI 模型」中启用并配置 Provider。
           </p>
         ) : (
@@ -158,16 +151,14 @@ export default function AgentBasicSection({
           />
         )}
         {!selectionValid && providerItems.length > 0 ? (
-          <p className="field-hint warn">
+          <p className="field-hint field-hint--after warn">
             当前后端模型已失效
             {agent.modelName ? `（${agent.modelName}）` : ""}
             ，请重新选择。
           </p>
-        ) : selectedProvider ? (
-          <p className="field-hint">
-            当前：{providerLabels[selectedProvider.id] || selectedProvider.id}
-            {selectedItem ? ` · ${selectedItem.modelName}` : ""}
-            {modelsForProvider.length === 0 ? "（未配置模型）" : ""}
+        ) : selectedProvider && modelsForProvider.length === 0 ? (
+          <p className="field-hint field-hint--after warn">
+            该 Provider 尚未配置模型。
           </p>
         ) : null}
       </div>

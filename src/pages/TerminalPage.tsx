@@ -4,6 +4,7 @@ import type { Terminal as TerminalType } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
@@ -101,7 +102,10 @@ function TerminalInstance({
       fontFamily: ts.fontFamily,
       scrollback: ts.scrollback,
       cursorStyle: toXtermCursorStyle(ts.cursorStyle),
-      allowProposedApi: true, // SearchAddon decorations use registerDecoration (proposed API)
+      allowProposedApi: true, // SearchAddon decorations + unicode.activeVersion
+      // Ambiguous-width glyphs (roman numerals, some CJK punctuation) need
+      // horizontal rescale for GB18030-style column alignment.
+      rescaleOverlappingGlyphs: true,
       theme: {
         background: "transparent",
         foreground: "rgba(255, 255, 255, 0.85)",
@@ -112,6 +116,11 @@ function TerminalInstance({
 
     const fitAddon = new FitAddon();
     xterm.loadAddon(fitAddon);
+    // Unicode 11 East-Asian Width: CJK, emoji, and newer wide chars occupy
+    // 2 cells. Default Unicode 6 under-counts them and overlaps columns.
+    const unicode11 = new Unicode11Addon();
+    xterm.loadAddon(unicode11);
+    xterm.unicode.activeVersion = "11";
     // WebLinksAddon: http/https URLs become clickable, opened via shell.openExternal.
     // Reuses the existing `selection:open_url` IPC channel rather than adding a
     // new `shell:openExternal` channel — same underlying handler, less surface.

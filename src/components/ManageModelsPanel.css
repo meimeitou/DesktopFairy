@@ -8,7 +8,7 @@
   gap: 6px;
   padding: 6px 12px;
   background: var(--persimmon-soft);
-  border: 1px solid rgba(232, 98, 74, 0.4);
+  border: 1px solid rgba(0, 185, 107, 0.4);
   border-radius: 8px;
   color: var(--persimmon-bright);
   font-size: 12px;
@@ -19,13 +19,13 @@
 }
 
 .manage-models-open-btn:hover {
-  background: rgba(232, 98, 74, 0.25);
-  border-color: rgba(232, 98, 74, 0.6);
+  background: rgba(0, 185, 107, 0.25);
+  border-color: rgba(0, 185, 107, 0.6);
 }
 
 .manage-models-count {
   padding: 1px 6px;
-  background: rgba(232, 98, 74, 0.35);
+  background: rgba(0, 185, 107, 0.35);
   border-radius: 10px;
   font-size: 11px;
   color: var(--bone-100);
@@ -44,7 +44,7 @@
 
 .manage-models-panel {
   width: 100%;
-  max-width: 420px;
+  max-width: 480px;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -100,7 +100,7 @@
   flex: 1;
   min-width: 120px;
   padding: 6px 10px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   font-size: 12px;
@@ -112,16 +112,16 @@
 
 .manage-models-toolbar input[type="search"]:focus {
   border-color: var(--persimmon-focus);
-  background: rgba(245, 239, 230, 0.07);
+  background: var(--persimmon-softer);
 }
 
 .manage-models-toolbar input[type="search"]::placeholder {
-  color: rgba(245, 239, 230, 0.2);
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .manage-models-toolbar button {
   padding: 6px 10px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--hairline-strong);
   border-radius: 8px;
   font-size: 12px;
@@ -154,27 +154,102 @@
   max-height: 320px;
 }
 
+.manage-models-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.manage-models-filters button {
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--bone-400);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.manage-models-filters button:hover {
+  background: var(--hairline);
+  color: var(--bone-100);
+}
+
+.manage-models-filters button.active {
+  background: rgba(0, 185, 107, 0.2);
+  border-color: rgba(0, 185, 107, 0.5);
+  color: var(--persimmon-bright);
+}
+
 .manage-models-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
   font-size: 13px;
-  color: var(--bone-200);
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
-  border-radius: 6px;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
 }
 
 .manage-models-item:hover {
-  background: var(--hairline);
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.manage-models-item input[type="checkbox"] {
-  accent-color: var(--persimmon);
+.manage-models-item.selected {
+  color: var(--bone-100);
+  background: var(--persimmon-softer);
+  border-color: rgba(0, 185, 107, 0.35);
 }
 
-.manage-models-item span {
+.manage-models-item.selected:hover {
+  background: var(--persimmon-soft);
+}
+
+.manage-models-id {
+  flex: 1;
+  min-width: 0;
   word-break: break-all;
+}
+
+.manage-models-kind {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.6;
+  border: 1px solid transparent;
+}
+
+.manage-models-kind.kind-chat {
+  color: var(--bone-300);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--hairline-strong);
+}
+
+.manage-models-kind.kind-embedding {
+  color: #8ecae6;
+  background: rgba(142, 202, 230, 0.12);
+  border-color: rgba(142, 202, 230, 0.28);
+}
+
+.manage-models-kind.kind-rerank {
+  color: #c9b6ff;
+  background: rgba(201, 182, 255, 0.12);
+  border-color: rgba(201, 182, 255, 0.28);
 }
 
 .manage-models-empty {

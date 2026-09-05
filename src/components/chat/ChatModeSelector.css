@@ -16,7 +16,7 @@
   padding: 5px 10px 5px 9px;
   border: 1px solid var(--hairline);
   border-radius: 10px;
-  background: rgba(245, 239, 230, 0.04);
+  background: rgba(255, 255, 255, 0.04);
   color: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -41,7 +41,7 @@
 }
 
 .chat-mode-selector-icon .chat-mode-trigger:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .chat-mode-selector-icon .chat-mode-trigger.active {
@@ -49,7 +49,7 @@
 }
 
 .chat-mode-trigger:hover {
-  background: rgba(245, 239, 230, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   border-color: var(--hairline-bold);
 }
 
@@ -75,7 +75,7 @@
   border-radius: 14px;
   box-shadow:
     0 16px 40px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(245, 239, 230, 0.04);
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
   z-index: 1200;
   animation: chat-mode-popover-in 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -141,11 +141,11 @@
 }
 
 .chat-mode-item:hover {
-  background: rgba(245, 239, 230, 0.05);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .chat-mode-item.active {
-  background: rgba(245, 239, 230, 0.07);
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .chat-mode-item-icon {

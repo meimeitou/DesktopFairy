@@ -93,6 +93,9 @@ function normalizeChatMessage(raw) {
     type: m.type === 'clear' ? 'clear' : undefined,
     error: m.error === true,
     timestamp: m.timestamp,
+    knowledgeCitations: Array.isArray(m.knowledgeCitations)
+      ? m.knowledgeCitations
+      : undefined,
   };
 }
 
@@ -352,6 +355,18 @@ function registerChatSessionHandlers({
     topic.updatedAt = Date.now();
     writeJson(topicsIndexPath(), store);
     return { ok: true };
+  });
+
+  ipcMain.handle('chat:topics:updateMeta', async (_event, { topicId, knowledgeBaseIds }) => {
+    const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    const topic = store.topics.find((t) => t.id === topicId);
+    if (!topic) return { ok: false, error: 'Topic not found' };
+    topic.knowledgeBaseIds = Array.isArray(knowledgeBaseIds)
+      ? knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
+      : [];
+    topic.updatedAt = Date.now();
+    writeJson(topicsIndexPath(), store);
+    return { ok: true, topic };
   });
 
   ipcMain.handle('chat:topics:setActive', async (_event, topicId) => {
