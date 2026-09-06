@@ -39,8 +39,9 @@ export function normalizeProcessorId(raw: unknown): FileProcessorId {
 
 export function normalizeFileProcessingSettings(raw: unknown): FileProcessingSettings {
   const data = raw && typeof raw === "object" ? (raw as Partial<FileProcessingSettings>) : {};
-  const mineru = data.mineru && typeof data.mineru === "object" ? data.mineru : {};
-  const openMineru =
+  const mineru: Partial<FileProcessorConfig> =
+    data.mineru && typeof data.mineru === "object" ? data.mineru : {};
+  const openMineru: Partial<FileProcessorConfig> =
     data.openMineru && typeof data.openMineru === "object" ? data.openMineru : {};
   return {
     processorId: normalizeProcessorId(data.processorId),

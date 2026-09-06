@@ -41,7 +41,7 @@ export default function AddProviderModal({ onClose, onConfirm }: Props) {
           <FieldHead hint="决定请求怎么拼、模型列表从哪拉。多数第三方选 OpenAI 兼容。">
             类型
           </FieldHead>
-          <RadioGroup
+          <RadioGroup<ProviderType>
             name="providerType"
             ariaLabel="服务商类型"
             value={type}
