@@ -3,10 +3,24 @@ const { getSkillsDir } = require('../agentSkillService.cjs');
 const { wrapMcpToolExecute } = require('./topicBroadcast.cjs');
 
 function getBuiltinTools(agentConfig, context) {
-  return getEnabledOpenAiToolDefinitions(agentConfig, context).map(({ type, function: fn }) => ({
+  const defs = getEnabledOpenAiToolDefinitions(agentConfig, context).map(({ type, function: fn }) => ({
     type,
     function: fn,
   }));
+  if (!shouldHideBuiltinWebFetch(agentConfig)) return defs;
+  return defs.filter((t) => t.function?.name !== 'WebFetch');
+}
+
+function shouldHideBuiltinWebFetch(agentConfig) {
+  const ids = agentConfig?.mcpServerIds || [];
+  if (!ids.length) return false;
+  try {
+    const { getServersByIds } = require('../mcpServerService.cjs');
+    const { isOfficialFetchServer } = require('../mcpToolArgs.cjs');
+    return getServersByIds(ids).some(isOfficialFetchServer);
+  } catch {
+    return ids.includes('builtin-mcp-fetch');
+  }
 }
 
 function buildSkillEnvVars(agentConfig) {

@@ -3,11 +3,13 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
 } from "react";
 import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
+import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 import ModelSelector from "../ModelSelector";
 import Tooltip from "../Tooltip";
 import AttachmentPreview from "./AttachmentPreview";
@@ -15,22 +17,25 @@ import ChatModeSelector from "./ChatModeSelector";
 import ContextUsageMeter from "./ContextUsageMeter";
 import ReasoningEffortSelector from "./ReasoningEffortSelector";
 import SlashCommandMenu from "./SlashCommandMenu";
-import type { ChatAttachment } from "../../shared/chatAttachments";
+import {
+  collectDataTransferFiles,
+  dataTransferHasFiles,
+  guessAttachmentFileName,
+  type ChatAttachment,
+} from "../../shared/chatAttachments";
 import type { ChatMode } from "../../shared/chatMode";
 import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import type { SlashCommand } from "../../shared/slashCommands";
-import {
-  fileExtFromName,
-  formatFileSize,
-  isImageExt,
-} from "../../shared/chatAttachments";
 import { isSupportedFileName } from "../../shared/chatMessages";
 import type { ContextUsageResult } from "../../shared/contextUsage";
 import KnowledgePicker from "../knowledge/KnowledgePicker";
+import ComposerBusyHalo from "./ComposerBusyHalo";
 import "./ChatInputBar.css";
 
 const api = window.electronAPI;
 const MAX_INPUT_HEIGHT = 160;
+const UNSUPPORTED_FILES_HINT =
+  "部分文件格式不支持，仅支持文本文件与常见图片格式。";
 
 function CameraIcon() {
   return (
@@ -212,8 +217,13 @@ function ChatInputBar({
   onKnowledgeBaseIdsChange,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const selectingRef = useRef(false);
   const capturingRef = useRef(false);
+  const dragDepthRef = useRef(0);
+  const [dragOver, setDragOver] = useState(false);
+
+  useComposerOverlay(dockRef);
 
   const composerDisabled = streaming || editingMessage;
   const {
@@ -256,7 +266,7 @@ function ChatInputBar({
       if (files.length === 0) return;
       const supported = files.filter((f) => f.kind !== "other");
       if (supported.length < files.length) {
-        alert("部分文件格式不支持，仅支持文本文件与常见图片格式。");
+        alert(UNSUPPORTED_FILES_HINT);
       }
       if (supported.length === 0) return;
       const existing = new Set(attachments.map((f) => f.path));
@@ -268,6 +278,51 @@ function ChatInputBar({
     },
     [attachments, onAttachmentsChange],
   );
+
+  const resolvePathForFile = (file: File): string => {
+    try {
+      const fromApi = api.getPathForFile?.(file);
+      if (fromApi) return fromApi;
+    } catch {
+      /* Electron <32 fallback below */
+    }
+    return (file as File & { path?: string }).path || "";
+  };
+
+  const attachmentsFromFiles = useCallback(async (files: File[]) => {
+    const attachable = files.filter((file) =>
+      isSupportedFileName(guessAttachmentFileName(file)),
+    );
+    if (files.length > 0 && attachable.length === 0) {
+      alert(UNSUPPORTED_FILES_HINT);
+      return [];
+    }
+    if (attachable.length < files.length) {
+      alert(UNSUPPORTED_FILES_HINT);
+    }
+
+    return Promise.all(
+      attachable.map(async (file) => {
+        const displayName = guessAttachmentFileName(file);
+        const filePath = resolvePathForFile(file);
+        if (filePath) {
+          const meta = (await api.invoke(
+            "file:stat_path",
+            filePath,
+          )) as ChatAttachment;
+          return {
+            ...meta,
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          };
+        }
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        return (await api.invoke("file:save_temp", {
+          name: displayName,
+          bytes,
+        })) as ChatAttachment;
+      }),
+    );
+  }, []);
 
   const handleSelectFiles = useCallback(async () => {
     if (selectingRef.current || composerDisabled) return;
@@ -296,102 +351,68 @@ function ChatInputBar({
     }
   }, [composerDisabled]);
 
-  const pathFromFile = (file: File): string | null => {
-    const f = file as File & { path?: string };
-    return f.path || null;
-  };
-
   const handlePaste = useCallback(
     async (e: ClipboardEvent<HTMLTextAreaElement>) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      const filePaths: string[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind !== "file") continue;
-        const file = item.getAsFile();
-        if (!file) continue;
-        const filePath = pathFromFile(file);
-        if (filePath) {
-          if (isSupportedFileName(file.name)) {
-            filePaths.push(filePath);
-          }
-          continue;
-        }
-        if (isImageExt(fileExtFromName(file.name))) {
-          e.preventDefault();
-          alert("请使用「附加文件」选择本地图片，或拖拽文件到输入框。");
-          return;
-        }
-      }
-
-      if (filePaths.length === 0) return;
+      if (composerDisabled) return;
+      const files = collectDataTransferFiles(e.clipboardData);
+      if (files.length === 0) return;
       e.preventDefault();
       try {
-        const loaded = await Promise.all(
-          filePaths.map(async (filePath) => {
-            const meta = (await api.invoke(
-              "file:stat_path",
-              filePath,
-            )) as ChatAttachment;
-            return {
-              ...meta,
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            };
-          }),
-        );
+        const loaded = await attachmentsFromFiles(files);
         addAttachments(loaded);
       } catch (err) {
         alert(err instanceof Error ? err.message : "无法读取粘贴的文件");
       }
     },
-    [addAttachments],
+    [addAttachments, attachmentsFromFiles, composerDisabled],
   );
+
+  const clearDragOver = () => {
+    dragDepthRef.current = 0;
+    setDragOver(false);
+  };
+
+  const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types)) return;
+    dragDepthRef.current += 1;
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragOver(false);
+  };
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types)) return;
+    e.dataTransfer.dropEffect = "copy";
+  };
 
   const handleDrop = useCallback(
     async (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       e.stopPropagation();
+      clearDragOver();
       if (composerDisabled) return;
 
-      const paths: string[] = [];
-      if (e.dataTransfer.files?.length) {
-        for (const file of Array.from(e.dataTransfer.files)) {
-          const filePath = pathFromFile(file);
-          if (filePath && isSupportedFileName(file.name)) {
-            paths.push(filePath);
-          }
-        }
-      }
-
-      if (paths.length === 0) return;
+      const files = collectDataTransferFiles(e.dataTransfer);
+      if (files.length === 0) return;
 
       try {
-        const loaded = await Promise.all(
-          paths.map(async (filePath) => {
-            const meta = (await api.invoke(
-              "file:stat_path",
-              filePath,
-            )) as ChatAttachment;
-            return {
-              ...meta,
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            };
-          }),
-        );
+        const loaded = await attachmentsFromFiles(files);
         addAttachments(loaded);
       } catch (err) {
         alert(err instanceof Error ? err.message : "无法读取拖拽的文件");
       }
     },
-    [addAttachments, composerDisabled],
+    [addAttachments, attachmentsFromFiles, composerDisabled],
   );
-
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (showSlashMenu) {
@@ -417,11 +438,20 @@ function ChatInputBar({
 
   return (
     <div
-      className="chat-input-shell"
+      ref={dockRef}
+      className={`chat-input-dock${streaming ? " is-busy" : ""}${dragOver ? " is-drop-target" : ""}`}
+      aria-busy={streaming}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
     >
-      <div className="chat-input-dock">
+      <ComposerBusyHalo />
+      {dragOver && (
+        <div className="chat-input-drop-mask" aria-hidden>
+          松开以添加文件
+        </div>
+      )}
         <AttachmentPreview
           files={attachments}
           onRemove={(id) =>
@@ -568,14 +598,7 @@ function ChatInputBar({
               </Tooltip>
             )}
           </div>
-        </div>
       </div>
-
-      <p className="chat-input-hint">
-        Enter 发送 · Shift+Enter 换行 · / 快捷指令 · 拖拽或粘贴文件
-        {attachments.length > 0 &&
-          ` · 已附加 ${attachments.length} 个 (${formatFileSize(attachments.reduce((s, f) => s + f.size, 0))})`}
-      </p>
     </div>
   );
 }

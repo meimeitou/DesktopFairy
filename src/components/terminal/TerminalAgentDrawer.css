@@ -29,6 +29,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
+  --chat-composer-height: 96px;
 }
 
 .terminal-agent-drawer-resize-handle {
@@ -133,7 +134,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 12px;
+  padding: 14px 12px 8px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -172,25 +173,20 @@
   max-width: 240px;
 }
 
-.terminal-agent-input-shell {
-  padding: 10px 12px 8px;
-  border-top: 1px solid transparent;
-  background: linear-gradient(
-    180deg,
-    rgba(26, 23, 20, 0) 0%,
-    rgba(26, 23, 20, 0.4) 40%,
-    var(--ink-850) 100%
-  );
-}
-
 .terminal-agent-dock {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  z-index: 6;
   display: flex;
   flex-direction: column;
   border-radius: 20px;
   background: var(--ink-800);
   border: 0.5px solid var(--hairline-strong);
   box-shadow:
-    0 1px 5px rgba(0, 0, 0, 0.18),
+    0 10px 28px rgba(0, 0, 0, 0.34),
+    0 1px 4px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
   padding-top: 8px;
   overflow: visible;
@@ -202,7 +198,7 @@
 .terminal-agent-dock:focus-within {
   border-color: var(--persimmon-focus);
   box-shadow:
-    0 1px 5px rgba(0, 0, 0, 0.2),
+    0 10px 28px rgba(0, 0, 0, 0.34),
     0 0 0 1px rgba(0, 185, 107, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
@@ -253,14 +249,6 @@
   width: 30px;
   height: 30px;
   border-radius: 999px;
-}
-
-.terminal-agent-input-hint {
-  margin: 6px 4px 0;
-  padding: 0 4px;
-  font-size: 11px;
-  color: var(--bone-600);
-  text-align: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

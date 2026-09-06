@@ -71,7 +71,7 @@ export function slashMenuQuery(input: string): string | null {
   return after;
 }
 
-/** Rewrites `/<skill-id> …` into a Skill-tool instruction. */
+/** Rewrites `/<skill-id> …` into a Skills load-tool instruction. */
 export function applySkillSlashCommand(
   text: string,
   skillIds: Iterable<string>,
@@ -84,8 +84,8 @@ export function applySkillSlashCommand(
   return {
     skillId,
     text: rest
-      ? `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据以下要求完成任务：\n\n${rest}`
-      : `请使用 Skill 工具加载并执行技能「${skillId}」，然后根据用户的后续要求完成任务。`,
+      ? `请使用 Skills 工具（action: "load"）加载并执行技能「${skillId}」，然后根据以下要求完成任务：\n\n${rest}`
+      : `请使用 Skills 工具（action: "load"）加载并执行技能「${skillId}」，然后根据用户的后续要求完成任务。`,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
   type PointerEvent,
   type ReactNode,
   type TouchEvent,
@@ -27,6 +28,8 @@ import {
 const BOTTOM_THRESHOLD = 48;
 /** Must be near the true end to resume following after the user scrolled away. */
 const REATTACH_THRESHOLD = 8;
+/** Composer bottom gap (8px) + air above the floating dock. */
+const COMPOSER_SCROLL_GAP = 24;
 const EMPTY_SET = new Set<string>();
 
 function ContextClearDivider() {
@@ -99,9 +102,47 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     > | null>(null);
     const lastTouchYRef = useRef<number | null>(null);
     const lastApprovalKeyRef = useRef<string | null>(null);
+    /** Pause follow-bottom while an approval card is centered — do not detach. */
+    const pauseForApprovalRef = useRef(false);
+    const pinGenRef = useRef(0);
     const prevItemsRef = useRef<MessageListItem[] | null>(null);
+    const [overlayPad, setOverlayPad] = useState(120);
+
+    useEffect(() => {
+      const root = parentRef.current;
+      if (!root) return;
+      let observer: ResizeObserver | null = null;
+      let cancelled = false;
+      const bind = () => {
+        if (cancelled) return;
+        const host = root.closest(
+          ".chat-main-area, .terminal-agent-drawer-content",
+        );
+        const dock = host?.querySelector<HTMLElement>(
+          ".chat-input-dock, .terminal-agent-dock",
+        );
+        if (!dock) {
+          requestAnimationFrame(bind);
+          return;
+        }
+        const apply = () => {
+          setOverlayPad(
+            Math.round(dock.getBoundingClientRect().height) + COMPOSER_SCROLL_GAP,
+          );
+        };
+        apply();
+        observer = new ResizeObserver(apply);
+        observer.observe(dock);
+      };
+      bind();
+      return () => {
+        cancelled = true;
+        observer?.disconnect();
+      };
+    }, []);
 
     const cancelPendingPin = useCallback(() => {
+      pinGenRef.current += 1;
       if (pinRafRef.current == null) return;
       cancelAnimationFrame(pinRafRef.current);
       pinRafRef.current = null;
@@ -173,20 +214,33 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       },
       overscan: 6,
       getItemKey: (index) => items[index]?.id ?? index,
+      paddingEnd: overlayPad,
+      scrollPaddingEnd: overlayPad,
     });
 
     const pinToBottom = useCallback(() => {
       const el = parentRef.current;
-      if (!el || items.length === 0 || !stickToBottomRef.current) return;
+      if (
+        !el ||
+        items.length === 0 ||
+        !stickToBottomRef.current ||
+        pauseForApprovalRef.current
+      ) {
+        return;
+      }
       virtualizer.scrollToIndex(items.length - 1, { align: "end" });
-      // Estimate may be short; pin again after layout/measure.
-      // Cancel any prior frame so scroll-away is not overridden by a stale pin.
+      // Estimate may be short (tool cards collapse, markdown grows). Pin again
+      // after layout/measure — two frames so virtualizer can remeasure rows.
       cancelPendingPin();
+      const gen = pinGenRef.current;
       pinRafRef.current = requestAnimationFrame(() => {
-        pinRafRef.current = null;
-        if (!stickToBottomRef.current) return;
-        const node = parentRef.current;
-        if (node) node.scrollTop = node.scrollHeight;
+        pinRafRef.current = requestAnimationFrame(() => {
+          pinRafRef.current = null;
+          if (gen !== pinGenRef.current) return;
+          if (!stickToBottomRef.current || pauseForApprovalRef.current) return;
+          const node = parentRef.current;
+          if (node) node.scrollTop = node.scrollHeight;
+        });
       });
     }, [cancelPendingPin, items.length, virtualizer]);
 
@@ -292,7 +346,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     useEffect(() => {
       if (!stickToBottomRef.current || items.length === 0) return;
       pinToBottom();
-    }, [stickKey, items.length, pinToBottom]);
+    }, [stickKey, items.length, overlayPad, pinToBottom]);
 
     // Tool cards auto-expand/collapse without changing stickKey text length;
     // re-pin when content height changes while we still intend to stick.
@@ -309,24 +363,32 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       return () => ro.disconnect();
     }, [messages.length, pinToBottom]);
 
-    // Scroll awaiting-approval cards into view (virtual rows must be scrolled first).
+    // Center awaiting-approval cards without permanently detaching follow-bottom.
+    // After the card is resolved, resume pinning so the final reply can follow.
     useEffect(() => {
       if (!approvalInfo) {
+        const hadApproval = lastApprovalKeyRef.current != null;
         lastApprovalKeyRef.current = null;
+        if (!hadApproval) return;
+        pauseForApprovalRef.current = false;
+        if (!suppressReattachRef.current) {
+          stickToBottomRef.current = true;
+          pinToBottom();
+        }
         return;
       }
       if (lastApprovalKeyRef.current === approvalInfo.key) return;
       lastApprovalKeyRef.current = approvalInfo.key;
-      detachFromBottom();
+      pauseForApprovalRef.current = true;
+      cancelPendingPin();
       virtualizer.scrollToIndex(approvalInfo.index, { align: "center" });
-      // Large tool groups: ensure the permission card itself is centered, not just the row.
       requestAnimationFrame(() => {
         const card = parentRef.current?.querySelector<HTMLElement>(
           "[data-tool-approval-id]",
         );
-        card?.scrollIntoView({ block: "center", behavior: "smooth" });
+        card?.scrollIntoView({ block: "center", behavior: "auto" });
       });
-    }, [approvalInfo, detachFromBottom, virtualizer]);
+    }, [approvalInfo, cancelPendingPin, pinToBottom, virtualizer]);
 
     const scrollProps = {
       onScroll: handleScroll,
@@ -347,7 +409,11 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const virtualItems = virtualizer.getVirtualItems();
 
     return (
-      <div className={className} ref={parentRef} {...scrollProps}>
+      <div
+        className={`${className} is-virtualized`}
+        ref={parentRef}
+        {...scrollProps}
+      >
         <div
           className="chat-messages-virtual-inner"
           style={{

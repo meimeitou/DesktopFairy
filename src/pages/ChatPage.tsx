@@ -21,7 +21,7 @@ import {
   buildApiMessages,
   buildAgentApiMessages,
   buildAgentHistoryMessages,
-  filterAfterContextClear,
+  filterForAgentHistory,
   filterForApi,
   findLastAssistantReplyIndex,
   findFirstAssistantReplyIndex,
@@ -290,15 +290,7 @@ export default function ChatPage({
   const usingAgent = isAgentBackend(activeBackend);
 
   const contextMessages = useMemo(() => {
-    if (usingAgent) {
-      return filterAfterContextClear(messages).filter(
-        (m) =>
-          m.type !== "clear" &&
-          !m.error &&
-          (m.type === "tool" ||
-            !(m.role === "assistant" && !m.content?.trim())),
-      );
-    }
+    if (usingAgent) return filterForAgentHistory(messages);
     return filterForApi(messages);
   }, [messages, usingAgent]);
 
@@ -765,7 +757,11 @@ export default function ChatPage({
               ? {
                   lastPromptTokens: usage.promptTokens,
                   lastCompletionTokens: usage.completionTokens,
-                  lastUsageMessageCount: messages.length,
+                  lastUsageMessageCount: (
+                    isAgentBackend(state.requestBackend)
+                      ? filterForAgentHistory(messages)
+                      : filterForApi(messages)
+                  ).length,
                 }
               : {}),
           };
@@ -797,6 +793,9 @@ export default function ChatPage({
             if (!summary.trim()) return state;
             return {
               ...state,
+              lastPromptTokens: undefined,
+              lastCompletionTokens: undefined,
+              lastUsageMessageCount: undefined,
               messages: [
                 ...state.messages,
                 {
@@ -1073,13 +1072,7 @@ export default function ChatPage({
       });
 
       const agentHistory = trimMessagesForApi(
-        filterAfterContextClear(state.messages).filter(
-          (m) =>
-            m.type !== "clear" &&
-            !m.error &&
-            (m.type === "tool" ||
-              !(m.role === "assistant" && !m.content?.trim())),
-        ),
+        filterForAgentHistory(state.messages),
         trimOpts,
       );
       const payloadMessages = buildAgentHistoryMessages(agentHistory);
@@ -1336,13 +1329,7 @@ export default function ChatPage({
       });
 
       const agentHistory = trimMessagesForApi(
-        filterAfterContextClear(state.messages).filter(
-          (m) =>
-            m.type !== "clear" &&
-            !m.error &&
-            (m.type === "tool" ||
-              !(m.role === "assistant" && !m.content?.trim())),
-        ),
+        filterForAgentHistory(state.messages),
         trimOpts,
       );
       const history = trimMessagesForApi(filterForApi(state.messages), trimOpts);

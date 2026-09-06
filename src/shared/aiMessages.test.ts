@@ -14,6 +14,9 @@ const {
   mapUserContent: (content: unknown) => unknown;
 };
 
+const PNG_BASE64 = "AQID";
+const PNG_BYTES = Buffer.from(PNG_BASE64, "base64");
+
 function msg(
   role: ChatMsg["role"],
   content: string,
@@ -28,13 +31,16 @@ function msg(
 }
 
 describe("toCoreMessages", () => {
-  it("maps image_url parts to AI SDK image parts", () => {
+  it("decodes data: image URLs to bytes so the SDK will not fetch them", () => {
     const out = toCoreMessages([
       {
         role: "user",
         content: [
           { type: "text", text: "what is this?" },
-          { type: "image_url", image_url: { url: "data:image/png;base64,abc" } },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/png;base64,${PNG_BASE64}` },
+          },
         ],
       },
     ]);
@@ -43,7 +49,29 @@ describe("toCoreMessages", () => {
         role: "user",
         content: [
           { type: "text", text: "what is this?" },
-          { type: "image", image: "data:image/png;base64,abc" },
+          { type: "image", image: PNG_BYTES, mediaType: "image/png" },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps http image URLs as strings", () => {
+    const out = toCoreMessages([
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: "https://example.com/a.png" },
+          },
+        ],
+      },
+    ]);
+    expect(out).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "image", image: "https://example.com/a.png" },
         ],
       },
     ]);

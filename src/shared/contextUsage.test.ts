@@ -101,10 +101,60 @@ describe("contextUsage", () => {
         messages: msgs,
         contextWindow: 128_000,
         lastPromptTokens: baseline.used,
+        lastCompletionTokens: 40,
         lastUsageMessageCount: 1,
       });
       expect(calibrated.lastServerPromptTokens).toBe(baseline.used);
-      expect(calibrated.used).toBeGreaterThanOrEqual(baseline.used);
+      expect(calibrated.used).toBeGreaterThanOrEqual(baseline.used + 40);
+    });
+
+    it("ignores stale server usage after context clear", () => {
+      const afterClear = [makeMsg("user", "new question")];
+      const result = estimateContextUsage({
+        messages: afterClear,
+        contextWindow: 128_000,
+        systemTokens: 2_000,
+        lastPromptTokens: 80_000,
+        lastCompletionTokens: 1_200,
+        lastUsageMessageCount: 40,
+      });
+      expect(result.lastServerPromptTokens).toBeUndefined();
+      expect(result.used).toBeLessThan(10_000);
+      expect(result.breakdown.history).toBe(estimateMessageTokens(afterClear[0]));
+    });
+
+    it("does not count messages above a clear separator", () => {
+      const msgs = [
+        makeMsg("user", "old conversation ".repeat(80)),
+        makeMsg("assistant", "old reply ".repeat(80)),
+        makeMsg("user", "", { type: "clear" }),
+        makeMsg("user", "hello after clear"),
+      ];
+      const result = estimateContextUsage({
+        messages: msgs,
+        contextWindow: 128_000,
+        systemTokens: 2_000,
+        lastPromptTokens: 80_000,
+        lastUsageMessageCount: 2,
+      });
+      expect(result.breakdown.history).toBe(
+        estimateMessageTokens(msgs[3]),
+      );
+      expect(result.used).toBe(2_000 + estimateMessageTokens(msgs[3]));
+      expect(result.lastServerPromptTokens).toBeUndefined();
+    });
+
+    it("ignores server usage when current history is empty", () => {
+      const result = estimateContextUsage({
+        messages: [],
+        contextWindow: 128_000,
+        systemTokens: 2_000,
+        lastPromptTokens: 80_000,
+        lastUsageMessageCount: 0,
+      });
+      expect(result.lastServerPromptTokens).toBeUndefined();
+      expect(result.used).toBe(2_000);
+      expect(result.breakdown.history).toBe(0);
     });
   });
 });

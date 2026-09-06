@@ -124,6 +124,13 @@ async function applyEdit(filePath, oldString, newString, replaceAll) {
 }
 
 async function toolEdit(args) {
+  const batched = Array.isArray(args?.edits) ? args.edits : [];
+  if (batched.length > 0) {
+    return toolMultiEdit({ file_path: args?.file_path, edits: batched });
+  }
+  if (args?.old_string === undefined && args?.new_string === undefined) {
+    return fail('Provide old_string and new_string, or edits[]');
+  }
   const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
   if (!filePath) return fail('file_path required');
   const oldString = String(args?.old_string ?? '');
@@ -175,9 +182,6 @@ async function toolMultiEdit(args) {
 async function toolBash(args, envVars = {}, deps = {}) {
   const command = String(args?.command || '').trim();
   if (!command) return fail('Empty command');
-  if (args?.run_in_background) {
-    return fail('Background shell is not supported in DesktopFairy yet');
-  }
   const timeoutMs = resolveBashTimeoutMs(args?.timeout);
   const shell = process.env.SHELL || '/bin/zsh';
   const signal = deps?.signal;

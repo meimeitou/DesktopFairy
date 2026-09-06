@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   invoke: (channel, ...args) => {
@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'file:select',
       'file:read',
       'file:stat_path',
+      'file:save_temp',
       'screenshot:capture',
       'screenshot:capture_to_chat',
       'screenshot:copy_text',
@@ -125,6 +126,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowGetPosition: () => ipcRenderer.invoke('window:get_position'),
   windowSetPosition: (x, y) => ipcRenderer.invoke('window:set_position', { x, y }),
   screenGetCursorPoint: () => ipcRenderer.invoke('screen:get_cursor_point'),
+
+  getPathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || '';
+    } catch {
+      return '';
+    }
+  },
 
   // Event listeners
   onChatPrefill: (callback) => {

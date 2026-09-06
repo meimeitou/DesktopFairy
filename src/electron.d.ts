@@ -13,6 +13,7 @@ declare global {
       windowGetPosition: () => Promise<{ x: number; y: number } | null>;
       windowSetPosition: (x: number, y: number) => Promise<void>;
       screenGetCursorPoint: () => Promise<{ x: number; y: number }>;
+      getPathForFile: (file: File) => string;
       onChatPrefill: (
         callback: (payload: {
           text?: string;

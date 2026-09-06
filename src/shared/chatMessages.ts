@@ -1,5 +1,5 @@
 import type { ChatAttachment } from "./chatAttachments";
-import { isImageExt } from "./chatAttachments";
+import { isSupportedAttachmentName } from "./chatAttachments";
 import type { ToolTerminalState } from "./ai/stream";
 import { estimateMessageTokens } from "./contextUsage";
 import { formatToolEvidenceForApi } from "./toolEvidence";
@@ -527,12 +527,5 @@ export function reconcileToolMessages(
 }
 
 export function isSupportedFileName(name: string): boolean {
-  const ext = name.includes(".") ? `.${name.split(".").pop()?.toLowerCase()}` : "";
-  return (
-    isImageExt(ext) ||
-    [
-      ".txt", ".md", ".markdown", ".json", ".csv", ".xml", ".yaml", ".yml",
-      ".js", ".ts", ".tsx", ".jsx", ".py", ".html", ".css", ".log",
-    ].includes(ext)
-  );
+  return isSupportedAttachmentName(name);
 }

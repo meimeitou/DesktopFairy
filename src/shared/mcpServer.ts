@@ -103,3 +103,28 @@ export interface McpServerLogEntry {
   message: string;
   source?: string;
 }
+
+export const BUILTIN_MCP_FETCH_ID = "builtin-mcp-fetch";
+
+export function isOfficialFetchMcpServer(server: {
+  id?: string;
+  args?: string[];
+}): boolean {
+  if (server?.id === BUILTIN_MCP_FETCH_ID) return true;
+  return (server.args || []).some((a) => String(a).includes("mcp-server-fetch"));
+}
+
+/** True when a bound, active MCP server provides the official fetch tool. */
+export function agentHasBoundMcpFetch(
+  mcpServerIds: string[] | undefined,
+  servers: Array<{ id: string; args?: string[]; isActive?: boolean }>,
+): boolean {
+  const bound = new Set(mcpServerIds || []);
+  if (bound.size === 0) return false;
+  return servers.some(
+    (s) =>
+      bound.has(s.id) &&
+      s.isActive !== false &&
+      isOfficialFetchMcpServer(s),
+  );
+}

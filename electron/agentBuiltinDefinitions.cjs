@@ -1,6 +1,6 @@
 /**
  * Builtin agent tool metadata aligned with Cherry Studio / Claude Code builtins.
- * DF-specific tools (Skill, UpdateProfile, McpManager, Terminal) are appended separately.
+ * DF-specific tools (Skills, UpdateProfile, McpManager, Terminal) are appended separately.
  * @see cherry-studio/src/shared/ai/claudecode/builtinTools.ts
  * @see cherry-studio/src/main/ai/mcp/servers/filesystem/tools/
  */
@@ -47,7 +47,8 @@ const CHERRY_ALIGNED_BUILTIN_TOOLS = [
 - ALWAYS prefer editing existing files over creating new ones
 - The edit will FAIL if old_string is not found in the file
 - The edit will FAIL if old_string appears multiple times (provide more context or use replace_all)
-- Use replace_all to rename variables or replace all occurrences`,
+- Use replace_all to rename variables or replace all occurrences
+- For several replacements on the same file, pass \`edits\` (applied in order) instead of calling Edit repeatedly`,
     category: 'file',
     defaultPrompt: true,
   },
@@ -78,13 +79,6 @@ const CHERRY_ALIGNED_BUILTIN_TOOLS = [
     defaultPrompt: false,
   },
   {
-    id: 'MultiEdit',
-    name: 'MultiEdit',
-    description: 'Performs multiple edits on a single file atomically',
-    category: 'file',
-    defaultPrompt: true,
-  },
-  {
     id: 'Read',
     name: 'Read',
     description: `Reads a file from the local filesystem.
@@ -95,13 +89,6 @@ const CHERRY_ALIGNED_BUILTIN_TOOLS = [
 - Results are returned with line numbers starting at 1
 - Binary files are detected and rejected with an error`,
     category: 'file',
-    defaultPrompt: false,
-  },
-  {
-    id: 'Task',
-    name: 'Task',
-    description: 'Runs a sub-agent to handle complex, multi-step tasks',
-    category: 'orchestration',
     defaultPrompt: false,
   },
   {
@@ -143,16 +130,10 @@ const CHERRY_ALIGNED_BUILTIN_TOOLS = [
 /** DesktopFairy-specific builtins (not in Cherry claudeCodeBuiltinTools) */
 const DF_EXTRA_BUILTIN_TOOLS = [
   {
-    id: 'Skill',
-    name: 'Skill',
-    description: 'Loads full instructions for an enabled skill',
-    category: 'context',
-    defaultPrompt: false,
-  },
-  {
     id: 'Skills',
     name: 'Skills',
-    description: 'Lists, searches, installs, initializes, and registers agent skills',
+    description:
+      'Loads, lists, searches, installs, initializes, and registers agent skills. Use action=load with `skill` to load an enabled skill\'s full instructions.',
     category: 'context',
     defaultPrompt: true,
   },
@@ -237,22 +218,18 @@ function getOpenAiToolParameters(toolId) {
         type: 'object',
         properties: {
           file_path: { type: 'string', description: 'The path to the file to modify' },
-          old_string: { type: 'string', description: 'The text to replace' },
-          new_string: { type: 'string', description: 'The text to replace it with' },
+          old_string: { type: 'string', description: 'The text to replace (single edit)' },
+          new_string: {
+            type: 'string',
+            description: 'The text to replace it with (single edit)',
+          },
           replace_all: {
             type: 'boolean',
             description: 'Replace all occurrences of old_string (default false)',
           },
-        },
-        required: ['file_path', 'old_string', 'new_string'],
-      };
-    case 'MultiEdit':
-      return {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string' },
           edits: {
             type: 'array',
+            description: 'Multiple replacements on this file, applied in order',
             items: {
               type: 'object',
               properties: {
@@ -264,7 +241,7 @@ function getOpenAiToolParameters(toolId) {
             },
           },
         },
-        required: ['file_path', 'edits'],
+        required: ['file_path'],
       };
     case 'Bash':
       return {
@@ -277,7 +254,6 @@ function getOpenAiToolParameters(toolId) {
               'Optional max runtime. Values < 1000 are treated as seconds; larger values as milliseconds. Default 120000 (2 min), max 600000 (10 min).',
           },
           description: { type: 'string' },
-          run_in_background: { type: 'boolean' },
         },
         required: ['command'],
       };
@@ -357,32 +333,18 @@ function getOpenAiToolParameters(toolId) {
         },
         required: ['todos'],
       };
-    case 'Task':
-      return {
-        type: 'object',
-        properties: {
-          description: { type: 'string' },
-          prompt: { type: 'string' },
-          subagent_type: { type: 'string' },
-        },
-        required: ['description', 'prompt', 'subagent_type'],
-      };
-    case 'Skill':
-      return {
-        type: 'object',
-        properties: {
-          skill: { type: 'string' },
-          args: { type: 'string' },
-        },
-        required: ['skill'],
-      };
     case 'Skills':
       return {
         type: 'object',
         properties: {
           action: {
             type: 'string',
-            enum: ['list', 'search', 'install', 'remove', 'init', 'register'],
+            enum: ['load', 'list', 'search', 'install', 'remove', 'init', 'register'],
+          },
+          skill: { type: 'string', description: 'Skill id for action=load' },
+          args: {
+            type: 'string',
+            description: 'Optional invocation context for action=load',
           },
           query: { type: 'string' },
           identifier: { type: 'string' },

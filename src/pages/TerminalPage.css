@@ -22,6 +22,135 @@
   position: relative;
 }
 
+.terminal-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.terminal-empty-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 320px;
+  max-width: calc(100% - 48px);
+  gap: 28px;
+}
+
+.terminal-empty-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.terminal-empty-hero .terminal-empty-local {
+  align-self: stretch;
+}
+
+.terminal-empty-mark {
+  display: block;
+  color: var(--bone-400);
+}
+
+.terminal-empty-local {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--ink-600);
+  color: var(--bone-100);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.terminal-empty-local:hover,
+.terminal-empty-local:focus-visible {
+  outline: none;
+  background: var(--ink-500);
+}
+
+.terminal-empty-cursor {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 13px;
+  background: var(--bone-100);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .terminal-empty-cursor {
+    animation: terminal-empty-blink 1.05s steps(1) infinite;
+  }
+}
+
+@keyframes terminal-empty-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.terminal-empty-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.terminal-empty-recent-label {
+  padding: 0 12px 8px;
+  font-size: 11px;
+  color: var(--bone-600);
+}
+
+.terminal-empty-recent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.terminal-empty-recent-item:hover,
+.terminal-empty-recent-item:focus-visible {
+  outline: none;
+  background: var(--ink-750);
+}
+
+.terminal-empty-recent-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-100);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.terminal-empty-recent-detail {
+  font-size: 11px;
+  color: var(--bone-500);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
 .terminal-instance {
   position: absolute;
   top: 0;

@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { dialog } = require('electron');
 
@@ -135,10 +136,64 @@ async function statFilePath(_event, filePath) {
   return meta;
 }
 
+function sanitizeFileName(name) {
+  const base = path.basename(String(name || 'attachment')).replace(/[/\\]/g, '_');
+  return base || 'attachment';
+}
+
+function toNodeBuffer(raw) {
+  if (Buffer.isBuffer(raw)) return raw;
+  if (raw instanceof Uint8Array) return Buffer.from(raw);
+  if (raw instanceof ArrayBuffer) return Buffer.from(raw);
+  if (Array.isArray(raw)) return Buffer.from(raw);
+  if (raw && typeof raw === 'object' && Array.isArray(raw.data)) {
+    return Buffer.from(raw.data);
+  }
+  throw new Error('Invalid file data');
+}
+
+function getAttachmentTempDir() {
+  const dir = path.join(os.tmpdir(), 'desktopfairy-attachments');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+async function saveTempFile(_event, payload) {
+  const name = sanitizeFileName(payload?.name);
+  const ext = path.extname(name).toLowerCase();
+  const kind = IMAGE_EXTENSIONS.has(ext)
+    ? 'image'
+    : TEXT_EXTENSIONS.has(ext)
+      ? 'text'
+      : 'other';
+  if (kind === 'other') {
+    throw new Error(`不支持的文件类型：${name}`);
+  }
+
+  const data = toNodeBuffer(payload?.bytes);
+  const maxBytes = kind === 'image' ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
+  if (data.length > maxBytes) {
+    throw new Error(
+      kind === 'image'
+        ? `Image too large (max ${MAX_IMAGE_BYTES / 1024 / 1024}MB)`
+        : `File too large (max ${MAX_TEXT_BYTES / 1024}KB)`,
+    );
+  }
+
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const filePath = path.join(getAttachmentTempDir(), `${stamp}${ext}`);
+  await fs.promises.writeFile(filePath, data);
+  const meta = toMetadata(filePath);
+  meta.name = name;
+  meta.kind = kind;
+  return meta;
+}
+
 function registerFileHandlers(ipcMain) {
   ipcMain.handle('file:select', selectFiles);
   ipcMain.handle('file:read', readFileContent);
   ipcMain.handle('file:stat_path', statFilePath);
+  ipcMain.handle('file:save_temp', saveTempFile);
 }
 
 module.exports = { registerFileHandlers, IMAGE_EXTENSIONS, TEXT_EXTENSIONS };

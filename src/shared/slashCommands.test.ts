@@ -37,7 +37,7 @@ describe("applySkillSlashCommand", () => {
     const result = applySkillSlashCommand("/find-skills", ids);
     expect(result?.skillId).toBe("find-skills");
     expect(result?.text).toContain("「find-skills」");
-    expect(result?.text).toContain("Skill 工具");
+    expect(result?.text).toContain("Skills 工具");
   });
 
   it("appends the user remainder as task requirements", () => {

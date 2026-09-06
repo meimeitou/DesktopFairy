@@ -10,7 +10,7 @@ import type {
   McpRuntimeState,
   McpRuntimeStatus,
 } from "../../../shared/mcpServer";
-import { buildMcpCommandString } from "../../../shared/mcpServer";
+import { buildMcpCommandString, agentHasBoundMcpFetch } from "../../../shared/mcpServer";
 import AgentCatalogToggleList from "./AgentCatalogToggleList";
 import AgentContextualToolList from "./AgentContextualToolList";
 import AgentMcpEditor from "./AgentMcpEditor";
@@ -73,15 +73,29 @@ export default function AgentToolsSection({
     [agent.toolApprovalMode]
   );
 
+  const hideWebFetch = useMemo(
+    () => agentHasBoundMcpFetch(agent.mcpServerIds, mcpServers),
+    [agent.mcpServerIds, mcpServers]
+  );
+
   const localEnabledIds = useMemo(
-    () => new Set(getEnabledAgentBuiltinTools(agent, "local").map((t) => t.id)),
-    [agent]
+    () =>
+      new Set(
+        getEnabledAgentBuiltinTools(agent, "local", { hideWebFetch }).map(
+          (t) => t.id
+        )
+      ),
+    [agent, hideWebFetch]
   );
 
   const terminalEnabledIds = useMemo(
     () =>
-      new Set(getEnabledAgentBuiltinTools(agent, "terminal").map((t) => t.id)),
-    [agent]
+      new Set(
+        getEnabledAgentBuiltinTools(agent, "terminal", { hideWebFetch }).map(
+          (t) => t.id
+        )
+      ),
+    [agent, hideWebFetch]
   );
 
   const boundMcpIds = useMemo(
@@ -115,9 +129,8 @@ export default function AgentToolsSection({
   }, []);
 
   useEffect(() => {
-    if (panel !== "mcp") return;
     void loadMcp();
-  }, [panel, loadMcp]);
+  }, [loadMcp]);
 
   useEffect(() => {
     if (panel !== "mcp") return;
@@ -137,6 +150,7 @@ export default function AgentToolsSection({
   const toggleLocalTool = (id: string, enabled: boolean) => {
     if (id === "Terminal") return; // Terminal is never available in the local context.
     if (id === "AskUserQuestion") return; // Always on except full-auto (mode-gated at runtime).
+    if (id === "WebFetch" && hideWebFetch) return;
     if (enabled) {
       onAgentChange({
         disabledToolIds: agent.disabledToolIds.filter((x) => x !== id),
@@ -149,6 +163,7 @@ export default function AgentToolsSection({
   const toggleTerminalTool = (id: string, enabled: boolean) => {
     if (id === "Bash") return; // Bash is never available in the terminal context.
     if (id === "AskUserQuestion") return;
+    if (id === "WebFetch" && hideWebFetch) return;
     if (enabled) {
       onAgentChange({
         terminalDisabledToolIds: agent.terminalDisabledToolIds.filter(
@@ -312,7 +327,13 @@ export default function AgentToolsSection({
                 aria-label="搜索内置工具"
               />
             </div>
-            <HintTip tip="按本地对话与终端分别开关。Terminal 仅终端可用，Bash 仅本地可用。" />
+            <HintTip
+              tip={
+                hideWebFetch
+                  ? "按本地对话与终端分别开关。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。"
+                  : "按本地对话与终端分别开关。Terminal 仅终端可用，Bash 仅本地可用。"
+              }
+            />
           </div>
           <AgentContextualToolList
             items={builtinCatalogItems}
@@ -323,6 +344,7 @@ export default function AgentToolsSection({
                 enabledIds: localEnabledIds,
                 forcedOffIds: new Set([
                   "Terminal",
+                  ...(hideWebFetch ? ["WebFetch"] : []),
                   ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
                 ]),
                 onToggle: toggleLocalTool,
@@ -333,6 +355,7 @@ export default function AgentToolsSection({
                 enabledIds: terminalEnabledIds,
                 forcedOffIds: new Set([
                   "Bash",
+                  ...(hideWebFetch ? ["WebFetch"] : []),
                   ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
                 ]),
                 onToggle: toggleTerminalTool,
@@ -429,6 +452,9 @@ export default function AgentToolsSection({
                               <span className="agent-tool-auto-badge">内置</span>
                             )}
                           </div>
+                          {server.description && (
+                            <p>{server.description}</p>
+                          )}
                           <p className="agent-mcp-command">
                             {buildMcpCommandString(server)}
                           </p>

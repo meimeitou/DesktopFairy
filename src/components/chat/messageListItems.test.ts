@@ -66,8 +66,26 @@ describe("buildMessageListItems", () => {
     const messages: ChatMsg[] = [
       { id: "a1", role: "assistant", content: "hello", timestamp: 1 },
     ];
-    expect(messageListStickKey(messages)).toBe("a1:5:0:1:");
+    expect(messageListStickKey(messages)).toBe("a1:5:0:1:a1:5:0:");
     expect(messageListStickKey([])).toBe("empty");
+  });
+
+  it("changes stick key when an earlier assistant reply grows", () => {
+    const messages: ChatMsg[] = [
+      { id: "a1", role: "assistant", content: "hi", timestamp: 1 },
+      {
+        id: "t1",
+        role: "assistant",
+        type: "tool",
+        content: "",
+        toolName: "Bash",
+        toolStatus: "done",
+        timestamp: 2,
+      },
+    ];
+    const before = messageListStickKey(messages);
+    messages[0] = { ...messages[0], content: "hello" };
+    expect(messageListStickKey(messages)).not.toBe(before);
   });
 
   it("includes recent tool statuses in the stick key", () => {
@@ -83,9 +101,9 @@ describe("buildMessageListItems", () => {
       },
       { id: "a1", role: "assistant", content: "", timestamp: 2 },
     ];
-    expect(messageListStickKey(messages)).toBe("a1:0:0:2:t1:running;");
+    expect(messageListStickKey(messages)).toBe("a1:0:0:2:a1:0:0:t1:running;");
     messages[0] = { ...messages[0], toolStatus: "done" };
-    expect(messageListStickKey(messages)).toBe("a1:0:0:2:t1:done;");
+    expect(messageListStickKey(messages)).toBe("a1:0:0:2:a1:0:0:t1:done;");
   });
 });
 

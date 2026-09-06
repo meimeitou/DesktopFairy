@@ -88,8 +88,8 @@ function buildToolListPrompt(enabledToolNames, context) {
   let names = enabledToolNames;
   if (!Array.isArray(names) || names.length === 0) {
     names = (context === 'terminal'
-      ? 'Read/Write/Edit/Terminal/Glob/Grep/WebSearch/WebFetch/Skill/Skills'
-      : 'Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skill/Skills'
+      ? 'Read/Write/Edit/Terminal/Glob/Grep/WebSearch/WebFetch/Skills'
+      : 'Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skills'
     ).split('/');
   }
   const visible = names.filter((n) => !TOOLS_WITH_OWN_SECTION.has(n));
@@ -119,9 +119,18 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
   parts.push(
     '## 记忆持久化\n\n你可以使用 UpdateProfile 工具将用户偏好和习惯写入持久存储：\n- 用户透露偏好、习惯、身份信息时 → UpdateProfile(field="user", action="append", content="...")\n- 需要调整自己的人格或执行规则时 → UpdateProfile(field="soul", action="replace", content="...")\n- 追加内容应简短原子（一条信息一行），不要重复已有内容。替换时需提供完整的新内容。'
   );
-  parts.push(
-    '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
-  );
+  const boundMcp = Array.isArray(agentConfig?.mcpServerIds)
+    ? agentConfig.mcpServerIds.length
+    : 0;
+  if (boundMcp === 0) {
+    parts.push(
+      '## MCP 服务器管理\n\n当前会话未绑定 MCP 服务器。需要外部工具时可用 `McpManager`：`list` 查看可用服务器，`add` 新增。绑定后其工具在下一轮请求生效。'
+    );
+  } else {
+    parts.push(
+      '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
+    );
+  }
   parts.push(
     '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。若需指向某条证据，用简短说明即可（如「见上方 WebSearch 结果 #2」）。'
   );

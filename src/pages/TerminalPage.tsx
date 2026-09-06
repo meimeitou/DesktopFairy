@@ -8,6 +8,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
+import TerminalEmptyState from "../components/terminal/TerminalEmptyState";
 import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
 import TerminalContextMenu from "../components/terminal/TerminalContextMenu";
 import TerminalSearchBar from "../components/terminal/TerminalSearchBar";
@@ -23,7 +24,11 @@ import {
   setSettings as commitAppSettings,
   useSettings,
 } from "../shared/settingsStore";
-import { appendSshRecent } from "../shared/terminalSettings";
+import {
+  appendSshRecent,
+  resolveSshRecentTarget,
+  type SshRecentEntry,
+} from "../shared/terminalSettings";
 import type { CursorStyle } from "../shared/terminalSettings";
 
 const api = window.electronAPI;
@@ -333,7 +338,8 @@ function TerminalInstance({
       if (!files?.length) return;
       const paths: string[] = [];
       for (const f of Array.from(files)) {
-        const fp = (f as File & { path?: string }).path;
+        const fp =
+          api.getPathForFile?.(f) || (f as File & { path?: string }).path;
         if (fp) paths.push(fp);
       }
       if (!paths.length || !sessionIdRef.current) return;
@@ -568,26 +574,39 @@ export default function TerminalPage({
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
+  const removeTabFromList = useCallback((prev: Tab[], id: string): Tab[] => {
+    const idx = prev.findIndex((t) => t.id === id);
+    if (idx < 0) return prev;
+    const nextTabs = prev.filter((t) => t.id !== id);
+    const hasSession = nextTabs.some(
+      (t) => t.kind === "terminal" || t.kind === "ssh",
+    );
+    if (!hasSession) {
+      setDrawerOpen(false);
+      setSearchEntry(null);
+      setSelectionTip(null);
+      setContextMenu(null);
+    }
+    if (nextTabs.length === 0) {
+      setActiveTabId("");
+      nextTabIndex.current = 1;
+      setSshPickerOpen(false);
+      return nextTabs;
+    }
+    if (activeTabIdRef.current === id) {
+      setActiveTabId(nextTabs[Math.max(0, idx - 1)].id);
+    }
+    return nextTabs;
+  }, []);
+
   const handleSessionExit = useCallback((tabId: string) => {
     setTabs((prev) => {
       const tab = prev.find((t) => t.id === tabId);
       const autoClose = tab?.kind === "ssh" || Boolean(tab?.launchCommand);
       if (!autoClose) return prev;
-
-      if (prev.length <= 1) {
-        const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        setActiveTabId(newId);
-        return [{ id: newId, title: "终端 1", kind: "terminal" as const }];
-      }
-
-      const idx = prev.findIndex((t) => t.id === tabId);
-      const nextTabs = prev.filter((t) => t.id !== tabId);
-      if (activeTabIdRef.current === tabId) {
-        setActiveTabId(nextTabs[Math.max(0, idx - 1)].id);
-      }
-      return nextTabs;
+      return removeTabFromList(prev, tabId);
     });
-  }, []);
+  }, [removeTabFromList]);
 
   const getActiveSessionId = useCallback(() => {
     return sessionMapRef.current.get(activeTabId)?.sessionId;
@@ -732,7 +751,7 @@ export default function TerminalPage({
   useEffect(() => {
     const handler = (e: Event) => {
       const { command } = (e as CustomEvent<{ command?: string }>).detail ?? {};
-      if (!command) return;
+      if (!command || !activeTabId) return;
       pasteCommandToTab(activeTabId, command);
     };
     window.addEventListener("terminal:run-command", handler);
@@ -746,16 +765,20 @@ export default function TerminalPage({
   }, []);
 
   const closeTabById = useCallback((id: string) => {
-    setTabs((prev) => {
-      if (prev.length <= 1) return prev;
-      const idx = prev.findIndex((t) => t.id === id);
-      const nextTabs = prev.filter((t) => t.id !== id);
-      if (activeTabIdRef.current === id) {
-        setActiveTabId(nextTabs[Math.max(0, idx - 1)].id);
+    setTabs((prev) => removeTabFromList(prev, id));
+  }, [removeTabFromList]);
+
+  const handleOpenRecent = useCallback(
+    (entry: SshRecentEntry) => {
+      const target = resolveSshRecentTarget(entry, settings.sshHosts);
+      if (target.type === "saved") {
+        handleConnectSsh(target.id);
+        return;
       }
-      return nextTabs;
-    });
-  }, []);
+      handleQuickConnect(target.host);
+    },
+    [settings.sshHosts, handleConnectSsh, handleQuickConnect],
+  );
 
   const requestCloseTab = useCallback(async (id: string) => {
     const tab = tabsRef.current.find((t) => t.id === id);
@@ -835,40 +858,50 @@ export default function TerminalPage({
     return () => document.removeEventListener("mousedown", handler);
   }, [sshPickerOpen]);
 
+  const hasSessionTab = tabs.some((t) => t.kind === "terminal" || t.kind === "ssh");
+
   return (
     <div className="terminal-page">
       <div className="terminal-page-left">
         <div className="terminal-instances-wrapper">
-          {tabs.map((tab) =>
-            tab.kind === "settings" ? (
-              <TerminalSettingsTab
-                key={tab.id}
-                isActive={tab.id === activeTabId && isActive}
-                settings={settings}
-                onChange={handleSettingsChange}
-                onConnectSsh={handleConnectSsh}
-                onQuickConnect={handleQuickConnect}
-                initialSection={settingsInitialSection}
-              />
-            ) : (
-              <TerminalInstance
-                key={tab.id}
-                tabId={tab.id}
-                isActive={tab.id === activeTabId && isActive}
-                cwd={tab.cwd}
-                launchCommand={tab.launchCommand}
-                sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
-                sshCredentials={settings.sshCredentials}
-                terminalSettings={settings.terminal}
-                onSessionReady={handleSessionReady}
-                onSessionEnd={handleSessionEnd}
-                onSessionExit={handleSessionExit}
-                onSelectionChange={handleSelectionChange}
-                onTitleChange={handleTitleChange}
-                onSearchAddonReady={handleSearchAddonReady}
-                onSearchAddonDispose={handleSearchAddonDispose}
-                onContextMenu={handleContextMenu}
-              />
+          {tabs.length === 0 ? (
+            <TerminalEmptyState
+              recent={settings.sshRecent}
+              onOpenLocal={handleAddTab}
+              onOpenRecent={handleOpenRecent}
+            />
+          ) : (
+            tabs.map((tab) =>
+              tab.kind === "settings" ? (
+                <TerminalSettingsTab
+                  key={tab.id}
+                  isActive={tab.id === activeTabId && isActive}
+                  settings={settings}
+                  onChange={handleSettingsChange}
+                  onConnectSsh={handleConnectSsh}
+                  onQuickConnect={handleQuickConnect}
+                  initialSection={settingsInitialSection}
+                />
+              ) : (
+                <TerminalInstance
+                  key={tab.id}
+                  tabId={tab.id}
+                  isActive={tab.id === activeTabId && isActive}
+                  cwd={tab.cwd}
+                  launchCommand={tab.launchCommand}
+                  sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
+                  sshCredentials={settings.sshCredentials}
+                  terminalSettings={settings.terminal}
+                  onSessionReady={handleSessionReady}
+                  onSessionEnd={handleSessionEnd}
+                  onSessionExit={handleSessionExit}
+                  onSelectionChange={handleSelectionChange}
+                  onTitleChange={handleTitleChange}
+                  onSearchAddonReady={handleSearchAddonReady}
+                  onSearchAddonDispose={handleSearchAddonDispose}
+                  onContextMenu={handleContextMenu}
+                />
+              )
             )
           )}
           {searchEntry && (
@@ -918,24 +951,22 @@ export default function TerminalPage({
               onClick={() => setActiveTabId(tab.id)}
             >
               <span>{tab.title}</span>
-              {tabs.length > 1 && (
-                <div
-                  className="terminal-tab-close"
-                  onClick={(e) => handleCloseTab(tab.id, e)}
+              <div
+                className="terminal-tab-close"
+                onClick={(e) => handleCloseTab(tab.id, e)}
+              >
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
                 >
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </div>
-              )}
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </div>
             </button>
           ))}
           <button
@@ -1016,39 +1047,43 @@ export default function TerminalPage({
         />
       )}
 
-      <TerminalAgentDrawer
-        isOpen={drawerOpen}
-        onToggle={() => setDrawerOpen((v) => !v)}
-        activeTabId={activeTabId}
-        getActiveSessionId={getActiveSessionId}
-        tabIds={tabs.map((t) => t.id)}
-      />
+      {hasSessionTab && (
+        <TerminalAgentDrawer
+          isOpen={drawerOpen}
+          onToggle={() => setDrawerOpen((v) => !v)}
+          activeTabId={activeTabId}
+          getActiveSessionId={getActiveSessionId}
+          tabIds={tabs.map((t) => t.id)}
+        />
+      )}
 
-      <button
-        type="button"
-        className={`terminal-agent-toggle${drawerOpen ? " open" : ""}`}
-        onClick={() => setDrawerOpen((v) => !v)}
-        title="AI 助手"
-      >
-        <svg
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {hasSessionTab && (
+        <button
+          type="button"
+          className={`terminal-agent-toggle${drawerOpen ? " open" : ""}`}
+          onClick={() => setDrawerOpen((v) => !v)}
+          title="AI 助手"
         >
-          <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9Z" />
-          <path d="M9 10h.01" />
-          <path d="M15 10h.01" />
-          <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
-          <path d="M12 3v2" />
-          <path d="M4.2 7.5l1.4-1.4" />
-          <path d="M18.4 6.1l1.4 1.4" />
-        </svg>
-      </button>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9Z" />
+            <path d="M9 10h.01" />
+            <path d="M15 10h.01" />
+            <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
+            <path d="M12 3v2" />
+            <path d="M4.2 7.5l1.4-1.4" />
+            <path d="M18.4 6.1l1.4 1.4" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }

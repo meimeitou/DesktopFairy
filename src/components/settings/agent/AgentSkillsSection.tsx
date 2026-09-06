@@ -115,7 +115,7 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
             刷新
           </button>
         </div>
-        <HintTip tip="启用后通过 Skill 工具按需加载。可导入含 SKILL.md 的本地文件夹，或直接编辑 ~/.agents/skills/。" />
+        <HintTip tip="启用后通过 Skills 工具（action: load）按需加载。可导入含 SKILL.md 的本地文件夹，或直接编辑 ~/.agents/skills/。" />
       </div>
       {skillImportError && (
         <p className="field-hint field-hint--after warn">{skillImportError}</p>

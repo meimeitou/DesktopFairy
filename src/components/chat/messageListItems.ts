@@ -89,5 +89,15 @@ export function messageListStickKey(messages: ChatMsg[]): string {
     if (m.type !== "tool") continue;
     toolSig += `${m.id}:${m.toolStatus ?? ""};`;
   }
-  return `${last.id}:${last.content.length}:${(last.reasoning ?? "").length}:${messages.length}:${toolSig}`;
+  // Final reply may sit above a trailing tool row; follow that text too.
+  let replySig = "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "assistant" || m.type === "tool" || m.type === "clear") {
+      continue;
+    }
+    replySig = `${m.id}:${m.content.length}:${(m.reasoning ?? "").length}`;
+    break;
+  }
+  return `${last.id}:${last.content.length}:${(last.reasoning ?? "").length}:${messages.length}:${replySig}:${toolSig}`;
 }

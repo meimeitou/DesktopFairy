@@ -32,9 +32,7 @@ const CHERRY_ALIGNED_TOOL_IDS = new Set([
   "Edit",
   "Glob",
   "Grep",
-  "MultiEdit",
   "Read",
-  "Task",
   "TodoWrite",
   "WebFetch",
   "WebSearch",
@@ -51,7 +49,7 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
   ),
   builtinTool(
     "Edit",
-    "Performs exact string replacements in files (use Read first; supports fuzzy matching)",
+    "Performs exact string replacements in files (use Read first; pass `edits` for multiple replacements on one file)",
     "file",
     true,
   ),
@@ -68,21 +66,9 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     false,
   ),
   builtinTool(
-    "MultiEdit",
-    "Performs multiple edits on a single file atomically",
-    "file",
-    true,
-  ),
-  builtinTool(
     "Read",
     "Reads file contents with line numbers (default 2000 lines; binary files rejected)",
     "file",
-    false,
-  ),
-  builtinTool(
-    "Task",
-    "Runs a sub-agent to handle complex, multi-step tasks",
-    "orchestration",
     false,
   ),
   builtinTool(
@@ -109,10 +95,9 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "file",
     true,
   ),
-  builtinTool("Skill", "Loads full instructions for an enabled skill", "context", false),
   builtinTool(
     "Skills",
-    "Lists, searches, installs, initializes, and registers agent skills",
+    "Loads, lists, searches, installs, initializes, and registers agent skills (action=load for an enabled skill)",
     "context",
     true
   ),
@@ -146,9 +131,7 @@ const DEFAULT_SAFE_TOOLS = new Set([
   "Read",
   "Glob",
   "Grep",
-  "Task",
   "TodoWrite",
-  "Skill",
   "UpdateProfile",
   "AskUserQuestion",
 ]);
@@ -239,19 +222,12 @@ function getOpenAiToolParameters(toolId: string) {
         type: "object",
         properties: {
           file_path: { type: "string" },
-          old_string: { type: "string" },
-          new_string: { type: "string" },
+          old_string: { type: "string", description: "Text to replace (single edit)" },
+          new_string: { type: "string", description: "Replacement text (single edit)" },
           replace_all: { type: "boolean" },
-        },
-        required: ["file_path", "old_string", "new_string"],
-      };
-    case "MultiEdit":
-      return {
-        type: "object",
-        properties: {
-          file_path: { type: "string" },
           edits: {
             type: "array",
+            description: "Multiple replacements on this file, applied in order",
             items: {
               type: "object",
               properties: {
@@ -263,7 +239,7 @@ function getOpenAiToolParameters(toolId: string) {
             },
           },
         },
-        required: ["file_path", "edits"],
+        required: ["file_path"],
       };
     case "Bash":
       return {
@@ -276,7 +252,6 @@ function getOpenAiToolParameters(toolId: string) {
               "Max runtime: values < 1000 = seconds, else milliseconds. Default 120000 (2 min), max 600000 (10 min).",
           },
           description: { type: "string" },
-          run_in_background: { type: "boolean" },
         },
         required: ["command"],
       };
@@ -351,30 +326,16 @@ function getOpenAiToolParameters(toolId: string) {
         },
         required: ["todos"],
       };
-    case "Task":
-      return {
-        type: "object",
-        properties: {
-          description: { type: "string" },
-          prompt: { type: "string" },
-          subagent_type: { type: "string" },
-        },
-        required: ["description", "prompt", "subagent_type"],
-      };
-    case "Skill":
-      return {
-        type: "object",
-        properties: {
-          skill: { type: "string" },
-          args: { type: "string" },
-        },
-        required: ["skill"],
-      };
     case "Skills":
       return {
         type: "object",
         properties: {
-          action: { type: "string", enum: ["list", "search", "install", "remove", "init", "register"] },
+          action: {
+            type: "string",
+            enum: ["load", "list", "search", "install", "remove", "init", "register"],
+          },
+          skill: { type: "string", description: "Skill id for action=load" },
+          args: { type: "string", description: "Optional invocation context for action=load" },
           query: { type: "string" },
           identifier: { type: "string" },
           name: { type: "string" },

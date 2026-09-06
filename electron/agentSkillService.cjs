@@ -12,11 +12,11 @@ const SKILLS_SH_API = 'https://skills.sh';
 
 const SKILLS_GUIDANCE = `## 技能 (Skills)
 
-下方目录列出当前已启用的技能（仅名称与简介）。需要执行某技能时，先调用 \`Skill\` 工具加载其 SKILL.md 全文，再按说明操作。
+下方目录列出当前已启用的技能（仅名称与简介）。需要执行某技能时，先调用 \`Skills\` 工具（action: "load"）加载其 SKILL.md 全文，再按说明操作。
 
-使用 \`Skills\` 工具管理技能库：\`list\` 查看已安装技能，\`search\` 搜索市场，\`install\` 安装，\`init\`/\`register\` 创建并注册本地技能（安装/删除前须征得用户确认）。
+同一 \`Skills\` 工具也用于管理技能库：\`list\` 查看已安装技能，\`search\` 搜索市场，\`install\` 安装，\`init\`/\`register\` 创建并注册本地技能（安装/删除前须征得用户确认）。
 
-当用户需要的能力可能已有现成技能时，优先 \`Skills\` search，不要从零摸索。安装后通过 \`Skill\` 按需加载完整说明。`;
+当用户需要的能力可能已有现成技能时，优先 \`Skills\` search，不要从零摸索。安装后通过 \`Skills\` load 按需加载完整说明。`;
 
 function getSkillsDir() {
   const dir = path.join(os.homedir(), '.agents', 'skills');
@@ -159,7 +159,7 @@ function buildSkillsCatalog(enabledSkillIds) {
     lines.push(`- **${skill.name}** (\`${skill.id}\`)${desc}`);
   }
   lines.push('');
-  lines.push('完整说明请通过 `Skill` 工具按需加载。');
+  lines.push('完整说明请通过 `Skills` 工具（action: "load"）按需加载。');
   return lines.join('\n').trim();
 }
 
@@ -425,6 +425,8 @@ async function executeSkillsTool(args, deps = {}) {
   const enabled = getEnabledSkillSet(deps.enabledSkillIds, deps.sessionEnabledSkillIds);
 
   switch (action) {
+    case 'load':
+      return executeSkillTool(args, deps);
     case 'list': {
       const all = scanSkills();
       const items = all.map((s) => ({
@@ -486,7 +488,7 @@ async function executeSkillsTool(args, deps = {}) {
       }
     }
     default:
-      return fail('Unknown action; use list/search/install/remove/init/register');
+      return fail('Unknown action; use load/list/search/install/remove/init/register');
   }
 }
 

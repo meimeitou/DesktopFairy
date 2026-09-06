@@ -4,13 +4,17 @@ const os = require('os');
 const { app, dialog } = require('electron');
 
 const MCP_STORE = () => path.join(app.getPath('userData'), 'da_mcp_servers.json');
+/** Bump when builtin preset defaults change and existing installs should pick them up. */
+const TOOL_DEFAULTS_REV = 2;
+const PRESETS_DEFAULTED_OFF = new Set(['builtin-mcp-fetch', 'builtin-mcp-sequential']);
 
 const BUILTIN_MCP_PRESETS = [
   {
     id: 'builtin-mcp-filesystem',
     name: 'Filesystem',
     type: 'stdio',
-    description: '读写本地文件（@modelcontextprotocol/server-filesystem）',
+    description:
+      '读写本地文件（@modelcontextprotocol/server-filesystem）。与内置 Read / Write / Edit / Glob 重复，一般无需启用。',
     reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
     command: 'npx',
     args: [
@@ -32,7 +36,7 @@ const BUILTIN_MCP_PRESETS = [
     command: 'uvx',
     args: ['mcp-server-fetch'],
     env: { PYTHONIOENCODING: 'utf-8' },
-    isActive: true,
+    isActive: false,
     installSource: 'builtin',
   },
   {
@@ -56,7 +60,7 @@ const BUILTIN_MCP_PRESETS = [
     reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
-    isActive: true,
+    isActive: false,
     installSource: 'builtin',
   },
 ];
@@ -64,17 +68,41 @@ const BUILTIN_MCP_PRESETS = [
 function loadStore() {
   try {
     if (fs.existsSync(MCP_STORE())) {
-      return JSON.parse(fs.readFileSync(MCP_STORE(), 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(MCP_STORE(), 'utf8'));
+      return migrateStore(parsed);
     }
   } catch {
     /* ignore */
   }
-  return { servers: [] };
+  return { servers: [], toolDefaultsRev: TOOL_DEFAULTS_REV };
+}
+
+function migrateStore(data) {
+  const servers = Array.isArray(data?.servers) ? data.servers : [];
+  let rev = Number(data?.toolDefaultsRev) || 0;
+  if (rev >= TOOL_DEFAULTS_REV) {
+    return { servers, toolDefaultsRev: rev };
+  }
+  if (rev < 2) {
+    for (const server of servers) {
+      if (PRESETS_DEFAULTED_OFF.has(server.id)) {
+        server.isActive = false;
+      }
+    }
+    rev = 2;
+  }
+  const next = { servers, toolDefaultsRev: rev };
+  saveStore(next);
+  return next;
 }
 
 function saveStore(data) {
   fs.mkdirSync(path.dirname(MCP_STORE()), { recursive: true });
   fs.writeFileSync(MCP_STORE(), JSON.stringify(data, null, 2), 'utf8');
+}
+
+function persistServers(servers) {
+  saveStore({ servers, toolDefaultsRev: TOOL_DEFAULTS_REV });
 }
 
 function mergePresetDefaults(server, preset) {
@@ -85,7 +113,7 @@ function mergePresetDefaults(server, preset) {
     id: preset.id,
     installSource: 'builtin',
     reference: server.reference || preset.reference,
-    description: server.description || preset.description,
+    description: preset.description || server.description,
     shouldConfig: preset.shouldConfig,
   };
   // Builtin preset command is canonical (not user-editable); always take it
@@ -123,7 +151,7 @@ function upsertServer(server) {
   const idx = servers.findIndex((s) => s.id === next.id);
   if (idx >= 0) servers[idx] = { ...servers[idx], ...next };
   else servers.push(next);
-  saveStore({ servers });
+  persistServers(servers);
   return next;
 }
 
@@ -134,7 +162,7 @@ function deleteServer(id) {
     return;
   }
   const servers = listServers().filter((s) => s.id !== id);
-  saveStore({ servers });
+  persistServers(servers);
 }
 
 function getServerById(id) {

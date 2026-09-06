@@ -264,12 +264,11 @@ interface LlmProvider {
 | 工具 | 类别 | 审批 | 说明 |
 |------|------|------|------|
 | Read / Glob / Grep | 搜索/文件 | 自动 | 只读 |
-| Write / Edit / MultiEdit | 文件 | 确认 | 写操作 |
+| Write / Edit | 文件 | 确认 | 写操作；多次替换用 Edit 的 `edits` |
 | Bash | Shell | 确认 | 命令执行 |
-| WebFetch / WebSearch | 网络 | 确认 | URL 抓取 / 搜索 |
+| WebFetch / WebSearch | 网络 | 确认 | URL 抓取 / 搜索；绑定 MCP Fetch 时隐藏 WebFetch |
 | TodoWrite | 编排 | 自动 | 任务列表 |
-| Task | 编排 | 自动 | 子 Agent（当前不支持，返回错误） |
-| Skill / Skills | 上下文 | 自动 | 技能加载 / 管理 |
+| Skills | 上下文 | load 自动；install/remove 确认 | 技能加载与管理 |
 | UpdateProfile | 上下文 | 自动 | 更新 SOUL.md / USER.md |
 
 **技能系统**（`electron/agentSkillService.cjs`）：
@@ -278,8 +277,8 @@ interface LlmProvider {
 - 内置技能：`find-skills`（发现并安装技能）、`skill-creator`（创建技能），受保护不可删除
 - `agent:skills:scan` IPC 返回技能列表（id / name / description / folderName / isBuiltin）
 - `agent:skills:import_directory`：系统选目录对话框，校验 `SKILL.md` 后复制到全局技能目录
-- `buildSkillsPrompt` 将已启用技能的目录注入系统提示词；完整内容由 `Skill` 工具按需加载
-- `Skills` 工具支持 list / search（skills.sh 市场）/ install / remove / init / register
+- `buildSkillsPrompt` 将已启用技能的目录注入系统提示词；完整内容由 `Skills`（action=load）按需加载
+- `Skills` 工具支持 load / list / search（skills.sh 市场）/ install / remove / init / register
 - 运行时安装的技能通过 `persistEnabledSkillId` 写入设置并广播
 
 **MCP 服务器**（`electron/agentMcpClient.cjs` + `mcpServerService.cjs`）：
@@ -441,7 +440,7 @@ electron/
   bashTimeout.cjs           # Bash timeout 解析（秒/ms 启发式）
   mcpToolArgs.cjs           # MCP fetch max_length 注入
   mcpResultFormat.cjs       # MCP 结果截断
-  agentSkillService.cjs     # 技能扫描、Skill/Skills 工具、skills.sh 市场
+  agentSkillService.cjs     # 技能扫描、Skills 工具、skills.sh 市场
   agentMcpClient.cjs        # MCP 客户端
   agentToolApproval.cjs     # 工具审批流程
   builtinSkills.cjs         # 内置技能安装器

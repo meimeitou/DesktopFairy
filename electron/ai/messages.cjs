@@ -1,11 +1,43 @@
 /**
  * Convert OpenAI-style chat messages (DesktopFairy) to AI SDK ModelMessage[].
+ * Data-URL images are decoded to bytes — the SDK otherwise fetches them as URLs.
  */
 
 function textContent(value) {
   if (typeof value === 'string') return value;
   if (value == null) return '';
   return String(value);
+}
+
+function decodeDataUrl(url) {
+  if (typeof url !== 'string' || !url.startsWith('data:')) return null;
+  const comma = url.indexOf(',');
+  if (comma < 0) return null;
+  const header = url.slice('data:'.length, comma);
+  const payload = url.slice(comma + 1);
+  const headerParts = header.split(';').map((p) => p.trim()).filter(Boolean);
+  const isBase64 = headerParts.some((p) => p.toLowerCase() === 'base64');
+  const mediaType = headerParts.find((p) => p.toLowerCase() !== 'base64') || 'image/png';
+  try {
+    const image = isBase64
+      ? Buffer.from(payload, 'base64')
+      : Buffer.from(decodeURIComponent(payload), 'utf8');
+    if (!image.length) return null;
+    return { type: 'image', image, mediaType };
+  } catch {
+    return null;
+  }
+}
+
+function toImagePart(image, mediaType) {
+  if (typeof image === 'string' && image.startsWith('data:')) {
+    const decoded = decodeDataUrl(image);
+    if (!decoded) throw new Error('Invalid image data URL');
+    return decoded;
+  }
+  const part = { type: 'image', image };
+  if (mediaType) part.mediaType = mediaType;
+  return part;
 }
 
 function mapUserContent(content) {
@@ -26,12 +58,12 @@ function mapUserContent(content) {
     if (part.type === 'image_url') {
       const url = part.image_url?.url ?? part.url;
       if (typeof url === 'string' && url) {
-        parts.push({ type: 'image', image: url });
+        parts.push(toImagePart(url));
       }
       continue;
     }
     if (part.type === 'image' && part.image != null) {
-      parts.push({ type: 'image', image: part.image, mediaType: part.mediaType });
+      parts.push(toImagePart(part.image, part.mediaType));
     }
   }
 

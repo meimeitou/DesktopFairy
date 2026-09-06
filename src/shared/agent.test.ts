@@ -65,10 +65,23 @@ describe('agent', () => {
   })
 
   describe('getEnabledAgentBuiltinTools', () => {
-    it('should return tools for normal mode', () => {
+    it('should not expose Task, MultiEdit, or Skill in the catalog', () => {
       const agent = makeAgent({ chatMode: 'normal' })
-      const tools = getEnabledAgentBuiltinTools(agent)
-      expect(tools.length).toBeGreaterThan(0)
+      const ids = getEnabledAgentBuiltinTools(agent).map((t) => t.id)
+      expect(ids).not.toContain('Task')
+      expect(ids).not.toContain('MultiEdit')
+      expect(ids).not.toContain('Skill')
+      expect(ids).toContain('Edit')
+      expect(ids).toContain('Skills')
+    })
+
+    it('should hide WebFetch when hideWebFetch is set', () => {
+      const agent = makeAgent({ chatMode: 'normal' })
+      const ids = getEnabledAgentBuiltinTools(agent, 'local', {
+        hideWebFetch: true,
+      }).map((t) => t.id)
+      expect(ids).not.toContain('WebFetch')
+      expect(ids).toContain('WebSearch')
     })
 
     it('should disable write/bash tools in plan mode (readOnly)', () => {
@@ -195,10 +208,11 @@ describe('agent', () => {
       expect(result.chatMode).toBe('normal')
     })
 
-    it('should ensure disabledToolIds is an array', () => {
-      const result = normalizeAgentConfig({ disabledToolIds: null })
-      expect(Array.isArray(result.disabledToolIds)).toBe(true)
-      expect(result.disabledToolIds).toEqual(LOCAL_DEFAULT_DISABLED_TOOL_IDS)
+    it('should strip unknown legacy tool ids such as Task and MultiEdit', () => {
+      const result = normalizeAgentConfig({
+        disabledToolIds: ['Task', 'MultiEdit', 'Terminal'],
+      })
+      expect(result.disabledToolIds).toEqual(['Terminal'])
     })
 
     it('should keep AskUserQuestion enabled even if present in disabledToolIds', () => {

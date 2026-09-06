@@ -289,3 +289,25 @@ export function appendSshRecent(
   const filtered = recent.filter((e) => sshRecentKey(e.host) !== key);
   return [{ host, connectedAt: Date.now() }, ...filtered].slice(0, MAX_SSH_RECENT);
 }
+
+export type SshRecentTarget =
+  | { type: "saved"; id: string }
+  | { type: "snapshot"; host: SshHost };
+
+/**
+ * 空页点最近记录时解析连接目标：
+ * 1. 已保存主机 id 命中 → 用当前保存配置
+ * 2. 否则 user@host:port 命中 → 用当前保存配置
+ * 3. 否则用历史快照（主机已删仍可重连）
+ */
+export function resolveSshRecentTarget(
+  entry: SshRecentEntry,
+  sshHosts: SshHost[],
+): SshRecentTarget {
+  const byId = sshHosts.find((h) => h.id === entry.host.id);
+  if (byId) return { type: "saved", id: byId.id };
+  const key = sshRecentKey(entry.host);
+  const byKey = sshHosts.find((h) => sshRecentKey(h) === key);
+  if (byKey) return { type: "saved", id: byKey.id };
+  return { type: "snapshot", host: entry.host };
+}

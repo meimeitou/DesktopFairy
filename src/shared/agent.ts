@@ -125,7 +125,6 @@ export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
   "Read",
   "Write",
   "Edit",
-  "MultiEdit",
   "Glob",
   "Grep",
 ];
@@ -265,7 +264,8 @@ export function getEffectiveToolApprovalMode(
 
 export function getEnabledAgentBuiltinTools(
   agent: AgentConfig,
-  context: "local" | "terminal" = "local"
+  context: "local" | "terminal" = "local",
+  options?: { hideWebFetch?: boolean }
 ): AgentToolDescriptor[] {
   const approval = getEffectiveToolApprovalMode(agent);
   const card = getChatModeCard(agent.chatMode);
@@ -276,11 +276,9 @@ export function getEnabledAgentBuiltinTools(
     for (const id of [
       "Write",
       "Edit",
-      "MultiEdit",
       "Bash",
       "WebFetch",
       "WebSearch",
-      "Task",
     ]) {
       disabled.add(id);
     }
@@ -307,6 +305,10 @@ export function getEnabledAgentBuiltinTools(
     ) {
       disabled.delete("Terminal");
     }
+  }
+
+  if (options?.hideWebFetch) {
+    disabled.add("WebFetch");
   }
 
   return getBuiltinToolCatalog(approval).filter((t) => !disabled.has(t.id));

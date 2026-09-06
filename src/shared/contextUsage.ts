@@ -225,11 +225,17 @@ export function trimMessagesForTokenBudget(
   };
 }
 
+function messagesAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
+  const clearIndex = messages.findLastIndex((m) => m.type === "clear");
+  if (clearIndex === -1) return messages;
+  return messages.slice(clearIndex + 1).filter((m) => m.type !== "clear");
+}
+
 export function estimateContextUsage(
   input: EstimateContextUsageInput,
 ): ContextUsageResult {
   const {
-    messages,
+    messages: rawMessages,
     input: draftInput = "",
     attachments = [],
     systemTokens = 0,
@@ -238,6 +244,8 @@ export function estimateContextUsage(
     lastCompletionTokens,
     lastUsageMessageCount,
   } = input;
+
+  const messages = messagesAfterContextClear(rawMessages);
 
   const sendBudget = sendTokenBudget(contextWindow);
   const draftInputTokens = estimateTokens(draftInput);
@@ -253,15 +261,32 @@ export function estimateContextUsage(
   const historyFromTrim = estimateMessagesTokens(kept);
 
   let used: number;
+  // lastUsageMessageCount is an index into this same (already filtered) list.
+  // After "清除上下文", the list shrinks; a stale count/prompt from above the
+  // separator must not inflate the meter.
   const hasServerBaseline =
     typeof lastPromptTokens === "number" &&
     lastPromptTokens > 0 &&
-    typeof lastUsageMessageCount === "number";
+    typeof lastUsageMessageCount === "number" &&
+    lastUsageMessageCount >= 0 &&
+    lastUsageMessageCount <= messages.length &&
+    messages.length > 0;
 
   if (hasServerBaseline) {
     const newMessages = messages.slice(lastUsageMessageCount);
     const newTokens = estimateMessagesTokens(newMessages);
-    used = lastPromptTokens! + newTokens + draftInputTokens + draftAttachmentTokens;
+    // promptTokens is the last request's input; the assistant reply becomes
+    // part of the *next* prompt, so add completion when the provider reports it.
+    const completionTokens =
+      typeof lastCompletionTokens === "number" && lastCompletionTokens > 0
+        ? lastCompletionTokens
+        : 0;
+    used =
+      lastPromptTokens! +
+      completionTokens +
+      newTokens +
+      draftInputTokens +
+      draftAttachmentTokens;
   } else {
     used =
       systemTokens +

@@ -197,8 +197,11 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
       return "更新待办";
     case "Skill":
       return pickString(args, ["skill"]) || "";
-    case "Skills":
-      return pickString(args, ["action"]) || "";
+    case "Skills": {
+      const action = pickString(args, ["action"]);
+      if (action === "load") return pickString(args, ["skill"]) || "load";
+      return action || "";
+    }
     case "AskUserQuestion": {
       const questions = Array.isArray(args.questions) ? args.questions : [];
       const first =

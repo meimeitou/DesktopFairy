@@ -9,15 +9,19 @@ import {
 import MessageList, { type MessageListHandle } from "../chat/MessageList";
 import { TerminalStopContext } from "../chat/agentTools/TerminalStopContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
+import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
 import {
   getAgentBackendLabel,
+  AGENT_BACKEND_KEY,
   type AgentConfig,
   type AgentSkillDescriptor,
 } from "../../shared/agent";
 import type { ChatMode } from "../../shared/chatMode";
 import ChatModeSelector from "../chat/ChatModeSelector";
+import ContextUsageMeter from "../chat/ContextUsageMeter";
 import SlashCommandMenu from "../chat/SlashCommandMenu";
+import ComposerBusyHalo from "../chat/ComposerBusyHalo";
 import KnowledgePicker from "../knowledge/KnowledgePicker";
 import {
   type ChatMsg,
@@ -33,6 +37,8 @@ import {
 import {
   buildTrimOptions,
   estimateAgentSystemPromptTokens,
+  estimateContextUsage,
+  resolveActiveModelName,
   resolveContextWindow,
 } from "../../shared/contextUsage";
 import type { ToolTerminalState } from "../../shared/ai/stream";
@@ -180,6 +186,9 @@ interface DrawerTabState {
   input: string;
   streaming: boolean;
   requestId: string | null;
+  lastPromptTokens?: number;
+  lastCompletionTokens?: number;
+  lastUsageMessageCount?: number;
 }
 
 function emptyTabState(): DrawerTabState {
@@ -228,6 +237,9 @@ export default function TerminalAgentDrawer({
     null,
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+
+  useComposerOverlay(dockRef);
 
   useEffect(() => {
     tabStatesRef.current = tabStates;
@@ -299,6 +311,27 @@ export default function TerminalAgentDrawer({
 
   const activeState = tabStates[activeTabId] ?? emptyTabState();
   const composerDisabled = activeState.streaming || !!editingMsgId;
+
+  const contextUsage = useMemo(() => {
+    const modelName = resolveActiveModelName(settings, AGENT_BACKEND_KEY);
+    const contextWindow = resolveContextWindow(modelName);
+    return estimateContextUsage({
+      messages: filterForAgentHistory(activeState.messages),
+      input: activeState.input,
+      systemTokens: estimateAgentSystemPromptTokens(settings.agent),
+      contextWindow,
+      lastPromptTokens: activeState.lastPromptTokens,
+      lastCompletionTokens: activeState.lastCompletionTokens,
+      lastUsageMessageCount: activeState.lastUsageMessageCount,
+    });
+  }, [
+    settings,
+    activeState.messages,
+    activeState.input,
+    activeState.lastPromptTokens,
+    activeState.lastCompletionTokens,
+    activeState.lastUsageMessageCount,
+  ]);
 
   const slashCommands = useMemo(
     () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
@@ -484,10 +517,12 @@ export default function TerminalAgentDrawer({
       requestId,
       aborted,
       tools,
+      usage,
     }: {
       requestId: string;
       aborted?: boolean;
       tools?: ToolTerminalState[];
+      usage?: { promptTokens?: number; completionTokens?: number };
     }) => {
       chunkBuffer.flushRequest(requestId);
       const tabId = requestIdToTabIdRef.current.get(requestId);
@@ -506,6 +541,13 @@ export default function TerminalAgentDrawer({
           streaming: false,
           requestId: null,
           messages: reconciled,
+          ...(usage?.promptTokens != null && usage.promptTokens > 0
+            ? {
+                lastPromptTokens: usage.promptTokens,
+                lastCompletionTokens: usage.completionTokens,
+                lastUsageMessageCount: filterForAgentHistory(reconciled).length,
+              }
+            : {}),
         };
         if (aborted) {
           return next;
@@ -517,22 +559,28 @@ export default function TerminalAgentDrawer({
               ? state.messages[assistantIdx].content
               : "";
           if (summary.trim()) {
-            next.messages = [
-              ...reconciled,
-              {
-                id: genId(),
-                role: "user" as const,
-                type: "clear" as const,
-                content: "",
-                timestamp: Date.now(),
-              } as ChatMsg,
-              {
-                id: genId(),
-                role: "user" as const,
-                content: `[上下文摘要]\n\n${summary.trim()}`,
-                timestamp: Date.now(),
-              } as ChatMsg,
-            ];
+            return {
+              ...next,
+              lastPromptTokens: undefined,
+              lastCompletionTokens: undefined,
+              lastUsageMessageCount: undefined,
+              messages: [
+                ...reconciled,
+                {
+                  id: genId(),
+                  role: "user" as const,
+                  type: "clear" as const,
+                  content: "",
+                  timestamp: Date.now(),
+                } as ChatMsg,
+                {
+                  id: genId(),
+                  role: "user" as const,
+                  content: `[上下文摘要]\n\n${summary.trim()}`,
+                  timestamp: Date.now(),
+                } as ChatMsg,
+              ],
+            };
           }
           return next;
         }
@@ -926,7 +974,7 @@ export default function TerminalAgentDrawer({
                 timestamp: Date.now(),
               } as ChatMsg,
             ];
-      return { ...s, messages: nextMessages };
+      return { ...s, messages: nextMessages, lastPromptTokens: undefined, lastCompletionTokens: undefined, lastUsageMessageCount: undefined };
     });
     scrollToBottom();
   }, [
@@ -974,6 +1022,9 @@ export default function TerminalAgentDrawer({
       ...s,
       messages: [],
       input: "",
+      lastPromptTokens: undefined,
+      lastCompletionTokens: undefined,
+      lastUsageMessageCount: undefined,
     }));
   }, [
     activeState.streaming,
@@ -1093,8 +1144,12 @@ export default function TerminalAgentDrawer({
           />
         </TerminalStopContext.Provider>
 
-        <div className="terminal-agent-input-shell">
-          <div className="terminal-agent-dock">
+        <div
+          ref={dockRef}
+          className={`terminal-agent-dock${activeState.streaming ? " is-busy" : ""}`}
+          aria-busy={activeState.streaming}
+        >
+            <ComposerBusyHalo />
             <div className="terminal-agent-editor" ref={slashHostRef}>
               {showSlashMenu && (
                 <SlashCommandMenu
@@ -1175,6 +1230,10 @@ export default function TerminalAgentDrawer({
                 </Tooltip>
               </div>
               <div className="chat-input-toolbar-right">
+                <ContextUsageMeter
+                  usage={contextUsage}
+                  disabled={composerDisabled}
+                />
                 {activeState.streaming ? (
                   <button
                     type="button"
@@ -1200,12 +1259,8 @@ export default function TerminalAgentDrawer({
               </div>
             </div>
           </div>
-          <p className="terminal-agent-input-hint">
-            Enter 发送 · Shift+Enter 换行
-          </p>
         </div>
-      </div>
-    </aside>
+      </aside>
   );
 }
 
