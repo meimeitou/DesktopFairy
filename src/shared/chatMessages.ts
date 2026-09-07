@@ -274,24 +274,7 @@ function parseToolArgsObject(raw?: string): Record<string, unknown> {
 }
 
 function toolResultPayload(msg: ChatMsg): string {
-  if (msg.toolStatus === "denied") {
-    return JSON.stringify({
-      ok: false,
-      error: msg.toolMessage || "User denied tool execution",
-    });
-  }
-  if (msg.toolStatus === "error") {
-    return JSON.stringify({
-      ok: false,
-      error: msg.toolMessage || "Tool error",
-    });
-  }
-  const preview = msg.toolResultPreview?.trim();
-  if (preview) return preview;
-  return JSON.stringify({
-    ok: true,
-    summary: formatToolEvidenceForApi(msg),
-  });
+  return formatToolEvidenceForApi(msg);
 }
 
 function isTerminalToolStatus(status: ChatMsg["toolStatus"] | undefined): boolean {

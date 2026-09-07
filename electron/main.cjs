@@ -21,6 +21,7 @@ const tipWindow = require('./tipWindow.cjs');
 const { isOverlayElevated } = require('./tipWindowMacPolicy.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
 const { registerKnowledgeHandlers, retrieveForChat } = require('./knowledge/knowledgeService.cjs');
+const { prependSystemDate } = require('./systemDate.cjs');
 const { registerScreenshotHandlers, captureRegion, screenshotCopyText, isOcrAvailable } = require('./screenshotService.cjs');
 const {
   registerLive2DSchemes,
@@ -926,7 +927,7 @@ const setupIPC = () => {
       }
       const { aborted, usage } = await streamPlainText({
         requestId,
-        messages,
+        messages: prependSystemDate(messages),
         apiConfig: resolved.apiConfig,
         signal: controller.signal,
         safeSend,

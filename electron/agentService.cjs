@@ -11,6 +11,7 @@ const { getChatModeSuffix } = require('./agentBuiltinCatalog.cjs');
 const { getBuiltinTools, buildAgentToolDeps } = require('./ai/agentStreamShared.cjs');
 const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
 const { getTerminalForeground } = require('./ptyService.cjs');
+const { formatSystemDateLine } = require('./systemDate.cjs');
 
 const inflightAgents = new Map();
 
@@ -97,7 +98,7 @@ function buildToolListPrompt(enabledToolNames, context) {
 }
 
 function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = []) {
-  const parts = [];
+  const parts = [formatSystemDateLine()];
   if (agentConfig?.soul?.trim()) {
     parts.push(agentConfig.soul.trim());
   }

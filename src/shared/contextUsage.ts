@@ -88,13 +88,7 @@ export function sendTokenBudget(contextWindow: number): number {
 }
 
 function messageTextForEstimate(msg: ChatMsg): string {
-  if (msg.type === "tool") {
-    const preview = msg.toolResultPreview || "";
-    const hint = msg.toolMessage || "";
-    const summary = formatToolEvidenceForApi(msg);
-    const candidates = [preview, hint, summary, msg.content];
-    return candidates.reduce((a, b) => (b.length > a.length ? b : a), "");
-  }
+  if (msg.type === "tool") return formatToolEvidenceForApi(msg);
   return msg.content || "";
 }
 
@@ -260,10 +254,9 @@ export function estimateContextUsage(
 
   const historyFromTrim = estimateMessagesTokens(kept);
 
-  let used: number;
-  // lastUsageMessageCount is an index into this same (already filtered) list.
-  // After "清除上下文", the list shrinks; a stale count/prompt from above the
-  // separator must not inflate the meter.
+  // Server usage is last-request billing (tool schemas + in-loop full results +
+  // reasoning completion). The meter is "what the next send will carry", so
+  // keep the billed numbers as a footnote only.
   const hasServerBaseline =
     typeof lastPromptTokens === "number" &&
     lastPromptTokens > 0 &&
@@ -272,28 +265,11 @@ export function estimateContextUsage(
     lastUsageMessageCount <= messages.length &&
     messages.length > 0;
 
-  if (hasServerBaseline) {
-    const newMessages = messages.slice(lastUsageMessageCount);
-    const newTokens = estimateMessagesTokens(newMessages);
-    // promptTokens is the last request's input; the assistant reply becomes
-    // part of the *next* prompt, so add completion when the provider reports it.
-    const completionTokens =
-      typeof lastCompletionTokens === "number" && lastCompletionTokens > 0
-        ? lastCompletionTokens
-        : 0;
-    used =
-      lastPromptTokens! +
-      completionTokens +
-      newTokens +
-      draftInputTokens +
-      draftAttachmentTokens;
-  } else {
-    used =
-      systemTokens +
-      historyFromTrim +
-      draftInputTokens +
-      draftAttachmentTokens;
-  }
+  const used =
+    systemTokens +
+    historyFromTrim +
+    draftInputTokens +
+    draftAttachmentTokens;
 
   const cappedUsed = Math.min(used, contextWindow);
   const percent = contextWindow > 0 ? (cappedUsed / contextWindow) * 100 : 0;

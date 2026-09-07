@@ -182,10 +182,38 @@ describe("buildAgentHistoryMessages", () => {
         role: "tool",
         tool_call_id: "tc1",
         name: "Bash",
-        content: '{"stdout":"a.txt"}',
+        content: "[Bash] (done) a.txt",
       },
       { role: "assistant", content: "done" },
     ]);
+  });
+
+  it("replays WebSearch as a short summary, not the full result JSON", () => {
+    const preview = JSON.stringify({
+      query: "国庆 火车票",
+      results: [
+        {
+          title: "预售规则",
+          url: "https://example.com/1",
+          content: "x".repeat(8_000),
+        },
+      ],
+    });
+    const api = buildAgentHistoryMessages([
+      msg("user", "何时购票"),
+      msg("assistant", "", {
+        type: "tool",
+        toolCallId: "tc2",
+        toolName: "WebSearch",
+        toolArgs: '{"query":"国庆 火车票"}',
+        toolStatus: "done",
+        toolResultPreview: preview,
+      }),
+    ]);
+    const tool = api.find((m) => m.role === "tool");
+    expect(tool?.content).toContain("预售规则");
+    expect(String(tool?.content).length).toBeLessThan(400);
+    expect(tool?.content).not.toContain("xxxx");
   });
 
   it("skips in-flight tool messages", () => {

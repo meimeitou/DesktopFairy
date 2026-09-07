@@ -87,25 +87,37 @@ describe("contextUsage", () => {
       expect(result.isEstimate).toBe(true);
     });
 
-    it("uses server prompt tokens when available", () => {
-      const msgs = [
-        makeMsg("user", "first"),
-        makeMsg("assistant", "answer"),
-      ];
-      const baseline = estimateContextUsage({
-        messages: [msgs[0]],
-        input: "first",
-        contextWindow: 128_000,
+    it("records server usage without treating billed prompt as current context", () => {
+      const hugeSearch = JSON.stringify({
+        query: "国庆 火车票",
+        results: Array.from({ length: 8 }, (_, i) => ({
+          title: `hit ${i}`,
+          url: `https://example.com/${i}`,
+          content: "x".repeat(2_000),
+        })),
       });
-      const calibrated = estimateContextUsage({
+      const msgs = [
+        makeMsg("user", "国庆节的火车票什么时候可以订"),
+        makeMsg("assistant", "", {
+          type: "tool",
+          toolName: "WebSearch",
+          toolStatus: "done",
+          toolResultPreview: hugeSearch,
+        }),
+        makeMsg("assistant", "预售一般是15天。"),
+      ];
+      const result = estimateContextUsage({
         messages: msgs,
         contextWindow: 128_000,
-        lastPromptTokens: baseline.used,
-        lastCompletionTokens: 40,
-        lastUsageMessageCount: 1,
+        systemTokens: 2_400,
+        lastPromptTokens: 20_000,
+        lastCompletionTokens: 503,
+        lastUsageMessageCount: 3,
       });
-      expect(calibrated.lastServerPromptTokens).toBe(baseline.used);
-      expect(calibrated.used).toBeGreaterThanOrEqual(baseline.used + 40);
+      expect(result.lastServerPromptTokens).toBe(20_000);
+      expect(result.lastServerCompletionTokens).toBe(503);
+      expect(result.used).toBeLessThan(4_000);
+      expect(result.breakdown.history).toBeLessThan(1_000);
     });
 
     it("ignores stale server usage after context clear", () => {
