@@ -5,12 +5,23 @@ export type KnowledgeItemStatus =
   | "completed"
   | "failed";
 
+export type KnowledgeBaseKind = "vector" | "semi_structured";
+
 export const KNOWLEDGE_FILE_EXTS = [
   ".txt",
   ".md",
   ".markdown",
   ".pdf",
   ".docx",
+] as const;
+
+export const KNOWLEDGE_SEMI_FILE_EXTS = [
+  ".txt",
+  ".md",
+  ".markdown",
+  ".json",
+  ".yaml",
+  ".yml",
 ] as const;
 
 export const KNOWLEDGE_MAX_FILE_BYTES = 100 * 1024 * 1024;
@@ -25,6 +36,11 @@ export const DEFAULT_KNOWLEDGE_CHUNK_SIZE = 1024;
 export const DEFAULT_KNOWLEDGE_CHUNK_OVERLAP = 200;
 export const DEFAULT_KNOWLEDGE_SCORE_THRESHOLD = 0.5;
 
+export const DEFAULT_SEMI_MAX_FILE_BYTES = 64 * 1024;
+export const DEFAULT_SEMI_MAX_FILES_PER_QUERY = 3;
+export const SEMI_DESCRIPTION_MAX = 500;
+export const SEMI_DESCRIPTION_MIN = 20;
+
 export interface KnowledgeSettings {
   embeddingProviderId: string;
   embeddingModel: string;
@@ -32,6 +48,10 @@ export interface KnowledgeSettings {
   scoreThreshold: number;
   chunkSize: number;
   chunkOverlap: number;
+  descriptionProviderId: string;
+  descriptionModel: string;
+  semiMaxFileBytes: number;
+  semiMaxFilesPerQuery: number;
 }
 
 export const DEFAULT_KNOWLEDGE_SETTINGS: KnowledgeSettings = {
@@ -41,11 +61,16 @@ export const DEFAULT_KNOWLEDGE_SETTINGS: KnowledgeSettings = {
   scoreThreshold: DEFAULT_KNOWLEDGE_SCORE_THRESHOLD,
   chunkSize: DEFAULT_KNOWLEDGE_CHUNK_SIZE,
   chunkOverlap: DEFAULT_KNOWLEDGE_CHUNK_OVERLAP,
+  descriptionProviderId: "",
+  descriptionModel: "",
+  semiMaxFileBytes: DEFAULT_SEMI_MAX_FILE_BYTES,
+  semiMaxFilesPerQuery: DEFAULT_SEMI_MAX_FILES_PER_QUERY,
 };
 
 export interface KnowledgeBase {
   id: string;
   name: string;
+  kind: KnowledgeBaseKind;
   createdAt: number;
   updatedAt: number;
   items: KnowledgeItem[];
@@ -61,6 +86,10 @@ export interface KnowledgeItem {
   relativePath?: string;
   indexedRelativePath?: string;
   noteContent?: string;
+  description?: string;
+  descriptionUpdatedAt?: number;
+  descriptionStatus?: "idle" | "generating" | "failed";
+  descriptionError?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -76,12 +105,23 @@ export interface KnowledgeHit {
   score: number;
 }
 
+/** File-level citation used by semi-structured knowledge injection. */
+export interface KnowledgeFileCitation {
+  baseId: string;
+  baseName: string;
+  itemId: string;
+  sourceName: string;
+  kind: "semi_structured";
+  description?: string;
+}
+
 export interface KnowledgeCitation {
   baseId: string;
   baseName: string;
   itemId: string;
   sourceName: string;
   text: string;
+  kind?: "vector" | "semi_structured";
 }
 
 export function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -132,6 +172,22 @@ export function normalizeKnowledgeSettings(raw: unknown): KnowledgeSettings {
     scoreThreshold: clampUnit(data.scoreThreshold, DEFAULT_KNOWLEDGE_SCORE_THRESHOLD),
     chunkSize,
     chunkOverlap,
+    descriptionProviderId:
+      typeof data.descriptionProviderId === "string" ? data.descriptionProviderId : "",
+    descriptionModel:
+      typeof data.descriptionModel === "string" ? data.descriptionModel : "",
+    semiMaxFileBytes: clampInt(
+      data.semiMaxFileBytes,
+      1024,
+      10 * 1024 * 1024,
+      DEFAULT_SEMI_MAX_FILE_BYTES,
+    ),
+    semiMaxFilesPerQuery: clampInt(
+      data.semiMaxFilesPerQuery,
+      1,
+      10,
+      DEFAULT_SEMI_MAX_FILES_PER_QUERY,
+    ),
   };
 }
 
@@ -139,11 +195,39 @@ export function knowledgeSettingsConfigured(settings: KnowledgeSettings): boolea
   return Boolean(settings.embeddingProviderId.trim() && settings.embeddingModel.trim());
 }
 
+export function semiDescriptionConfigured(settings: KnowledgeSettings): boolean {
+  return Boolean(
+    settings.descriptionProviderId.trim() && settings.descriptionModel.trim(),
+  );
+}
+
+export function normalizeKnowledgeBaseKind(raw: unknown): KnowledgeBaseKind {
+  return raw === "semi_structured" ? "semi_structured" : "vector";
+}
+
+export function normalizeDescription(raw: unknown): string {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  if (text.length <= SEMI_DESCRIPTION_MAX) return text;
+  return `${text.slice(0, SEMI_DESCRIPTION_MAX - 1)}…`;
+}
+
 export function isAllowedKnowledgeExt(fileName: string): boolean {
   const ext = fileName.includes(".")
     ? `.${fileName.split(".").pop()!.toLowerCase()}`
     : "";
   return (KNOWLEDGE_FILE_EXTS as readonly string[]).includes(ext);
+}
+
+export function isAllowedSemiExt(fileName: string): boolean {
+  const ext = fileName.includes(".")
+    ? `.${fileName.split(".").pop()!.toLowerCase()}`
+    : "";
+  return (KNOWLEDGE_SEMI_FILE_EXTS as readonly string[]).includes(ext);
+}
+
+export function allowedExtsForKind(kind: KnowledgeBaseKind): readonly string[] {
+  return kind === "semi_structured" ? KNOWLEDGE_SEMI_FILE_EXTS : KNOWLEDGE_FILE_EXTS;
 }
 
 export function uniqueCopyName(existingNames: string[], fileName: string): string {
@@ -281,6 +365,7 @@ export function hitsToCitations(hits: KnowledgeHit[]): KnowledgeCitation[] {
     itemId: hit.itemId,
     sourceName: hit.sourceName,
     text: hit.text,
+    kind: "vector" as const,
   }));
 }
 

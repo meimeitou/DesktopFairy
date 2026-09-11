@@ -56,6 +56,7 @@ function writeCatalog(catalog) {
 function listBases() {
   return readCatalog().bases.map((base) => ({
     ...base,
+    kind: base.kind === 'semi_structured' ? 'semi_structured' : 'vector',
     items: Array.isArray(base.items) ? base.items : [],
   }));
 }
@@ -81,11 +82,12 @@ function deleteBase(baseId) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function createBase({ name }) {
+function createBase({ name, kind } = {}) {
   const now = Date.now();
   const base = {
     id: genId(),
     name: String(name || '').trim() || '未命名知识库',
+    kind: kind === 'semi_structured' ? 'semi_structured' : 'vector',
     createdAt: now,
     updatedAt: now,
     items: [],

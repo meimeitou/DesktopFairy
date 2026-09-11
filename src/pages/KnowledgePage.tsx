@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KnowledgeBase, KnowledgeItem } from "../shared/knowledge";
-import { knowledgeSettingsConfigured } from "../shared/knowledge";
+import type { KnowledgeBase, KnowledgeBaseKind, KnowledgeItem } from "../shared/knowledge";
+import { knowledgeSettingsConfigured, semiDescriptionConfigured } from "../shared/knowledge";
 import { getEmbeddingApiConfig, type AppSettings } from "../shared/settings";
 import { setSettings, useSettings } from "../shared/settingsStore";
 import ChatMarkdown from "../components/chat/ChatMarkdown";
@@ -136,6 +136,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [creating, setCreating] = useState("");
+  const [newKind, setNewKind] = useState<KnowledgeBaseKind>("vector");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [descEditing, setDescEditing] = useState<{ item: KnowledgeItem; text: string; regenerating: boolean } | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [notePreview, setNotePreview] = useState(false);
@@ -189,12 +192,13 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
         setNotePreview(false);
       } else if (recallOpen) setRecallOpen(false);
       else if (addOpen) setAddOpen(false);
+      else if (createOpen) setCreateOpen(false);
       else if (itemMenu) setItemMenu(null);
       else if (conflicts) setConflicts(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen, preview, noteOpen, recallOpen, addOpen, itemMenu, conflicts]);
+  }, [settingsOpen, preview, noteOpen, recallOpen, addOpen, createOpen, itemMenu, conflicts]);
 
   useEffect(() => {
     const onReveal = (e: Event) => {
@@ -210,6 +214,8 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
     () => bases.find((b) => b.id === activeId) || bases[0] || null,
     [bases, activeId],
   );
+  const activeSemi = active?.kind === "semi_structured";
+  const descReady = semiDescriptionConfigured(settings.knowledge);
 
   const items = active?.items || [];
   const selectedItems = items.filter((item) => selectedIds.includes(item.id));
@@ -345,7 +351,7 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
 
   const reindexItems = async (ids: string[]) => {
     if (!active || ids.length === 0) return;
-    if (!embeddingReady) {
+    if (!activeSemi && !embeddingReady) {
       setItemMenu(null);
       setError("请先在左下角「设置」中配置 embedding 模型");
       setSettingsOpen(true);
@@ -365,10 +371,58 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
     setItemMenu({ id: itemId, top: rect.bottom + 4, left: rect.right });
   };
 
+  const openDescEditor = (item: KnowledgeItem) => {
+    setItemMenu(null);
+    setDescEditing({ item, text: item.description || "", regenerating: false });
+  };
+
+  const saveDescription = async () => {
+    if (!descEditing || !active) return;
+    const value = descEditing.text.trim();
+    try {
+      await api.invoke("knowledge:set_item_description", {
+        baseId: active.id,
+        itemId: descEditing.item.id,
+        description: value,
+      });
+      setDescEditing(null);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const regenerateDescription = async () => {
+    if (!descEditing || !active) return;
+    if (!descReady) {
+      setError("请先在设置中选择「描述生成 LLM」");
+      return;
+    }
+    setDescEditing({ ...descEditing, regenerating: true });
+    try {
+      const res = (await api.invoke("knowledge:describe_item", {
+        baseId: active.id,
+        itemId: descEditing.item.id,
+      })) as { description?: string };
+      setDescEditing((prev) =>
+        prev ? { ...prev, text: String(res?.description || prev.text), regenerating: false } : null,
+      );
+      await reload();
+    } catch (e) {
+      setDescEditing((prev) => (prev ? { ...prev, regenerating: false } : null));
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const createBase = async () => {
     const name = creating.trim() || "未命名知识库";
-    const created = (await api.invoke("knowledge:create_base", { name })) as KnowledgeBase;
+    const created = (await api.invoke("knowledge:create_base", {
+      name,
+      kind: newKind,
+    })) as KnowledgeBase;
     setCreating("");
+    setNewKind("vector");
+    setCreateOpen(false);
     await reload();
     setActiveId(created.id);
   };
@@ -376,7 +430,7 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
   const addFiles = async () => {
     setAddOpen(false);
     if (!active) return;
-    if (!embeddingReady) {
+    if (!activeSemi && !embeddingReady) {
       setError("请先在左下角「设置」中配置 embedding 模型");
       setSettingsOpen(true);
       return;
@@ -453,18 +507,17 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
       <div className="kb-layout">
         <aside className="kb-nav">
           <div className="kb-nav-add">
-            <input
-              type="text"
-              className="kb-nav-input"
-              value={creating}
-              placeholder="新知识库名称"
-              onChange={(e) => setCreating(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void createBase();
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ width: "100%" }}
+              onClick={() => {
+                setCreating("");
+                setNewKind("vector");
+                setCreateOpen(true);
               }}
-            />
-            <button type="button" className="btn-secondary" onClick={() => void createBase()}>
-              新建
+            >
+              + 新建知识库
             </button>
           </div>
           {bases.length === 0 ? (
@@ -505,6 +558,21 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                         onClick={() => setActiveId(base.id)}
                       >
                         <span className="kb-nav-item-name">{base.name}</span>
+                        {base.kind === "semi_structured" && (
+                          <span
+                            className="kb-item-kind"
+                            title="半结构化知识库"
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 10,
+                              padding: "0 4px",
+                              borderRadius: 3,
+                              background: "rgba(120,140,200,0.2)",
+                            }}
+                          >
+                            半
+                          </span>
+                        )}
                       </button>
                       <span className="kb-nav-item-count">{base.items?.length || 0}</span>
                       <div className="kb-nav-item-actions">
@@ -609,6 +677,7 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                           </th>
                           <th className="kb-col-name">名称</th>
                           <th className="kb-col-type">类型</th>
+                          {activeSemi && <th className="kb-col-desc">描述</th>}
                           <th className="kb-col-status">状态</th>
                           <th className="kb-col-time">时间</th>
                           <th className="kb-col-action">操作</th>
@@ -654,6 +723,37 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                                   {item.type === "note" ? "笔记" : "文件"}
                                 </span>
                               </td>
+                              {activeSemi && (
+                                <td className="kb-col-desc">
+                                  {item.description ? (
+                                    <button
+                                      type="button"
+                                      className="kb-item-name-btn"
+                                      onClick={() => openDescEditor(item)}
+                                      title={item.description}
+                                      style={{
+                                        textAlign: "left",
+                                        maxWidth: 280,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {item.description}
+                                    </button>
+                                  ) : item.descriptionStatus === "generating" ? (
+                                    <span className="kb-empty">生成中…</span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="btn-ghost"
+                                      onClick={() => openDescEditor(item)}
+                                    >
+                                      未设置，去添加
+                                    </button>
+                                  )}
+                                </td>
+                              )}
                               <td className="kb-col-status">
                                 <span className={`kb-status kb-status-${item.status}`}>
                                   {STATUS_LABEL[item.status] || item.status}
@@ -717,6 +817,14 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                 }}
               >
                 编辑
+              </button>
+            )}
+            {activeSemi && menuItem.type === "file" && (
+              <button
+                type="button"
+                onClick={() => openDescEditor(menuItem)}
+              >
+                编辑描述
               </button>
             )}
             <button
@@ -805,7 +913,11 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
         <div className="kb-modal" onClick={() => setAddOpen(false)}>
           <div className="kb-modal-card kb-add-modal-card" onClick={(e) => e.stopPropagation()}>
             <h3>添加数据</h3>
-            <p className="field-hint">选择要加入当前知识库的类型。</p>
+            <p className="field-hint">
+              {activeSemi
+                ? "半结构化库仅支持纯文本文件（md / txt / json / yaml），按文件描述整体注入。"
+                : "选择要加入当前知识库的类型。"}
+            </p>
             <div className="kb-add-choices">
               <button
                 type="button"
@@ -814,17 +926,21 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
               >
                 <FileAddIcon />
                 <span className="kb-add-choice-title">文件</span>
-                <span className="kb-add-choice-desc">txt / md / docx / pdf</span>
+                <span className="kb-add-choice-desc">
+                  {activeSemi ? "md / txt / json / yaml" : "txt / md / docx / pdf"}
+                </span>
               </button>
-              <button
-                type="button"
-                className="kb-add-choice"
-                onClick={openCreateNote}
-              >
-                <NoteAddIcon />
-                <span className="kb-add-choice-title">笔记</span>
-                <span className="kb-add-choice-desc">标题 + Markdown 正文</span>
-              </button>
+              {!activeSemi && (
+                <button
+                  type="button"
+                  className="kb-add-choice"
+                  onClick={openCreateNote}
+                >
+                  <NoteAddIcon />
+                  <span className="kb-add-choice-title">笔记</span>
+                  <span className="kb-add-choice-desc">标题 + Markdown 正文</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -882,6 +998,180 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
               </button>
               <button type="button" className="btn-secondary" onClick={() => void saveNote()}>
                 {editingNote ? "保存" : "添加"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {createOpen && (
+        <div className="kb-modal" onClick={() => setCreateOpen(false)}>
+          <div
+            className="kb-modal-card kb-note-modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="kb-settings-modal-header">
+              <h3>新建知识库</h3>
+              <button
+                type="button"
+                className="btn-ghost kb-settings-close"
+                onClick={() => setCreateOpen(false)}
+                aria-label="关闭"
+              >
+                关闭
+              </button>
+            </header>
+            <div className="field">
+              <label>名称</label>
+              <input
+                type="text"
+                autoFocus
+                value={creating}
+                placeholder="例如：产品文档 / 角色设定"
+                onChange={(e) => setCreating(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void createBase();
+                }}
+              />
+            </div>
+            <div className="field">
+              <label>类型</label>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  padding: "8px 10px",
+                  border: "1px solid var(--border-color, rgba(120,140,200,0.3))",
+                  borderRadius: 6,
+                  marginBottom: 6,
+                  cursor: "pointer",
+                  background:
+                    newKind === "vector" ? "rgba(120,140,200,0.08)" : "transparent",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="kb-create-kind"
+                  checked={newKind === "vector"}
+                  onChange={() => setNewKind("vector")}
+                  style={{ marginTop: 3 }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontWeight: 500 }}>结构化（向量检索）</span>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>
+                    支持 txt / md / pdf / docx；分块后用 embedding 做相似度检索，适合大段文档、跨文件查资料。
+                  </span>
+                </div>
+              </label>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  padding: "8px 10px",
+                  border: "1px solid var(--border-color, rgba(120,140,200,0.3))",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background:
+                    newKind === "semi_structured"
+                      ? "rgba(120,140,200,0.08)"
+                      : "transparent",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="kb-create-kind"
+                  checked={newKind === "semi_structured"}
+                  onChange={() => setNewKind("semi_structured")}
+                  style={{ marginTop: 3 }}
+                />
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontWeight: 500 }}>半结构化（按描述挑文件）</span>
+                  <span style={{ fontSize: 12, opacity: 0.7 }}>
+                    仅支持 md / txt / json / yaml；每个文件带一段描述，对话时由 LLM 按描述挑相关文件整篇注入上下文。
+                  </span>
+                </div>
+              </label>
+            </div>
+            <div className="kb-note-tools">
+              <span className="kb-modal-spacer" />
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setCreateOpen(false)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void createBase()}
+              >
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {descEditing && (
+        <div className="kb-modal" onClick={() => setDescEditing(null)}>
+          <div
+            className="kb-modal-card kb-note-modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="kb-settings-modal-header">
+              <div>
+                <h3>编辑描述</h3>
+                <p className="field-hint">{descEditing.item.sourceName}</p>
+              </div>
+              <button
+                type="button"
+                className="btn-ghost kb-settings-close"
+                onClick={() => setDescEditing(null)}
+                aria-label="关闭"
+              >
+                关闭
+              </button>
+            </header>
+            <div className="field">
+              <label>描述（LLM 将根据它筛选文件，200-500 字为佳）</label>
+              <textarea
+                rows={6}
+                value={descEditing.text}
+                maxLength={500}
+                placeholder="用一段话说明这个文件的主题、涵盖的知识点或用途…"
+                onChange={(e) =>
+                  setDescEditing((prev) => (prev ? { ...prev, text: e.target.value } : null))
+                }
+              />
+              <p className="field-hint">
+                当前 {descEditing.text.length} 字（上限 500）
+              </p>
+            </div>
+            <div className="kb-note-tools">
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={!descReady || descEditing.regenerating}
+                onClick={() => void regenerateDescription()}
+                title={descReady ? "" : "需在设置中选择描述生成 LLM"}
+              >
+                {descEditing.regenerating ? "生成中…" : "AI 重新生成"}
+              </button>
+              <span className="kb-modal-spacer" />
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setDescEditing(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void saveDescription()}
+              >
+                保存
               </button>
             </div>
           </div>

@@ -1063,11 +1063,6 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
       return toolMcpManager(args, deps);
     case 'Terminal':
       return toolTerminal(args, deps);
-    case 'kb_search':
-    case 'kb_read': {
-      const { executeKnowledgeTool } = require('./knowledge/tools.cjs');
-      return executeKnowledgeTool(toolName, args, deps);
-    }
     default:
       return fail(`工具 "${toolName}" 不在可用工具列表中。请只使用系统提供的工具，不要虚构不存在的工具。`);
   }

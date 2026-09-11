@@ -111,6 +111,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'knowledge:search',
       'knowledge:read_item',
       'knowledge:test_processor',
+      'knowledge:describe_item',
+      'knowledge:set_item_description',
       'chat:topics:updateMeta',
     ];
 

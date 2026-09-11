@@ -11,12 +11,38 @@ const EMBED_BATCH = 10;
 const PROCESSOR_TIMEOUT_MS = 10 * 60 * 1000;
 const INDEX_SCHEMA_VERSION = 1;
 const ALLOWED_EXTS = new Set(['.txt', '.md', '.markdown', '.pdf', '.docx']);
+const SEMI_ALLOWED_EXTS = new Set(['.txt', '.md', '.markdown', '.json', '.yaml', '.yml']);
+const DEFAULT_SEMI_MAX_FILE_BYTES = 64 * 1024;
+const DEFAULT_SEMI_MAX_FILES_PER_QUERY = 3;
+const SEMI_DESCRIPTION_MAX = 500;
 
 function isAllowedExt(fileName) {
   const lower = String(fileName || '').toLowerCase();
   const dot = lower.lastIndexOf('.');
   if (dot < 0) return false;
   return ALLOWED_EXTS.has(lower.slice(dot));
+}
+
+function isAllowedSemiExt(fileName) {
+  const lower = String(fileName || '').toLowerCase();
+  const dot = lower.lastIndexOf('.');
+  if (dot < 0) return false;
+  return SEMI_ALLOWED_EXTS.has(lower.slice(dot));
+}
+
+function normalizeBaseKind(raw) {
+  return raw === 'semi_structured' ? 'semi_structured' : 'vector';
+}
+
+function isSemiBase(base) {
+  return base && normalizeBaseKind(base.kind) === 'semi_structured';
+}
+
+function normalizeDescription(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return '';
+  if (text.length <= SEMI_DESCRIPTION_MAX) return text;
+  return `${text.slice(0, SEMI_DESCRIPTION_MAX - 1)}…`;
 }
 
 function uniqueCopyName(existingNames, fileName) {
@@ -157,6 +183,7 @@ function hitsToCitations(hits) {
     itemId: hit.itemId,
     sourceName: hit.sourceName,
     text: hit.text,
+    kind: 'vector',
   }));
 }
 
@@ -212,7 +239,15 @@ module.exports = {
   PROCESSOR_TIMEOUT_MS,
   INDEX_SCHEMA_VERSION,
   ALLOWED_EXTS,
+  SEMI_ALLOWED_EXTS,
+  DEFAULT_SEMI_MAX_FILE_BYTES,
+  DEFAULT_SEMI_MAX_FILES_PER_QUERY,
+  SEMI_DESCRIPTION_MAX,
   isAllowedExt,
+  isAllowedSemiExt,
+  normalizeBaseKind,
+  isSemiBase,
+  normalizeDescription,
   uniqueCopyName,
   splitMarkdownChunks,
   mergeHits,

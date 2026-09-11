@@ -94,6 +94,19 @@ export default function KnowledgePicker({ selectedIds, onChange, disabled }: Pro
                   onClick={() => toggle(base.id)}
                 >
                   {base.name}
+                  {base.kind === "semi_structured" && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontSize: 10,
+                        padding: "0 4px",
+                        borderRadius: 3,
+                        background: "rgba(120,140,200,0.2)",
+                      }}
+                    >
+                      半
+                    </span>
+                  )}
                 </button>
               );
             })
@@ -123,12 +136,23 @@ export function KnowledgeCitations({
               type="button"
               className="kb-citation-btn"
               onClick={() => setOpenId(openId === key ? null : key)}
+              title={c.kind === "semi_structured" ? "半结构化文件（全文注入）" : "向量片段"}
             >
+              {c.kind === "semi_structured" ? "📄 " : ""}
               {c.baseName} / {c.sourceName}
             </button>
             {openId === key && (
               <div className="kb-citation-pop">
-                <pre>{c.text}</pre>
+                {c.kind === "semi_structured" ? (
+                  <>
+                    <p style={{ fontSize: 11, opacity: 0.7 }}>
+                      本次已整篇注入上下文。描述预览：
+                    </p>
+                    <pre>{c.text || "（无描述）"}</pre>
+                  </>
+                ) : (
+                  <pre>{c.text}</pre>
+                )}
                 {onOpen && (
                   <button type="button" onClick={() => onOpen(c)}>
                     在知识库中查看

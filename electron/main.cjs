@@ -21,6 +21,7 @@ const tipWindow = require('./tipWindow.cjs');
 const { isOverlayElevated } = require('./tipWindowMacPolicy.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
 const { registerKnowledgeHandlers, retrieveForChat } = require('./knowledge/knowledgeService.cjs');
+const { buildKnowledgeInjection } = require('./knowledge/injectForChat.cjs');
 const { prependSystemDate } = require('./systemDate.cjs');
 const { registerScreenshotHandlers, captureRegion, screenshotCopyText, isOcrAvailable } = require('./screenshotService.cjs');
 const {
@@ -902,27 +903,24 @@ const setupIPC = () => {
         : [];
       let messages = payload.messages;
       if (knowledgeBaseIds.length > 0) {
-        const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-        const query = typeof lastUser?.content === 'string'
-          ? lastUser.content
-          : Array.isArray(lastUser?.content)
-            ? lastUser.content.filter((p) => p?.type === 'text').map((p) => p.text).join('\n')
-            : '';
-        if (query.trim()) {
-          try {
-            const retrieved = await retrieveForChat({ query, baseIds: knowledgeBaseIds });
-            if (retrieved.context) {
-              messages = [{ role: 'system', content: retrieved.context }, ...messages];
-            }
-            if (retrieved.citations?.length) {
-              safeSend('chat:stream:citations', {
-                requestId,
-                citations: retrieved.citations,
-              });
-            }
-          } catch (e) {
-            console.warn('[knowledge] pre-retrieve failed:', e?.message || e);
+        try {
+          const injected = await buildKnowledgeInjection({
+            messages,
+            knowledgeBaseIds,
+            apiConfig: resolved.apiConfig,
+            signal: controller.signal,
+          });
+          if (injected.systemMessage) {
+            messages = [{ role: 'system', content: injected.systemMessage }, ...messages];
           }
+          if (injected.citations?.length) {
+            safeSend('chat:stream:citations', {
+              requestId,
+              citations: injected.citations,
+            });
+          }
+        } catch (e) {
+          console.warn('[knowledge] pre-inject failed:', e?.message || e);
         }
       }
       const { aborted, usage } = await streamPlainText({

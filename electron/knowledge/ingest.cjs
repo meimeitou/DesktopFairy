@@ -6,7 +6,8 @@ const catalog = require('./catalog.cjs');
 const indexStore = require('./indexStore.cjs');
 const { extractItemText } = require('./processors.cjs');
 const { embedTexts, currentEmbeddingConfig } = require('./embed.cjs');
-const { splitMarkdownChunks } = require('./lib.cjs');
+const { splitMarkdownChunks, isSemiBase, isAllowedSemiExt, DEFAULT_SEMI_MAX_FILE_BYTES } = require('./lib.cjs');
+const { scheduleAutoDescribe, currentDescriptionConfig } = require('./describe.cjs');
 const settingsSnapshot = require('../settingsSnapshot.cjs');
 
 const queue = [];
@@ -66,6 +67,10 @@ async function processJob({ baseId, itemId }) {
   const item = base?.items?.find((row) => row.id === itemId);
   if (!base || !item) return;
   if (item.status === 'completed') return;
+
+  if (isSemiBase(base)) {
+    return processSemiJob({ base, item });
+  }
 
   const settings = settingsSnapshot.getSnapshot() || {};
   const knowledge = settings.knowledge || {};
@@ -145,6 +150,39 @@ async function processJob({ baseId, itemId }) {
   }
 }
 
+async function processSemiJob({ base, item }) {
+  const settings = settingsSnapshot.getSnapshot() || {};
+  const knowledge = settings.knowledge || {};
+  const maxBytes = Math.max(1024, Number(knowledge.semiMaxFileBytes) || DEFAULT_SEMI_MAX_FILE_BYTES);
+  const baseId = base.id;
+  try {
+    if (item.type !== 'file') throw new Error('半结构化库仅支持文件');
+    if (!isAllowedSemiExt(item.sourceName)) throw new Error('半结构化库不支持的文件类型');
+    const absPath = path.join(catalog.rawDir(baseId), item.relativePath);
+    if (!fs.existsSync(absPath)) throw new Error('文件副本丢失');
+    const stat = fs.statSync(absPath);
+    if (stat.size > maxBytes) {
+      throw new Error(`文件超出上限 (${stat.size} > ${maxBytes} 字节)`);
+    }
+    catalog.upsertItem(baseId, {
+      ...item,
+      status: 'completed',
+      error: undefined,
+      updatedAt: Date.now(),
+    });
+    if (!item.description && currentDescriptionConfig()) {
+      scheduleAutoDescribe(baseId, item.id);
+    }
+  } catch (e) {
+    catalog.upsertItem(baseId, {
+      ...item,
+      status: 'failed',
+      error: String(e?.message || e),
+      updatedAt: Date.now(),
+    });
+  }
+}
+
 function requeueItem(baseId, itemId) {
   const item = catalog.getItem(baseId, itemId);
   if (!item) throw new Error('条目不存在');
@@ -159,7 +197,9 @@ function requeueItem(baseId, itemId) {
 
 function requeueAllBases() {
   for (const base of catalog.listBases()) {
-    indexStore.dropIndexFile(base.id);
+    if (!isSemiBase(base)) {
+      indexStore.dropIndexFile(base.id);
+    }
     for (const item of base.items || []) {
       catalog.upsertItem(base.id, {
         ...item,
