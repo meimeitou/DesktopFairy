@@ -6,7 +6,6 @@ const { getBuiltinTools, buildAgentToolDeps } = require('./ai/agentStreamShared.
 const {
   buildAgentSystemPrompt,
   getCurrentWebSearchConfig,
-  persistEnabledSkillId,
 } = require('./agentService.cjs');
 const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
 const { getServersByIds } = require('./mcpServerService.cjs');
@@ -58,36 +57,27 @@ function registerAiStreamHandlers(ipcMain, deps) {
     const agentConfig = resolved.agentConfig;
     assertHttpUrl(apiConfig.apiHost);
 
-    if (manager.isTopicStreaming(topicId)) {
-      const existing = manager.activeStreams.get(topicId);
-      return { mode: 'blocked', requestId: existing?.requestId || requestId };
-    }
-
     const sender = event.sender;
     const parentWindow = getParentWindow?.() || null;
     const legacySend = (channel, data) => {
       broadcastToTopic(manager, topicId, sender, channel, data);
     };
 
-    topicAgentState.set(topicId, { bypassApproval: false });
-    manager.attach(topicId, sender);
-
-    const mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
-    const context = terminalSessionId ? 'terminal' : 'local';
     const knowledgeBaseIds = Array.isArray(rawKnowledgeBaseIds)
       ? rawKnowledgeBaseIds.filter((id) => typeof id === 'string' && id)
       : [];
-    const builtinTools = getBuiltinTools(agentConfig, context);
-    const { knowledgeToolDefinitions } = require('./knowledge/tools.cjs');
-    const kbTools = knowledgeBaseIds.length > 0 ? knowledgeToolDefinitions() : [];
-    const toolDefinitions = [...builtinTools, ...kbTools, ...(mcpRuntime.definitions || [])];
-    const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-    const enabledToolNames = [...builtinTools, ...kbTools].map((t) => t.function.name);
-    const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
     const apiMessages = (messages || []).filter((m) => m.role !== 'system');
     const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
-
     const bridge = createChunkBridge({ requestId, safeSend: legacySend });
+
+    /** @type {{ dispose?: () => void } | null} */
+    let mcpRuntime = null;
+
+    const abortIfNeeded = (signal) => {
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+    };
 
     const startResult = manager.startStream({
       topicId,
@@ -95,6 +85,21 @@ function registerAiStreamHandlers(ipcMain, deps) {
       createStream: async () => {
         const entry = manager.activeStreams.get(topicId);
         const signal = entry?.controller?.signal;
+        abortIfNeeded(signal);
+
+        mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
+        abortIfNeeded(signal);
+
+        const context = terminalSessionId ? 'terminal' : 'local';
+        const builtinTools = getBuiltinTools(agentConfig, context);
+        const { knowledgeToolDefinitions } = require('./knowledge/tools.cjs');
+        const kbTools = knowledgeBaseIds.length > 0 ? knowledgeToolDefinitions() : [];
+        const toolDefinitions = [...builtinTools, ...kbTools, ...(mcpRuntime.definitions || [])];
+        const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
+        abortIfNeeded(signal);
+
+        const enabledToolNames = [...builtinTools, ...kbTools].map((t) => t.function.name);
+        const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
 
         const toolDeps = buildAgentToolDeps({
           topicId,
@@ -109,15 +114,14 @@ function registerAiStreamHandlers(ipcMain, deps) {
           safeSend: legacySend,
           getBypassApproval: () => topicAgentState.get(topicId)?.bypassApproval === true,
           onApprovalWaitStart: () => {
-            const entry = manager.activeStreams.get(topicId);
-            if (entry?.idle) manager.extendIdleForApproval(topicId, entry.idle);
+            const live = manager.activeStreams.get(topicId);
+            if (live?.idle) manager.extendIdleForApproval(topicId, live.idle);
           },
           webSearchConfig: getCurrentWebSearchConfig(),
           terminalSessionId,
           suppressToolDoneEvent: true,
           knowledgeBaseIds,
         });
-        toolDeps.persistEnabledSkillId = (skillId) => persistEnabledSkillId(skillId, getWindows);
 
         return streamText({
           messages: apiMessages,
@@ -157,11 +161,11 @@ function registerAiStreamHandlers(ipcMain, deps) {
     });
 
     if (startResult.mode === 'blocked') {
-      topicAgentState.delete(topicId);
-      mcpRuntime?.dispose?.();
       return startResult;
     }
 
+    topicAgentState.set(topicId, { bypassApproval: false });
+    manager.attach(topicId, sender);
     return startResult;
   });
 

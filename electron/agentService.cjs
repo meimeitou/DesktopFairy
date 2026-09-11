@@ -26,44 +26,6 @@ function getCurrentWebSearchConfig() {
   }
 }
 
-function persistEnabledSkillId(skillId, getWindows) {
-  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
-  let settings;
-  try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  } catch {
-    return;
-  }
-  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
-  const ids = Array.isArray(agent.enabledSkillIds) ? agent.enabledSkillIds : [];
-  if (ids.includes(skillId)) return;
-  agent.enabledSkillIds = [...ids, skillId];
-  settings.agent = agent;
-  try {
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-  } catch {
-    return;
-  }
-  let revision;
-  try {
-    const { setSnapshot } = require('./settingsSnapshot.cjs');
-    revision = setSnapshot(settings);
-  } catch {
-    /* optional */
-  }
-  const payload =
-    typeof revision === 'number' ? { settings, revision } : settings;
-  for (const win of getWindows?.() || []) {
-    try {
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('settings:updated', payload);
-      }
-    } catch {
-      /* window gone */
-    }
-  }
-}
-
 function buildTerminalEnvSection(terminalState) {
   let envLine = '当前终端前台为本地 shell。';
   if (terminalState && terminalState.kind === 'remote') {
@@ -241,7 +203,6 @@ function registerAgentHandlers(ipcMain, deps) {
         terminalSessionId,
         suppressToolDoneEvent: true,
       });
-      toolDeps.persistEnabledSkillId = (skillId) => persistEnabledSkillId(skillId, getWindows);
 
       const { toolSnapshot, aborted, usage } = await runAgentStream({
         requestId,
@@ -348,5 +309,4 @@ module.exports = {
   abortAllAgentRuns,
   buildAgentSystemPrompt,
   getCurrentWebSearchConfig,
-  persistEnabledSkillId,
 };

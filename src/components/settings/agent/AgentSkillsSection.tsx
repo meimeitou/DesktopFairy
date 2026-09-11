@@ -68,10 +68,6 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
         return;
       }
       if ("skill" in result && result.skill?.id) {
-        const { id } = result.skill;
-        if (!agent.enabledSkillIds.includes(id)) {
-          onChange({ enabledSkillIds: [...agent.enabledSkillIds, id] });
-        }
         await loadSkills();
       }
     } catch (e) {
@@ -115,7 +111,7 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
             刷新
           </button>
         </div>
-        <HintTip tip="启用后通过 Skills 工具（action: load）按需加载。可导入含 SKILL.md 的本地文件夹，或直接编辑 ~/.agents/skills/。" />
+        <HintTip tip="打开后，技能名称与简介会注入模型上下文，可通过 Skills 工具加载。关闭的技能不进上下文，只能用 /技能id 调用。导入或安装不会自动打开。" />
       </div>
       {skillImportError && (
         <p className="field-hint field-hint--after warn">{skillImportError}</p>

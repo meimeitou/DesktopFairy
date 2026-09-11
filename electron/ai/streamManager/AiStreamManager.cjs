@@ -1,5 +1,6 @@
 const { abortTool } = require('../../mcpRuntimeService.cjs');
 const { pipeStreamLoop } = require('./pipeStreamLoop.cjs');
+const { unseenLegacyEvents, markLegacyCursor } = require('./legacyReplay.cjs');
 
 const GRACE_MS = 30_000;
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
@@ -114,6 +115,11 @@ class AiStreamManager {
       return { mode: 'blocked', requestId: existing.requestId };
     }
 
+    if (existing?.graceTimer) {
+      clearTimeout(existing.graceTimer);
+      existing.graceTimer = null;
+    }
+
     const controller = new AbortController();
     const entry = {
       topicId,
@@ -122,7 +128,9 @@ class AiStreamManager {
       status: 'streaming',
       buffer: [],
       legacyBuffer: [],
-      listeners: new Set(),
+      legacyBase: 0,
+      legacyCursors: new WeakMap(),
+      listeners: existing?.listeners ?? new Set(),
       graceTimer: null,
       mcpCallIds: new Set(mcpCallIds),
       startedAt: Date.now(),
@@ -218,15 +226,19 @@ class AiStreamManager {
       }
     } finally {
       for (const callId of entry.mcpCallIds) abortTool(callId);
-      this.scheduleGrace(topicId);
+      if (this.activeStreams.get(topicId) === entry) {
+        this.scheduleGrace(topicId);
+      }
     }
   }
 
   scheduleGrace(topicId) {
     const entry = this.activeStreams.get(topicId);
-    if (!entry) return;
+    if (!entry || entry.status === 'streaming') return;
     if (entry.graceTimer) clearTimeout(entry.graceTimer);
     entry.graceTimer = setTimeout(() => {
+      const cur = this.activeStreams.get(topicId);
+      if (cur !== entry || cur.status === 'streaming') return;
       this.activeStreams.delete(topicId);
     }, GRACE_MS);
   }
@@ -241,15 +253,17 @@ class AiStreamManager {
       return { attached: false, chunks: [], legacyEvents: [] };
     }
 
+    const legacyEvents = unseenLegacyEvents(entry, webContents);
     entry.listeners.add(webContents);
     if (entry.graceTimer) {
       clearTimeout(entry.graceTimer);
       entry.graceTimer = null;
     }
+    markLegacyCursor(entry, webContents);
     return {
       attached: true,
       chunks: [...entry.buffer],
-      legacyEvents: [...entry.legacyBuffer],
+      legacyEvents,
       status: entry.status,
       requestId: entry.requestId,
     };
@@ -259,7 +273,9 @@ class AiStreamManager {
     const entry = this.activeStreams.get(topicId);
     if (entry) {
       entry.listeners.delete(webContents);
-      if (entry.listeners.size === 0) this.scheduleGrace(topicId);
+      if (entry.listeners.size === 0 && entry.status !== 'streaming') {
+        this.scheduleGrace(topicId);
+      }
       return;
     }
 

@@ -67,7 +67,6 @@ function buildAgentToolDeps({
     envVars: buildSkillEnvVars(agentConfig),
     enabledSkillIds: agentConfig.enabledSkillIds || [],
     sessionEnabledSkillIds,
-    persistEnabledSkillId: undefined,
     executeMcpTool: wrapMcpToolExecute(mcpRuntime, {
       topicId,
       signal,

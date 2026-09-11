@@ -195,6 +195,7 @@ export default function ChatPage({
   >(() => {});
   const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
+  const agentSendLockRef = useRef(new Set<string>());
   const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
 
   useEffect(() => {
@@ -1046,6 +1047,40 @@ export default function ChatPage({
     [],
   );
 
+  const failAgentOpen = useCallback(
+    (topicId: string, requestId: string, message: string) => {
+      if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
+      requestIdToTopicIdRef.current.delete(requestId);
+      const s = topicStatesRef.current[topicId];
+      if (!s) return;
+      const owns = s.requestId === requestId;
+      const idx = findLastAssistantReplyIndex(s.messages);
+      const nextMsgs = s.messages.slice();
+      if (idx >= 0) {
+        nextMsgs[idx] = {
+          ...nextMsgs[idx],
+          content: message,
+          error: true,
+        };
+      }
+      const next = {
+        ...s,
+        messages: nextMsgs,
+        streaming: owns ? false : s.streaming,
+        requestId: owns ? null : s.requestId,
+        requestBackend: owns ? null : s.requestBackend,
+      };
+      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
+      setTopicStates((prev) => ({ ...prev, [topicId]: next }));
+      if (owns) {
+        syncStreamingFlag(topicId, false);
+        notifyLive2DScene("replyError");
+        flushSessionSave(topicId);
+      }
+    },
+    [syncStreamingFlag, flushSessionSave],
+  );
+
   const handleContinue = useCallback(
     async (topicId: string) => {
       setMaxTurnsPendingTopics((prev) => {
@@ -1056,7 +1091,10 @@ export default function ChatPage({
 
       const state = topicStatesRef.current[topicId];
       if (!state || state.streaming) return;
+      if (agentSendLockRef.current.has(topicId)) return;
+      agentSendLockRef.current.add(topicId);
 
+      try {
       await flushSettingsSave();
       const settings = getSettingsSnapshot();
       const apiConfig = getChatApiConfig(settings);
@@ -1081,27 +1119,24 @@ export default function ChatPage({
       requestIdToTopicIdRef.current.set(requestId, topicId);
 
       const now = Date.now();
-      setTopicStates((prev) => {
-        const s = prev[topicId] ?? emptyTopicState();
-        return {
-          ...prev,
-          [topicId]: {
-            ...s,
-            messages: [
-              ...s.messages,
-              {
-                id: genId(),
-                role: "assistant" as const,
-                content: "",
-                timestamp: now,
-              },
-            ],
-            streaming: true,
-            requestId,
-            requestBackend: getActiveChatBackend(settings),
+      const s = topicStatesRef.current[topicId] ?? emptyTopicState();
+      const nextTopic = {
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            id: genId(),
+            role: "assistant" as const,
+            content: "",
+            timestamp: now,
           },
-        };
-      });
+        ],
+        streaming: true,
+        requestId,
+        requestBackend: getActiveChatBackend(settings),
+      };
+      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: nextTopic };
+      setTopicStates((prev) => ({ ...prev, [topicId]: nextTopic }));
       syncStreamingFlag(topicId, true);
       scrollToBottom();
       notifyLive2DScene("thinking");
@@ -1123,67 +1158,20 @@ export default function ChatPage({
         .then((result) => {
           if (!result || typeof result !== "object") return;
           if ((result as { mode?: string }).mode !== "blocked") return;
-          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
-          requestIdToTopicIdRef.current.delete(requestId);
-          setTopicStates((prev) => {
-            const s = prev[topicId];
-            if (!s) return prev;
-            const idx = findLastAssistantReplyIndex(s.messages);
-            const next = s.messages.slice();
-            if (idx >= 0) {
-              next[idx] = {
-                ...next[idx],
-                content: "该话题已有进行中的会话，请等待完成或先停止。",
-                error: true,
-              };
-            }
-            return {
-              ...prev,
-              [topicId]: {
-                ...s,
-                messages: next,
-                streaming: false,
-                requestId: null,
-                requestBackend: null,
-              },
-            };
-          });
-          syncStreamingFlag(topicId, false);
-          notifyLive2DScene("replyError");
-          flushSessionSave(topicId);
+          failAgentOpen(
+            topicId,
+            requestId,
+            "该话题已有进行中的会话，请等待完成或先停止。",
+          );
         })
         .catch((e: Error) => {
-          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
-          requestIdToTopicIdRef.current.delete(requestId);
-          setTopicStates((prev) => {
-            const s = prev[topicId];
-            if (!s) return prev;
-            const idx = findLastAssistantReplyIndex(s.messages);
-            const next = s.messages.slice();
-            if (idx >= 0) {
-              next[idx] = {
-                ...next[idx],
-                content: `请求失败：${e.message || e}`,
-                error: true,
-              };
-            }
-            return {
-              ...prev,
-              [topicId]: {
-                ...s,
-                messages: next,
-                streaming: false,
-                requestId: null,
-                requestBackend: null,
-              },
-            };
-          });
-          syncStreamingFlag(topicId, false);
-          notifyLive2DScene("replyError");
-          flushSessionSave(topicId);
+          failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
         });
+      } finally {
+        agentSendLockRef.current.delete(topicId);
+      }
     },
-    [flushSettingsSave, scrollToBottom, syncStreamingFlag, flushSessionSave],
+    [failAgentOpen, scrollToBottom, syncStreamingFlag],
   );
 
   const handleSend = useCallback(
@@ -1192,6 +1180,7 @@ export default function ChatPage({
       if (!topicId) return;
       const state = topicStatesRef.current[topicId];
       if (!state || state.streaming) return;
+      if (agentSendLockRef.current.has(topicId)) return;
 
       const isResend = overrideText !== undefined;
       const sendAttachments = isResend
@@ -1219,6 +1208,8 @@ export default function ChatPage({
         }
       }
 
+      agentSendLockRef.current.add(topicId);
+      try {
       // Always resolve from the latest store snapshot.
       await flushSettingsSave();
       const settings = getSettingsSnapshot();
@@ -1366,25 +1357,22 @@ export default function ChatPage({
 
       const shouldAutoTitle = state.messages.length === 0;
 
-      setTopicStates((prev) => {
-        const s = prev[topicId] ?? emptyTopicState();
-        return {
-          ...prev,
-          [topicId]: {
-            ...s,
-            messages: [
-              ...s.messages,
-              userMsg,
-              { id: genId(), role: "assistant", content: "", timestamp: now },
-            ],
-            input: isResend ? s.input : "",
-            attachments: isResend ? s.attachments : [],
-            streaming: true,
-            requestId,
-            requestBackend,
-          },
-        };
-      });
+      const live = topicStatesRef.current[topicId] ?? emptyTopicState();
+      const nextTopic = {
+        ...live,
+        messages: [
+          ...live.messages,
+          userMsg,
+          { id: genId(), role: "assistant" as const, content: "", timestamp: now },
+        ],
+        input: isResend ? live.input : "",
+        attachments: isResend ? live.attachments : [],
+        streaming: true,
+        requestId,
+        requestBackend,
+      };
+      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: nextTopic };
+      setTopicStates((prev) => ({ ...prev, [topicId]: nextTopic }));
       syncStreamingFlag(topicId, true);
       scrollToBottom();
 
@@ -1446,73 +1434,23 @@ export default function ChatPage({
         .then((result) => {
           if (!agentMode || !result || typeof result !== "object") return;
           if ((result as { mode?: string }).mode !== "blocked") return;
-          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
-          requestIdToTopicIdRef.current.delete(requestId);
-          setTopicStates((prev) => {
-            const s = prev[topicId];
-            if (!s) return prev;
-            const idx = findLastAssistantReplyIndex(s.messages);
-            const next = s.messages.slice();
-            if (idx >= 0) {
-              next[idx] = {
-                ...next[idx],
-                content: "该话题已有进行中的会话，请等待完成或先停止。",
-                error: true,
-              };
-            }
-            return {
-              ...prev,
-              [topicId]: {
-                ...s,
-                messages: next,
-                streaming: false,
-                requestId: null,
-                requestBackend: null,
-              },
-            };
-          });
-          syncStreamingFlag(topicId, false);
-          notifyLive2DScene("replyError");
-          flushSessionSave(topicId);
+          failAgentOpen(
+            topicId,
+            requestId,
+            "该话题已有进行中的会话，请等待完成或先停止。",
+          );
         })
         .catch((e: Error) => {
-          if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
-          requestIdToTopicIdRef.current.delete(requestId);
-          setTopicStates((prev) => {
-            const s = prev[topicId];
-            if (!s) return prev;
-            return {
-              ...prev,
-              [topicId]: {
-                ...s,
-                streaming: false,
-                requestId: null,
-                requestBackend: null,
-              },
-            };
-          });
-          syncStreamingFlag(topicId, false);
-          notifyLive2DScene("replyError");
-          setTopicStates((prev) => {
-            const s = prev[topicId];
-            if (!s) return prev;
-            const idx = findLastAssistantReplyIndex(s.messages);
-            if (idx < 0) return prev;
-            const next = s.messages.slice();
-            next[idx] = {
-              ...next[idx],
-              content: `请求失败：${e.message || e}`,
-              error: true,
-            };
-            return { ...prev, [topicId]: { ...s, messages: next } };
-          });
-          flushSessionSave(topicId);
+          failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
         });
+      } finally {
+        agentSendLockRef.current.delete(topicId);
+      }
     },
     [
       skills,
       loadAttachmentPayloads,
-      flushSessionSave,
+      failAgentOpen,
       scheduleTopicSave,
       scrollToBottom,
       syncStreamingFlag,

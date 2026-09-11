@@ -2,6 +2,7 @@ const { createOpenAI } = require('@ai-sdk/openai');
 const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
 const { createAnthropic } = require('@ai-sdk/anthropic');
 const { createOllama } = require('ollama-ai-provider-v2');
+const { filterHermesSseChunk, flushHermesSseCarry } = require('./hermesSseFilter.cjs');
 
 function withoutTrailingSlash(url) {
   return String(url || '').trim().replace(/\/+$/, '');
@@ -50,28 +51,22 @@ function createHermesFilterFetch() {
     if (!ct.includes('event-stream')) return resp;
 
     const reader = resp.body.getReader();
+    let carry = '';
     const filtered = new ReadableStream({
       async pull(controller) {
         const { done, value } = await reader.read();
-        if (done) { controller.close(); return; }
+        if (done) {
+          const tail = decoder.decode();
+          const result = filterHermesSseChunk(tail, carry);
+          const out = result.out + flushHermesSseCarry(result.carry);
+          if (out) controller.enqueue(encoder.encode(out));
+          controller.close();
+          return;
+        }
         const text = decoder.decode(value, { stream: true });
-        const kept = text
-          .split('\n')
-          .filter((line) => {
-            if (!line.startsWith('data: ')) return true;
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') return true;
-            try {
-              const obj = JSON.parse(data);
-              // Hermes tool events have `tool`/`toolCallId` but no OpenAI `choices`/`error`.
-              if (obj && typeof obj === 'object' && 'tool' in obj && !('choices' in obj) && !('error' in obj)) {
-                return false;
-              }
-            } catch { /* not JSON, keep */ }
-            return true;
-          })
-          .join('\n');
-        controller.enqueue(encoder.encode(kept));
+        const result = filterHermesSseChunk(text, carry);
+        carry = result.carry;
+        if (result.out) controller.enqueue(encoder.encode(result.out));
       },
       cancel() { reader.cancel(); },
     });

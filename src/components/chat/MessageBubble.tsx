@@ -62,6 +62,10 @@ function CloseIcon({ size = 14 }: { size?: number }) {
 export interface MessageBubbleProps {
   msg: ChatMsg;
   isStreamingTarget: boolean;
+  /** Topic-level stream; reasoning lives on the first assistant, not always the last. */
+  streaming?: boolean;
+  /** False while tools run or a later assistant is answering. */
+  thinkingClockLive?: boolean;
   invalidAttachmentPaths: Set<string>;
   isEditing?: boolean;
   onRetry?: (msgId: string) => void;
@@ -75,6 +79,8 @@ export interface MessageBubbleProps {
 function MessageBubble({
   msg,
   isStreamingTarget,
+  streaming = false,
+  thinkingClockLive,
   invalidAttachmentPaths,
   isEditing = false,
   onRetry,
@@ -164,7 +170,11 @@ function MessageBubble({
           </div>
         )}
         {showThinking && (
-          <ThinkingBlock msg={msg} isStreaming={isStreamingAssistant} />
+          <ThinkingBlock
+            msg={msg}
+            isStreaming={streaming}
+            clockLive={thinkingClockLive}
+          />
         )}
         {isError ? (
           <span className="msg-plain">{msg.content}</span>

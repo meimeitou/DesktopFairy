@@ -140,7 +140,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   disabledToolIds: LOCAL_DEFAULT_DISABLED_TOOL_IDS,
   terminalDisabledToolIds: TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   mcpServerIds: [],
-  enabledSkillIds: ["find-skills", "skill-creator"],
+  enabledSkillIds: [],
   maxTurns: 30,
   toolApprovalMode: "confirm",
   envVars: {},
@@ -229,15 +229,9 @@ export function normalizeAgentConfig(
     enableTerminalTool:
       typeof raw.enableTerminalTool === "boolean" ? raw.enableTerminalTool : undefined,
     mcpServerIds,
-    enabledSkillIds: (() => {
-      const ids = Array.isArray(raw.enabledSkillIds)
-        ? raw.enabledSkillIds.filter((id): id is string => typeof id === "string")
-        : [...base.enabledSkillIds];
-      if (ids.includes("find-skills") && !ids.includes("skill-creator")) {
-        return [...ids, "skill-creator"];
-      }
-      return ids;
-    })(),
+    enabledSkillIds: Array.isArray(raw.enabledSkillIds)
+      ? raw.enabledSkillIds.filter((id): id is string => typeof id === "string")
+      : [...base.enabledSkillIds],
     maxTurns:
       typeof raw.maxTurns === "number" && Number.isFinite(raw.maxTurns)
         ? Math.min(100, Math.max(1, Math.round(raw.maxTurns)))

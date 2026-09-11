@@ -233,6 +233,7 @@ export default function TerminalAgentDrawer({
   const compactRequestIdRef = useRef<string | null>(null);
   const handleClearContextRef = useRef<() => void>(() => {});
   const handleSendRef = useRef<(text?: string) => void>(() => {});
+  const agentSendLockRef = useRef(new Set<string>());
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(
     null,
   );
@@ -415,7 +416,9 @@ export default function TerminalAgentDrawer({
     (tabId: string, updater: (state: DrawerTabState) => DrawerTabState) => {
       setTabStates((prev) => {
         const current = prev[tabId] ?? emptyTabState();
-        return { ...prev, [tabId]: updater(current) };
+        const next = updater(current);
+        tabStatesRef.current = { ...tabStatesRef.current, [tabId]: next };
+        return { ...prev, [tabId]: next };
       });
     },
     [],
@@ -701,6 +704,7 @@ export default function TerminalAgentDrawer({
     async (overrideText?: string) => {
       const state = tabStatesRef.current[activeTabId];
       if (!state || state.streaming) return;
+      if (agentSendLockRef.current.has(activeTabId)) return;
       const isResend = overrideText !== undefined;
       const isCompactRequest = overrideText === COMPACT_PROMPT;
       const text = (overrideText ?? state.input).trim();
@@ -712,6 +716,8 @@ export default function TerminalAgentDrawer({
         return;
       }
 
+      agentSendLockRef.current.add(activeTabId);
+      try {
       let finalText = text;
       let invokedSkillId: string | undefined;
       if (!overrideText) {
@@ -831,9 +837,10 @@ export default function TerminalAgentDrawer({
             return;
           requestIdToTabIdRef.current.delete(requestId);
           updateTabState(activeTabId, (s) => {
+            const owns = s.requestId === requestId;
             const idx = findLastAssistantReplyIndex(s.messages);
             if (idx < 0) {
-              return { ...s, streaming: false, requestId: null };
+              return owns ? { ...s, streaming: false, requestId: null } : s;
             }
             const next = s.messages.slice();
             next[idx] = {
@@ -841,16 +848,19 @@ export default function TerminalAgentDrawer({
               content: "该终端已有进行中的会话，请等待完成或先停止。",
               error: true,
             };
-            return { ...s, messages: next, streaming: false, requestId: null };
+            return owns
+              ? { ...s, messages: next, streaming: false, requestId: null }
+              : { ...s, messages: next };
           });
         }
       } catch (e) {
         if (requestIdToTabIdRef.current.get(requestId) !== activeTabId) return;
         requestIdToTabIdRef.current.delete(requestId);
         updateTabState(activeTabId, (s) => {
+          const owns = s.requestId === requestId;
           const idx = findLastAssistantReplyIndex(s.messages);
           if (idx < 0) {
-            return { ...s, streaming: false, requestId: null };
+            return owns ? { ...s, streaming: false, requestId: null } : s;
           }
           const next = s.messages.slice();
           next[idx] = {
@@ -858,8 +868,13 @@ export default function TerminalAgentDrawer({
             content: `请求失败：${e instanceof Error ? e.message : String(e)}`,
             error: true,
           };
-          return { ...s, messages: next, streaming: false, requestId: null };
+          return owns
+            ? { ...s, messages: next, streaming: false, requestId: null }
+            : { ...s, messages: next };
         });
+      }
+      } finally {
+        agentSendLockRef.current.delete(activeTabId);
       }
     },
     [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom, skills],

@@ -12,11 +12,9 @@ const SKILLS_SH_API = 'https://skills.sh';
 
 const SKILLS_GUIDANCE = `## 技能 (Skills)
 
-下方目录列出当前已启用的技能（仅名称与简介）。需要执行某技能时，先调用 \`Skills\` 工具（action: "load"）加载其 SKILL.md 全文，再按说明操作。
+下方目录只列出设置中已开启的技能（名称与简介）。需要执行时，先调用 \`Skills\` 工具（action: "load"）加载其 SKILL.md 全文，再按说明操作。未开启的技能不在上下文中，不可自行 load。
 
-同一 \`Skills\` 工具也用于管理技能库：\`list\` 查看已安装技能，\`search\` 搜索市场，\`install\` 安装，\`init\`/\`register\` 创建并注册本地技能（安装/删除前须征得用户确认）。
-
-当用户需要的能力可能已有现成技能时，优先 \`Skills\` search，不要从零摸索。安装后通过 \`Skills\` load 按需加载完整说明。`;
+同一 \`Skills\` 工具也可管理技能库：\`list\` 查看已安装及是否开启，\`search\` 搜索市场，\`install\` 安装，\`init\`/\`register\` 创建并注册本地技能（安装/删除前须征得用户确认）。新安装的技能不会自动开启；提示用户在设置中打开，或等待用户用 \`/技能id\` 调用。`;
 
 function getSkillsDir() {
   const dir = path.join(os.homedir(), '.agents', 'skills');
@@ -180,7 +178,12 @@ function fail(message) {
 function executeSkillTool(args, deps = {}) {
   const skill = resolveSkill(args?.skill, deps.enabledSkillIds, deps.sessionEnabledSkillIds);
   if (!skill) {
-    return fail(`Skill not found or not enabled: ${args?.skill || ''}`);
+    const id = String(args?.skill || '').trim();
+    return fail(
+      id
+        ? `Skill not found or not enabled: ${id}. Enable it in Settings, or ask the user to invoke /${id}.`
+        : 'Skill not found or not enabled.'
+    );
   }
 
   let content = skill.body || '';
@@ -407,7 +410,6 @@ async function registerSkillFolder(name, deps = {}) {
   if (deps.sessionEnabledSkillIds instanceof Set) {
     deps.sessionEnabledSkillIds.add(folderName);
   }
-  deps.persistEnabledSkillId?.(folderName);
 
   return {
     id: folderName,
@@ -415,8 +417,8 @@ async function registerSkillFolder(name, deps = {}) {
     name: meta.name || folderName,
     description: meta.description || '',
     path: skillDir,
-    enabled: true,
-    message: `Skill "${meta.name || folderName}" registered and enabled for this agent.`,
+    enabled: false,
+    message: `Skill "${meta.name || folderName}" registered. Not added to context; you may load it this turn. Afterwards enable it in Settings or invoke /${folderName}.`,
   };
 }
 
@@ -448,11 +450,10 @@ async function executeSkillsTool(args, deps = {}) {
       if (deps.sessionEnabledSkillIds instanceof Set) {
         deps.sessionEnabledSkillIds.add(installed.id);
       }
-      deps.persistEnabledSkillId?.(installed.id);
       return ok({
         ...installed,
-        enabled: true,
-        message: `Skill installed to ${installed.path} and enabled for this agent.`,
+        enabled: false,
+        message: `Skill installed to ${installed.path}. Not added to context; you may load it this turn. Afterwards enable it in Settings or invoke /${installed.id}.`,
       });
     }
     case 'remove': {

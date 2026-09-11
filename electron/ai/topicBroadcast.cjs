@@ -2,6 +2,8 @@
  * Broadcast IPC events to all webContents attached to a topic stream.
  */
 
+const { pushLegacyEvent, markLegacyCursor } = require('./streamManager/legacyReplay.cjs');
+
 function sendToWebContents(webContents, channel, data) {
   try {
     if (webContents && !webContents.isDestroyed()) {
@@ -22,20 +24,26 @@ function sendToWebContents(webContents, channel, data) {
 function broadcastToTopic(manager, topicId, fallbackSender, channel, data) {
   const entry = manager.activeStreams.get(topicId);
   let delivered = false;
+  const recipients = [];
 
   if (entry?.listeners?.size) {
     for (const listener of entry.listeners) {
-      if (sendToWebContents(listener, channel, data)) delivered = true;
+      if (sendToWebContents(listener, channel, data)) {
+        delivered = true;
+        recipients.push(listener);
+      }
     }
   }
 
-  if (!delivered) {
-    sendToWebContents(fallbackSender, channel, data);
+  if (!delivered && fallbackSender) {
+    if (sendToWebContents(fallbackSender, channel, data)) {
+      recipients.push(fallbackSender);
+    }
   }
 
-  if (entry?.legacyBuffer) {
-    entry.legacyBuffer.push({ channel, data });
-    if (entry.legacyBuffer.length > 10_000) entry.legacyBuffer.shift();
+  if (entry) {
+    pushLegacyEvent(entry, { channel, data });
+    for (const wc of recipients) markLegacyCursor(entry, wc);
   }
 }
 

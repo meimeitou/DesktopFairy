@@ -133,7 +133,7 @@ const DF_EXTRA_BUILTIN_TOOLS = [
     id: 'Skills',
     name: 'Skills',
     description:
-      'Loads, lists, searches, installs, initializes, and registers agent skills. Use action=load with `skill` to load an enabled skill\'s full instructions.',
+      'Loads, lists, searches, installs, initializes, and registers agent skills. action=load only works for skills enabled in Settings or invoked this turn via /skill-id. Newly installed skills are not auto-enabled.',
     category: 'context',
     defaultPrompt: true,
   },

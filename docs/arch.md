@@ -277,9 +277,10 @@ interface LlmProvider {
 - 内置技能：`find-skills`（发现并安装技能）、`skill-creator`（创建技能），受保护不可删除
 - `agent:skills:scan` IPC 返回技能列表（id / name / description / folderName / isBuiltin）
 - `agent:skills:import_directory`：系统选目录对话框，校验 `SKILL.md` 后复制到全局技能目录
-- `buildSkillsPrompt` 将已启用技能的目录注入系统提示词；完整内容由 `Skills`（action=load）按需加载
+- `buildSkillsPrompt` 只将设置中开启的技能（名称与简介）注入系统提示词；完整内容由 `Skills`（action=load）按需加载
+- 未开启的技能不进上下文，只能由用户 `/skill-id` 在当次请求临时启用
 - `Skills` 工具支持 load / list / search（skills.sh 市场）/ install / remove / init / register
-- 运行时安装的技能通过 `persistEnabledSkillId` 写入设置并广播
+- 导入、安装、注册不会自动打开设置开关
 
 **MCP 服务器**（`electron/agentMcpClient.cjs` + `mcpServerService.cjs`）：
 

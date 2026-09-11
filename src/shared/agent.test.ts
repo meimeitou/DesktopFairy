@@ -240,12 +240,12 @@ describe('agent', () => {
       expect(Array.isArray(result.enabledSkillIds)).toBe(true)
     })
 
-    it('should auto-add skill-creator when find-skills is enabled', () => {
-      const result = normalizeAgentConfig({
-        enabledSkillIds: ['find-skills'],
-      })
-      expect(result.enabledSkillIds).toContain('find-skills')
-      expect(result.enabledSkillIds).toContain('skill-creator')
+    it('does not inject readable skills until the settings toggle is on', () => {
+      expect(DEFAULT_AGENT_CONFIG.enabledSkillIds).toEqual([])
+      expect(normalizeAgentConfig({}).enabledSkillIds).toEqual([])
+      expect(
+        normalizeAgentConfig({ enabledSkillIds: ['find-skills'] }).enabledSkillIds,
+      ).toEqual(['find-skills'])
     })
   })
 

@@ -1,12 +1,19 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
+import {
+  formatThinkingLabel,
+  syncThinkingClock,
+} from "../../shared/thinkingElapsed";
+import { thinkingPreviewTail } from "../../shared/thinkingPreview";
 import ChatMarkdown from "./ChatMarkdown";
 import "./ThinkingBlock.css";
 
 interface Props {
   msg: ChatMsg;
-  /** True while this assistant message is still streaming. */
+  /** Topic-level stream. Reasoning sits on the first assistant, not always the last. */
   isStreaming: boolean;
+  /** Tick the timer only while reasoning is the current work (not tools / later answer). */
+  clockLive?: boolean;
 }
 
 function BulbIcon({ size = 15 }: { size?: number }) {
@@ -72,33 +79,40 @@ function CheckIcon({ size = 13 }: { size?: number }) {
 
 /** Updates label via DOM so the markdown body is not re-rendered every 100ms. */
 function ThinkingElapsedLabel({
+  msgId,
   isThinking,
-  startedAt,
+  clockLive,
 }: {
+  msgId: string;
   isThinking: boolean;
-  startedAt: number;
+  clockLive: boolean;
 }) {
   const spanRef = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = spanRef.current;
     if (!el) return;
 
-    if (!isThinking) {
-      const ms = Math.max(Date.now() - startedAt, 100);
-      el.textContent = `已深度思考（用时 ${(ms / 1000).toFixed(1)} 秒）`;
+    const paint = () => {
+      el.textContent = formatThinkingLabel(
+        isThinking,
+        syncThinkingClock(msgId, clockLive),
+      );
+    };
+
+    if (!clockLive) {
+      paint();
       return;
     }
 
     let raf = 0;
     const tick = () => {
-      const ms = Math.max(Date.now() - startedAt, 100);
-      el.textContent = `思考中（用时 ${(ms / 1000).toFixed(1)} 秒）`;
+      paint();
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [isThinking, startedAt]);
+  }, [clockLive, isThinking, msgId]);
 
   return (
     <span className="thinking-label" ref={spanRef}>
@@ -117,38 +131,20 @@ const ThinkingMarkdownBody = memo(function ThinkingMarkdownBody({
   return <ChatMarkdown content={content} streaming={isThinking} />;
 });
 
-function ThinkingBlock({ msg, isStreaming }: Props) {
+function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
   const content = msg.reasoning ?? "";
-  // Reasoning is "active" while streaming and no answer text has arrived yet
-  // (reasoning_content streams before content for typical reasoning models).
+  // Agent turns put answer text on a later assistant after tools; this bubble
+  // often has reasoning only. Use topic streaming, not last-assistant streaming.
   const isThinking = isStreaming && !msg.content;
-  // Three-level display: "half" shows a capped preview with a fade mask,
+  const tickClock = clockLive ?? isThinking;
+  // Three-level display: "half" shows a clipped latest-suffix preview,
   // "full" shows the whole body, "collapsed" hides the body entirely.
   type FoldState = "collapsed" | "half" | "full";
   const [fold, setFold] = useState<FoldState>("half");
   const [copied, setCopied] = useState(false);
-  const startedAtRef = useRef(0);
-  const [startedAt, setStartedAt] = useState(0);
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const wasThinkingRef = useRef(false);
-
-  useEffect(() => {
-    if (isThinking && !wasThinkingRef.current) {
-      const now = Date.now();
-      startedAtRef.current = now;
-      setStartedAt(now);
-    }
-    wasThinkingRef.current = isThinking;
-  }, [isThinking]);
-
-  // Auto-scroll the half-folded body to the bottom whenever reasoning
-  // content changes, so the latest thinking text stays visible.
-  useEffect(() => {
-    if (fold !== "half") return;
-    const el = bodyRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [fold, content]);
+  // Half-fold only paints a suffix: full-doc markdown + CSS mask + scrollTop
+  // on every chunk is what flickered once reasoning overflowed the preview.
+  const bodyContent = fold === "half" ? thinkingPreviewTail(content) : content;
 
   const handleCopy = async () => {
     if (!content) return;
@@ -179,14 +175,15 @@ function ThinkingBlock({ msg, isStreaming }: Props) {
         aria-expanded={expanded}
       >
         <BulbIcon />
-        <ThinkingElapsedLabel isThinking={isThinking} startedAt={startedAt} />
+        <ThinkingElapsedLabel
+          msgId={msg.id}
+          isThinking={isThinking}
+          clockLive={tickClock}
+        />
         <ChevronIcon />
       </button>
       {showBody && (
-        <div
-          ref={fold === "half" ? bodyRef : undefined}
-          className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}
-        >
+        <div className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}>
           {!isThinking && fold === "full" && (
             <button
               type="button"
@@ -197,7 +194,7 @@ function ThinkingBlock({ msg, isStreaming }: Props) {
               {copied ? <CheckIcon /> : <CopyIcon />}
             </button>
           )}
-          <ThinkingMarkdownBody content={content} isThinking={isThinking} />
+          <ThinkingMarkdownBody content={bodyContent} isThinking={isThinking} />
         </div>
       )}
     </div>

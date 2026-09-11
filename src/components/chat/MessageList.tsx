@@ -15,6 +15,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { findLastAssistantReplyIndex } from "../../shared/chatMessages";
+import { isThinkingClockLive } from "../../shared/thinkingElapsed";
 import MessageBubble from "./MessageBubble";
 import ToolCallBubble, { ToolCallGroup } from "./ToolCallBubble";
 import type { AskUserAnswers } from "./agentTools/askUserQuestionParse";
@@ -467,6 +468,12 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                   <MessageBubble
                     msg={item.msg}
                     isStreamingTarget={item.msg.id === streamingAssistantId}
+                    streaming={streaming}
+                    thinkingClockLive={isThinkingClockLive(
+                      streaming,
+                      item.msg,
+                      messages,
+                    )}
                     invalidAttachmentPaths={invalidAttachmentPaths}
                     isEditing={item.msg.id === editingMsgId}
                     onRetry={item.msg.role === "user" ? onRetry : undefined}
