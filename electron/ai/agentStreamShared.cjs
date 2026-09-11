@@ -49,7 +49,6 @@ function buildAgentToolDeps({
   webSearchConfig,
   terminalSessionId,
   suppressToolDoneEvent = true,
-  knowledgeBaseIds = [],
 }) {
   const sessionEnabledSkillIds = new Set(agentConfig?.enabledSkillIds || []);
 
@@ -80,7 +79,6 @@ function buildAgentToolDeps({
     webSearchConfig,
     terminalSessionId,
     suppressToolDoneEvent,
-    knowledgeBaseIds: Array.isArray(knowledgeBaseIds) ? knowledgeBaseIds.filter(Boolean) : [],
   };
 }
 

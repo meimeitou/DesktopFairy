@@ -7,14 +7,33 @@ const catalog = require('./catalog.cjs');
 const indexStore = require('./indexStore.cjs');
 const ingest = require('./ingest.cjs');
 const { searchKnowledge, readKnowledgeItem } = require('./search.cjs');
-const { formatKnowledgeContext, hitsToCitations, isAllowedExt, uniqueCopyName, MAX_FILE_BYTES, MAX_BATCH_FILES, NOTE_CONTENT_MAX } = require('./lib.cjs');
+const {
+  formatKnowledgeContext,
+  hitsToCitations,
+  isAllowedExt,
+  isAllowedSemiExt,
+  isSemiBase,
+  normalizeBaseKind,
+  uniqueCopyName,
+  MAX_FILE_BYTES,
+  MAX_BATCH_FILES,
+  NOTE_CONTENT_MAX,
+  DEFAULT_SEMI_MAX_FILE_BYTES,
+} = require('./lib.cjs');
 const settingsSnapshot = require('../settingsSnapshot.cjs');
 const { currentEmbeddingConfig } = require('./embed.cjs');
+const describe = require('./describe.cjs');
 
 function requireEmbedding() {
   if (!currentEmbeddingConfig()) {
     throw new Error('未配置全局 embedding 模型，请到知识库页面左下角设置完成配置');
   }
+}
+
+function semiMaxBytes() {
+  const s = settingsSnapshot.getSnapshot() || {};
+  const n = Number(s.knowledge?.semiMaxFileBytes);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_SEMI_MAX_FILE_BYTES;
 }
 
 function copyIntoRaw(baseId, srcPath, destName) {
@@ -24,14 +43,21 @@ function copyIntoRaw(baseId, srcPath, destName) {
   return destName;
 }
 
-async function selectKnowledgeFiles() {
+async function selectKnowledgeFiles(baseKind) {
+  const semi = baseKind === 'semi_structured';
+  const filters = semi
+    ? [{ name: '半结构化文件', extensions: ['txt', 'md', 'markdown', 'json', 'yaml', 'yml'] }]
+    : [{ name: '知识库文件', extensions: ['txt', 'md', 'markdown', 'pdf', 'docx'] }];
   const result = await dialog.showOpenDialog({
     properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: '知识库文件', extensions: ['txt', 'md', 'markdown', 'pdf', 'docx'] },
-    ],
+    filters,
   });
   if (result.canceled || result.filePaths.length === 0) return [];
+  const maxBytes = semi ? semiMaxBytes() : MAX_FILE_BYTES;
+  const allowFn = semi ? isAllowedSemiExt : isAllowedExt;
+  const sizeErr = semi
+    ? `文件超过 ${(maxBytes / 1024).toFixed(0)}KB`
+    : '文件超过 100MB';
   return result.filePaths.slice(0, MAX_BATCH_FILES).map((filePath) => {
     const name = path.basename(filePath);
     const stats = fs.statSync(filePath);
@@ -40,11 +66,11 @@ async function selectKnowledgeFiles() {
       name,
       size: stats.size,
       ext: path.extname(name).toLowerCase(),
-      allowed: isAllowedExt(name) && stats.size <= MAX_FILE_BYTES,
-      error: !isAllowedExt(name)
+      allowed: allowFn(name) && stats.size <= maxBytes,
+      error: !allowFn(name)
         ? '不支持的文件类型'
-        : stats.size > MAX_FILE_BYTES
-          ? '文件超过 100MB'
+        : stats.size > maxBytes
+          ? sizeErr
           : null,
     };
   });
@@ -63,13 +89,21 @@ function detectConflicts(base, files) {
 }
 
 function addPreparedFiles(baseId, decisions) {
-  requireEmbedding();
   const base = catalog.getBase(baseId);
   if (!base) throw new Error('知识库不存在');
+  const semi = isSemiBase(base);
+  if (!semi) requireEmbedding();
+  const maxBytes = semi ? semiMaxBytes() : MAX_FILE_BYTES;
+  const allowFn = semi ? isAllowedSemiExt : isAllowedExt;
   const created = [];
   for (const decision of decisions || []) {
     if (!decision?.path) continue;
     if (decision.allowed === false) continue;
+    if (!allowFn(decision.name)) continue;
+    try {
+      const stat = fs.statSync(decision.path);
+      if (stat.size > maxBytes) continue;
+    } catch { continue; }
     if (decision.conflict && decision.action === 'replace' && decision.existingItemId) {
       indexStore.deleteItemChunks(baseId, decision.existingItemId);
       catalog.removeItem(baseId, decision.existingItemId);
@@ -100,9 +134,10 @@ function addPreparedFiles(baseId, decisions) {
 }
 
 function addNote(baseId, { title, content }) {
-  requireEmbedding();
   const base = catalog.getBase(baseId);
   if (!base) throw new Error('知识库不存在');
+  if (isSemiBase(base)) throw new Error('半结构化知识库暂不支持添加笔记');
+  requireEmbedding();
   const text = String(content || '');
   if (text.length > NOTE_CONTENT_MAX) throw new Error('笔记超过 10 万字上限');
   const now = Date.now();
@@ -122,6 +157,9 @@ function addNote(baseId, { title, content }) {
 }
 
 function updateNote(baseId, itemId, { title, content }) {
+  const base = catalog.getBase(baseId);
+  if (!base) throw new Error('知识库不存在');
+  if (isSemiBase(base)) throw new Error('半结构化知识库暂不支持笔记');
   requireEmbedding();
   const item = catalog.getItem(baseId, itemId);
   if (!item || item.type !== 'note') throw new Error('笔记不存在');
@@ -181,7 +219,10 @@ function registerKnowledgeHandlers(ipcMain) {
   ingest.failInterrupted();
 
   ipcMain.handle('knowledge:list_bases', async () => catalog.listBases());
-  ipcMain.handle('knowledge:create_base', async (_e, payload) => catalog.createBase(payload || {}));
+  ipcMain.handle('knowledge:create_base', async (_e, payload) => catalog.createBase({
+    name: payload?.name,
+    kind: normalizeBaseKind(payload?.kind),
+  }));
   ipcMain.handle('knowledge:update_base', async (_e, { baseId, patch }) => catalog.updateBase(baseId, patch || {}));
   ipcMain.handle('knowledge:delete_base', async (_e, { baseId }) => {
     indexStore.dropIndexFile(baseId);
@@ -189,8 +230,8 @@ function registerKnowledgeHandlers(ipcMain) {
     return { ok: true };
   });
   ipcMain.handle('knowledge:select_files', async (_e, { baseId } = {}) => {
-    const files = await selectKnowledgeFiles();
     const base = baseId ? catalog.getBase(baseId) : null;
+    const files = await selectKnowledgeFiles(base?.kind);
     return base ? detectConflicts(base, files) : files;
   });
   ipcMain.handle('knowledge:add_files', async (_e, { baseId, decisions }) => addPreparedFiles(baseId, decisions));
@@ -203,12 +244,15 @@ function registerKnowledgeHandlers(ipcMain) {
     return { ok: true };
   });
   ipcMain.handle('knowledge:reindex_item', async (_e, { baseId, itemId }) => {
-    requireEmbedding();
+    const base = catalog.getBase(baseId);
+    if (!isSemiBase(base)) requireEmbedding();
     ingest.requeueItem(baseId, itemId);
     return { ok: true };
   });
   ipcMain.handle('knowledge:rebuild_all', async () => {
-    requireEmbedding();
+    // Only require embedding if any vector base exists.
+    const anyVector = catalog.listBases().some((b) => !isSemiBase(b));
+    if (anyVector) requireEmbedding();
     ingest.requeueAllBases();
     return { ok: true };
   });
@@ -216,6 +260,15 @@ function registerKnowledgeHandlers(ipcMain) {
   ipcMain.handle('knowledge:read_item', async (_e, { baseId, itemId, maxChars }) =>
     readKnowledgeItem(baseId, itemId, maxChars));
   ipcMain.handle('knowledge:test_processor', async (_e, { processorId }) => testProcessor(processorId));
+
+  ipcMain.handle('knowledge:describe_item', async (_e, { baseId, itemId }) => {
+    const description = await describe.generateDescription({ baseId, itemId });
+    return { ok: true, description };
+  });
+  ipcMain.handle('knowledge:set_item_description', async (_e, { baseId, itemId, description }) => {
+    const value = describe.setDescriptionManual(baseId, itemId, description);
+    return { ok: true, description: value };
+  });
 }
 
 module.exports = {

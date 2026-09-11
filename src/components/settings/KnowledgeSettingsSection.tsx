@@ -3,6 +3,7 @@ import type { AppSettings } from "../../shared/settings";
 import {
   listEmbeddingModelItems,
   getEmbeddingApiConfig,
+  getSelectableModelItems,
 } from "../../shared/settings";
 import type { KnowledgeSettings } from "../../shared/knowledge";
 import { clampInt, knowledgeSettingsConfigured } from "../../shared/knowledge";
@@ -16,9 +17,13 @@ interface Props {
 
 export default function KnowledgeSettingsSection({ settings, onChange }: Props) {
   const items = useMemo(() => listEmbeddingModelItems(settings), [settings]);
+  const chatItems = useMemo(() => getSelectableModelItems(settings), [settings]);
   const cfg = settings.knowledge;
   const compound = cfg.embeddingProviderId && cfg.embeddingModel
     ? `${cfg.embeddingProviderId}::${cfg.embeddingModel}`
+    : "";
+  const descCompound = cfg.descriptionProviderId && cfg.descriptionModel
+    ? `${cfg.descriptionProviderId}::${cfg.descriptionModel}`
     : "";
   const ready = Boolean(getEmbeddingApiConfig(settings));
   const [busy, setBusy] = useState(false);
@@ -149,6 +154,70 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
             void applyRetrievalChange({ chunkOverlap: next }, true);
           }}
         />
+      </div>
+
+      <hr style={{ margin: "16px 0", opacity: 0.2 }} />
+      <p className="field-hint">
+        <strong>半结构化知识库</strong>：不做向量化，按文件描述由 LLM 挑选相关文件全文注入。
+      </p>
+      <div className="field">
+        <label>描述生成 LLM</label>
+        <select
+          value={descCompound}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (!value) {
+              update({ descriptionProviderId: "", descriptionModel: "" });
+              return;
+            }
+            const sep = value.indexOf("::");
+            update({
+              descriptionProviderId: value.slice(0, sep),
+              descriptionModel: value.slice(sep + 2),
+            });
+          }}
+        >
+          <option value="">未选择（不自动生成描述）</option>
+          {chatItems.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <p className="field-hint field-hint--after">
+          入库时会自动用该模型生成 200–500 字的文件描述，可手动编辑。未选择或调用失败时，需手动填写描述才能参与筛选。
+        </p>
+      </div>
+      <div className="field">
+        <label>半结构化单文件大小上限（KB）</label>
+        <input
+          type="number"
+          min={1}
+          max={10240}
+          defaultValue={Math.round((cfg.semiMaxFileBytes || 65536) / 1024)}
+          key={`semi-bytes-${cfg.semiMaxFileBytes}`}
+          onBlur={(e) => {
+            const kb = Math.max(1, Math.min(10240, Number(e.target.value) || 64));
+            update({ semiMaxFileBytes: kb * 1024 });
+          }}
+        />
+      </div>
+      <div className="field">
+        <label>单次注入最多文件数</label>
+        <input
+          type="number"
+          min={1}
+          max={10}
+          defaultValue={cfg.semiMaxFilesPerQuery}
+          key={`semi-cap-${cfg.semiMaxFilesPerQuery}`}
+          onBlur={(e) => {
+            const n = clampInt(e.target.value, 1, 10, 3);
+            update({ semiMaxFilesPerQuery: n });
+          }}
+        />
+        <p className="field-hint field-hint--after">
+          LLM 每次最多为一次提问挑出这么多文件，全部整篇注入 system message。
+        </p>
       </div>
     </section>
   );

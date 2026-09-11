@@ -78,13 +78,34 @@ function registerAiStreamHandlers(ipcMain, deps) {
       ? rawKnowledgeBaseIds.filter((id) => typeof id === 'string' && id)
       : [];
     const builtinTools = getBuiltinTools(agentConfig, context);
-    const { knowledgeToolDefinitions } = require('./knowledge/tools.cjs');
-    const kbTools = knowledgeBaseIds.length > 0 ? knowledgeToolDefinitions() : [];
-    const toolDefinitions = [...builtinTools, ...kbTools, ...(mcpRuntime.definitions || [])];
+    const toolDefinitions = [...builtinTools, ...(mcpRuntime.definitions || [])];
     const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-    const enabledToolNames = [...builtinTools, ...kbTools].map((t) => t.function.name);
-    const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
+    const enabledToolNames = builtinTools.map((t) => t.function.name);
+    const systemPromptBase = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
     const apiMessages = (messages || []).filter((m) => m.role !== 'system');
+
+    let systemPrompt = systemPromptBase;
+    if (knowledgeBaseIds.length > 0) {
+      try {
+        const { buildKnowledgeInjection } = require('./knowledge/injectForChat.cjs');
+        const injected = await buildKnowledgeInjection({
+          messages: apiMessages,
+          knowledgeBaseIds,
+          apiConfig,
+        });
+        if (injected.systemMessage) {
+          systemPrompt = `${systemPromptBase}\n\n${injected.systemMessage}`;
+        }
+        if (injected.citations?.length) {
+          legacySend('chat:stream:citations', {
+            requestId,
+            citations: injected.citations,
+          });
+        }
+      } catch (e) {
+        console.warn('[knowledge] agent pre-inject failed:', e?.message || e);
+      }
+    }
     const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
 
     const bridge = createChunkBridge({ requestId, safeSend: legacySend });
@@ -115,7 +136,6 @@ function registerAiStreamHandlers(ipcMain, deps) {
           webSearchConfig: getCurrentWebSearchConfig(),
           terminalSessionId,
           suppressToolDoneEvent: true,
-          knowledgeBaseIds,
         });
         toolDeps.persistEnabledSkillId = (skillId) => persistEnabledSkillId(skillId, getWindows);
 

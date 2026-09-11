@@ -550,6 +550,32 @@ export function getEmbeddingApiConfig(settings: AppSettings): {
   };
 }
 
+/** Chat-completion config used to auto-describe semi-structured KB files. */
+export function getDescriptionApiConfig(settings: AppSettings): {
+  apiHost: string;
+  apiKey: string;
+  providerType: LlmProvider["type"];
+  modelName: string;
+  providerId: string;
+} | null {
+  const knowledge = settings.knowledge;
+  if (!knowledge?.descriptionProviderId || !knowledge.descriptionModel) return null;
+  const provider = settings.providers.find(
+    (p) => p.id === knowledge.descriptionProviderId && p.enabled,
+  );
+  if (!provider || !provider.apiHost) return null;
+  if ((provider.models || []).length > 0 && !provider.models.includes(knowledge.descriptionModel)) {
+    return null;
+  }
+  return {
+    apiHost: provider.apiHost,
+    apiKey: provider.apiKey,
+    providerType: provider.type,
+    modelName: knowledge.descriptionModel,
+    providerId: provider.id,
+  };
+}
+
 /** Model name from the active provider's curated list (empty if none configured). */
 export function resolveModelNameForProvider(
   settings: AppSettings,

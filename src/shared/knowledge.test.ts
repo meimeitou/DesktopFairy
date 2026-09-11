@@ -6,6 +6,13 @@ import {
   splitMarkdownChunks,
   uniqueCopyName,
   replaceDocumentImages,
+  normalizeKnowledgeBaseKind,
+  normalizeDescription,
+  isAllowedSemiExt,
+  isAllowedKnowledgeExt,
+  DEFAULT_SEMI_MAX_FILE_BYTES,
+  DEFAULT_SEMI_MAX_FILES_PER_QUERY,
+  SEMI_DESCRIPTION_MAX,
   type KnowledgeHit,
 } from "./knowledge";
 
@@ -33,11 +40,64 @@ describe("normalizeKnowledgeSettings", () => {
     expect(next.chunkOverlap).toBeLessThan(next.chunkSize);
     expect(next.topK).toBe(20);
     expect(next.scoreThreshold).toBe(0.5);
+    expect(next.semiMaxFileBytes).toBe(DEFAULT_SEMI_MAX_FILE_BYTES);
+    expect(next.semiMaxFilesPerQuery).toBe(DEFAULT_SEMI_MAX_FILES_PER_QUERY);
+    expect(next.descriptionProviderId).toBe("");
+    expect(next.descriptionModel).toBe("");
   });
 
   it("clamps scoreThreshold to 0–1", () => {
     expect(normalizeKnowledgeSettings({ scoreThreshold: 1.8 }).scoreThreshold).toBe(1);
     expect(normalizeKnowledgeSettings({ scoreThreshold: -0.2 }).scoreThreshold).toBe(0);
+  });
+
+  it("clamps semi limits and keeps user values in range", () => {
+    const next = normalizeKnowledgeSettings({
+      semiMaxFileBytes: 32 * 1024,
+      semiMaxFilesPerQuery: 5,
+    });
+    expect(next.semiMaxFileBytes).toBe(32 * 1024);
+    expect(next.semiMaxFilesPerQuery).toBe(5);
+    const clamped = normalizeKnowledgeSettings({
+      semiMaxFileBytes: 500,
+      semiMaxFilesPerQuery: 99,
+    });
+    expect(clamped.semiMaxFileBytes).toBe(1024);
+    expect(clamped.semiMaxFilesPerQuery).toBe(10);
+  });
+});
+
+describe("normalizeKnowledgeBaseKind", () => {
+  it("defaults unknown to vector and preserves semi_structured", () => {
+    expect(normalizeKnowledgeBaseKind(undefined)).toBe("vector");
+    expect(normalizeKnowledgeBaseKind("random")).toBe("vector");
+    expect(normalizeKnowledgeBaseKind("semi_structured")).toBe("semi_structured");
+  });
+});
+
+describe("normalizeDescription", () => {
+  it("trims and truncates at max length", () => {
+    expect(normalizeDescription("   hi   ")).toBe("hi");
+    const long = "x".repeat(SEMI_DESCRIPTION_MAX + 20);
+    const out = normalizeDescription(long);
+    expect(out.length).toBe(SEMI_DESCRIPTION_MAX);
+    expect(out.endsWith("…")).toBe(true);
+  });
+});
+
+describe("extension whitelists", () => {
+  it("semi allows md/json/yaml but not pdf/docx", () => {
+    expect(isAllowedSemiExt("a.md")).toBe(true);
+    expect(isAllowedSemiExt("a.json")).toBe(true);
+    expect(isAllowedSemiExt("a.yaml")).toBe(true);
+    expect(isAllowedSemiExt("a.yml")).toBe(true);
+    expect(isAllowedSemiExt("a.pdf")).toBe(false);
+    expect(isAllowedSemiExt("a.docx")).toBe(false);
+  });
+  it("vector allows pdf/docx", () => {
+    expect(isAllowedKnowledgeExt("a.pdf")).toBe(true);
+    expect(isAllowedKnowledgeExt("a.docx")).toBe(true);
+    expect(isAllowedKnowledgeExt("a.json")).toBe(false);
   });
 });
 
