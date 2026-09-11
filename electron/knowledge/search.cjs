@@ -8,9 +8,10 @@ const { embedTexts, currentEmbeddingConfig } = require('./embed.cjs');
 const { mergeHits, clampUnit, DEFAULT_SCORE_THRESHOLD, replaceDocumentImages } = require('./lib.cjs');
 const settingsSnapshot = require('../settingsSnapshot.cjs');
 
-async function searchKnowledge({ query, baseIds, topK, scoreThreshold, includeBelowThreshold }) {
+async function searchKnowledge({ query, baseIds, topK, scoreThreshold, includeBelowThreshold, signal }) {
   const q = String(query || '').trim();
   if (!q) return [];
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const settings = settingsSnapshot.getSnapshot() || {};
   const knowledge = settings.knowledge || {};
   const k = Math.max(1, Number(topK) || knowledge.topK || 5);
@@ -26,6 +27,7 @@ async function searchKnowledge({ query, baseIds, topK, scoreThreshold, includeBe
   const ids = Array.isArray(baseIds) ? baseIds.filter(Boolean) : [];
   if (ids.length === 0) return [];
   const [queryVec] = await embedTexts([q], embedding);
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   const allHits = [];
   for (const baseId of ids) {
     const base = catalog.getBase(baseId);

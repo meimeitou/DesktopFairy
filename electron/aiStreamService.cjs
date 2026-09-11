@@ -86,8 +86,20 @@ function registerAiStreamHandlers(ipcMain, deps) {
             citations: injected.citations,
           });
         }
+        if (injected.errors?.length) {
+          legacySend('chat:stream:knowledge_error', {
+            requestId,
+            errors: injected.errors,
+          });
+        }
       } catch (e) {
-        console.warn('[knowledge] agent pre-inject failed:', e?.message || e);
+        if (e?.name !== 'AbortError') {
+          console.warn('[knowledge] agent pre-inject failed:', e?.message || e);
+          legacySend('chat:stream:knowledge_error', {
+            requestId,
+            errors: [{ kind: 'unknown', message: String(e?.message || e) }],
+          });
+        }
       }
     }
 

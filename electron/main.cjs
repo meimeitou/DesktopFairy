@@ -919,8 +919,19 @@ const setupIPC = () => {
               citations: injected.citations,
             });
           }
+          if (injected.errors?.length) {
+            safeSend('chat:stream:knowledge_error', {
+              requestId,
+              errors: injected.errors,
+            });
+          }
         } catch (e) {
+          if (e?.name === 'AbortError') throw e;
           console.warn('[knowledge] pre-inject failed:', e?.message || e);
+          safeSend('chat:stream:knowledge_error', {
+            requestId,
+            errors: [{ kind: 'unknown', message: String(e?.message || e) }],
+          });
         }
       }
       const { aborted, usage } = await streamPlainText({

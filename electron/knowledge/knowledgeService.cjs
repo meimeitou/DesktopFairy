@@ -217,6 +217,7 @@ async function retrieveForChat({ query, baseIds }) {
 
 function registerKnowledgeHandlers(ipcMain) {
   ingest.failInterrupted();
+  describe.failInterruptedDescriptions();
 
   ipcMain.handle('knowledge:list_bases', async () => catalog.listBases());
   ipcMain.handle('knowledge:create_base', async (_e, payload) => catalog.createBase({
@@ -261,8 +262,12 @@ function registerKnowledgeHandlers(ipcMain) {
     readKnowledgeItem(baseId, itemId, maxChars));
   ipcMain.handle('knowledge:test_processor', async (_e, { processorId }) => testProcessor(processorId));
 
-  ipcMain.handle('knowledge:describe_item', async (_e, { baseId, itemId }) => {
-    const description = await describe.generateDescription({ baseId, itemId });
+  ipcMain.handle('knowledge:describe_item', async (_e, { baseId, itemId, persist } = {}) => {
+    const description = await describe.generateDescription({
+      baseId,
+      itemId,
+      persist: persist !== false,
+    });
     return { ok: true, description };
   });
   ipcMain.handle('knowledge:set_item_description', async (_e, { baseId, itemId, description }) => {

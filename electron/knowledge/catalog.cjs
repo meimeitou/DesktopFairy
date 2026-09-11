@@ -99,6 +99,15 @@ function createBase({ name, kind } = {}) {
 function updateBase(baseId, patch) {
   const base = getBase(baseId);
   if (!base) throw new Error('知识库不存在');
+  if (patch && 'kind' in patch && patch.kind !== base.kind) {
+    throw new Error('知识库类型不可修改');
+  }
+  const allowed = new Set(['name']);
+  for (const key of Object.keys(patch || {})) {
+    if (!allowed.has(key)) {
+      throw new Error(`不支持修改字段：${key}`);
+    }
+  }
   if (typeof patch.name === 'string' && patch.name.trim()) base.name = patch.name.trim();
   base.updatedAt = Date.now();
   return saveBase(base);

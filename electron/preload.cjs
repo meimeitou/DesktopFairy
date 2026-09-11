@@ -236,6 +236,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('chat:stream:citations', listener);
     return () => ipcRenderer.removeListener('chat:stream:citations', listener);
   },
+  onChatStreamKnowledgeError: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('chat:stream:knowledge_error', listener);
+    return () => ipcRenderer.removeListener('chat:stream:knowledge_error', listener);
+  },
 
   onAgentStreamTool: (callback) => {
     const listener = (_event, payload) => callback(payload);

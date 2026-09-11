@@ -202,10 +202,27 @@ function MessageBubble({
           />
         )}
         {!isUser && !isEditing && (
-          <KnowledgeCitations
-            citations={msg.knowledgeCitations}
-            onOpen={onOpenCitation}
-          />
+          <>
+            {msg.knowledgeWarning && (
+              <div
+                style={{
+                  fontSize: 11,
+                  marginTop: 4,
+                  padding: "4px 8px",
+                  borderRadius: 4,
+                  background: "rgba(200, 130, 60, 0.12)",
+                  color: "var(--persimmon, #c86e3c)",
+                }}
+                title={msg.knowledgeWarning}
+              >
+                ⚠️ {msg.knowledgeWarning}
+              </div>
+            )}
+            <KnowledgeCitations
+              citations={msg.knowledgeCitations}
+              onOpen={onOpenCitation}
+            />
+          </>
         )}
         {isEditing ? (
           <div className="msg-actions msg-actions-visible">

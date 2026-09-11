@@ -947,6 +947,42 @@ export default function ChatPage({
       });
     };
 
+    const handleKnowledgeError = ({
+      requestId,
+      errors,
+    }: {
+      requestId: string;
+      errors?: Array<{ kind: string; message: string }>;
+    }) => {
+      if (!errors?.length) return;
+      const topicId = requestIdToTopicIdRef.current.get(requestId);
+      if (!topicId) return;
+      const summary = errors
+        .map((e) => {
+          const label =
+            e.kind === "vector"
+              ? "向量库检索"
+              : e.kind === "semi_structured"
+                ? "半结构化筛选"
+                : "知识库预注入";
+          return `${label}失败：${e.message}`;
+        })
+        .join("；");
+      // Surface as a non-blocking system notice attached to the last assistant reply.
+      patchTopicState(topicId, (state) => {
+        const idx = findLastAssistantReplyIndex(state.messages);
+        if (idx < 0) return state;
+        const next = state.messages.slice();
+        const prev = next[idx];
+        const existing = String(prev.knowledgeWarning || "");
+        next[idx] = {
+          ...prev,
+          knowledgeWarning: existing ? `${existing}；${summary}` : summary,
+        };
+        return { ...state, messages: next };
+      });
+    };
+
     legacyStreamHandlersRef.current = {
       onChatChunk: handleChatChunk,
       onChatDone: handleChatDone,
@@ -960,6 +996,7 @@ export default function ChatPage({
     const offError = api.onChatStreamError(handleChatError);
     const offTool = api.onAgentStreamTool?.(handleAgentTool);
     const offCitations = api.onChatStreamCitations?.(handleCitations);
+    const offKbError = api.onChatStreamKnowledgeError?.(handleKnowledgeError);
 
     return () => {
       chunkBuffer.dispose();
@@ -968,6 +1005,7 @@ export default function ChatPage({
       offError?.();
       offTool?.();
       offCitations?.();
+      offKbError?.();
     };
   }, [flushSessionSave, scheduleTopicSave, patchTopicState]);
 

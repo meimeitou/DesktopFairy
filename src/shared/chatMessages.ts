@@ -36,6 +36,8 @@ export interface ChatMsg {
   toolResultBytes?: number;
   /** Display-only knowledge citations for plain-chat RAG. Not replayed to the model. */
   knowledgeCitations?: KnowledgeCitation[];
+  /** Display-only warning shown when knowledge pre-injection failed. Not replayed. */
+  knowledgeWarning?: string;
 }
 
 export type ApiContentPart =

@@ -400,14 +400,15 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
     }
     setDescEditing({ ...descEditing, regenerating: true });
     try {
+      // persist: false → preview only. User must click "保存" to persist.
       const res = (await api.invoke("knowledge:describe_item", {
         baseId: active.id,
         itemId: descEditing.item.id,
+        persist: false,
       })) as { description?: string };
       setDescEditing((prev) =>
         prev ? { ...prev, text: String(res?.description || prev.text), regenerating: false } : null,
       );
-      await reload();
     } catch (e) {
       setDescEditing((prev) => (prev ? { ...prev, regenerating: false } : null));
       setError(e instanceof Error ? e.message : String(e));

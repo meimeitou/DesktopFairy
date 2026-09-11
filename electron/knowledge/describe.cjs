@@ -4,7 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { generateText } = require('ai');
 const catalog = require('./catalog.cjs');
-const { normalizeDescription, SEMI_DESCRIPTION_MAX } = require('./lib.cjs');
+const {
+  normalizeDescription,
+  SEMI_DESCRIPTION_MAX,
+  isSemiBase,
+  isAllowedSemiExt,
+} = require('./lib.cjs');
 const { resolveProviderModel } = require('../ai/providerModel.cjs');
 const settingsSnapshot = require('../settingsSnapshot.cjs');
 
@@ -52,19 +57,50 @@ function key(baseId, itemId) {
   return `${baseId}::${itemId}`;
 }
 
-async function generateDescription({ baseId, itemId } = {}) {
+/**
+ * Merge a small patch onto the latest catalog item snapshot.
+ * Prevents stale-spread from overwriting concurrent writes (fix HIGH #1).
+ */
+function patchItem(baseId, itemId, patch) {
+  const fresh = catalog.getItem(baseId, itemId);
+  if (!fresh) return null;
+  catalog.upsertItem(baseId, {
+    ...fresh,
+    ...patch,
+    updatedAt: patch?.updatedAt || Date.now(),
+  });
+  return fresh;
+}
+
+/**
+ * Build the description for one item.
+ *
+ * @param {object} opts
+ * @param {string} opts.baseId
+ * @param {string} opts.itemId
+ * @param {boolean} [opts.persist=true]  When false, return the text but do not
+ *                                       write it to catalog (preview mode).
+ */
+async function generateDescription({ baseId, itemId, persist = true } = {}) {
+  const base = catalog.getBase(baseId);
+  if (!base) throw new Error('知识库不存在');
+  if (!isSemiBase(base)) throw new Error('仅半结构化知识库支持生成描述');
   const item = catalog.getItem(baseId, itemId);
   if (!item) throw new Error('条目不存在');
+  if (item.type !== 'file' || !isAllowedSemiExt(item.sourceName)) {
+    throw new Error('该条目不支持自动生成描述');
+  }
   const cfg = currentDescriptionConfig();
   if (!cfg) throw new Error('未配置描述生成 LLM，请在知识库设置中选择');
   const source = readItemSourceText(baseId, item);
   if (!source.trim()) throw new Error('文件内容为空或读取失败');
 
   const trimmed = source.length > 8000 ? `${source.slice(0, 8000)}\n\n（后文省略）` : source;
+  const safeName = String(item.sourceName || '').replace(/[\r\n]+/g, ' ');
   const prompt = [
     '你是知识库文件描述生成器。请阅读下方文件内容，用中文写一段简短描述，说明该文件的主题、覆盖的知识点或用途，方便后续通过描述选择相关文件。',
     `严格控制在 200-${SEMI_DESCRIPTION_MAX} 字之间，只输出描述本身，不要加标题、标签或引号。`,
-    `文件名：${item.sourceName}`,
+    `文件名：${safeName}`,
     '文件内容：',
     trimmed,
   ].join('\n');
@@ -72,38 +108,37 @@ async function generateDescription({ baseId, itemId } = {}) {
   const k = key(baseId, itemId);
   if (inflight.has(k)) throw new Error('描述生成已在进行中');
   inflight.add(k);
-  catalog.upsertItem(baseId, {
-    ...item,
-    descriptionStatus: 'generating',
-    descriptionError: undefined,
-    updatedAt: Date.now(),
-  });
+  if (persist) {
+    patchItem(baseId, itemId, {
+      descriptionStatus: 'generating',
+      descriptionError: undefined,
+    });
+  }
   try {
     const model = resolveProviderModel(cfg);
-    const result = await generateText({ model, prompt, maxOutputTokens: 600 });
+    // 中文一个字符常拆成多个 token，200-500 中文字符需要 ~1500 tokens 才不会截断（fix HIGH #2）。
+    const result = await generateText({ model, prompt, maxOutputTokens: 2000 });
     const raw = String(result?.text || '').trim();
     const description = normalizeDescription(raw);
     if (!description) throw new Error('模型未返回有效描述');
-    const now = Date.now();
-    const updated = catalog.getItem(baseId, itemId);
-    if (!updated) throw new Error('条目已被删除');
-    catalog.upsertItem(baseId, {
-      ...updated,
-      description,
-      descriptionUpdatedAt: now,
-      descriptionStatus: 'idle',
-      descriptionError: undefined,
-      updatedAt: now,
-    });
+    if (persist) {
+      const now = Date.now();
+      if (!patchItem(baseId, itemId, {
+        description,
+        descriptionUpdatedAt: now,
+        descriptionStatus: 'idle',
+        descriptionError: undefined,
+        updatedAt: now,
+      })) {
+        throw new Error('条目已被删除');
+      }
+    }
     return description;
   } catch (e) {
-    const current = catalog.getItem(baseId, itemId);
-    if (current) {
-      catalog.upsertItem(baseId, {
-        ...current,
+    if (persist) {
+      patchItem(baseId, itemId, {
         descriptionStatus: 'failed',
         descriptionError: String(e?.message || e),
-        updatedAt: Date.now(),
       });
     }
     throw e;
@@ -117,8 +152,7 @@ function setDescriptionManual(baseId, itemId, description) {
   if (!item) throw new Error('条目不存在');
   const normalized = normalizeDescription(description);
   const now = Date.now();
-  catalog.upsertItem(baseId, {
-    ...item,
+  patchItem(baseId, itemId, {
     description: normalized || undefined,
     descriptionUpdatedAt: normalized ? now : item.descriptionUpdatedAt,
     descriptionStatus: 'idle',
@@ -137,9 +171,27 @@ function scheduleAutoDescribe(baseId, itemId) {
   });
 }
 
+/**
+ * Recover from crashes: any item stuck in `descriptionStatus === 'generating'`
+ * has no live worker anymore; reset to `failed` so users can retry (fix LOW #2).
+ */
+function failInterruptedDescriptions() {
+  for (const base of catalog.listBases()) {
+    for (const item of base.items || []) {
+      if (item.descriptionStatus === 'generating') {
+        patchItem(base.id, item.id, {
+          descriptionStatus: 'failed',
+          descriptionError: '描述生成中断，请重试',
+        });
+      }
+    }
+  }
+}
+
 module.exports = {
   currentDescriptionConfig,
   generateDescription,
   setDescriptionManual,
   scheduleAutoDescribe,
+  failInterruptedDescriptions,
 };

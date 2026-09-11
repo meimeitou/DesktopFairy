@@ -47,23 +47,28 @@ async function buildKnowledgeInjection({ messages, knowledgeBaseIds, apiConfig, 
   const ids = Array.isArray(knowledgeBaseIds)
     ? knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
     : [];
-  if (ids.length === 0) return { systemMessage: null, citations: [], files: [] };
+  if (ids.length === 0) return { systemMessage: null, citations: [], files: [], errors: [] };
   const query = pickLatestUserQuery(messages);
-  if (!query.trim()) return { systemMessage: null, citations: [], files: [] };
+  if (!query.trim()) return { systemMessage: null, citations: [], files: [], errors: [] };
 
   const { vector, semi } = partitionBaseIdsByKind(ids);
   const parts = [];
   const citations = [];
   const files = [];
+  /** @type {Array<{kind:'vector'|'semi_structured', message:string}>} */
+  const errors = [];
 
   if (vector.length > 0) {
     try {
-      const hits = await searchKnowledge({ query, baseIds: vector });
+      const hits = await searchKnowledge({ query, baseIds: vector, signal });
       const ctx = formatKnowledgeContext(hits);
       if (ctx) parts.push(ctx);
       citations.push(...hitsToCitations(hits));
     } catch (e) {
-      console.warn('[knowledge] vector pre-retrieve failed:', e?.message || e);
+      if (e?.name === 'AbortError') throw e;
+      const message = String(e?.message || e);
+      console.warn('[knowledge] vector pre-retrieve failed:', message);
+      errors.push({ kind: 'vector', message });
     }
   }
   if (semi.length > 0) {
@@ -79,12 +84,15 @@ async function buildKnowledgeInjection({ messages, knowledgeBaseIds, apiConfig, 
       citations.push(...semiFilesToCitations(picked));
       files.push(...picked);
     } catch (e) {
-      console.warn('[knowledge] semi pre-select failed:', e?.message || e);
+      if (e?.name === 'AbortError') throw e;
+      const message = String(e?.message || e);
+      console.warn('[knowledge] semi pre-select failed:', message);
+      errors.push({ kind: 'semi_structured', message });
     }
   }
 
   const systemMessage = parts.length > 0 ? parts.join('\n\n---\n\n') : null;
-  return { systemMessage, citations, files };
+  return { systemMessage, citations, files, errors };
 }
 
 module.exports = { buildKnowledgeInjection };

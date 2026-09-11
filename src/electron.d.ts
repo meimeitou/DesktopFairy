@@ -75,6 +75,16 @@ declare global {
             itemId: string;
             sourceName: string;
             text: string;
+            kind?: "vector" | "semi_structured";
+          }>;
+        }) => void
+      ) => () => void;
+      onChatStreamKnowledgeError?: (
+        callback: (payload: {
+          requestId: string;
+          errors: Array<{
+            kind: "vector" | "semi_structured" | "unknown";
+            message: string;
           }>;
         }) => void
       ) => () => void;
