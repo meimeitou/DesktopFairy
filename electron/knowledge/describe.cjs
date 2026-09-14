@@ -87,7 +87,10 @@ async function generateDescription({ baseId, itemId, persist = true } = {}) {
   if (!isSemiBase(base)) throw new Error('仅半结构化知识库支持生成描述');
   const item = catalog.getItem(baseId, itemId);
   if (!item) throw new Error('条目不存在');
-  if (item.type !== 'file' || !isAllowedSemiExt(item.sourceName)) {
+  if (item.type !== 'file' && item.type !== 'note') {
+    throw new Error('该条目不支持自动生成描述');
+  }
+  if (item.type === 'file' && !isAllowedSemiExt(item.sourceName)) {
     throw new Error('该条目不支持自动生成描述');
   }
   const cfg = currentDescriptionConfig();

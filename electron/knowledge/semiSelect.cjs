@@ -14,7 +14,7 @@ function readCandidateBases(baseIds) {
     const base = catalog.getBase(id);
     if (!base || !isSemiBase(base)) continue;
     const items = (base.items || []).filter(
-      (item) => item.type === 'file' && item.description && String(item.description).trim(),
+      (item) => (item.type === 'file' || item.type === 'note') && item.description && String(item.description).trim(),
     );
     if (items.length === 0) continue;
     out.push({ base, items });
@@ -86,6 +86,7 @@ function parseSelected(raw, flat) {
 }
 
 function readItemFullText(baseId, item) {
+  if (item.type === 'note') return String(item.noteContent || '');
   if (!item.relativePath) return '';
   const abs = path.join(catalog.rawDir(baseId), item.relativePath);
   try {

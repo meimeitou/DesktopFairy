@@ -156,7 +156,19 @@ async function processSemiJob({ base, item }) {
   const maxBytes = Math.max(1024, Number(knowledge.semiMaxFileBytes) || DEFAULT_SEMI_MAX_FILE_BYTES);
   const baseId = base.id;
   try {
-    if (item.type !== 'file') throw new Error('半结构化库仅支持文件');
+    if (item.type === 'note') {
+      catalog.upsertItem(baseId, {
+        ...item,
+        status: 'completed',
+        error: undefined,
+        updatedAt: Date.now(),
+      });
+      if (!item.description && currentDescriptionConfig()) {
+        scheduleAutoDescribe(baseId, item.id);
+      }
+      return;
+    }
+    if (item.type !== 'file') throw new Error('半结构化库仅支持文件或笔记');
     if (!isAllowedSemiExt(item.sourceName)) throw new Error('半结构化库不支持的文件类型');
     const absPath = path.join(catalog.rawDir(baseId), item.relativePath);
     if (!fs.existsSync(absPath)) throw new Error('文件副本丢失');

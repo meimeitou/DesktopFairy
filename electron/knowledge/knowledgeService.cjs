@@ -136,8 +136,7 @@ function addPreparedFiles(baseId, decisions) {
 function addNote(baseId, { title, content }) {
   const base = catalog.getBase(baseId);
   if (!base) throw new Error('知识库不存在');
-  if (isSemiBase(base)) throw new Error('半结构化知识库暂不支持添加笔记');
-  requireEmbedding();
+  if (!isSemiBase(base)) requireEmbedding();
   const text = String(content || '');
   if (text.length > NOTE_CONTENT_MAX) throw new Error('笔记超过 10 万字上限');
   const now = Date.now();
@@ -159,8 +158,7 @@ function addNote(baseId, { title, content }) {
 function updateNote(baseId, itemId, { title, content }) {
   const base = catalog.getBase(baseId);
   if (!base) throw new Error('知识库不存在');
-  if (isSemiBase(base)) throw new Error('半结构化知识库暂不支持笔记');
-  requireEmbedding();
+  if (!isSemiBase(base)) requireEmbedding();
   const item = catalog.getItem(baseId, itemId);
   if (!item || item.type !== 'note') throw new Error('笔记不存在');
   const text = String(content ?? item.noteContent ?? '');

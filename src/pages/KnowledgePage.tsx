@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { KnowledgeBase, KnowledgeBaseKind, KnowledgeItem } from "../shared/knowledge";
-import { knowledgeSettingsConfigured, semiDescriptionConfigured } from "../shared/knowledge";
+import type {
+  KnowledgeBase,
+  KnowledgeBaseKind,
+  KnowledgeItem,
+} from "../shared/knowledge";
+import {
+  knowledgeSettingsConfigured,
+  semiDescriptionConfigured,
+} from "../shared/knowledge";
 import { getEmbeddingApiConfig, type AppSettings } from "../shared/settings";
 import { setSettings, useSettings } from "../shared/settingsStore";
 import ChatMarkdown from "../components/chat/ChatMarkdown";
@@ -45,7 +52,13 @@ function formatItemTime(ts: number): string {
 
 function MoreIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="5" r="1.7" />
       <circle cx="12" cy="12" r="1.7" />
       <circle cx="12" cy="19" r="1.7" />
@@ -96,7 +109,17 @@ function FileAddIcon() {
 
 function DeleteIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </svg>
@@ -105,7 +128,17 @@ function DeleteIcon() {
 
 function EditIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
     </svg>
@@ -129,16 +162,25 @@ function SettingsGearIcon() {
   );
 }
 
-export default function KnowledgePage({ isActive = true }: { isActive?: boolean }) {
+export default function KnowledgePage({
+  isActive = true,
+}: {
+  isActive?: boolean;
+}) {
   const settings = useSettings();
-  const embeddingReady = Boolean(getEmbeddingApiConfig(settings))
-    && knowledgeSettingsConfigured(settings.knowledge);
+  const embeddingReady =
+    Boolean(getEmbeddingApiConfig(settings)) &&
+    knowledgeSettingsConfigured(settings.knowledge);
   const [bases, setBases] = useState<KnowledgeBase[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [creating, setCreating] = useState("");
   const [newKind, setNewKind] = useState<KnowledgeBaseKind>("vector");
   const [createOpen, setCreateOpen] = useState(false);
-  const [descEditing, setDescEditing] = useState<{ item: KnowledgeItem; text: string; regenerating: boolean } | null>(null);
+  const [descEditing, setDescEditing] = useState<{
+    item: KnowledgeItem;
+    text: string;
+    regenerating: boolean;
+  } | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [notePreview, setNotePreview] = useState(false);
@@ -153,13 +195,21 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [itemMenu, setItemMenu] = useState<{ id: string; top: number; left: number } | null>(null);
-  const [preview, setPreview] = useState<{
-    title: string;
-    text: string;
-    truncated: boolean;
-    error?: string;
-  } | "loading" | null>(null);
+  const [itemMenu, setItemMenu] = useState<{
+    id: string;
+    top: number;
+    left: number;
+  } | null>(null);
+  const [preview, setPreview] = useState<
+    | {
+        title: string;
+        text: string;
+        truncated: boolean;
+        error?: string;
+      }
+    | "loading"
+    | null
+  >(null);
   const skipRenameCommit = useRef(false);
 
   const reload = useCallback(async () => {
@@ -198,11 +248,21 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [settingsOpen, preview, noteOpen, recallOpen, addOpen, createOpen, itemMenu, conflicts]);
+  }, [
+    settingsOpen,
+    preview,
+    noteOpen,
+    recallOpen,
+    addOpen,
+    createOpen,
+    itemMenu,
+    conflicts,
+  ]);
 
   useEffect(() => {
     const onReveal = (e: Event) => {
-      const detail = (e as CustomEvent<{ baseId?: string; itemId?: string }>).detail;
+      const detail = (e as CustomEvent<{ baseId?: string; itemId?: string }>)
+        .detail;
       if (detail?.baseId) setActiveId(detail.baseId);
       if (detail?.itemId) setFocusItemId(detail.itemId);
     };
@@ -306,7 +366,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
     }
     if (!renamingId) return;
     const name = renameText.trim() || "未命名知识库";
-    setBases((prev) => prev.map((b) => (b.id === renamingId ? { ...b, name } : b)));
+    setBases((prev) =>
+      prev.map((b) => (b.id === renamingId ? { ...b, name } : b)),
+    );
     setRenamingId(null);
     setRenameText("");
     await api.invoke("knowledge:update_base", {
@@ -407,10 +469,18 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
         persist: false,
       })) as { description?: string };
       setDescEditing((prev) =>
-        prev ? { ...prev, text: String(res?.description || prev.text), regenerating: false } : null,
+        prev
+          ? {
+              ...prev,
+              text: String(res?.description || prev.text),
+              regenerating: false,
+            }
+          : null,
       );
     } catch (e) {
-      setDescEditing((prev) => (prev ? { ...prev, regenerating: false } : null));
+      setDescEditing((prev) =>
+        prev ? { ...prev, regenerating: false } : null,
+      );
       setError(e instanceof Error ? e.message : String(e));
     }
   };
@@ -450,13 +520,19 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
       setConflicts(pending.map((f) => ({ ...f, action: "keep" })));
       return;
     }
-    await api.invoke("knowledge:add_files", { baseId: active.id, decisions: pending });
+    await api.invoke("knowledge:add_files", {
+      baseId: active.id,
+      decisions: pending,
+    });
     await reload();
   };
 
   const confirmConflicts = async () => {
     if (!active || !conflicts) return;
-    await api.invoke("knowledge:add_files", { baseId: active.id, decisions: conflicts });
+    await api.invoke("knowledge:add_files", {
+      baseId: active.id,
+      decisions: conflicts,
+    });
     setConflicts(null);
     await reload();
   };
@@ -491,8 +567,14 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
     <div className="kb-page">
       {!embeddingReady && (
         <div className="kb-banner">
-          <span>尚未配置全局 embedding 模型，请在左侧底部打开设置完成配置。</span>
-          <button type="button" className="kb-banner-dismiss" onClick={() => setSettingsOpen(true)}>
+          <span>
+            尚未配置全局 embedding 模型，请在左侧底部打开设置完成配置。
+          </span>
+          <button
+            type="button"
+            className="kb-banner-dismiss"
+            onClick={() => setSettingsOpen(true)}
+          >
             打开设置
           </button>
         </div>
@@ -500,7 +582,11 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
       {error && (
         <div className="kb-banner kb-banner-error">
           <span>{error}</span>
-          <button type="button" className="kb-banner-dismiss" onClick={() => setError("")}>
+          <button
+            type="button"
+            className="kb-banner-dismiss"
+            onClick={() => setError("")}
+          >
             关闭
           </button>
         </div>
@@ -575,7 +661,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                           </span>
                         )}
                       </button>
-                      <span className="kb-nav-item-count">{base.items?.length || 0}</span>
+                      <span className="kb-nav-item-count">
+                        {base.items?.length || 0}
+                      </span>
                       <div className="kb-nav-item-actions">
                         <button
                           type="button"
@@ -615,7 +703,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
           {!active ? (
             <div className="kb-empty-state">
               <p className="kb-empty-title">创建第一个知识库</p>
-              <p className="kb-empty">在左侧输入名称后点「新建」，再加入文件或笔记。</p>
+              <p className="kb-empty">
+                在左侧输入名称后点「新建」，再加入文件或笔记。
+              </p>
             </div>
           ) : (
             <>
@@ -628,14 +718,20 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                       <button
                         type="button"
                         className="btn-ghost"
-                        onClick={() => void reindexItems(selectedItems.map((item) => item.id))}
+                        onClick={() =>
+                          void reindexItems(
+                            selectedItems.map((item) => item.id),
+                          )
+                        }
                       >
                         重建索引
                       </button>
                       <button
                         type="button"
                         className="btn-ghost kb-danger"
-                        onClick={() => void deleteItems(selectedItems.map((item) => item.id))}
+                        onClick={() =>
+                          void deleteItems(selectedItems.map((item) => item.id))
+                        }
                       >
                         删除
                       </button>
@@ -660,7 +756,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                 {items.length === 0 ? (
                   <div className="kb-empty-state kb-list-empty">
                     <p className="kb-empty-title">还没有条目</p>
-                    <p className="kb-empty">点右上角「添加数据」，加入文件或笔记。</p>
+                    <p className="kb-empty">
+                      点右上角「添加数据」，加入文件或笔记。
+                    </p>
                   </div>
                 ) : (
                   <div className="kb-table-wrap">
@@ -711,7 +809,10 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                                     {item.sourceName}
                                   </button>
                                 ) : (
-                                  <span className="kb-item-name" title={item.sourceName}>
+                                  <span
+                                    className="kb-item-name"
+                                    title={item.sourceName}
+                                  >
                                     {item.sourceName}
                                   </span>
                                 )}
@@ -720,7 +821,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                                 )}
                               </td>
                               <td className="kb-col-type">
-                                <span className={`kb-type kb-type-${item.type}`}>
+                                <span
+                                  className={`kb-type kb-type-${item.type}`}
+                                >
                                   {item.type === "note" ? "笔记" : "文件"}
                                 </span>
                               </td>
@@ -742,7 +845,8 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                                     >
                                       {item.description}
                                     </button>
-                                  ) : item.descriptionStatus === "generating" ? (
+                                  ) : item.descriptionStatus ===
+                                    "generating" ? (
                                     <span className="kb-empty">生成中…</span>
                                   ) : (
                                     <button
@@ -756,12 +860,16 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                                 </td>
                               )}
                               <td className="kb-col-status">
-                                <span className={`kb-status kb-status-${item.status}`}>
+                                <span
+                                  className={`kb-status kb-status-${item.status}`}
+                                >
                                   {STATUS_LABEL[item.status] || item.status}
                                 </span>
                               </td>
                               <td className="kb-col-time">
-                                {formatItemTime(item.updatedAt || item.createdAt)}
+                                {formatItemTime(
+                                  item.updatedAt || item.createdAt,
+                                )}
                               </td>
                               <td className="kb-col-action">
                                 <button
@@ -793,58 +901,53 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
           )}
         </section>
       </div>
-      {itemMenu && (() => {
-        const menuItem = items.find((item) => item.id === itemMenu.id);
-        if (!menuItem) return null;
-        const reindexDisabled = menuItem.status === "processing";
-        return (
-          <div
-            className="kb-row-menu"
-            style={{ top: itemMenu.top, left: itemMenu.left }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => void openPreview(menuItem)}
+      {itemMenu &&
+        (() => {
+          const menuItem = items.find((item) => item.id === itemMenu.id);
+          if (!menuItem) return null;
+          const reindexDisabled = menuItem.status === "processing";
+          return (
+            <div
+              className="kb-row-menu"
+              style={{ top: itemMenu.top, left: itemMenu.left }}
+              onMouseDown={(e) => e.stopPropagation()}
             >
-              预览
-            </button>
-            {menuItem.type === "note" && (
+              <button type="button" onClick={() => void openPreview(menuItem)}>
+                预览
+              </button>
+              {menuItem.type === "note" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setItemMenu(null);
+                    openEditNote(menuItem);
+                  }}
+                >
+                  编辑
+                </button>
+              )}
+              {activeSemi && menuItem.type === "file" && (
+                <button type="button" onClick={() => openDescEditor(menuItem)}>
+                  编辑描述
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  setItemMenu(null);
-                  openEditNote(menuItem);
-                }}
+                disabled={reindexDisabled}
+                onClick={() => void reindexItems([menuItem.id])}
               >
-                编辑
+                重建索引
               </button>
-            )}
-            {activeSemi && menuItem.type === "file" && (
               <button
                 type="button"
-                onClick={() => openDescEditor(menuItem)}
+                className="danger"
+                onClick={() => void deleteItems([menuItem.id])}
               >
-                编辑描述
+                删除
               </button>
-            )}
-            <button
-              type="button"
-              disabled={reindexDisabled}
-              onClick={() => void reindexItems([menuItem.id])}
-            >
-              重建索引
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => void deleteItems([menuItem.id])}
-            >
-              删除
-            </button>
-          </div>
-        );
-      })()}
+            </div>
+          );
+        })()}
       {preview && (
         <div className="kb-modal" onClick={() => setPreview(null)}>
           <div
@@ -874,9 +977,11 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
             ) : (
               <>
                 <div className="kb-preview-body">
-                  {preview.text.trim()
-                    ? <ChatMarkdown content={preview.text} />
-                    : <p className="kb-empty">没有可预览的内容</p>}
+                  {preview.text.trim() ? (
+                    <ChatMarkdown content={preview.text} />
+                  ) : (
+                    <p className="kb-empty">没有可预览的内容</p>
+                  )}
                 </div>
                 {preview.truncated && (
                   <p className="field-hint">内容过长，仅显示前面部分。</p>
@@ -893,7 +998,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
           defaultTopK={settings.knowledge.topK}
           defaultScoreThreshold={settings.knowledge.scoreThreshold}
           embeddingReady={embeddingReady}
-          completedCount={items.filter((item) => item.status === "completed").length}
+          completedCount={
+            items.filter((item) => item.status === "completed").length
+          }
           onClose={() => setRecallOpen(false)}
           onOpenItem={(itemId, sourceName) => {
             const item = items.find((row) => row.id === itemId);
@@ -912,11 +1019,14 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
       )}
       {addOpen && (
         <div className="kb-modal" onClick={() => setAddOpen(false)}>
-          <div className="kb-modal-card kb-add-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="kb-modal-card kb-add-modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3>添加数据</h3>
             <p className="field-hint">
               {activeSemi
-                ? "半结构化库仅支持纯文本文件（md / txt / json / yaml），按文件描述整体注入。"
+                ? "半结构化库支持文件（md / txt / json / yaml）和笔记，按文件描述整体注入。"
                 : "选择要加入当前知识库的类型。"}
             </p>
             <div className="kb-add-choices">
@@ -928,20 +1038,20 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                 <FileAddIcon />
                 <span className="kb-add-choice-title">文件</span>
                 <span className="kb-add-choice-desc">
-                  {activeSemi ? "md / txt / json / yaml" : "txt / md / docx / pdf"}
+                  {activeSemi
+                    ? "md / txt / json / yaml"
+                    : "txt / md / docx / pdf"}
                 </span>
               </button>
-              {!activeSemi && (
-                <button
-                  type="button"
-                  className="kb-add-choice"
-                  onClick={openCreateNote}
-                >
-                  <NoteAddIcon />
-                  <span className="kb-add-choice-title">笔记</span>
-                  <span className="kb-add-choice-desc">标题 + Markdown 正文</span>
-                </button>
-              )}
+              <button
+                type="button"
+                className="kb-add-choice"
+                onClick={openCreateNote}
+              >
+                <NoteAddIcon />
+                <span className="kb-add-choice-title">笔记</span>
+                <span className="kb-add-choice-desc">标题 + Markdown 正文</span>
+              </button>
             </div>
           </div>
         </div>
@@ -976,9 +1086,11 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
               <label>正文</label>
               {notePreview ? (
                 <div className="kb-note-preview">
-                  {noteBody.trim()
-                    ? <ChatMarkdown content={noteBody} />
-                    : <p className="kb-empty">没有可预览的内容</p>}
+                  {noteBody.trim() ? (
+                    <ChatMarkdown content={noteBody} />
+                  ) : (
+                    <p className="kb-empty">没有可预览的内容</p>
+                  )}
                 </div>
               ) : (
                 <textarea
@@ -990,14 +1102,22 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
               )}
             </div>
             <div className="kb-note-tools">
-              <button type="button" className="btn-ghost" onClick={() => setNotePreview((v) => !v)}>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setNotePreview((v) => !v)}
+              >
                 {notePreview ? "编辑" : "预览"}
               </button>
               <span className="kb-modal-spacer" />
               <button type="button" className="btn-ghost" onClick={resetNote}>
                 取消
               </button>
-              <button type="button" className="btn-secondary" onClick={() => void saveNote()}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void saveNote()}
+              >
                 {editingNote ? "保存" : "添加"}
               </button>
             </div>
@@ -1042,12 +1162,15 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                   alignItems: "flex-start",
                   gap: 8,
                   padding: "8px 10px",
-                  border: "1px solid var(--border-color, rgba(120,140,200,0.3))",
+                  border:
+                    "1px solid var(--border-color, rgba(120,140,200,0.3))",
                   borderRadius: 6,
                   marginBottom: 6,
                   cursor: "pointer",
                   background:
-                    newKind === "vector" ? "rgba(120,140,200,0.08)" : "transparent",
+                    newKind === "vector"
+                      ? "rgba(120,140,200,0.08)"
+                      : "transparent",
                 }}
               >
                 <input
@@ -1057,10 +1180,13 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                   onChange={() => setNewKind("vector")}
                   style={{ marginTop: 3 }}
                 />
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontWeight: 500 }}>结构化（向量检索）</span>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
+                >
+                  <span style={{ fontWeight: 500 }}>非结构化（向量检索）</span>
                   <span style={{ fontSize: 12, opacity: 0.7 }}>
-                    支持 txt / md / pdf / docx；分块后用 embedding 做相似度检索，适合大段文档、跨文件查资料。
+                    支持 txt / md / pdf / docx；分块后用 embedding
+                    模型做相似度检索，适合大段文档、跨文件查资料。
                   </span>
                 </div>
               </label>
@@ -1070,7 +1196,8 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                   alignItems: "flex-start",
                   gap: 8,
                   padding: "8px 10px",
-                  border: "1px solid var(--border-color, rgba(120,140,200,0.3))",
+                  border:
+                    "1px solid var(--border-color, rgba(120,140,200,0.3))",
                   borderRadius: 6,
                   cursor: "pointer",
                   background:
@@ -1086,10 +1213,15 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                   onChange={() => setNewKind("semi_structured")}
                   style={{ marginTop: 3 }}
                 />
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontWeight: 500 }}>半结构化（按描述挑文件）</span>
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
+                >
+                  <span style={{ fontWeight: 500 }}>
+                    半结构化（按描述挑文件）
+                  </span>
                   <span style={{ fontSize: 12, opacity: 0.7 }}>
-                    仅支持 md / txt / json / yaml；每个文件带一段描述，对话时由 LLM 按描述挑相关文件整篇注入上下文。
+                    仅支持 md / txt / json / yaml；每个文件带一段描述，对话时由
+                    LLM 按描述挑相关文件整篇注入上下文。
                   </span>
                 </div>
               </label>
@@ -1142,7 +1274,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                 maxLength={500}
                 placeholder="用一段话说明这个文件的主题、涵盖的知识点或用途…"
                 onChange={(e) =>
-                  setDescEditing((prev) => (prev ? { ...prev, text: e.target.value } : null))
+                  setDescEditing((prev) =>
+                    prev ? { ...prev, text: e.target.value } : null,
+                  )
                 }
               />
               <p className="field-hint">
@@ -1211,7 +1345,9 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
         <div className="kb-modal" onClick={() => setConflicts(null)}>
           <div className="kb-modal-card" onClick={(e) => e.stopPropagation()}>
             <h3>文件名冲突</h3>
-            <p className="field-hint">同名文件已在库中。为每一条选择保留两者或替换已有。</p>
+            <p className="field-hint">
+              同名文件已在库中。为每一条选择保留两者或替换已有。
+            </p>
             {conflicts.map((file, idx) => (
               <label key={file.path} className="kb-conflict-row">
                 <span className="kb-conflict-name">{file.name}</span>
@@ -1219,8 +1355,11 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                   value={file.action}
                   onChange={(e) => {
                     const action = e.target.value as "keep" | "replace";
-                    setConflicts((prev) =>
-                      prev?.map((row, i) => (i === idx ? { ...row, action } : row)) || null,
+                    setConflicts(
+                      (prev) =>
+                        prev?.map((row, i) =>
+                          i === idx ? { ...row, action } : row,
+                        ) || null,
                     );
                   }}
                 >
@@ -1234,7 +1373,10 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                 type="button"
                 className="btn-ghost"
                 onClick={() =>
-                  setConflicts((prev) => prev?.map((row) => ({ ...row, action: "keep" })) || null)
+                  setConflicts(
+                    (prev) =>
+                      prev?.map((row) => ({ ...row, action: "keep" })) || null,
+                  )
                 }
               >
                 全部保留
@@ -1243,16 +1385,28 @@ export default function KnowledgePage({ isActive = true }: { isActive?: boolean 
                 type="button"
                 className="btn-ghost"
                 onClick={() =>
-                  setConflicts((prev) => prev?.map((row) => ({ ...row, action: "replace" })) || null)
+                  setConflicts(
+                    (prev) =>
+                      prev?.map((row) => ({ ...row, action: "replace" })) ||
+                      null,
+                  )
                 }
               >
                 全部替换
               </button>
               <span className="kb-modal-spacer" />
-              <button type="button" className="btn-ghost" onClick={() => setConflicts(null)}>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setConflicts(null)}
+              >
                 取消
               </button>
-              <button type="button" className="btn-secondary" onClick={() => void confirmConflicts()}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void confirmConflicts()}
+              >
                 确定
               </button>
             </div>
