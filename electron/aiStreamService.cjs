@@ -115,6 +115,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
       }
     };
 
+    topicAgentState.set(topicId, { bypassApproval: false });
     const startResult = manager.startStream({
       topicId,
       requestId,
@@ -155,6 +156,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
           webSearchConfig: getCurrentWebSearchConfig(),
           terminalSessionId,
           suppressToolDoneEvent: true,
+          onToolDenied: bridge.markDenied,
         });
 
         return streamText({
@@ -195,10 +197,10 @@ function registerAiStreamHandlers(ipcMain, deps) {
     });
 
     if (startResult.mode === 'blocked') {
+      topicAgentState.delete(topicId);
       return startResult;
     }
 
-    topicAgentState.set(topicId, { bypassApproval: false });
     manager.attach(topicId, sender);
     return startResult;
   });

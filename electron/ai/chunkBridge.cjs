@@ -5,6 +5,7 @@
 function createChunkBridge({ requestId, safeSend, onToolEvent }) {
   const toolLedger = new Map();
   const toolArgsAcc = new Map();
+  const deniedIds = new Set();
 
   const updateLedger = (toolCallId, patch) => {
     if (!toolCallId) return;
@@ -80,6 +81,7 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
       }
 
       case 'tool-output-available': {
+        if (deniedIds.has(chunk.toolCallId)) break;
         const preview = typeof chunk.output === 'string'
           ? chunk.output
           : JSON.stringify(chunk.output ?? {});
@@ -128,8 +130,9 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
   };
 
   const getToolSnapshot = () => [...toolLedger.values()];
+  const markDenied = (toolCallId) => deniedIds.add(toolCallId);
 
-  return { handleChunk, getToolSnapshot, toolLedger };
+  return { handleChunk, getToolSnapshot, toolLedger, markDenied };
 }
 
 module.exports = { createChunkBridge };

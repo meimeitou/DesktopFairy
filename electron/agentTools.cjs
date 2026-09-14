@@ -251,6 +251,7 @@ async function executeAgentTool(toolCall, deps) {
       return { resultText: '', aborted: true };
     }
     if (approvalResult === 'denied') {
+      deps.onToolDenied?.(toolCallId);
       return {
         resultText: JSON.stringify({ ok: false, error: 'User denied tool execution' }),
         denied: true,

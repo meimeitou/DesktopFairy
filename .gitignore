@@ -29,3 +29,6 @@ dist-electron
 src-tauri/target
 
 .trae/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
