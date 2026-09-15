@@ -11,6 +11,7 @@ import TopicSidebar from "../components/chat/TopicSidebar";
 import MessageList, {
   type MessageListHandle,
 } from "../components/chat/MessageList";
+import { TerminalStopContext } from "../components/chat/agentTools/TerminalStopContext";
 import { useToolApproval } from "../hooks/useToolApproval";
 import { createStreamChunkBuffer } from "../hooks/createStreamChunkBuffer";
 import type { ToolTerminalState } from "../shared/ai/stream";
@@ -758,10 +759,9 @@ export default function ChatPage({
               ? {
                   lastPromptTokens: usage.promptTokens,
                   lastCompletionTokens: usage.completionTokens,
-                  lastUsageMessageCount: (
-                    isAgentBackend(state.requestBackend)
-                      ? filterForAgentHistory(messages)
-                      : filterForApi(messages)
+                  lastUsageMessageCount: (isAgentBackend(state.requestBackend)
+                    ? filterForAgentHistory(messages)
+                    : filterForApi(messages)
                   ).length,
                 }
               : {}),
@@ -1133,78 +1133,82 @@ export default function ChatPage({
       agentSendLockRef.current.add(topicId);
 
       try {
-      await flushSettingsSave();
-      const settings = getSettingsSnapshot();
-      const apiConfig = getChatApiConfig(settings);
-      if (!apiConfig?.apiHost || !apiConfig.modelName) return;
+        await flushSettingsSave();
+        const settings = getSettingsSnapshot();
+        const apiConfig = getChatApiConfig(settings);
+        if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
-      const agent = settings.agent;
-      const backend = getActiveChatBackend(settings);
-      const trimOpts = buildTrimOptions({
-        contextWindow: resolveContextWindow(
-          resolveActiveModelName(settings, backend),
-        ),
-        systemTokens: estimateAgentSystemPromptTokens(agent),
-      });
-
-      const agentHistory = trimMessagesForApi(
-        filterForAgentHistory(state.messages),
-        trimOpts,
-      );
-      const payloadMessages = buildAgentHistoryMessages(agentHistory);
-
-      const requestId = genId();
-      requestIdToTopicIdRef.current.set(requestId, topicId);
-
-      const now = Date.now();
-      const s = topicStatesRef.current[topicId] ?? emptyTopicState();
-      const nextTopic = {
-        ...s,
-        messages: [
-          ...s.messages,
-          {
-            id: genId(),
-            role: "assistant" as const,
-            content: "",
-            timestamp: now,
-          },
-        ],
-        streaming: true,
-        requestId,
-        requestBackend: getActiveChatBackend(settings),
-      };
-      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: nextTopic };
-      setTopicStates((prev) => ({ ...prev, [topicId]: nextTopic }));
-      syncStreamingFlag(topicId, true);
-      scrollToBottom();
-      notifyLive2DScene("thinking");
-
-      openAgentStream({
-        topicId,
-        requestId,
-        messages: payloadMessages,
-        apiConfig: {
-          apiHost: apiConfig.apiHost,
-          apiKey: apiConfig.apiKey,
-          providerType: apiConfig.providerType,
-          modelName: apiConfig.modelName,
-        },
-        agentConfig: agent,
-        knowledgeBaseIds:
-          topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds || [],
-      })
-        .then((result) => {
-          if (!result || typeof result !== "object") return;
-          if ((result as { mode?: string }).mode !== "blocked") return;
-          failAgentOpen(
-            topicId,
-            requestId,
-            "该话题已有进行中的会话，请等待完成或先停止。",
-          );
-        })
-        .catch((e: Error) => {
-          failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
+        const agent = settings.agent;
+        const backend = getActiveChatBackend(settings);
+        const trimOpts = buildTrimOptions({
+          contextWindow: resolveContextWindow(
+            resolveActiveModelName(settings, backend),
+          ),
+          systemTokens: estimateAgentSystemPromptTokens(agent),
         });
+
+        const agentHistory = trimMessagesForApi(
+          filterForAgentHistory(state.messages),
+          trimOpts,
+        );
+        const payloadMessages = buildAgentHistoryMessages(agentHistory);
+
+        const requestId = genId();
+        requestIdToTopicIdRef.current.set(requestId, topicId);
+
+        const now = Date.now();
+        const s = topicStatesRef.current[topicId] ?? emptyTopicState();
+        const nextTopic = {
+          ...s,
+          messages: [
+            ...s.messages,
+            {
+              id: genId(),
+              role: "assistant" as const,
+              content: "",
+              timestamp: now,
+            },
+          ],
+          streaming: true,
+          requestId,
+          requestBackend: getActiveChatBackend(settings),
+        };
+        topicStatesRef.current = {
+          ...topicStatesRef.current,
+          [topicId]: nextTopic,
+        };
+        setTopicStates((prev) => ({ ...prev, [topicId]: nextTopic }));
+        syncStreamingFlag(topicId, true);
+        scrollToBottom();
+        notifyLive2DScene("thinking");
+
+        openAgentStream({
+          topicId,
+          requestId,
+          messages: payloadMessages,
+          apiConfig: {
+            apiHost: apiConfig.apiHost,
+            apiKey: apiConfig.apiKey,
+            providerType: apiConfig.providerType,
+            modelName: apiConfig.modelName,
+          },
+          agentConfig: agent,
+          knowledgeBaseIds:
+            topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
+            [],
+        })
+          .then((result) => {
+            if (!result || typeof result !== "object") return;
+            if ((result as { mode?: string }).mode !== "blocked") return;
+            failAgentOpen(
+              topicId,
+              requestId,
+              "该话题已有进行中的会话，请等待完成或先停止。",
+            );
+          })
+          .catch((e: Error) => {
+            failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
+          });
       } finally {
         agentSendLockRef.current.delete(topicId);
       }
@@ -1248,239 +1252,248 @@ export default function ChatPage({
 
       agentSendLockRef.current.add(topicId);
       try {
-      // Always resolve from the latest store snapshot.
-      await flushSettingsSave();
-      const settings = getSettingsSnapshot();
-      const requestBackend = getActiveChatBackend(settings);
-      const agentMode = isAgentBackend(requestBackend);
-      const apiConfig = getChatApiConfig(settings);
+        // Always resolve from the latest store snapshot.
+        await flushSettingsSave();
+        const settings = getSettingsSnapshot();
+        const requestBackend = getActiveChatBackend(settings);
+        const agentMode = isAgentBackend(requestBackend);
+        const apiConfig = getChatApiConfig(settings);
 
-      let invokedSkillId: string | undefined;
-      if (agentMode && !isCompactRequest && !overrideText) {
-        const applied = applySkillSlashCommand(
-          text,
-          skills.map((s) => s.id),
-        );
-        if (applied) {
-          finalText = applied.text;
-          invokedSkillId = applied.skillId;
+        let invokedSkillId: string | undefined;
+        if (agentMode && !isCompactRequest && !overrideText) {
+          const applied = applySkillSlashCommand(
+            text,
+            skills.map((s) => s.id),
+          );
+          if (applied) {
+            finalText = applied.text;
+            invokedSkillId = applied.skillId;
+          }
         }
-      }
 
-      if (agentMode) {
-        const guidance = getAgentBackendGuidance(settings);
-        if (guidance) {
-          const now = Date.now();
-          const userMsg: ChatMsg = {
-            id: genId(),
-            role: "user",
-            content: finalText,
-            attachments:
-              sendAttachments.length > 0 ? [...sendAttachments] : undefined,
-            timestamp: now,
-          };
-          setTopicStates((prev) => {
-            const s = prev[topicId] ?? emptyTopicState();
-            return {
-              ...prev,
-              [topicId]: {
-                ...s,
-                messages: [
-                  ...s.messages,
-                  userMsg,
-                  {
-                    id: genId(),
-                    role: "assistant",
-                    content: guidance,
-                    error: true,
-                    timestamp: now,
-                  },
-                ],
-                input: isResend ? s.input : "",
-                attachments: isResend ? s.attachments : [],
-                streaming: false,
-                requestId: null,
-                requestBackend: null,
-              },
+        if (agentMode) {
+          const guidance = getAgentBackendGuidance(settings);
+          if (guidance) {
+            const now = Date.now();
+            const userMsg: ChatMsg = {
+              id: genId(),
+              role: "user",
+              content: finalText,
+              attachments:
+                sendAttachments.length > 0 ? [...sendAttachments] : undefined,
+              timestamp: now,
             };
-          });
-          scrollToBottom();
-          scheduleTopicSave(topicId);
+            setTopicStates((prev) => {
+              const s = prev[topicId] ?? emptyTopicState();
+              return {
+                ...prev,
+                [topicId]: {
+                  ...s,
+                  messages: [
+                    ...s.messages,
+                    userMsg,
+                    {
+                      id: genId(),
+                      role: "assistant",
+                      content: guidance,
+                      error: true,
+                      timestamp: now,
+                    },
+                  ],
+                  input: isResend ? s.input : "",
+                  attachments: isResend ? s.attachments : [],
+                  streaming: false,
+                  requestId: null,
+                  requestBackend: null,
+                },
+              };
+            });
+            scrollToBottom();
+            scheduleTopicSave(topicId);
+            return;
+          }
+        } else if (!apiConfig?.apiHost || !apiConfig.modelName) {
+          alert("请先在设置中配置服务商 API Host 和模型。");
           return;
         }
-      } else if (!apiConfig?.apiHost || !apiConfig.modelName) {
-        alert("请先在设置中配置服务商 API Host 和模型。");
-        return;
-      }
 
-      if (!apiConfig?.apiHost || !apiConfig.modelName) {
-        alert(
-          agentMode
-            ? "请先在智能体设置中配置后端 Provider 与模型。"
-            : "请先在设置中配置服务商 API Host 和模型。",
-        );
-        return;
-      }
-
-      const agent = invokedSkillId
-        ? {
-            ...settings.agent,
-            enabledSkillIds: withEnabledSkillId(
-              settings.agent.enabledSkillIds,
-              invokedSkillId,
-            ),
-          }
-        : settings.agent;
-
-      let attachmentPayloads = {
-        textFiles: [] as { name: string; text: string }[],
-        images: [] as { name: string; dataUrl: string }[],
-      };
-      try {
-        if (sendAttachments.length > 0) {
-          attachmentPayloads = await loadAttachmentPayloads(sendAttachments);
+        if (!apiConfig?.apiHost || !apiConfig.modelName) {
+          alert(
+            agentMode
+              ? "请先在智能体设置中配置后端 Provider 与模型。"
+              : "请先在设置中配置服务商 API Host 和模型。",
+          );
+          return;
         }
-      } catch (e) {
-        alert(e instanceof Error ? e.message : "读取附件失败");
-        return;
-      }
 
-      const backend = getActiveChatBackend(settings);
-      const trimOpts = buildTrimOptions({
-        contextWindow: resolveContextWindow(
-          resolveActiveModelName(settings, backend),
-        ),
-        systemTokens: agentMode
-          ? estimateAgentSystemPromptTokens(agent)
-          : 0,
-        draftInput: finalText,
-        draftAttachments: sendAttachments,
-      });
-
-      const agentHistory = trimMessagesForApi(
-        filterForAgentHistory(state.messages),
-        trimOpts,
-      );
-      const history = trimMessagesForApi(filterForApi(state.messages), trimOpts);
-      const systemPrompt = agentMode ? agent.soul : undefined;
-      const payloadMessages = agentMode
-        ? buildAgentApiMessages(
-            agentHistory,
-            finalText,
-            attachmentPayloads,
-            systemPrompt,
-          )
-        : buildApiMessages(
-            history,
-            finalText,
-            attachmentPayloads,
-            systemPrompt,
-          );
-
-      const now = Date.now();
-      const userMsg: ChatMsg = {
-        id: genId(),
-        role: "user",
-        content: finalText,
-        attachments:
-          sendAttachments.length > 0 ? [...sendAttachments] : undefined,
-        timestamp: now,
-      };
-
-      const requestId = genId();
-      requestIdToTopicIdRef.current.set(requestId, topicId);
-      if (isCompactRequest) {
-        compactRequestIdRef.current = requestId;
-      }
-
-      const shouldAutoTitle = state.messages.length === 0;
-
-      const live = topicStatesRef.current[topicId] ?? emptyTopicState();
-      const nextTopic = {
-        ...live,
-        messages: [
-          ...live.messages,
-          userMsg,
-          { id: genId(), role: "assistant" as const, content: "", timestamp: now },
-        ],
-        input: isResend ? live.input : "",
-        attachments: isResend ? live.attachments : [],
-        streaming: true,
-        requestId,
-        requestBackend,
-      };
-      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: nextTopic };
-      setTopicStates((prev) => ({ ...prev, [topicId]: nextTopic }));
-      syncStreamingFlag(topicId, true);
-      scrollToBottom();
-
-      if (shouldAutoTitle) {
-        const autoTitle = generateTopicTitle(text);
-        void api
-          .invoke("chat:topics:rename", {
-            topicId,
-            name: autoTitle,
-          })
-          .then(() => {
-            setTopics((prev) =>
-              prev.map((t) =>
-                t.id === topicId
-                  ? { ...t, name: autoTitle, updatedAt: Date.now() }
-                  : t,
+        const agent = invokedSkillId
+          ? {
+              ...settings.agent,
+              enabledSkillIds: withEnabledSkillId(
+                settings.agent.enabledSkillIds,
+                invokedSkillId,
               ),
-            );
-          });
-      }
+            }
+          : settings.agent;
 
-      scheduleTopicSave(topicId);
-      setSidebarCollapsed(true);
+        let attachmentPayloads = {
+          textFiles: [] as { name: string; text: string }[],
+          images: [] as { name: string; dataUrl: string }[],
+        };
+        try {
+          if (sendAttachments.length > 0) {
+            attachmentPayloads = await loadAttachmentPayloads(sendAttachments);
+          }
+        } catch (e) {
+          alert(e instanceof Error ? e.message : "读取附件失败");
+          return;
+        }
 
-      notifyLive2DScene("userSend");
-      notifyLive2DScene("thinking");
-
-      const invokePromise = agentMode
-        ? openAgentStream({
-            topicId,
-            requestId,
-            messages: payloadMessages,
-            apiConfig: {
-              apiHost: apiConfig.apiHost,
-              apiKey: apiConfig.apiKey,
-              providerType: apiConfig.providerType,
-              modelName: apiConfig.modelName,
-            },
-            agentConfig: agent,
-            knowledgeBaseIds:
-              topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
-              [],
-          })
-        : api.invoke("chat:send", {
-            requestId,
-            messages: payloadMessages,
-            knowledgeBaseIds:
-              topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
-              [],
-            apiConfig: {
-              apiHost: apiConfig.apiHost,
-              apiKey: apiConfig.apiKey,
-              providerType: apiConfig.providerType,
-              modelName: apiConfig.modelName,
-            },
-          });
-
-      invokePromise
-        .then((result) => {
-          if (!agentMode || !result || typeof result !== "object") return;
-          if ((result as { mode?: string }).mode !== "blocked") return;
-          failAgentOpen(
-            topicId,
-            requestId,
-            "该话题已有进行中的会话，请等待完成或先停止。",
-          );
-        })
-        .catch((e: Error) => {
-          failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
+        const backend = getActiveChatBackend(settings);
+        const trimOpts = buildTrimOptions({
+          contextWindow: resolveContextWindow(
+            resolveActiveModelName(settings, backend),
+          ),
+          systemTokens: agentMode ? estimateAgentSystemPromptTokens(agent) : 0,
+          draftInput: finalText,
+          draftAttachments: sendAttachments,
         });
+
+        const agentHistory = trimMessagesForApi(
+          filterForAgentHistory(state.messages),
+          trimOpts,
+        );
+        const history = trimMessagesForApi(
+          filterForApi(state.messages),
+          trimOpts,
+        );
+        const systemPrompt = agentMode ? agent.soul : undefined;
+        const payloadMessages = agentMode
+          ? buildAgentApiMessages(
+              agentHistory,
+              finalText,
+              attachmentPayloads,
+              systemPrompt,
+            )
+          : buildApiMessages(
+              history,
+              finalText,
+              attachmentPayloads,
+              systemPrompt,
+            );
+
+        const now = Date.now();
+        const userMsg: ChatMsg = {
+          id: genId(),
+          role: "user",
+          content: finalText,
+          attachments:
+            sendAttachments.length > 0 ? [...sendAttachments] : undefined,
+          timestamp: now,
+        };
+
+        const requestId = genId();
+        requestIdToTopicIdRef.current.set(requestId, topicId);
+        if (isCompactRequest) {
+          compactRequestIdRef.current = requestId;
+        }
+
+        const shouldAutoTitle = state.messages.length === 0;
+
+        const live = topicStatesRef.current[topicId] ?? emptyTopicState();
+        const nextTopic = {
+          ...live,
+          messages: [
+            ...live.messages,
+            userMsg,
+            {
+              id: genId(),
+              role: "assistant" as const,
+              content: "",
+              timestamp: now,
+            },
+          ],
+          input: isResend ? live.input : "",
+          attachments: isResend ? live.attachments : [],
+          streaming: true,
+          requestId,
+          requestBackend,
+        };
+        topicStatesRef.current = {
+          ...topicStatesRef.current,
+          [topicId]: nextTopic,
+        };
+        setTopicStates((prev) => ({ ...prev, [topicId]: nextTopic }));
+        syncStreamingFlag(topicId, true);
+        scrollToBottom();
+
+        if (shouldAutoTitle) {
+          const autoTitle = generateTopicTitle(text);
+          void api
+            .invoke("chat:topics:rename", {
+              topicId,
+              name: autoTitle,
+            })
+            .then(() => {
+              setTopics((prev) =>
+                prev.map((t) =>
+                  t.id === topicId
+                    ? { ...t, name: autoTitle, updatedAt: Date.now() }
+                    : t,
+                ),
+              );
+            });
+        }
+
+        scheduleTopicSave(topicId);
+        setSidebarCollapsed(true);
+
+        notifyLive2DScene("userSend");
+        notifyLive2DScene("thinking");
+
+        const invokePromise = agentMode
+          ? openAgentStream({
+              topicId,
+              requestId,
+              messages: payloadMessages,
+              apiConfig: {
+                apiHost: apiConfig.apiHost,
+                apiKey: apiConfig.apiKey,
+                providerType: apiConfig.providerType,
+                modelName: apiConfig.modelName,
+              },
+              agentConfig: agent,
+              knowledgeBaseIds:
+                topicsRef.current.find((t) => t.id === topicId)
+                  ?.knowledgeBaseIds || [],
+            })
+          : api.invoke("chat:send", {
+              requestId,
+              messages: payloadMessages,
+              knowledgeBaseIds:
+                topicsRef.current.find((t) => t.id === topicId)
+                  ?.knowledgeBaseIds || [],
+              apiConfig: {
+                apiHost: apiConfig.apiHost,
+                apiKey: apiConfig.apiKey,
+                providerType: apiConfig.providerType,
+                modelName: apiConfig.modelName,
+              },
+            });
+
+        invokePromise
+          .then((result) => {
+            if (!agentMode || !result || typeof result !== "object") return;
+            if ((result as { mode?: string }).mode !== "blocked") return;
+            failAgentOpen(
+              topicId,
+              requestId,
+              "该话题已有进行中的会话，请等待完成或先停止。",
+            );
+          })
+          .catch((e: Error) => {
+            failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
+          });
       } finally {
         agentSendLockRef.current.delete(topicId);
       }
@@ -1618,8 +1631,7 @@ export default function ChatPage({
         [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
       }));
       setTimeout(
-        () =>
-          handleSendRef.current(trimmed, { resendAttachments }),
+        () => handleSendRef.current(trimmed, { resendAttachments }),
         0,
       );
     },
@@ -1627,17 +1639,20 @@ export default function ChatPage({
   );
 
   // 重试用户消息：删除该消息及其后所有消息，用原始文本重新发送
-  const handleRetry = useCallback((msgId: string) => {
-    const topicId = activeTopicIdRef.current;
-    if (!topicId) return;
-    const state = topicStatesRef.current[topicId];
-    if (!state || state.streaming) return;
-    const idx = state.messages.findIndex((m) => m.id === msgId);
-    if (idx === -1) return;
-    const target = state.messages[idx];
-    if (target.role !== "user") return;
-    resendFromUserMessage(msgId, target.content);
-  }, [resendFromUserMessage]);
+  const handleRetry = useCallback(
+    (msgId: string) => {
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      const state = topicStatesRef.current[topicId];
+      if (!state || state.streaming) return;
+      const idx = state.messages.findIndex((m) => m.id === msgId);
+      if (idx === -1) return;
+      const target = state.messages[idx];
+      if (target.role !== "user") return;
+      resendFromUserMessage(msgId, target.content);
+    },
+    [resendFromUserMessage],
+  );
 
   const handleStartEdit = useCallback((msgId: string) => {
     setEditingMsgId(msgId);
@@ -1746,31 +1761,33 @@ export default function ChatPage({
         />
       )}
       <div className="chat-main-area">
-        <MessageList
-          ref={messageListRef}
-          messages={messages}
-          streaming={streaming}
-          invalidAttachmentPaths={invalidAttachmentPaths}
-          onApprove={handleApproveTool}
-          onDeny={handleDenyTool}
-          onAlwaysAllow={handleAlwaysAllowTool}
-          onAnswer={submitToolAnswer}
-          submittingApprovalId={submittingApprovalId}
-          onRetry={streaming ? undefined : handleRetry}
-          onStartEdit={streaming ? undefined : handleStartEdit}
-          onConfirmEdit={handleConfirmEdit}
-          onCancelEdit={handleCancelEdit}
-          editingMsgId={editingMsgId}
-          onDelete={handleDeleteMessage}
-          onOpenCitation={(citation) => {
-            window.dispatchEvent(
-              new CustomEvent("knowledge:reveal", {
-                detail: { baseId: citation.baseId, itemId: citation.itemId },
-              }),
-            );
-          }}
-          emptyContent={emptyContent}
-        />
+        <TerminalStopContext.Provider value={handleStop}>
+          <MessageList
+            ref={messageListRef}
+            messages={messages}
+            streaming={streaming}
+            invalidAttachmentPaths={invalidAttachmentPaths}
+            onApprove={handleApproveTool}
+            onDeny={handleDenyTool}
+            onAlwaysAllow={handleAlwaysAllowTool}
+            onAnswer={submitToolAnswer}
+            submittingApprovalId={submittingApprovalId}
+            onRetry={streaming ? undefined : handleRetry}
+            onStartEdit={streaming ? undefined : handleStartEdit}
+            onConfirmEdit={handleConfirmEdit}
+            onCancelEdit={handleCancelEdit}
+            editingMsgId={editingMsgId}
+            onDelete={handleDeleteMessage}
+            onOpenCitation={(citation) => {
+              window.dispatchEvent(
+                new CustomEvent("knowledge:reveal", {
+                  detail: { baseId: citation.baseId, itemId: citation.itemId },
+                }),
+              );
+            }}
+            emptyContent={emptyContent}
+          />
+        </TerminalStopContext.Provider>
 
         {activeTopicId &&
           maxTurnsPendingTopics.has(activeTopicId) &&

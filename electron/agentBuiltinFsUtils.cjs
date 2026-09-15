@@ -543,7 +543,9 @@ async function isBinaryFile(filePath) {
 
 
 
-async function runRipgrep(args) {
+const RG_TIMEOUT_MS = 60_000;
+
+async function runRipgrep(args, { signal } = {}) {
   const ripgrepBinaryPath = 'rg';
 
   return new Promise((resolve) => {
@@ -554,17 +556,46 @@ async function runRipgrep(args) {
     })
 
     let stdout = ''
+    let settled = false;
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
+
+    const killChild = () => {
+      try { child.kill('SIGKILL'); } catch { /* gone */ }
+    };
+
+    const onAbort = () => {
+      killChild();
+      finish({ ok: false, stdout: '', exitCode: null, aborted: true });
+    };
+
+    // hard timeout so a runaway scan never hangs the agent
+    const timer = setTimeout(() => {
+      killChild();
+      finish({ ok: false, stdout: '', exitCode: null, timedOut: true });
+    }, RG_TIMEOUT_MS);
+
+    if (signal) {
+      if (signal.aborted) { onAbort(); return; }
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     child.stdout?.on('data', (chunk) => {
       stdout += chunk.toString('utf-8')
     })
 
     child.on('error', () => {
-      resolve({ ok: false, stdout: '', exitCode: null })
+      finish({ ok: false, stdout: '', exitCode: null })
     })
 
     child.on('close', (code) => {
-      resolve({ ok: true, stdout, exitCode: code })
+      finish({ ok: true, stdout, exitCode: code })
     })
   })
 }

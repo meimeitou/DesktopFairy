@@ -254,7 +254,7 @@ async function toolBash(args, envVars = {}, deps = {}) {
   });
 }
 
-async function toolGlob(args) {
+async function toolGlob(args, signal) {
   const pattern = String(args?.pattern || '').trim();
   if (!pattern) return fail('pattern required');
   const searchPath = resolveAgentPath(args?.path || AGENT_FS_BASE(), AGENT_FS_BASE());
@@ -281,7 +281,9 @@ async function toolGlob(args) {
 
   const files = [];
   let truncated = false;
-  const rgResult = await runRipgrep(rgArgs);
+  const rgResult = await runRipgrep(rgArgs, { signal });
+  if (rgResult.aborted) return fail('Glob cancelled');
+  if (rgResult.timedOut) return fail('Glob timed out (60 s). Use a more specific pattern or path.');
   if (rgResult.ok && rgResult.stdout.length > 0) {
     for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
       if (files.length >= MAX_FILES_LIMIT) {
@@ -314,7 +316,7 @@ async function toolGlob(args) {
   return ok({ matches: files.map((f) => f.path), output: output.join('\n'), cwd: searchPath });
 }
 
-async function toolGrep(args) {
+async function toolGrep(args, signal) {
   const pattern = String(args?.pattern || '').trim();
   if (!pattern) return fail('pattern required');
   const searchPath = resolveAgentPath(args?.path || AGENT_FS_BASE(), AGENT_FS_BASE());
@@ -346,7 +348,9 @@ async function toolGrep(args) {
   const matches = [];
   let truncated = false;
 
-  const rgResult = await runRipgrep(rgArgs);
+  const rgResult = await runRipgrep(rgArgs, { signal });
+  if (rgResult.aborted) return fail('Grep cancelled');
+  if (rgResult.timedOut) return fail('Grep timed out (60 s). Use a more specific pattern or path.');
   if (rgResult.ok && rgResult.exitCode !== null && rgResult.exitCode !== 2) {
     for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
       if (matches.length >= MAX_GREP_MATCHES) {
@@ -1046,9 +1050,9 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
     case 'Bash':
       return toolBash(args, deps.envVars, deps);
     case 'Glob':
-      return toolGlob(args);
+      return toolGlob(args, deps.signal);
     case 'Grep':
-      return toolGrep(args);
+      return toolGrep(args, deps.signal);
     case 'WebFetch':
       return toolWebFetch(args);
     case 'WebSearch':

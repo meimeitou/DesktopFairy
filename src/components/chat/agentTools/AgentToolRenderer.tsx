@@ -12,13 +12,7 @@ import TerminalOutput from "./TerminalOutput";
 import ToolHeader from "./ToolHeader";
 import { parseAskUserQuestions } from "./askUserQuestionParse";
 
-function StatusBadge({
-  status,
-  label,
-}: {
-  status: string;
-  label: string;
-}) {
+function StatusBadge({ status, label }: { status: string; label: string }) {
   return (
     <span className={`agent-tool-status-badge agent-tool-status-${status}`}>
       {(status === "running" || status === "streaming") && (
@@ -43,7 +37,9 @@ function BashToolBody({ msg }: { msg: ChatMsg }) {
   const output = parseToolOutput(msg.toolResultPreview);
   const stdout = extractStdout(output);
   const stderr =
-    output && typeof output === "object" && typeof (output as Record<string, unknown>).stderr === "string"
+    output &&
+    typeof output === "object" &&
+    typeof (output as Record<string, unknown>).stderr === "string"
       ? String((output as Record<string, unknown>).stderr)
       : "";
 
@@ -71,7 +67,9 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
   const command = typeof input.command === "string" ? input.command : "";
   const output = parseToolOutput(msg.toolResultPreview);
   const outObj =
-    output && typeof output === "object" ? (output as Record<string, unknown>) : null;
+    output && typeof output === "object"
+      ? (output as Record<string, unknown>)
+      : null;
   const outText =
     typeof output === "string"
       ? output
@@ -82,7 +80,8 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
           : "";
   const exitCode =
     typeof outObj?.exitCode === "number" ? outObj.exitCode : undefined;
-  const isRunning = msg.toolStatus === "running" || msg.toolStatus === "streaming";
+  const isRunning =
+    msg.toolStatus === "running" || msg.toolStatus === "streaming";
   const isDone = msg.toolStatus === "done";
 
   return (
@@ -127,7 +126,8 @@ function ReadToolBody({ msg }: { msg: ChatMsg }) {
   const input = getToolInput(msg.toolName || "", msg.toolArgs);
   const path = extractFilePath(input);
   const output = parseToolOutput(msg.toolResultPreview);
-  const text = extractStdout(output) || (typeof output === "string" ? output : "");
+  const text =
+    extractStdout(output) || (typeof output === "string" ? output : "");
 
   return (
     <div className="agent-tool-body">
@@ -166,12 +166,14 @@ function GenericToolBody({ msg }: { msg: ChatMsg }) {
           <TerminalOutput content={JSON.stringify(input, null, 2)} />
         </>
       )}
-      {outputText && msg.toolStatus !== "running" && msg.toolStatus !== "streaming" && (
-        <>
-          <div className="agent-tool-section-label">结果</div>
-          <TerminalOutput content={outputText} />
-        </>
-      )}
+      {outputText &&
+        msg.toolStatus !== "running" &&
+        msg.toolStatus !== "streaming" && (
+          <>
+            <div className="agent-tool-section-label">结果</div>
+            <TerminalOutput content={outputText} />
+          </>
+        )}
     </div>
   );
 }
@@ -180,7 +182,9 @@ function SkillToolBody({ msg }: { msg: ChatMsg }) {
   const input = getToolInput(msg.toolName || "", msg.toolArgs);
   const output = parseToolOutput(msg.toolResultPreview);
   const content =
-    output && typeof output === "object" && typeof (output as Record<string, unknown>).content === "string"
+    output &&
+    typeof output === "object" &&
+    typeof (output as Record<string, unknown>).content === "string"
       ? String((output as Record<string, unknown>).content)
       : extractStdout(output) || (typeof output === "string" ? output : "");
 
@@ -220,12 +224,14 @@ function SkillsToolBody({ msg }: { msg: ChatMsg }) {
           <div className="agent-tool-file-path">{String(input.action)}</div>
         </>
       )}
-      {outputText && msg.toolStatus !== "running" && msg.toolStatus !== "streaming" && (
-        <>
-          <div className="agent-tool-section-label">结果</div>
-          <TerminalOutput content={outputText} />
-        </>
-      )}
+      {outputText &&
+        msg.toolStatus !== "running" &&
+        msg.toolStatus !== "streaming" && (
+          <>
+            <div className="agent-tool-section-label">结果</div>
+            <TerminalOutput content={outputText} />
+          </>
+        )}
     </div>
   );
 }
@@ -234,7 +240,9 @@ function AskUserQuestionBody({ msg }: { msg: ChatMsg }) {
   const questions = parseAskUserQuestions(msg);
   const output = parseToolOutput(msg.toolResultPreview);
   const answers =
-    output && typeof output === "object" && (output as Record<string, unknown>).answers
+    output &&
+    typeof output === "object" &&
+    (output as Record<string, unknown>).answers
       ? ((output as Record<string, unknown>).answers as Record<string, unknown>)
       : null;
 
@@ -284,7 +292,11 @@ function renderToolBody(msg: ChatMsg) {
   if (name === "Skills") return <SkillsToolBody msg={msg} />;
   if (name === "AskUserQuestion") return <AskUserQuestionBody msg={msg} />;
   if (name === "Read" || name === "Write" || name === "Edit") {
-    return name === "Read" ? <ReadToolBody msg={msg} /> : <GenericToolBody msg={msg} />;
+    return name === "Read" ? (
+      <ReadToolBody msg={msg} />
+    ) : (
+      <GenericToolBody msg={msg} />
+    );
   }
   if (name.startsWith("mcp__")) return <GenericToolBody msg={msg} />;
   return <GenericToolBody msg={msg} />;
@@ -296,6 +308,10 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
   const isCollapsible = status === "done";
   const [expanded, setExpanded] = useState(status !== "done");
   const prevStatus = useRef(status);
+  const stopStream = useContext(TerminalStopContext);
+  const isRunning = status === "running" || status === "streaming";
+  // Terminal has its own stop button inside TerminalToolBody
+  const showStopBtn = isRunning && msg.toolName !== "Terminal" && !!stopStream;
 
   useEffect(() => {
     if (prevStatus.current !== "done" && status === "done") {
@@ -326,7 +342,9 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
       <ToolHeader
         toolName={msg.toolName || "工具"}
         params={
-          summary ? <span className="agent-tool-inline-param">{summary}</span> : undefined
+          summary ? (
+            <span className="agent-tool-inline-param">{summary}</span>
+          ) : undefined
         }
         status={<StatusBadge status={status} label={label} />}
         collapsible={isCollapsible}
@@ -334,6 +352,17 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
         onToggle={() => setExpanded((v) => !v)}
       />
       {showBody && renderToolBody(msg)}
+      {showStopBtn && (
+        <div className="agent-tool-abort-row">
+          <button
+            type="button"
+            className="agent-tool-stop-btn"
+            onClick={stopStream}
+          >
+            终止
+          </button>
+        </div>
+      )}
       {msg.toolMessage && (status === "error" || status === "denied") && (
         <p className="agent-tool-error-text">{msg.toolMessage}</p>
       )}
