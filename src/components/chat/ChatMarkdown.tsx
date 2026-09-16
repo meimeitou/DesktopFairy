@@ -3,9 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkCjkFriendly from "remark-cjk-friendly";
 import rehypeHighlight from "rehype-highlight";
-import remend from "remend";
 import type { Components } from "react-markdown";
 import CodeBlock from "./CodeBlock";
+import { normalizeGfmTables, prepareStreamingMarkdown } from "./markdownPrepare";
 import "./ChatMarkdown.css";
 import "highlight.js/styles/github-dark.min.css";
 
@@ -70,29 +70,9 @@ const components: Components = {
   },
 };
 
-/** Close an odd number of ``` fences so partial code blocks still render. */
-function closeOpenCodeFence(md: string): string {
-  let opens = 0;
-  for (const line of md.split("\n")) {
-    if (/^ {0,3}```/.test(line)) opens += 1;
-  }
-  if (opens % 2 === 1) return `${md}\n\`\`\``;
-  return md;
-}
-
-/**
- * Streaming markdown like Cherry Studio / Streamdown:
- * - remend completes incomplete ** / ` / links mid-stream
- * - open code fences are closed so fenced blocks still paint
- * - rehype-highlight is deferred until stream ends (expensive re-tokenize)
- */
-function prepareStreamingMarkdown(content: string): string {
-  return closeOpenCodeFence(remend(content));
-}
-
 function ChatMarkdown({ content, streaming }: Props) {
   const displayContent = useMemo(
-    () => (streaming ? prepareStreamingMarkdown(content) : content),
+    () => (streaming ? prepareStreamingMarkdown(content) : normalizeGfmTables(content)),
     [content, streaming],
   );
 
