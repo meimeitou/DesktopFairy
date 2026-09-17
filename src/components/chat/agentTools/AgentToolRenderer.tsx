@@ -1,4 +1,4 @@
-import { memo, useContext, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import {
   extractFilePath,
@@ -7,7 +7,6 @@ import {
   getToolInput,
   parseToolOutput,
 } from "./toolUtils";
-import { TerminalStopContext } from "./TerminalStopContext";
 import TerminalOutput from "./TerminalOutput";
 import ToolHeader from "./ToolHeader";
 import { parseAskUserQuestions } from "./askUserQuestionParse";
@@ -62,7 +61,6 @@ function BashToolBody({ msg }: { msg: ChatMsg }) {
 }
 
 function TerminalToolBody({ msg }: { msg: ChatMsg }) {
-  const stopTerminal = useContext(TerminalStopContext);
   const input = getToolInput(msg.toolName || "Terminal", msg.toolArgs);
   const command = typeof input.command === "string" ? input.command : "";
   const output = parseToolOutput(msg.toolResultPreview);
@@ -80,8 +78,6 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
           : "";
   const exitCode =
     typeof outObj?.exitCode === "number" ? outObj.exitCode : undefined;
-  const isRunning =
-    msg.toolStatus === "running" || msg.toolStatus === "streaming";
   const isDone = msg.toolStatus === "done";
 
   return (
@@ -92,20 +88,11 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
           <TerminalOutput content={command} commandMode />
         </>
       )}
-      {(outText || isRunning) && (
+      {(outText || msg.toolStatus === "running" || msg.toolStatus === "streaming") && (
         <>
           <div className="agent-tool-section-label">输出</div>
           <TerminalOutput content={outText || "…"} />
         </>
-      )}
-      {isRunning && stopTerminal && (
-        <button
-          type="button"
-          className="agent-tool-stop-btn"
-          onClick={stopTerminal}
-        >
-          停止
-        </button>
       )}
       {isDone && exitCode !== undefined && (
         <div className="agent-tool-exit-line">
@@ -308,10 +295,7 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
   const isCollapsible = status === "done";
   const [expanded, setExpanded] = useState(status !== "done");
   const prevStatus = useRef(status);
-  const stopStream = useContext(TerminalStopContext);
   const isRunning = status === "running" || status === "streaming";
-  // Terminal has its own stop button inside TerminalToolBody
-  const showStopBtn = isRunning && msg.toolName !== "Terminal" && !!stopStream;
 
   useEffect(() => {
     if (prevStatus.current !== "done" && status === "done") {
@@ -350,19 +334,9 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
         collapsible={isCollapsible}
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
+        cancelToolCallId={isRunning ? msg.toolCallId : undefined}
       />
       {showBody && renderToolBody(msg)}
-      {showStopBtn && (
-        <div className="agent-tool-abort-row">
-          <button
-            type="button"
-            className="agent-tool-stop-btn"
-            onClick={stopStream}
-          >
-            终止
-          </button>
-        </div>
-      )}
       {msg.toolMessage && (status === "error" || status === "denied") && (
         <p className="agent-tool-error-text">{msg.toolMessage}</p>
       )}

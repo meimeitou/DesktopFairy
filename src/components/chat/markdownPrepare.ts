@@ -1,5 +1,3 @@
-import remend from "remend";
-
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})/;
 
 interface FenceState {
@@ -52,26 +50,6 @@ function isDelimiterRow(line: string): boolean {
     }
   }
   return hasDash && t.includes("|");
-}
-
-/**
- * Close a still-open ``` / ~~~ fence so partial code blocks still render.
- * Tracks fence char + length per CommonMark instead of naive backtick parity,
- * so ``` inside a ~~~ block is content, not a fence.
- */
-export function closeOpenCodeFence(md: string): string {
-  const lines = md.split("\n");
-  let open: FenceState | null = null;
-  for (const line of lines) {
-    if (!open) {
-      const m = FENCE_OPEN_RE.exec(line);
-      if (m) open = { marker: m[1][0], length: m[1].length };
-    } else if (closingFence(line, open)) {
-      open = null;
-    }
-  }
-  if (open) return `${md}\n${open.marker.repeat(open.length)}`;
-  return md;
 }
 
 /**
@@ -129,10 +107,4 @@ export function normalizeGfmTables(md: string): string {
     out.push(line);
   }
   return out.join("\n");
-}
-
-/** Streaming markdown like Cherry Studio / Streamdown:
- *  remend completes inline markers, tables normalize, open fences close. */
-export function prepareStreamingMarkdown(content: string): string {
-  return closeOpenCodeFence(normalizeGfmTables(remend(content)));
 }

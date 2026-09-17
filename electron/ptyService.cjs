@@ -631,14 +631,7 @@ function registerPtyHandlers({ ipcMain }) {
     }
   });
 
-  ipcMain.handle('terminal:agent:stop', async (_event, { sessionId }) => {
-    // SSH 会话的 capture 在 sshService 中管理，按前缀路由。
-    if (sessionId && sessionId.startsWith('ssh_')) {
-      const { stopSshActiveCapture } = require('./sshService.cjs');
-      return { ok: stopSshActiveCapture(sessionId) };
-    }
-    return { ok: stopActiveCapture(sessionId) };
-  });
+
 }
 
 function runCommandInSession(sessionId, command, timeout = 60_000, signal) {

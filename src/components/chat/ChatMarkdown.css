@@ -21,23 +21,23 @@
   margin-bottom: 0;
 }
 
-.chat-markdown h1,
-.chat-markdown h2,
-.chat-markdown h3,
-.chat-markdown h4 {
+/* Headings — streamdown renders data-streamdown="heading-N" */
+.chat-markdown [data-streamdown^="heading-"] {
   margin: 0.8em 0 0.4em;
   font-weight: 600;
   line-height: 1.35;
 }
-.chat-markdown h1 { font-size: 1.25em; }
-.chat-markdown h2 { font-size: 1.15em; }
-.chat-markdown h3 { font-size: 1.05em; }
-.chat-markdown h4 { font-size: 1em; }
+.chat-markdown [data-streamdown="heading-1"] { font-size: 1.25em; }
+.chat-markdown [data-streamdown="heading-2"] { font-size: 1.15em; }
+.chat-markdown [data-streamdown="heading-3"] { font-size: 1.05em; }
+.chat-markdown [data-streamdown="heading-4"] { font-size: 1em; }
+.chat-markdown [data-streamdown="heading-5"],
+.chat-markdown [data-streamdown="heading-6"] { font-size: 1em; }
 
 .chat-markdown ul,
 .chat-markdown ol {
-  margin: 0.4em 0;
-  padding-left: 1.4em;
+  margin: 0.5em 0;
+  padding-left: 1.5em;
 }
 .chat-markdown li {
   margin: 0.2em 0;
@@ -46,12 +46,13 @@
   margin: 0.15em 0;
 }
 
-.chat-markdown hr {
+.chat-markdown [data-streamdown="horizontal-rule"] {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  margin: 0.8em 0;
+  border-top: 1px solid var(--hairline);
+  margin: 1em 0;
 }
 
+.chat-markdown [data-streamdown="link"],
 .chat-markdown a {
   color: rgba(160, 140, 255, 0.95);
   text-decoration: underline;
@@ -61,42 +62,65 @@
   color: rgba(190, 175, 255, 1);
 }
 
-.md-inline-code {
+.chat-markdown [data-streamdown="inline-code"] {
   padding: 0.1em 0.35em;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
 }
 
-.md-code-block {
+/* strong renders as <span data-streamdown="strong" class="font-semibold"> —
+ * not a <strong> element; bold depends on the inert Tailwind class. */
+.chat-markdown [data-streamdown="strong"] {
+  font-weight: 600;
+}
+
+/* Images constrain via Tailwind max-w-full — constrain here instead. */
+.chat-markdown [data-streamdown="image"] {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* Streaming caret: streamdown injects --streamdown-caret on its root div and
+ * styles the glyph via inert Tailwind arbitrary variants; render it via
+ * ::after on the last block. Absent in static mode (var undefined → empty). */
+.chat-markdown-streaming > div > :last-child::after {
+  content: var(--streamdown-caret, "");
+  display: inline-block;
+}
+
+/* Code blocks — layout utilities are Tailwind classes compiled into JS and
+ * inert without Tailwind; layout comes from these attribute selectors. */
+.chat-markdown [data-streamdown="code-block"] {
   margin: 0.6em 0;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-850);
 }
-.md-code-header {
+.chat-markdown [data-streamdown="code-block-header"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
   background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--hairline-strong);
 }
-.md-code-lang {
+.chat-markdown [data-streamdown="code-block-header"] span {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--bone-500);
   text-transform: lowercase;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
 }
-.md-code-actions {
+.chat-markdown [data-streamdown="code-block-actions"] {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.md-code-run {
+.chat-markdown [data-streamdown="code-block-copy-button"],
+.chat-markdown [data-streamdown="code-block-download-button"] {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -105,89 +129,339 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 4px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--bone-400);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.md-code-run:hover {
-  background: rgba(120, 200, 120, 0.12);
-  color: rgba(180, 255, 180, 0.9);
-  border-color: rgba(120, 200, 120, 0.25);
-}
-.md-code-copy {
-  padding: 2px 8px;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.md-code-copy:hover {
+.chat-markdown [data-streamdown="code-block-copy-button"]:hover,
+.chat-markdown [data-streamdown="code-block-download-button"]:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--bone-100);
 }
-
-.md-code-block pre {
+.chat-markdown [data-streamdown="code-block-body"] {
   margin: 0;
   padding: 10px 12px;
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.5;
-  background: transparent !important;
+  background: var(--sdm-bg, var(--ink-850));
+  color: var(--sdm-fg, var(--bone-100));
+  font-family: var(--font-mono);
 }
-.md-code-block pre code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.chat-markdown [data-streamdown="code-block-body"] pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+.chat-markdown [data-streamdown="code-block-body"] code {
+  font-family: var(--font-mono);
   background: transparent;
   border: none;
   padding: 0;
 }
+/* Shiki tokens set inline CSS vars (--sdm-c/--sdm-tbg); the Tailwind
+ * utilities that consume them are inert without Tailwind, so map here. */
+.chat-markdown [data-streamdown="code-block-body"] span {
+  color: var(--sdm-c, inherit);
+  background-color: var(--sdm-tbg, transparent);
+}
+/* Line spans rely on Tailwind's `block` class (display:block) for line
+ * breaks — inert without Tailwind; non-empty lines carry no "\n" text. */
+.chat-markdown [data-streamdown="code-block-body"] code > span {
+  display: block;
+}
 
-.md-blockquote {
+/* Shell code block with "在终端运行" — replaces the deleted CodeBlock.tsx */
+.sd-shell-block {
+  margin: 0.6em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-850);
+}
+.sd-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--hairline-strong);
+}
+.sd-shell-lang {
+  font-size: 11px;
+  color: var(--bone-500);
+  text-transform: lowercase;
+  font-family: var(--font-mono);
+}
+.sd-shell-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sd-shell-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--bone-400);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.sd-shell-run:hover {
+  background: rgba(120, 200, 120, 0.12);
+  color: rgba(180, 255, 180, 0.9);
+  border-color: rgba(120, 200, 120, 0.25);
+}
+.sd-shell-block [data-streamdown="code-block"] {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+.sd-shell-block [data-streamdown="code-block-header"] {
+  display: none; /* shell header row replaces streamdown's own */
+}
+
+.chat-markdown [data-streamdown="blockquote"] {
   margin: 0.5em 0;
   padding: 0.2em 0 0.2em 0.8em;
-  border-left: 3px solid rgba(0, 185, 107, 0.55);
+  border-left: 3px solid var(--persimmon-focus);
   color: rgba(255, 255, 255, 0.75);
 }
 
-.md-table-wrap {
+/* Tables */
+.chat-markdown [data-streamdown="table-wrapper"] {
   margin: 0.6em 0;
   overflow-x: auto;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--hairline-strong);
 }
-.chat-markdown table {
+
+/* Table controls row (copy / download / fullscreen) — streamdown gives it
+ * only Tailwind classes (flex items-center justify-end gap-1); inert here.
+ * It is the first child div of table-wrapper when controls are enabled. */
+.chat-markdown [data-streamdown="table-wrapper"] > div:first-child,
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+/* Dropdown anchors (copy/download format menus wrap button + menu in a
+ * div.relative — also a Tailwind-only class). */
+.chat-markdown [data-streamdown="table-wrapper"] > div:first-child > div {
+  position: relative;
+}
+/* Dropdown format menus: absolute top-full right-0 + card styling. */
+.chat-markdown [data-streamdown="table-wrapper"] [class*="absolute"] {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  min-width: 120px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-850);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.chat-markdown [data-streamdown="table-wrapper"] [class*="absolute"] button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+.chat-markdown [data-streamdown="table-wrapper"] [class*="absolute"] button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+/* Icon buttons in the controls row (svg-only, p-1). */
+.chat-markdown [data-streamdown="table-wrapper"] > div:first-child button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--bone-400);
+  cursor: pointer;
+}
+.chat-markdown [data-streamdown="table-wrapper"] > div:first-child button:hover {
+  color: var(--bone-100);
+}
+
+.chat-markdown [data-streamdown="table"] {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
 }
-.chat-markdown th,
-.chat-markdown td {
+.chat-markdown [data-streamdown="table-cell"],
+.chat-markdown [data-streamdown="table-header-cell"] {
   padding: 6px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--hairline);
   text-align: left;
 }
-.chat-markdown th {
+
+/* Mermaid controls row — has the attribute but flex classes are inert. */
+.chat-markdown [data-streamdown="mermaid-block-actions"],
+[data-streamdown="mermaid-fullscreen"] [data-streamdown="mermaid-block-actions"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--ink-850);
+  padding: 4px 6px;
+}
+.chat-markdown [data-streamdown="mermaid-block-actions"] button,
+[data-streamdown="mermaid-fullscreen"] [data-streamdown="mermaid-block-actions"] button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  background: transparent;
+  border: none;
+  color: var(--bone-400);
+  cursor: pointer;
+}
+.chat-markdown [data-streamdown="mermaid-block-actions"] button:hover,
+[data-streamdown="mermaid-fullscreen"] [data-streamdown="mermaid-block-actions"] button:hover {
+  color: var(--bone-100);
+}
+
+/* Fullscreen overlays: fixed inset-0 + flex-col are Tailwind-only.
+ * NOTE: .chat-app-topbar (44px, -webkit-app-region: drag) sits over the
+ * viewport top in the chat window; drag regions swallow mouse events
+ * regardless of z-index. The overlay must opt out and pad its controls
+ * below the drag band, or copy/download/fullscreen buttons are dead. */
+[data-streamdown="table-fullscreen"],
+[data-streamdown="mermaid-fullscreen"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--ink-900);
+  color: var(--bone-200);
+  -webkit-app-region: no-drag;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin: 0;
+  padding: 56px 16px 16px; /* top padding clears the 44px drag band */
+  border: none;
+  overflow: hidden;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > div:first-child > div {
+  position: relative;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > div:nth-child(2) {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-header-cell"] {
   background: rgba(255, 255, 255, 0.04);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
-}
-.chat-markdown tr:last-child td {
-  border-bottom: none;
+  white-space: nowrap;
 }
 
-.chat-markdown-streaming .md-stream-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: rgba(160, 140, 255, 0.9);
-  animation: md-cursor-blink 1s step-end infinite;
+/* Portal renders into <body>, outside .chat-markdown — dropdown menus and
+ * icon buttons inside fullscreen need unscoped selectors. */
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] [class*="absolute"] {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  min-width: 120px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-850);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
-@keyframes md-cursor-blink {
-  50% { opacity: 0; }
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] [class*="absolute"] button {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] [class*="absolute"] button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Mermaid fullscreen: center diagram; controls pinned top-right. */
+[data-streamdown="mermaid-fullscreen"] {
+  align-items: center;
+  justify-content: center;
+}
+[data-streamdown="mermaid-fullscreen"] > div:first-child {
+  position: absolute;
+  top: 56px; /* below the 44px titlebar drag band */
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-markdown [data-streamdown="mermaid-block"] {
+  margin: 0.6em 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--ink-850);
+  padding: 8px;
+}
+.chat-markdown [data-streamdown="mermaid-block"] > div:first-child {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  color: var(--bone-500);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-transform: lowercase;
+}
+.chat-markdown [data-streamdown="mermaid-block"] [data-streamdown="mermaid"] {
+  margin: 0;
+}
+
+/* KaTeX / mermaid containers */
+.chat-markdown .katex-display {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.chat-markdown [data-streamdown="mermaid"] {
+  margin: 0.6em 0;
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.chat-markdown [data-streamdown="mermaid"] svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* User bubble: simpler markdown */
@@ -197,7 +471,7 @@
 .msg-user .chat-markdown a {
   color: rgba(230, 220, 255, 1);
 }
-.msg-user .md-inline-code {
+.msg-user .chat-markdown [data-streamdown="inline-code"] {
   background: rgba(0, 0, 0, 0.25);
   border-color: rgba(255, 255, 255, 0.15);
 }

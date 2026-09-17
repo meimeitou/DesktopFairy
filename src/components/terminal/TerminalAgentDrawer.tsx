@@ -7,7 +7,7 @@ import {
   type PointerEvent,
 } from "react";
 import MessageList, { type MessageListHandle } from "../chat/MessageList";
-import { TerminalStopContext } from "../chat/agentTools/TerminalStopContext";
+import { ToolCancelContext } from "../chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
@@ -940,12 +940,9 @@ export default function TerminalAgentDrawer({
     }
   }, [activeTabId]);
 
-  const handleStopTerminal = useCallback(() => {
-    const sid = getActiveSessionId();
-    if (sid) {
-      void api.invoke("terminal:agent:stop", { sessionId: sid });
-    }
-  }, [getActiveSessionId]);
+  const handleCancelTool = useCallback((toolCallId: string) => {
+    void api.invoke("agent:tool:cancel", { toolCallId });
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1137,27 +1134,26 @@ export default function TerminalAgentDrawer({
             </button>
           </div>
         </div>
-
-        <TerminalStopContext.Provider value={handleStopTerminal}>
-          <MessageList
-            ref={messageListRef}
-            className="terminal-agent-messages"
-            messages={activeState.messages}
-            streaming={activeState.streaming}
-            onApprove={handleApproveTool}
-            onDeny={handleDenyTool}
-            onAlwaysAllow={handleAlwaysAllowTool}
-            onAnswer={submitToolAnswer}
-            submittingApprovalId={submittingApprovalId}
-            alwaysAllowLabel="本次全部允许"
-            onRetry={activeState.streaming ? undefined : handleRetry}
-            onStartEdit={activeState.streaming ? undefined : handleStartEdit}
-            onConfirmEdit={handleConfirmEdit}
-            onCancelEdit={handleCancelEdit}
-            editingMsgId={editingMsgId}
-            emptyContent={emptyContent}
-          />
-        </TerminalStopContext.Provider>
+        <ToolCancelContext.Provider value={handleCancelTool}>
+            <MessageList
+              ref={messageListRef}
+              className="terminal-agent-messages"
+              messages={activeState.messages}
+              streaming={activeState.streaming}
+              onApprove={handleApproveTool}
+              onDeny={handleDenyTool}
+              onAlwaysAllow={handleAlwaysAllowTool}
+              onAnswer={submitToolAnswer}
+              submittingApprovalId={submittingApprovalId}
+              alwaysAllowLabel="本次全部允许"
+              onRetry={activeState.streaming ? undefined : handleRetry}
+              onStartEdit={activeState.streaming ? undefined : handleStartEdit}
+              onConfirmEdit={handleConfirmEdit}
+              onCancelEdit={handleCancelEdit}
+              editingMsgId={editingMsgId}
+              emptyContent={emptyContent}
+            />
+        </ToolCancelContext.Provider>
 
         <div
           ref={dockRef}

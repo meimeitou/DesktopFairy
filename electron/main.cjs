@@ -37,6 +37,10 @@ const { registerSshHandlers, killAllSshSessions } = require('./sshService.cjs');
 const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
 const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
 const { registerAiStreamHandlers, abortAllAiStreams } = require('./aiStreamService.cjs');
+const {
+  registerToolAbortHandlers,
+  clearAllToolAborts,
+} = require('./agentToolAbort.cjs');
 const { registerToolApprovalHandlers } = require('./agentToolApproval.cjs');
 const { registerMcpServerHandlers } = require('./mcpServerService.cjs');
 const { registerMcpRuntimeHandlers, disposeAll: disposeAllMcpClients } = require('./mcpRuntimeService.cjs');
@@ -656,6 +660,7 @@ const setupIPC = () => {
   registerMcpServerHandlers(ipcMain);
   registerMcpRuntimeHandlers(ipcMain);
   registerAgentAvatarHandlers(ipcMain);
+  registerToolAbortHandlers(ipcMain);
   registerToolApprovalHandlers(ipcMain);
   registerAgentHandlers(ipcMain, {
     getWindows: getScreenshotWindows,
@@ -1161,8 +1166,18 @@ app.whenReady().then(() => {
     let reloadTimer = null;
     fs.watch(__dirname, { recursive: true }, (_evt, file) => {
       if (!file || !file.endsWith('.cjs')) return;
-      if (reloadTimer) clearTimeout(reloadTimer);
+      clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => {
+        // Under `npm run dev` concurrently --kill-others, relaunch+exit kills
+        // vite too (relaunched child escapes the tree). Only relaunch when
+        // running standalone (direct `electron .`).
+        const supervised = process.env.npm_lifecycle_event != null;
+        if (supervised) {
+          console.log(
+            `[hot-reload] ${file} changed — main-process change; restart \`make dev\` to pick it up`,
+          );
+          return;
+        }
         console.log(`[hot-reload] ${file} changed, restarting…`);
         app.relaunch();
         app.exit(0);
@@ -1285,6 +1300,7 @@ app.on('before-quit', () => {
   isQuitting = true;
   killAllSessions();
   killAllSshSessions();
+  clearAllToolAborts();
   abortAllAgentRuns();
   abortAllAiStreams();
   disposeAllMcpClients();

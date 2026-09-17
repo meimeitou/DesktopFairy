@@ -11,7 +11,7 @@ import TopicSidebar from "../components/chat/TopicSidebar";
 import MessageList, {
   type MessageListHandle,
 } from "../components/chat/MessageList";
-import { TerminalStopContext } from "../components/chat/agentTools/TerminalStopContext";
+import { ToolCancelContext } from "../components/chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../hooks/useToolApproval";
 import { createStreamChunkBuffer } from "../hooks/createStreamChunkBuffer";
 import type { ToolTerminalState } from "../shared/ai/stream";
@@ -1527,6 +1527,10 @@ export default function ChatPage({
     }
   }, []);
 
+  const handleCancelTool = useCallback((toolCallId: string) => {
+    void api.invoke("agent:tool:cancel", { toolCallId });
+  }, []);
+
   const handleClearContext = useCallback(() => {
     const topicId = activeTopicIdRef.current;
     if (!topicId) return;
@@ -1761,33 +1765,33 @@ export default function ChatPage({
         />
       )}
       <div className="chat-main-area">
-        <TerminalStopContext.Provider value={handleStop}>
-          <MessageList
-            ref={messageListRef}
-            messages={messages}
-            streaming={streaming}
-            invalidAttachmentPaths={invalidAttachmentPaths}
-            onApprove={handleApproveTool}
-            onDeny={handleDenyTool}
-            onAlwaysAllow={handleAlwaysAllowTool}
-            onAnswer={submitToolAnswer}
-            submittingApprovalId={submittingApprovalId}
-            onRetry={streaming ? undefined : handleRetry}
-            onStartEdit={streaming ? undefined : handleStartEdit}
-            onConfirmEdit={handleConfirmEdit}
-            onCancelEdit={handleCancelEdit}
-            editingMsgId={editingMsgId}
-            onDelete={handleDeleteMessage}
-            onOpenCitation={(citation) => {
-              window.dispatchEvent(
-                new CustomEvent("knowledge:reveal", {
-                  detail: { baseId: citation.baseId, itemId: citation.itemId },
-                }),
-              );
-            }}
-            emptyContent={emptyContent}
-          />
-        </TerminalStopContext.Provider>
+        <ToolCancelContext.Provider value={handleCancelTool}>
+            <MessageList
+              ref={messageListRef}
+              messages={messages}
+              streaming={streaming}
+              invalidAttachmentPaths={invalidAttachmentPaths}
+              onApprove={handleApproveTool}
+              onDeny={handleDenyTool}
+              onAlwaysAllow={handleAlwaysAllowTool}
+              onAnswer={submitToolAnswer}
+              submittingApprovalId={submittingApprovalId}
+              onRetry={streaming ? undefined : handleRetry}
+              onStartEdit={streaming ? undefined : handleStartEdit}
+              onConfirmEdit={handleConfirmEdit}
+              onCancelEdit={handleCancelEdit}
+              editingMsgId={editingMsgId}
+              onDelete={handleDeleteMessage}
+              onOpenCitation={(citation) => {
+                window.dispatchEvent(
+                  new CustomEvent("knowledge:reveal", {
+                    detail: { baseId: citation.baseId, itemId: citation.itemId },
+                  }),
+                );
+              }}
+              emptyContent={emptyContent}
+            />
+        </ToolCancelContext.Provider>
 
         {activeTopicId &&
           maxTurnsPendingTopics.has(activeTopicId) &&

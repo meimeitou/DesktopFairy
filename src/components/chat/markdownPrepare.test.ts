@@ -3,11 +3,7 @@ import remarkCjkFriendly from "remark-cjk-friendly";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import {
-  closeOpenCodeFence,
-  normalizeGfmTables,
-  prepareStreamingMarkdown,
-} from "./markdownPrepare";
+import { normalizeGfmTables } from "./markdownPrepare";
 
 type MdNode = { type?: string; children?: MdNode[] };
 
@@ -40,25 +36,6 @@ const USER_REPORT = `有两条路线：
 | A. 苹果内购 | 商家用美区 ID，走 内购给你的账号订阅 | 低（通道，OpenAI 不拦） |
 | B. AuthSession / Token | 你在自己浏览器登录 chatgpt.com，复制一段临时 JSON 会话令牌给，平台完成支付 | 中（是敏感凭证，用完必须退出登） |`;
 
-describe("closeOpenCodeFence", () => {
-  it("closes an open ``` fence so partial code blocks render", () => {
-    expect(closeOpenCodeFence("before\n```ts\nconst x = 1;")).toBe(
-      "before\n```ts\nconst x = 1;\n```",
-    );
-  });
-
-  it("closes ~~~ fences and treats ``` inside a ~~~ block as content", () => {
-    expect(closeOpenCodeFence("~~~\n```\ncode")).toBe("~~~\n```\ncode\n~~~");
-    expect(closeOpenCodeFence("before\n~~~ts\nconst x = 1;")).toBe(
-      "before\n~~~ts\nconst x = 1;\n~~~",
-    );
-  });
-
-  it("does not double-close a finished fence", () => {
-    const src = "```ts\nconst x = 1;\n```";
-    expect(closeOpenCodeFence(src)).toBe(src);
-  });
-});
 
 describe("normalizeGfmTables", () => {
   it("inserts a blank line between a list item and a flush-left table", () => {
@@ -108,17 +85,10 @@ describe("normalizeGfmTables", () => {
   });
 });
 
-describe("prepareStreamingMarkdown", () => {
-  it("completes bold via remend and closes open fences", () => {
-    expect(prepareStreamingMarkdown("hello **world")).toContain("**world**");
-    const out = prepareStreamingMarkdown("before\n```ts\nconst x = 1;");
-    expect(out.trimEnd().endsWith("```")).toBe(true);
-  });
-
+describe("normalizeGfmTables (user report regression)", () => {
   it("turns the user-reported list+table into a real GFM table", () => {
     // pre-fix: the table rides the list as lazy continuation → no table node
     expect(parseTableCount(USER_REPORT)).toBe(0);
     expect(parseTableCount(normalizeGfmTables(USER_REPORT))).toBe(1);
-    expect(parseTableCount(prepareStreamingMarkdown(USER_REPORT))).toBe(1);
   });
 });
