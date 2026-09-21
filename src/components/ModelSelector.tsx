@@ -1,10 +1,5 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Button, Icon, Input } from "animal-island-ui";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./ModelSelector.css";
 
 interface Props {
@@ -16,6 +11,10 @@ interface Props {
   disabled?: boolean;
   /** Optional display labels keyed by model value. Falls back to the value itself. */
   modelLabels?: Record<string, string>;
+  /** Panel placement: "up-left" opens upward right-aligned (bottom toolbars); "auto" picks by viewport. */
+  panelDirection?: "up-left" | "auto";
+  /** Trigger skin: "toolbar" = borderless inline (chat/terminal toolbars); "field" = input-like box (settings). */
+  variant?: "toolbar" | "field";
 }
 
 export default function ModelSelector({
@@ -26,6 +25,8 @@ export default function ModelSelector({
   allowCustom = true,
   disabled = false,
   modelLabels,
+  panelDirection = "auto",
+  variant = "field",
 }: Props) {
   const [query, setQuery] = useState("");
   // null = auto (custom when value is outside the list); explicit overrides from buttons.
@@ -39,7 +40,6 @@ export default function ModelSelector({
   const [dropUp, setDropUp] = useState(false);
   const [alignEnd, setAlignEnd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -89,27 +89,26 @@ export default function ModelSelector({
     if (!open) setQuery("");
   }, [open]);
 
-  // Focus the search field on open and pick a direction that fits the viewport.
   useLayoutEffect(() => {
     if (!open) return;
-    if (searchRef.current) searchRef.current.focus();
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceRight = window.innerWidth - rect.right;
-      const spaceLeft = rect.left;
-      setDropUp(rect.top > spaceBelow);
-      // Prefer expanding toward the side with more room (chat toolbar sits on the right).
-      setAlignEnd(spaceLeft >= spaceRight);
-    }
-  }, [open]);
+    containerRef.current?.querySelector("input")?.focus();
+    if (panelDirection !== "auto" || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceRight = window.innerWidth - rect.right;
+    const spaceLeft = rect.left;
+    setDropUp(rect.top > spaceBelow);
+    // Prefer expanding toward the side with more room (chat toolbar sits on the right).
+    setAlignEnd(spaceLeft >= spaceRight);
+  }, [open, panelDirection]);
 
   if (useCustom) {
     return (
       <div className="model-selector">
         <div className="model-selector-row">
-          <input
+          <Input
             type="text"
+            shadow
             className="model-selector-input"
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -117,13 +116,14 @@ export default function ModelSelector({
             disabled={disabled}
           />
           {models.length > 0 && (
-            <button
-              type="button"
+            <Button
+              type="text"
+              size="small"
               className="model-selector-mode-btn"
               onClick={() => setModeOverride("list")}
             >
               从列表选择
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -137,9 +137,7 @@ export default function ModelSelector({
   // Show the current custom (non-listed) value as the first entry so users can
   // see and keep it when search is empty or matches it.
   const customValue =
-    effectiveValue && !models.includes(effectiveValue)
-      ? effectiveValue
-      : null;
+    effectiveValue && !models.includes(effectiveValue) ? effectiveValue : null;
   const customLabel = customValue
     ? (modelLabels?.[customValue] ?? customValue)
     : null;
@@ -153,13 +151,13 @@ export default function ModelSelector({
       <div className="model-selector-row">
         <div
           className={`model-selector-combo${open ? " open" : ""}${
-            dropUp ? " drop-up" : ""
-          }${alignEnd ? " align-end" : ""}`}
+            panelDirection === "up-left" || dropUp ? " drop-up" : ""
+          }${panelDirection === "up-left" || alignEnd ? " align-end" : ""}`}
           ref={containerRef}
         >
-          <button
-            type="button"
-            className="model-selector-trigger"
+          <Button
+            type="text"
+            className={`model-selector-trigger variant-${variant}`}
             onClick={() => !disabled && setOpen((o) => !o)}
             disabled={disabled}
           >
@@ -172,16 +170,16 @@ export default function ModelSelector({
               {selectedLabel}
             </span>
             <span className="model-selector-caret" aria-hidden="true">
-              ▾
+              <Icon name="Play" size={10} />
             </span>
-          </button>
+          </Button>
           {open && (
             <div className="model-selector-panel" role="listbox">
               <div className="model-selector-search-wrap">
-                <input
-                  ref={searchRef}
+                <Input
                   type="search"
-                  className="model-selector-search"
+                  shadow
+                  allowClear
                   placeholder="搜索模型…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -189,8 +187,8 @@ export default function ModelSelector({
               </div>
               <div className="model-selector-list">
                 {showCustomEntry && customLabel && customValue && (
-                  <button
-                    type="button"
+                  <Button
+                    type="text"
                     role="option"
                     aria-selected
                     className="model-selector-option selected"
@@ -201,15 +199,15 @@ export default function ModelSelector({
                     }}
                   >
                     {customLabel}
-                  </button>
+                  </Button>
                 )}
                 {filtered.length === 0 && !showCustomEntry ? (
                   <div className="model-selector-empty">无匹配模型</div>
                 ) : (
                   filtered.map((m) => (
-                    <button
+                    <Button
                       key={m}
-                      type="button"
+                      type="text"
                       role="option"
                       aria-selected={m === effectiveValue}
                       className={`model-selector-option${
@@ -223,7 +221,7 @@ export default function ModelSelector({
                       }}
                     >
                       {modelLabels?.[m] ?? m}
-                    </button>
+                    </Button>
                   ))
                 )}
               </div>
@@ -231,13 +229,14 @@ export default function ModelSelector({
           )}
         </div>
         {allowCustom && (
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="model-selector-mode-btn"
             onClick={() => setModeOverride("custom")}
           >
             自定义
-          </button>
+          </Button>
         )}
       </div>
     </div>

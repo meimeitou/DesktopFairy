@@ -1,3 +1,4 @@
+import { Button, Icon, Switch } from "animal-island-ui";
 import { useState, useEffect } from "react";
 import ProviderSettingsSection from "../components/settings/ProviderSettingsSection";
 import AgentSettingsSection from "../components/settings/agent/AgentSettingsSection";
@@ -32,172 +33,22 @@ interface MenuItem {
   icon: React.ReactNode;
 }
 
-function CloudIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-    </svg>
-  );
-}
-
-function SparkleIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 3l1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275L12 3z" />
-    </svg>
-  );
-}
-
-function ScissorsIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="6" cy="6" r="3" />
-      <circle cx="6" cy="18" r="3" />
-      <line x1="20" y1="4" x2="8.12" y2="15.88" />
-      <line x1="14.47" y1="14.48" x2="20" y2="20" />
-      <line x1="8.12" y1="8.12" x2="12" y2="12" />
-    </svg>
-  );
-}
-
-function MaskIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2 12a5 5 0 0 0 5 5 8 8 0 0 1 5 2 8 8 0 0 1 5-2 5 5 0 0 0 5-5V7h-20v5z" />
-      <path d="M6 11c1.5 0 3 .5 3 2-2 0-3 1-3 1" />
-      <path d="M18 11c-1.5 0-3 .5-3 2 2 0 3 1 3 1" />
-    </svg>
-  );
-}
-
-function InfoIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="16" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12.01" y2="8" />
-    </svg>
-  );
-}
-
-function KeyboardIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="2" y="6" width="20" height="12" rx="2" />
-      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8" />
-    </svg>
-  );
-}
-
-function EarthIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-    </svg>
-  );
-}
-
-function FileProcIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-    </svg>
-  );
-}
-
 const MENU_PRIMARY: MenuItem[] = [
-  { id: "model", label: "AI 模型", icon: <CloudIcon /> },
-  { id: "agent", label: "智能体", icon: <SparkleIcon /> },
-  { id: "websearch", label: "网络搜索", icon: <EarthIcon /> },
-  { id: "fileProcessing", label: "文档处理", icon: <FileProcIcon /> },
-  { id: "selection", label: "划词助手", icon: <ScissorsIcon /> },
+  { id: "model", label: "AI 模型", icon: <Icon name="Cloud" size={16} /> },
+  { id: "agent", label: "智能体", icon: <Icon name="Star" size={16} /> },
+  { id: "websearch", label: "网络搜索", icon: <Icon name="Globe" size={16} /> },
+  { id: "fileProcessing", label: "文档处理", icon: <Icon name="File" size={16} /> },
+  { id: "selection", label: "划词助手", icon: <Icon name="Pencil" size={16} /> },
 ];
 
 const MENU_SECONDARY: MenuItem[] = [
-  { id: "character", label: "Live2D 配置", icon: <MaskIcon /> },
-  { id: "shortcut", label: "快捷键", icon: <KeyboardIcon /> },
-  { id: "about", label: "关于", icon: <InfoIcon /> },
+  { id: "character", label: "Live2D 配置", icon: <Icon name="Cat" size={16} /> },
+  { id: "shortcut", label: "快捷键", icon: <Icon name="Bell" size={16} /> },
+  { id: "about", label: "关于", icon: <Icon name="Bulb" size={16} /> },
 ];
 
 const TAB_META: Record<SettingsTab, { title: string; desc: string }> = {
-  model: { title: "AI 模型", desc: "配置模型服务商、API 密钥与默认模型" },
+  model: { title: "AI 模型", desc: "配置模型服务商、API 密钥与可用模型" },
   agent: { title: "智能体", desc: "定义人格、技能、工具与执行策略" },
   websearch: { title: "网络搜索", desc: "让智能体在回答时检索网络资料" },
   fileProcessing: { title: "文档处理", desc: "选择处理器并配置凭证" },
@@ -221,15 +72,15 @@ function SettingsSidebar({
   onSelect: (tab: SettingsTab) => void;
 }) {
   const renderItem = (item: MenuItem) => (
-    <button
+    <Button
       key={item.id}
-      type="button"
+      type="text"
       className={`settings-menu-item${active === item.id ? " active" : ""}`}
       onClick={() => onSelect(item.id)}
     >
       <span className="settings-menu-icon">{item.icon}</span>
       <span className="settings-menu-label">{item.label}</span>
-    </button>
+    </Button>
   );
 
   return (
@@ -323,7 +174,6 @@ export default function SettingsPage({
               <li className="done">智能体</li>
               <li className="done">AI 模型</li>
               <li className="done">知识库</li>
-              <li className="done">语音播报</li>
             </ul>
           </section>
         );
@@ -340,17 +190,11 @@ export default function SettingsPage({
           <div className="settings-page-title-row">
             <h1 className="settings-page-title">{TAB_META[activeTab].title}</h1>
             {activeTab === "selection" && (
-              <label className="toggle" title="启用划词助手">
-                <input
-                  type="checkbox"
-                  checked={settings.selectionEnabled}
-                  onChange={(e) =>
-                    update({ selectionEnabled: e.target.checked })
-                  }
-                  aria-label="启用划词助手"
-                />
-                <span className="toggle-track" />
-              </label>
+              <Switch
+                checked={settings.selectionEnabled}
+                onChange={(checked) => update({ selectionEnabled: checked })}
+                aria-label="启用划词助手"
+              />
             )}
           </div>
           <p className="settings-page-desc">{TAB_META[activeTab].desc}</p>
@@ -381,23 +225,14 @@ export default function SettingsPage({
         <span className="app-name" data-tauri-drag-region>
           设置
         </span>
-        <button
+        <Button
+          type="text"
+          size="small"
           className="icon-btn close-btn"
+          icon={<Icon name="Close" size={14} />}
           onClick={onClose ?? (() => window.close())}
           title="关闭"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        />
       </div>
       {layout}
     </div>

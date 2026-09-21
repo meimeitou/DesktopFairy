@@ -84,13 +84,13 @@ function createBrowserWindow() {
     center: true,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0f0f19',
+    backgroundColor: '#f5f8e0',
     ...(process.platform === 'darwin'
       ? {
           titleBarStyle: 'hidden',
           titleBarOverlay: {
-            color: '#0f0f19',
-            symbolColor: 'rgba(255, 255, 255, 0.72)',
+            color: '#f5f8e0',
+            symbolColor: 'rgba(74, 54, 32, 0.75)',
             height: 44,
           },
           trafficLightPosition: { x: 14, y: 13 },

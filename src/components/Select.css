@@ -1,0 +1,168 @@
+/* 自建 Select：视觉沿用 ModelSelector 面板语言（奶白毛玻璃 + hairline），
+   面板向上/向下展开，弹窗内不会被裁切。 */
+
+.df-select {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.df-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 14px;
+  background: #faf8f3;
+  border: 1px solid var(--hairline-strong);
+  border-bottom: none;
+  border-radius: 12px;
+  box-shadow: 0 3px #d4c9b4;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-100);
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    background 0.15s;
+}
+
+.df-select-trigger:hover:not(:disabled) {
+  background: #fdfcf9;
+}
+
+
+.df-select-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.df-select.open .df-select-trigger,
+.df-select-trigger:focus-visible {
+  border-color: var(--persimmon-focus);
+  box-shadow: 0 3px var(--persimmon);
+}
+
+.df-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.df-select-value.placeholder {
+  color: var(--bone-600);
+  font-weight: 400;
+}
+
+.df-select-caret {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  font-size: 10px;
+  color: var(--bone-500);
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+
+.df-select.open .df-select-caret {
+  transform: rotate(-90deg);
+  color: var(--persimmon);
+}
+
+/* Options panel — expands up/down, never sideways. */
+.df-select-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: rgba(248, 244, 232, 0.98);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  box-shadow:
+    0 12px 32px rgba(121, 79, 39, 0.23),
+    0 2px 6px rgba(121, 79, 39, 0.13);
+  z-index: 1000;
+  animation: df-select-in 0.12s ease;
+}
+
+.df-select.drop-up .df-select-list {
+  top: auto;
+  bottom: calc(100% + 4px);
+  animation: df-select-in-up 0.12s ease;
+}
+
+@keyframes df-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes df-select-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.df-select-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--bone-200);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  outline: none;
+}
+
+.df-select-option.active {
+  background: var(--persimmon-softer);
+}
+
+.df-select-option.selected {
+  color: var(--bone-100);
+  font-weight: 600;
+}
+
+.df-select-option.selected.active {
+  background: var(--persimmon-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .df-select-list,
+  .df-select.drop-up .df-select-list,
+  .df-select-caret {
+    animation: none;
+    transition: none;
+  }
+}

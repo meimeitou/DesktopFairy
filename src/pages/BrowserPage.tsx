@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./BrowserPage.css";
 
@@ -203,9 +204,9 @@ export default function BrowserPage() {
       <header className="browser-topbar">
         <div className="browser-tabstrip">
           {tabs.map((tab) => (
-            <button
+            <Button
               key={tab.id}
-              type="button"
+              type="text"
               className={`browser-tab${tab.id === activeTabId ? " active" : ""}`}
               onClick={() => setActiveTabId(tab.id)}
               title={tab.url}
@@ -223,16 +224,16 @@ export default function BrowserPage() {
               >
                 ×
               </span>
-            </button>
+            </Button>
           ))}
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="browser-tab-add"
             onClick={handleNewTab}
             title="新标签页"
-          >
-            +
-          </button>
+            icon={<Icon name="Plus" size={16} />}
+          />
         </div>
         <div className="browser-topbar-drag" aria-hidden />
       </header>
@@ -248,24 +249,26 @@ export default function BrowserPage() {
           onFocus={(e) => e.target.select()}
           onClick={(e) => e.currentTarget.select()}
         />
-        <button
-          type="button"
+        <Button
+          type="text"
+          size="small"
           className="browser-url-action"
           onClick={handleCopyUrl}
           disabled={!displayUrl}
           title="复制链接"
         >
           {copied ? "已复制" : "复制"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          type="text"
+          size="small"
           className="browser-url-action"
           onClick={handleOpenExternal}
           disabled={!displayUrl}
           title="在默认浏览器打开"
         >
           浏览器打开
-        </button>
+        </Button>
       </div>
 
       <main className="browser-content">

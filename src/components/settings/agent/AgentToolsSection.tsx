@@ -1,3 +1,4 @@
+import { Button, Input, Switch } from "animal-island-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import HintTip from "../../HintTip";
 import {
@@ -40,7 +41,7 @@ function newMcpId() {
 const MCP_STATUS_COLOR: Record<McpRuntimeState, string> = {
   connected: "#4ade80",
   connecting: "#facc15",
-  error: "#f87171",
+  error: "#e05a5a",
   disabled: "#6b7280",
 };
 
@@ -319,13 +320,9 @@ export default function AgentToolsSection({
         <>
           <div className="agent-tool-search-row">
             <div className="field agent-tool-search">
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索…"
-                aria-label="搜索内置工具"
-              />
+              <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索…"
+              aria-label="搜索内置工具" />
             </div>
             <HintTip
               tip={
@@ -409,13 +406,14 @@ export default function AgentToolsSection({
                           <strong>{preset.name}</strong>
                           {preset.description && <p>{preset.description}</p>}
                         </div>
-                        <button
-                          type="button"
+                        <Button
+                          type="default"
+                          size="small"
                           className="agent-catalog-add-btn"
                           onClick={() => void installBuiltinMcp(preset.id)}
                         >
                           安装
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
@@ -428,13 +426,14 @@ export default function AgentToolsSection({
                     服务器
                     <HintTip tip="全局启停 MCP 进程。绑定到智能体与此处开关相互独立。" />
                   </span>
-                  <button
-                    type="button"
+                  <Button
+                    type="default"
+                    size="small"
                     className="agent-catalog-add-btn"
                     onClick={() => startAddMcp()}
                   >
                     + 自定义
-                  </button>
+                  </Button>
                 </div>
                 <ul className="agent-toggle-list">
                   {mcpServers
@@ -460,54 +459,55 @@ export default function AgentToolsSection({
                           </p>
                         </div>
                         <div className="agent-catalog-actions">
-                          <button
-                            type="button"
-                            className="agent-catalog-add-btn small"
+                          <Button
+                            type="default"
+                            size="small"
+                            className="agent-catalog-add-btn"
                             onClick={() => startEditMcp(server)}
                           >
                             编辑
-                          </button>
+                          </Button>
                           {server.isActive !== false && (
                             <>
-                              <button
-                                type="button"
+                              <Button
+                                type="text"
+                                size="small"
                                 className="agent-mcp-action-btn"
                                 disabled={loadingServerOps.has(server.id)}
                                 onClick={() => void handleRestartServer(server.id)}
                               >
                                 重启
-                              </button>
-                              <button
-                                type="button"
+                              </Button>
+                              <Button
+                                type="text"
+                                size="small"
                                 className="agent-mcp-action-btn"
                                 disabled={loadingServerOps.has(server.id)}
                                 onClick={() => void handleStopServer(server.id)}
                               >
                                 停止
-                              </button>
+                              </Button>
                             </>
                           )}
-                          <label
-                            className="toggle agent-toggle-switch"
-                            title={server.isActive !== false ? "全局启用" : "全局禁用"}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={server.isActive !== false}
-                              onChange={(e) =>
-                                void toggleMcpActive(server, e.target.checked)
-                              }
-                            />
-                            <span className="toggle-track" />
-                          </label>
+                          <Switch
+                            checked={server.isActive !== false}
+                            onChange={(checked) =>
+                              void toggleMcpActive(server, checked)
+                            }
+                            aria-label={
+                              server.isActive !== false ? "全局启用" : "全局禁用"
+                            }
+                          />
                           {server.installSource !== "builtin" && (
-                            <button
-                              type="button"
+                            <Button
+                              type="default"
+                              size="small"
+                              danger
                               className="agent-catalog-remove"
                               onClick={() => void deleteMcp(server.id)}
                             >
                               删除
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </li>

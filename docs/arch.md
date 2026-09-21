@@ -42,7 +42,7 @@
 | 桌面壳 | Electron | 主进程 IPC、托盘、全局快捷键、文件对话框 |
 | UI | React 19 + TypeScript + Vite | 单页多窗口路由（`?window=` 参数） |
 | 角色渲染 | Live2D Cubism SDK (WebGL2) | `Live2DController` → `Live2DModel` |
-| AI 接入 | 主进程 HTTP + IPC 流式回推 | 避免 CORS；OpenAI 兼容（含 Hermes Agent）与 Ollama |
+| AI 接入 | 主进程 HTTP + IPC 流式回推 | 避免 CORS；OpenAI 兼容与 Ollama |
 | 配置存储 | localStorage + 磁盘 JSON | 键名 `da_settings`；主进程同步划词等子系统 |
 
 ---
@@ -151,8 +151,6 @@ SDK 源码：`src/live2d/framework/`（别名 `@framework`），业务代码在 
 
 `Live2DController.applyReaction` 用 `getExpressionNames()` 与当前模型表情列表求交；无匹配时 fallback 随机动作。开启拟人化时，`Live2DCanvas` **关闭** 8 秒随机换表情定时器。
 
-Hermes tools/skills 在 Hermes 服务端执行；Live2D 仅对聊天 UI 生命周期事件反应，不解析 `hermes.tool.progress` SSE。
-
 **模型来源**（`electron/live2dService.cjs` + `src/shared/live2dPaths.ts`）：
 
 | 类型 | settings.modelPath 示例 | 加载方式 |
@@ -207,9 +205,9 @@ interface LlmProvider {
 }
 ```
 
-- 内置 Provider：OpenAI、Ollama、**Hermes Agent**
+- 内置 Provider：OpenAI、Ollama
 - 支持添加自定义 Provider（类型二选一）
-- 设置页：API Host、Key（Ollama 可空）、管理模型、**检测连接**（`chat:check`）
+- 设置页：API Host、Key（Ollama 可空）、管理模型、**检测连接**（`chat:check`，探测模型列表接口，免模型、不消耗 tokens）
 
 **智能体系统提示词**（主进程 `buildAgentSystemPrompt()` in `agentService.cjs`）：
 
@@ -492,7 +490,7 @@ src/
     framework/              # Cubism SDK（勿改）
   shared/
     settings.ts             # AppSettings、load/save、迁移
-    providers.ts            # LlmProvider、URL 工具、Hermes 系统预设
+    providers.ts            # LlmProvider、URL 工具、系统预设
     agent.ts                # AgentConfig、normalize、工具目录
     ai/stream.ts            # ToolTerminalState、AiStreamOpenRequest
     agentBuiltinTools.ts    # 内置工具定义（renderer 端镜像）
@@ -529,7 +527,6 @@ interface AppSettings {
   // AI
   activeProviderId: string;
   providers: LlmProvider[];
-  modelName: string;
   chatBackend: string;          // "agent" | "providerId::modelName"
 
   // 智能体
@@ -564,7 +561,6 @@ interface AppSettings {
   webSearch: WebSearchConfig;
 
   // 其他
-  ttsEnabled: boolean;          // 未实现播放
   deletedSystemProviderIds: string[];
 }
 

@@ -1,6 +1,8 @@
+import { Button, Input, Switch, Tabs } from "animal-island-ui";
+import Select from "../Select";
+import { useConfirm } from "../../hooks/useConfirm";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Checkbox from "../Checkbox";
-import HintTip, { FieldHead } from "../HintTip";
+import { FieldHead } from "../HintTip";
 import type { AppSettings, CustomLive2DModel } from "../../shared/settings";
 import {
   DEFAULT_SETTINGS,
@@ -35,6 +37,8 @@ interface Props {
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
 }
+
+type Live2DSettingsTab = "model" | "behavior" | "window";
 
 const SIZE_PRESETS = [
   { label: "小", width: 80, height: 160 },
@@ -97,7 +101,8 @@ function SizeNumberInput({
   };
 
   return (
-    <input
+    <Input
+      shadow
       type="text"
       inputMode="numeric"
       value={draft}
@@ -152,7 +157,8 @@ function OffsetNumberInput({
   }, [value]);
 
   return (
-    <input
+    <Input
+      shadow
       type="text"
       inputMode="numeric"
       placeholder={placeholder}
@@ -173,9 +179,10 @@ function OffsetNumberInput({
     />
   );
 }
-
 export default function Live2DSettingsSection({ settings, onChange }: Props) {
   const [models, setModels] = useState<Live2DModelOption[]>([]);
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const [activeTab, setActiveTab] = useState<Live2DSettingsTab>("model");
   const [caps, setCaps] = useState<ModelCapabilities>(EMPTY_CAPS);
   const [pickError, setPickError] = useState<string | null>(null);
   const [pickWarning, setPickWarning] = useState<string | null>(null);
@@ -230,10 +237,12 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     const next = { ...settings, ...patch };
     onChange(patch);
     try {
-      const r = (await api.invoke("settings:sync", next)) as {
-        persisted?: boolean;
-        error?: string;
-      } | undefined;
+      const r = (await api.invoke("settings:sync", next)) as
+        | {
+            persisted?: boolean;
+            error?: string;
+          }
+        | undefined;
       if (r && !r.persisted) {
         setPickError(
           `设置未保存到磁盘${r.error ? `：${r.error}` : "，重启后可能丢失"}`,
@@ -310,15 +319,20 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
   };
 
   /** Remove from app settings only; model files on disk are never deleted. */
-  const unlistLocalModel = (model: Live2DModelOption) => {
+  const unlistLocalModel = async (model: Live2DModelOption) => {
     const label = model.name || modelDisplayName(model.path);
-    if (
-      !window.confirm(
-        `确定从应用列表中移除「${label}」吗？\n\n仅从 DesktopFairy 配置中取消引用，不会删除磁盘上的模型文件。`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "移除模型",
+      okText: "移除",
+      content: (
+        <>
+          确定从应用列表中移除「{label}」吗？
+          <br />
+          仅从 DesktopFairy 配置中取消引用，不会删除磁盘上的模型文件。
+        </>
+      ),
+    });
+    if (!ok) return;
     setPickError(null);
     const nextCustom = settings.customModels.filter(
       (m) => m.path !== model.path,
@@ -342,348 +356,398 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     notifyLive2DSpeechBubble(text, "manual");
   };
 
+  const [pathCopied, setPathCopied] = useState(false);
+  const copyModelPath = async () => {
+    try {
+      await navigator.clipboard.writeText(settings.modelPath);
+      setPathCopied(true);
+      setTimeout(() => setPathCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   const hasMotions = caps.motionGroups.length > 0;
   const hasExpressions = caps.expressions.length > 0;
 
+  const tabItems: {
+    key: Live2DSettingsTab;
+    label: string;
+    children: React.ReactNode;
+  }[] = [
+    {
+      key: "model",
+      label: "模型设置",
+      children: (
+        <>
+          <div className="field">
+            <div className="live2d-model-toolbar">
+              <FieldHead hint="选择桌面上的角色。本地模型请选 .model3.json，或包含它的目录。">
+                模型
+              </FieldHead>
+              <Button
+                type="primary"
+                size="small"
+                onClick={() => void browseLocalModel()}
+              >
+                浏览本地
+              </Button>
+            </div>
+            {pickError && (
+              <p className="field-hint field-hint--after warn">{pickError}</p>
+            )}
+            {pickWarning && (
+              <p className="field-hint field-hint--after">{pickWarning}</p>
+            )}
+            {displayModels.length > 0 ? (
+              <div className="model-picker">
+                {displayModels.map((model) => (
+                  <div key={model.path} className="model-picker-item">
+                    <Button
+                      type="text"
+                      className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}${model.missing ? " missing" : ""}`}
+                      onClick={() => selectModel(model)}
+                      title={model.path}
+                      disabled={model.missing}
+                    >
+                      {model.name}
+                      <span className="model-picker-source">
+                        {model.missing
+                          ? "失效"
+                          : model.source === "local"
+                            ? "本地"
+                            : "内置"}
+                      </span>
+                    </Button>
+                    {model.source === "local" && (
+                      <Button
+                        type="text"
+                        size="small"
+                        className="model-picker-remove-btn"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void unlistLocalModel(model);
+                        }}
+                        aria-label={`从应用列表移除 ${model.name}`}
+                      >
+                        ×
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="live2d-status-line">
+                未找到模型。把内置模型放到 public/models/，或浏览本地文件。
+              </p>
+            )}
+          </div>
+
+          <div className="field">
+            <FieldHead hint="当前模型文件的位置，通过上方选择或「浏览本地」修改。">
+              路径
+            </FieldHead>
+            <div className="live2d-path-row">
+              <code className="live2d-path-text" title={settings.modelPath}>
+                {settings.modelPath || "未选择模型"}
+              </code>
+              <Button
+                type="text"
+                size="small"
+                disabled={!settings.modelPath}
+                onClick={() => void copyModelPath()}
+              >
+                {pathCopied ? "已复制" : "复制"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="field">
+            <FieldHead hint="试播当前模型的动作与表情。模型未配置时按钮不可用。">
+              试演
+            </FieldHead>
+            <div className="live2d-action-row">
+              <Button
+                type="default"
+                size="small"
+                onClick={() => sendCommand("random_motion")}
+                disabled={!hasMotions}
+                title={hasMotions ? "随机播放动作" : "当前模型未配置动作"}
+              >
+                切换动作
+              </Button>
+              <Button
+                type="default"
+                size="small"
+                onClick={() => sendCommand("next_expression")}
+                disabled={!hasExpressions}
+                title={
+                  hasExpressions
+                    ? `依次切换表情（共 ${caps.expressions.length} 个）`
+                    : "当前模型未配置表情"
+                }
+              >
+                下一个表情
+              </Button>
+            </div>
+            {!hasMotions && !hasExpressions ? (
+              <p className="live2d-status-line">当前模型没有动作或表情。</p>
+            ) : hasExpressions ? (
+              <ul className="live2d-cap-chips">
+                {caps.expressions.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: "behavior",
+      label: "动作对话设置",
+      children: (
+        <>
+          <div className="live2d-checks">
+            <div className="live2d-check">
+              <FieldHead hint="聊天时角色自动切换表情，匹配对话情绪。关闭后表情随机播放。">
+                拟人化反应
+              </FieldHead>
+              <Switch
+                checked={settings.live2dReactive}
+                onChange={(live2dReactive) => onChange({ live2dReactive })}
+                aria-label="拟人化反应"
+              />
+            </div>
+            <div className="live2d-check">
+              <FieldHead hint="在角色头顶显示 AI 回复摘要等短句。">
+                头顶对话框
+              </FieldHead>
+              <Switch
+                checked={settings.live2dSpeechBubble}
+                onChange={(live2dSpeechBubble) =>
+                  onChange({ live2dSpeechBubble })
+                }
+                aria-label="头顶对话框"
+              />
+            </div>
+          </div>
+
+          {settings.live2dSpeechBubble && (
+            <div className="live2d-bubble-extras">
+              <div className="field">
+                <FieldHead
+                  htmlFor="live2d-bubble-max"
+                  hint="超出的文字会被截断。范围 20–120。"
+                >
+                  最大字数
+                </FieldHead>
+                <div className="field-number-row">
+                  <Input
+                    shadow
+                    id="live2d-bubble-max"
+                    type="number"
+                    min={20}
+                    max={120}
+                    value={settings.live2dSpeechBubbleMaxChars}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") return;
+                      onChange({
+                        live2dSpeechBubbleMaxChars:
+                          normalizeSpeechBubbleMaxChars(Number(raw)),
+                      });
+                    }}
+                    onBlur={(e) => {
+                      onChange({
+                        live2dSpeechBubbleMaxChars:
+                          normalizeSpeechBubbleMaxChars(Number(e.target.value)),
+                      });
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="live2d-bubble-test">
+                <Input
+                  shadow
+                  type="text"
+                  value={bubbleTestText}
+                  onChange={(e) => setBubbleTestText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") testSpeechBubble();
+                  }}
+                  placeholder={DEFAULT_SPEECH_BUBBLE_TEST_TEXT}
+                  aria-label="对话框测试文字"
+                />
+                <Button type="default" size="small" onClick={testSpeechBubble}>
+                  测试
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "window",
+      label: "窗口设置",
+      children: (
+        <>
+          <div className="live2d-stage">
+            <div className="field">
+              <FieldHead hint="桌宠窗口的像素尺寸。可点预设，或自己填宽高。">
+                窗口大小
+              </FieldHead>
+              <div className="size-presets">
+                {SIZE_PRESETS.map((p) => (
+                  <Button
+                    key={p.label}
+                    type="text"
+                    className={`size-preset-btn${settings.windowWidth === p.width && settings.windowHeight === p.height ? " active" : ""}`}
+                    onClick={() => {
+                      onChange({
+                        windowWidth: p.width,
+                        windowHeight: p.height,
+                      });
+                      api.invoke("resize_main_window", {
+                        width: p.width,
+                        height: p.height,
+                      });
+                    }}
+                  >
+                    {p.label}
+                    <span className="size-hint">
+                      {p.width}×{p.height}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+              <div className="size-inputs">
+                <div className="size-input-group">
+                  <span>宽</span>
+                  <SizeNumberInput
+                    value={settings.windowWidth}
+                    min={MIN_WINDOW_WIDTH}
+                    max={MAX_WINDOW_WIDTH}
+                    deferChangeUntilCommit
+                    onChange={(windowWidth) => {
+                      const { width: w, height: h } = clampWindowSize(
+                        windowWidth,
+                        settings.windowHeight,
+                      );
+                      onChange({ windowWidth: w, windowHeight: h });
+                    }}
+                    onCommit={(width) => {
+                      const { width: w, height: h } = clampWindowSize(
+                        width,
+                        settings.windowHeight,
+                      );
+                      api.invoke("resize_main_window", {
+                        width: w,
+                        height: h,
+                      });
+                    }}
+                  />
+                </div>
+                <div className="size-input-group">
+                  <span>高</span>
+                  <SizeNumberInput
+                    value={settings.windowHeight}
+                    min={MIN_WINDOW_HEIGHT}
+                    max={MAX_WINDOW_HEIGHT}
+                    deferChangeUntilCommit
+                    onChange={(windowHeight) => {
+                      const { width: w, height: h } = clampWindowSize(
+                        settings.windowWidth,
+                        windowHeight,
+                      );
+                      onChange({ windowWidth: w, windowHeight: h });
+                    }}
+                    onCommit={(height) => {
+                      const { width: w, height: h } = clampWindowSize(
+                        settings.windowWidth,
+                        height,
+                      );
+                      api.invoke("resize_main_window", { width: w, height: h });
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="field">
+              <FieldHead
+                htmlFor="live2d-scale"
+                hint="角色在窗口里的放大倍率，不改变窗口本身。"
+              >
+                缩放
+              </FieldHead>
+              <Select
+                value={String(settings.modelScale)}
+                onChange={(key) => onChange({ modelScale: Number(key) })}
+                options={[
+                  { key: "0.5", label: "0.5×" },
+                  { key: "0.75", label: "0.75×" },
+                  { key: "1", label: "1×" },
+                  { key: "1.5", label: "1.5×" },
+                  { key: "2", label: "2×" },
+                  { key: "2.5", label: "2.5×" },
+                ]}
+                aria-label="缩放"
+              />
+            </div>
+
+            <div className="field">
+              <div className="live2d-offset-head">
+                <FieldHead hint="相对窗口中心微调，单位像素。负值向左 / 向上，正值向右 / 向下。">
+                  位置
+                </FieldHead>
+                <Button
+                  type="default"
+                  size="small"
+                  className="live2d-offset-reset"
+                  onClick={() => onChange({ modelOffsetX: 0, modelOffsetY: 0 })}
+                >
+                  重置
+                </Button>
+              </div>
+              <div className="live2d-offset-grid">
+                <div className="live2d-offset-item">
+                  <span>左右</span>
+                  <OffsetNumberInput
+                    value={settings.modelOffsetX}
+                    onChange={(modelOffsetX) => onChange({ modelOffsetX })}
+                  />
+                </div>
+                <div className="live2d-offset-item">
+                  <span>上下</span>
+                  <OffsetNumberInput
+                    value={settings.modelOffsetY}
+                    onChange={(modelOffsetY) => onChange({ modelOffsetY })}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      ),
+    },
+  ];
+
   return (
     <section className="settings-section live2d-settings">
-      <div className="field">
-        <div className="live2d-model-toolbar">
-          <FieldHead hint="选择桌面上的角色。本地模型请选 .model3.json，或包含它的目录。">
-            模型
-          </FieldHead>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => void browseLocalModel()}
-          >
-            浏览本地
-          </button>
-        </div>
-        {pickError && (
-          <p className="field-hint field-hint--after warn">{pickError}</p>
-        )}
-        {pickWarning && (
-          <p className="field-hint field-hint--after">{pickWarning}</p>
-        )}
-        {displayModels.length > 0 ? (
-          <div className="model-picker">
-            {displayModels.map((model) => (
-              <div key={model.path} className="model-picker-item">
-                <button
-                  type="button"
-                  className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}${model.missing ? " missing" : ""}`}
-                  onClick={() => selectModel(model)}
-                  title={model.path}
-                  disabled={model.missing}
-                >
-                  {model.name}
-                  <span className="model-picker-source">
-                    {model.missing
-                      ? "失效"
-                      : model.source === "local"
-                        ? "本地"
-                        : "内置"}
-                  </span>
-                </button>
-                {model.source === "local" && (
-                  <button
-                    type="button"
-                    className="model-picker-remove-btn"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      unlistLocalModel(model);
-                    }}
-                    title="从应用列表移除（不删除源文件）"
-                    aria-label={`从应用列表移除 ${model.name}`}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="live2d-status-line">
-            未找到模型。把内置模型放到 public/models/，或浏览本地文件。
-          </p>
-        )}
-      </div>
-
-      <div className="field">
-        <FieldHead
-          htmlFor="live2d-model-path"
-          hint="内置模型以 /models/ 开头。本地模型填绝对路径，失焦时校验。"
-        >
-          路径
-        </FieldHead>
-        <input
-          id="live2d-model-path"
-          type="text"
-          value={settings.modelPath}
-          onChange={(e) => onChange({ modelPath: e.target.value })}
-          onBlur={() => {
-            const trimmed = settings.modelPath.trim();
-            if (!trimmed) return;
-            setPickError(null);
-            setPickWarning(null);
-            api
-              .invoke("live2d:validate_model_path", trimmed)
-              .then(async (res) => {
-                await handleValidateResult(res as ValidateModelResult);
-                refreshModels();
-              })
-              .catch(() => setPickError("路径校验失败"));
-          }}
-          placeholder="/models/MyModel/MyModel.model3.json"
-        />
-      </div>
-
-      <div className="field">
-        <FieldHead hint="试播当前模型的动作与表情。模型未配置时按钮不可用。">
-          试演
-        </FieldHead>
-        <div className="live2d-action-row">
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => sendCommand("random_motion")}
-            disabled={!hasMotions}
-            title={hasMotions ? "随机播放动作" : "当前模型未配置动作"}
-          >
-            切换动作
-          </button>
-          <button
-            type="button"
-            className="btn-ghost"
-            onClick={() => sendCommand("next_expression")}
-            disabled={!hasExpressions}
-            title={
-              hasExpressions
-                ? `依次切换表情（共 ${caps.expressions.length} 个）`
-                : "当前模型未配置表情"
-            }
-          >
-            下一个表情
-          </button>
-        </div>
-        {!hasMotions && !hasExpressions ? (
-          <p className="live2d-status-line">当前模型没有动作或表情。</p>
-        ) : hasExpressions ? (
-          <ul className="live2d-cap-chips">
-            {caps.expressions.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-
-      <div className="live2d-checks">
-        <div className="live2d-check">
-          <Checkbox
-            checked={settings.live2dReactive}
-            onChange={(live2dReactive) => onChange({ live2dReactive })}
-            label="拟人化反应"
-          />
-          <HintTip tip="聊天时切换表情。关闭后恢复随机表情。" />
-        </div>
-        <div className="live2d-check">
-          <Checkbox
-            checked={settings.live2dSpeechBubble}
-            onChange={(live2dSpeechBubble) => onChange({ live2dSpeechBubble })}
-            label="头顶对话框"
-          />
-          <HintTip tip="在角色头顶显示 AI 回复摘要等短句。" />
-        </div>
-      </div>
-
-      {settings.live2dSpeechBubble && (
-        <div className="live2d-bubble-extras">
-          <div className="field">
-            <FieldHead
-              htmlFor="live2d-bubble-max"
-              hint="超出的文字会被截断。范围 20–120。"
-            >
-              最大字数
-            </FieldHead>
-            <div className="field-number-row">
-              <input
-                id="live2d-bubble-max"
-                type="number"
-                min={20}
-                max={120}
-                value={settings.live2dSpeechBubbleMaxChars}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  if (raw === "") return;
-                  onChange({
-                    live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
-                      Number(raw),
-                    ),
-                  });
-                }}
-                onBlur={(e) => {
-                  onChange({
-                    live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
-                      Number(e.target.value),
-                    ),
-                  });
-                }}
-              />
-            </div>
-          </div>
-          <div className="live2d-bubble-test">
-            <input
-              type="text"
-              value={bubbleTestText}
-              onChange={(e) => setBubbleTestText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") testSpeechBubble();
-              }}
-              placeholder={DEFAULT_SPEECH_BUBBLE_TEST_TEXT}
-              aria-label="对话框测试文字"
-            />
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={testSpeechBubble}
-            >
-              测试
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="live2d-stage">
-        <div className="field">
-          <FieldHead hint="桌宠窗口的像素尺寸。可点预设，或自己填宽高。">
-            窗口大小
-          </FieldHead>
-          <div className="size-presets">
-            {SIZE_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                className={`size-preset-btn${settings.windowWidth === p.width && settings.windowHeight === p.height ? " active" : ""}`}
-                onClick={() => {
-                  onChange({ windowWidth: p.width, windowHeight: p.height });
-                  api.invoke("resize_main_window", {
-                    width: p.width,
-                    height: p.height,
-                  });
-                }}
-              >
-                {p.label}
-                <span className="size-hint">
-                  {p.width}×{p.height}
-                </span>
-              </button>
-            ))}
-          </div>
-          <div className="size-inputs">
-            <div className="size-input-group">
-              <span>宽</span>
-              <SizeNumberInput
-                value={settings.windowWidth}
-                min={MIN_WINDOW_WIDTH}
-                max={MAX_WINDOW_WIDTH}
-                deferChangeUntilCommit
-                onChange={(windowWidth) => {
-                  const { width: w, height: h } = clampWindowSize(
-                    windowWidth,
-                    settings.windowHeight,
-                  );
-                  onChange({ windowWidth: w, windowHeight: h });
-                }}
-                onCommit={(width) => {
-                  const { width: w, height: h } = clampWindowSize(
-                    width,
-                    settings.windowHeight,
-                  );
-                  api.invoke("resize_main_window", { width: w, height: h });
-                }}
-              />
-            </div>
-            <span className="size-sep">×</span>
-            <div className="size-input-group">
-              <span>高</span>
-              <SizeNumberInput
-                value={settings.windowHeight}
-                min={MIN_WINDOW_HEIGHT}
-                max={MAX_WINDOW_HEIGHT}
-                deferChangeUntilCommit
-                onChange={(windowHeight) => {
-                  const { width: w, height: h } = clampWindowSize(
-                    settings.windowWidth,
-                    windowHeight,
-                  );
-                  onChange({ windowWidth: w, windowHeight: h });
-                }}
-                onCommit={(height) => {
-                  const { width: w, height: h } = clampWindowSize(
-                    settings.windowWidth,
-                    height,
-                  );
-                  api.invoke("resize_main_window", { width: w, height: h });
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="field">
-          <FieldHead htmlFor="live2d-scale" hint="角色在窗口里的放大倍率，不改变窗口本身。">
-            缩放
-          </FieldHead>
-          <select
-            id="live2d-scale"
-            value={settings.modelScale}
-            onChange={(e) => onChange({ modelScale: Number(e.target.value) })}
-          >
-            <option value={0.5}>0.5×</option>
-            <option value={0.75}>0.75×</option>
-            <option value={1.0}>1×</option>
-            <option value={1.5}>1.5×</option>
-            <option value={2.0}>2×</option>
-            <option value={2.5}>2.5×</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <div className="live2d-offset-head">
-            <FieldHead hint="相对窗口中心微调，单位像素。负值向左 / 向上，正值向右 / 向下。">
-              位置
-            </FieldHead>
-            <button
-              type="button"
-              className="btn-ghost live2d-offset-reset"
-              onClick={() => onChange({ modelOffsetX: 0, modelOffsetY: 0 })}
-            >
-              重置
-            </button>
-          </div>
-          <div className="live2d-offset-grid">
-            <div className="live2d-offset-item">
-              <span>左右</span>
-              <OffsetNumberInput
-                value={settings.modelOffsetX}
-                onChange={(modelOffsetX) => onChange({ modelOffsetX })}
-              />
-            </div>
-            <div className="live2d-offset-item">
-              <span>上下</span>
-              <OffsetNumberInput
-                value={settings.modelOffsetY}
-                onChange={(modelOffsetY) => onChange({ modelOffsetY })}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
+      <Tabs
+        items={tabItems}
+        activeKey={activeTab}
+        onChange={(key) => setActiveTab(key as Live2DSettingsTab)}
+        className="live2d-tabs"
+        aria-label="Live2D 设置分区"
+      />
+      {confirmDialog}
     </section>
   );
 }

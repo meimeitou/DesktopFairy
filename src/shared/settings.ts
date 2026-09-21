@@ -7,7 +7,6 @@ import {
 import {
   AGENT_BACKEND_KEY,
   DEFAULT_AGENT_CONFIG,
-  getAgentBackendLabel,
   isAgentBackend,
   normalizeAgentConfig,
   type AgentConfig,
@@ -64,7 +63,7 @@ export interface CustomLive2DModel {
 export interface AppSettings {
   activeProviderId: string;
   providers: LlmProvider[];
-  modelName: string;
+
   systemPrompt: string;
   selectionEnabled: boolean;
   selectionTriggerMode: SelectionTriggerMode;
@@ -75,7 +74,6 @@ export interface AppSettings {
   selectionMaxLength: number;
   searchEngine: string;
   selectionActions: SelectionActionItem[];
-  ttsEnabled: boolean;
   modelPath: string;
   windowWidth: number;
   windowHeight: number;
@@ -95,8 +93,6 @@ export interface AppSettings {
   deletedSystemProviderIds: string[];
   /** Single desktop agent configuration */
   agent: AgentConfig;
-  /** Chat backend: "agent" or `${providerId}::${modelName}` */
-  chatBackend: string;
   /** Active conversation mode. Mirrors agent.chatMode but stored at app level for quick UI access. */
   chatMode: ChatMode;
   /** Global MCP server registry (Cherry Studio style) */
@@ -122,7 +118,7 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   activeProviderId: "openai",
   providers: cloneProviders(SYSTEM_PROVIDERS),
-  modelName: "gpt-4o-mini",
+
   systemPrompt: "你是一位可爱的桌面伙伴，回答简洁、自然、有温度。",
   selectionEnabled: true,
   selectionTriggerMode: "shortcut",
@@ -132,7 +128,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   selectionMaxLength: 500,
   searchEngine: DEFAULT_SEARCH_ENGINE,
   selectionActions: DEFAULT_SELECTION_ACTIONS.map((a) => ({ ...a })),
-  ttsEnabled: false,
   modelPath: "/models/Hiyori/Hiyori.model3.json",
   windowWidth: 200,
   windowHeight: 400,
@@ -145,7 +140,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customModels: [],
   deletedSystemProviderIds: [],
   agent: { ...DEFAULT_AGENT_CONFIG },
-  chatBackend: AGENT_BACKEND_KEY,
   chatMode: DEFAULT_CHAT_MODE,
   mcpServers: [],
   webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
@@ -197,7 +191,7 @@ export function normalizeSelectionMaxLength(value: unknown): number {
   if (!Number.isFinite(n)) return DEFAULT_SETTINGS.selectionMaxLength;
   return Math.min(
     MAX_SELECTION_MAX_LENGTH,
-    Math.max(MIN_SELECTION_MAX_LENGTH, Math.round(n))
+    Math.max(MIN_SELECTION_MAX_LENGTH, Math.round(n)),
   );
 }
 
@@ -206,7 +200,7 @@ export function normalizeSpeechBubbleMaxChars(value: unknown): number {
   if (!Number.isFinite(n)) return DEFAULT_SETTINGS.live2dSpeechBubbleMaxChars;
   return Math.min(
     MAX_SPEECH_BUBBLE_MAX_CHARS,
-    Math.max(MIN_SPEECH_BUBBLE_MAX_CHARS, Math.round(n))
+    Math.max(MIN_SPEECH_BUBBLE_MAX_CHARS, Math.round(n)),
   );
 }
 
@@ -226,7 +220,7 @@ function normalizeCustomModels(value: unknown): CustomLive2DModel[] {
         typeof item === "object" &&
         typeof (item as CustomLive2DModel).name === "string" &&
         typeof (item as CustomLive2DModel).path === "string" &&
-        (item as CustomLive2DModel).path.trim().length > 0
+        (item as CustomLive2DModel).path.trim().length > 0,
     )
     .map((item) => ({
       name: item.name.trim(),
@@ -242,14 +236,14 @@ function normalizeMcpServers(value: unknown): McpServer[] {
         !!s &&
         typeof s === "object" &&
         typeof (s as McpServer).id === "string" &&
-        typeof (s as McpServer).name === "string"
+        typeof (s as McpServer).name === "string",
     )
     .map((s) => ({
       id: s.id,
       name: s.name.trim(),
-      type:
-        s.type === "sse" || s.type === "streamableHttp" ? s.type : "stdio",
-      description: typeof s.description === "string" ? s.description : undefined,
+      type: s.type === "sse" || s.type === "streamableHttp" ? s.type : "stdio",
+      description:
+        typeof s.description === "string" ? s.description : undefined,
       baseUrl: typeof s.baseUrl === "string" ? s.baseUrl : undefined,
       command: typeof s.command === "string" ? s.command : undefined,
       args: Array.isArray(s.args)
@@ -259,16 +253,16 @@ function normalizeMcpServers(value: unknown): McpServer[] {
         s.env && typeof s.env === "object" && !Array.isArray(s.env)
           ? Object.fromEntries(
               Object.entries(s.env).filter(
-                ([k, v]) => typeof k === "string" && typeof v === "string"
-              )
+                ([k, v]) => typeof k === "string" && typeof v === "string",
+              ),
             )
           : undefined,
       headers:
         s.headers && typeof s.headers === "object" && !Array.isArray(s.headers)
           ? Object.fromEntries(
               Object.entries(s.headers).filter(
-                ([k, v]) => typeof k === "string" && typeof v === "string"
-              )
+                ([k, v]) => typeof k === "string" && typeof v === "string",
+              ),
             )
           : undefined,
       isActive: s.isActive !== false,
@@ -281,10 +275,19 @@ function normalizeMcpServers(value: unknown): McpServer[] {
 }
 
 function migrateLegacyAgentMcp(
-  settings: AppSettings
+  settings: AppSettings,
 ): Pick<AppSettings, "mcpServers" | "agent"> {
   const agent = settings.agent;
-  const legacy = (agent as AgentConfig & { mcpServers?: { id: string; name: string; command: string; enabled?: boolean }[] }).mcpServers;
+  const legacy = (
+    agent as AgentConfig & {
+      mcpServers?: {
+        id: string;
+        name: string;
+        command: string;
+        enabled?: boolean;
+      }[];
+    }
+  ).mcpServers;
   if (!Array.isArray(legacy) || legacy.length === 0) {
     return { mcpServers: settings.mcpServers, agent };
   }
@@ -322,7 +325,9 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       ? settings.providers.map((p) => normalizeProvider(p))
       : cloneProviders(SYSTEM_PROVIDERS),
     ...migratedMcp,
-    selectionMaxLength: normalizeSelectionMaxLength(settings.selectionMaxLength),
+    selectionMaxLength: normalizeSelectionMaxLength(
+      settings.selectionMaxLength,
+    ),
     selectionTriggerMode:
       settings.selectionTriggerMode === "auto" ? "auto" : "shortcut",
     selectionActions: mergeSelectionActions(settings.selectionActions),
@@ -345,22 +350,20 @@ function finalizeSettings(settings: AppSettings): AppSettings {
         ? settings.live2dSpeechBubble
         : DEFAULT_SETTINGS.live2dSpeechBubble,
     live2dSpeechBubbleMaxChars: normalizeSpeechBubbleMaxChars(
-      settings.live2dSpeechBubbleMaxChars
+      settings.live2dSpeechBubbleMaxChars,
     ),
     customModels: normalizeCustomModels(settings.customModels),
     agent: normalizeAgentConfig(migratedMcp.agent, {
       soul:
-        typeof settings.systemPrompt === "string" && settings.systemPrompt.trim()
+        typeof settings.systemPrompt === "string" &&
+        settings.systemPrompt.trim()
           ? settings.systemPrompt
           : DEFAULT_AGENT_CONFIG.soul,
       providerId: settings.activeProviderId || DEFAULT_AGENT_CONFIG.providerId,
-      modelName: settings.modelName || DEFAULT_AGENT_CONFIG.modelName,
-      chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
+      chatMode: normalizeChatMode(
+        settings.chatMode ?? settings.agent?.chatMode,
+      ),
     }),
-    chatBackend:
-      typeof settings.chatBackend === "string" && settings.chatBackend.trim()
-        ? settings.chatBackend.trim()
-        : AGENT_BACKEND_KEY,
     chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
     mcpServers: migratedMcp.mcpServers,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
@@ -369,7 +372,10 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     fileProcessing: normalizeFileProcessingSettings(settings.fileProcessing),
     // 先 normalize 再迁移：把残留的内联凭据(password/privateKeyPath 等)提取为
     // 独立的 SshCredential 并改存 credentialId 引用。幂等。
-    ...((): Pick<AppSettings, "sshHosts" | "sshGroups" | "sshRecent" | "sshCredentials"> => {
+    ...((): Pick<
+      AppSettings,
+      "sshHosts" | "sshGroups" | "sshRecent" | "sshCredentials"
+    > => {
       const migrated = migrateInlineCredentials(
         normalizeSshHosts(settings.sshHosts),
         normalizeSshRecent(settings.sshRecent),
@@ -382,25 +388,30 @@ function finalizeSettings(settings: AppSettings): AppSettings {
         sshCredentials: migrated.sshCredentials,
       };
     })(),
-    // Keep explicit modelName (including custom IDs not in the curated list).
-    modelName: (() => {
-      const named =
-        typeof settings.modelName === "string" ? settings.modelName.trim() : "";
-      if (named) return named;
-      return getActiveProvider(settings).models[0] ?? "";
-    })(),
   };
-  // Drop legacy temperature if present in saved settings.
-  delete (next as AppSettings & { temperature?: number }).temperature;
+  // Drop legacy fields if present in saved settings.
+  const legacy = next as AppSettings & {
+    temperature?: number;
+    ttsEnabled?: boolean;
+    modelName?: string;
+  };
+  delete legacy.temperature;
+  delete legacy.ttsEnabled;
+  delete legacy.modelName;
   return next;
 }
 
-function migrateFromLegacy(parsed: Partial<AppSettings> & LegacySettings): AppSettings {
+function migrateFromLegacy(
+  parsed: Partial<AppSettings> & LegacySettings,
+): AppSettings {
   const base = { ...DEFAULT_SETTINGS, ...parsed };
   if (Array.isArray(parsed.providers) && parsed.providers.length > 0) {
     return finalizeSettings({
       ...base,
-      providers: mergeSystemProviders(parsed.providers, parsed.deletedSystemProviderIds),
+      providers: mergeSystemProviders(
+        parsed.providers,
+        parsed.deletedSystemProviderIds,
+      ),
       activeProviderId:
         parsed.activeProviderId ||
         parsed.providers.find((p) => p.enabled)?.id ||
@@ -426,7 +437,6 @@ function migrateFromLegacy(parsed: Partial<AppSettings> & LegacySettings): AppSe
     ...base,
     providers: mergeSystemProviders(providers, parsed.deletedSystemProviderIds),
     activeProviderId: target.id,
-    modelName: parsed.modelName || target.models[0] || DEFAULT_SETTINGS.modelName,
   });
 }
 
@@ -442,7 +452,8 @@ export function loadSettings(): AppSettings {
     const api = (window as Window & typeof globalThis).electronAPI;
     const diskRaw = api?.loadSettingsFromDisk?.();
     if (diskRaw) {
-      const parsed = JSON.parse(diskRaw) as Partial<AppSettings> & LegacySettings;
+      const parsed = JSON.parse(diskRaw) as Partial<AppSettings> &
+        LegacySettings;
       const settings = migrateFromLegacy(parsed);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
       return settings;
@@ -480,10 +491,8 @@ export async function saveSettings(
   }
   pendingSettingsSaves += 1;
   try {
-    const result = (await api.invoke(
-      "settings:sync",
-      settings,
-    )) as SettingsSyncResult | undefined;
+    const result = (await api.invoke("settings:sync", settings)) as
+      SettingsSyncResult | undefined;
     if (result && typeof result === "object" && "persisted" in result) {
       return result;
     }
@@ -559,12 +568,16 @@ export function getDescriptionApiConfig(settings: AppSettings): {
   providerId: string;
 } | null {
   const knowledge = settings.knowledge;
-  if (!knowledge?.descriptionProviderId || !knowledge.descriptionModel) return null;
+  if (!knowledge?.descriptionProviderId || !knowledge.descriptionModel)
+    return null;
   const provider = settings.providers.find(
     (p) => p.id === knowledge.descriptionProviderId && p.enabled,
   );
   if (!provider || !provider.apiHost) return null;
-  if ((provider.models || []).length > 0 && !provider.models.includes(knowledge.descriptionModel)) {
+  if (
+    (provider.models || []).length > 0 &&
+    !provider.models.includes(knowledge.descriptionModel)
+  ) {
     return null;
   }
   return {
@@ -576,57 +589,15 @@ export function getDescriptionApiConfig(settings: AppSettings): {
   };
 }
 
-/** Model name from the active provider's curated list (empty if none configured). */
-export function resolveModelNameForProvider(
-  settings: AppSettings,
-  provider?: LlmProvider
-): string {
-  const p = provider ?? getActiveProvider(settings);
-  const models = p.models;
-  if (models.length === 0) return "";
-  if (settings.modelName && models.includes(settings.modelName)) {
-    return settings.modelName;
-  }
-  return models[0] ?? "";
-}
-
-/** Model used for chat API calls and the chat model selector. */
-export function getActiveModelName(settings: AppSettings): string {
-  const named = typeof settings.modelName === "string" ? settings.modelName.trim() : "";
-  if (named) return named;
-  return getActiveProvider(settings).models[0] ?? "";
-}
-
-export function getSelectableModels(settings: AppSettings): string[] {
-  return getActiveProvider(settings).models;
-}
-
-export function getActiveApiConfig(settings: AppSettings): {
-  apiHost: string;
-  apiKey: string;
-  providerType: LlmProvider["type"];
-  modelName: string;
-  providerId: string;
-} {
-  const provider = getActiveProvider(settings);
-  return {
-    apiHost: provider.apiHost,
-    apiKey: provider.apiKey,
-    providerType: provider.type,
-    modelName: getActiveModelName(settings),
-    providerId: provider.id,
-  };
-}
-
 export function updateProviderInSettings(
   settings: AppSettings,
   providerId: string,
-  patch: Partial<LlmProvider>
+  patch: Partial<LlmProvider>,
 ): AppSettings {
   return {
     ...settings,
     providers: settings.providers.map((p) =>
-      p.id === providerId ? { ...p, ...patch } : p
+      p.id === providerId ? { ...p, ...patch } : p,
     ),
   };
 }
@@ -641,7 +612,9 @@ export interface ModelItem {
   modelName: string;
 }
 
-export function getAgentProvider(settings: AppSettings): LlmProvider | undefined {
+export function getAgentProvider(
+  settings: AppSettings,
+): LlmProvider | undefined {
   const agent = settings.agent;
   return settings.providers.find((p) => p.id === agent.providerId && p.enabled);
 }
@@ -650,8 +623,12 @@ export function resolveAgentModelName(settings: AppSettings): string {
   const provider = getAgentProvider(settings);
   const agent = settings.agent;
   if (!provider) return "";
-  const named = typeof agent.modelName === "string" ? agent.modelName.trim() : "";
-  if (named && (provider.models.length === 0 || provider.models.includes(named))) {
+  const named =
+    typeof agent.modelName === "string" ? agent.modelName.trim() : "";
+  if (
+    named &&
+    (provider.models.length === 0 || provider.models.includes(named))
+  ) {
     return named;
   }
   return "";
@@ -686,7 +663,8 @@ export function getAgentBackendGuidance(settings: AppSettings): string | null {
     ].join("\n");
   }
 
-  const modelName = typeof agent.modelName === "string" ? agent.modelName.trim() : "";
+  const modelName =
+    typeof agent.modelName === "string" ? agent.modelName.trim() : "";
   if (!modelName) {
     return [
       "智能体尚未选择模型。",
@@ -721,7 +699,8 @@ export function getAgentApiConfig(settings: AppSettings): {
   if (getAgentBackendGuidance(settings)) return null;
   const provider = getAgentProvider(settings);
   const modelName = resolveAgentModelName(settings);
-  if (!provider || !modelName || !String(provider.apiHost || "").trim()) return null;
+  if (!provider || !modelName || !String(provider.apiHost || "").trim())
+    return null;
   return {
     apiHost: provider.apiHost,
     apiKey: provider.apiKey,
@@ -738,24 +717,7 @@ export function getChatApiConfig(settings: AppSettings): {
   modelName: string;
   providerId: string;
 } | null {
-  const backend = getActiveChatBackend(settings);
-  if (isAgentBackend(backend)) {
-    const cfg = getAgentApiConfig(settings);
-    return cfg;
-  }
-  const { providerId, modelName } = parseModelCompound(
-    backend,
-    settings.activeProviderId
-  );
-  const provider = settings.providers.find((p) => p.id === providerId && p.enabled);
-  if (!provider || !modelName) return null;
-  return {
-    apiHost: provider.apiHost,
-    apiKey: provider.apiKey,
-    providerType: provider.type,
-    modelName,
-    providerId,
-  };
+  return getAgentApiConfig(settings);
 }
 
 /** Returns all models from enabled providers, labeled as "服务商/模型名". */
@@ -775,52 +737,27 @@ export function getSelectableModelItems(settings: AppSettings): ModelItem[] {
   return items;
 }
 
-export interface ChatBackendItem {
-  value: string;
-  label: string;
-  isAgent?: boolean;
-}
-
-/** Agent entry + all enabled provider models for the chat picker. */
-export function getChatBackendItems(settings: AppSettings): ChatBackendItem[] {
-  const items: ChatBackendItem[] = [
-    {
-      value: AGENT_BACKEND_KEY,
-      label: getAgentBackendLabel(settings.agent),
-      isAgent: true,
-    },
-  ];
-  for (const model of getSelectableModelItems(settings)) {
-    items.push({ value: model.value, label: model.label });
-  }
-  return items;
-}
-
-export function getActiveChatBackend(settings: AppSettings): string {
-  const items = getChatBackendItems(settings);
-  if (items.some((item) => item.value === settings.chatBackend)) {
-    return settings.chatBackend;
-  }
-  return items[0]?.value ?? AGENT_BACKEND_KEY;
-}
-
-/** Returns the compound key `${providerId}::${modelName}` for the current selection. */
-export function getActiveModelCompound(settings: AppSettings): string {
-  const provider = getActiveProvider(settings);
-  const modelName = getActiveModelName(settings);
-  if (!modelName) return "";
-  return `${provider.id}::${modelName}`;
-}
-
 /** Parses a compound key back to { providerId, modelName }. */
 export function parseModelCompound(
   compound: string,
-  fallbackProviderId: string
+  fallbackProviderId: string,
 ): { providerId: string; modelName: string } {
   const sep = compound.indexOf("::");
-  if (sep === -1) return { providerId: fallbackProviderId, modelName: compound };
-  return { providerId: compound.slice(0, sep), modelName: compound.slice(sep + 2) };
+  if (sep === -1)
+    return { providerId: fallbackProviderId, modelName: compound };
+  return {
+    providerId: compound.slice(0, sep),
+    modelName: compound.slice(sep + 2),
+  };
 }
 
 export { isAgentBackend, AGENT_BACKEND_KEY };
-export type { SelectionActionItem, LlmProvider, AgentConfig, McpServer, TerminalSettings, SshHost, SshCredential };
+export type {
+  SelectionActionItem,
+  LlmProvider,
+  AgentConfig,
+  McpServer,
+  TerminalSettings,
+  SshHost,
+  SshCredential,
+};

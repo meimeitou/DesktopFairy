@@ -48,7 +48,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
     const resolved = settingsSnapshot.resolveForSend({
       agentConfig: payload?.agentConfig,
       apiConfig: payload?.apiConfig,
-      forceAgent: true,
+      sessionModel: payload?.sessionModel,
     });
     if (!resolved.ok || !resolved.apiConfig || !resolved.agentConfig) {
       throw new Error(resolved.error || 'ai:stream_open invalid apiConfig');

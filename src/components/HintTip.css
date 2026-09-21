@@ -2,46 +2,56 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
   padding: 0;
-  border: 1px solid var(--hairline-bold);
+  border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--bone-500);
-  font-size: 10px;
-  font-weight: 600;
-  font-family: inherit;
-  line-height: 1;
+  color: var(--bone-600);
   cursor: help;
   flex-shrink: 0;
   vertical-align: middle;
 }
 
+.hint-tip svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
 .hint-tip:hover {
-  color: var(--bone-200);
-  border-color: var(--bone-400);
+  color: var(--bone-500);
 }
 
 .hint-tip:focus-visible {
   outline: 2px solid var(--persimmon-focus);
   outline-offset: 2px;
-  color: var(--bone-100);
-  border-color: var(--persimmon);
+  color: var(--bone-400);
+}
+
+/* Portal tooltip: fixed at viewport level, never clipped by card overflow. */
+.hint-tip-popover {
+  position: fixed;
+  z-index: 2147483000;
+  max-width: 260px;
+  padding: 5px 10px;
+  border: 1px solid var(--hairline-bold);
+  border-radius: 10px;
+  background: var(--ink-850);
+  color: var(--bone-500);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 3px 10px rgba(61, 52, 40, 0.12);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .field-head {
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 7px;
-}
-
-.field-head:hover,
-.field-head:focus-within {
-  z-index: 20;
 }
 
 .field-head > label,

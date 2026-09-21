@@ -1,3 +1,6 @@
+import { Input, Notification } from "animal-island-ui";
+import Select from "../Select";
+import { useConfirm } from "../../hooks/useConfirm";
 import { useMemo, useState } from "react";
 import type { AppSettings } from "../../shared/settings";
 import {
@@ -27,6 +30,7 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
     : "";
   const ready = Boolean(getEmbeddingApiConfig(settings));
   const [busy, setBusy] = useState(false);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const update = (patch: Partial<KnowledgeSettings>) => {
     onChange({ knowledge: { ...cfg, ...patch } });
@@ -35,9 +39,11 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
   const applyRetrievalChange = async (patch: Partial<KnowledgeSettings>, rebuild: boolean) => {
     const next = { ...cfg, ...patch };
     if (rebuild && knowledgeSettingsConfigured(cfg)) {
-      const ok = window.confirm(
-        "将重建全部知识库索引（会再次消耗 MinerU 与 embedding 配额）。确定继续？",
-      );
+      const ok = await confirm({
+        title: "重建索引",
+        okText: "重建",
+        content: "将重建全部知识库索引（会再次消耗 MinerU 与 embedding 配额）。确定继续？",
+      });
       if (!ok) return;
     }
     update(patch);
@@ -47,7 +53,7 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
     try {
       await api.invoke("knowledge:rebuild_all");
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
+      Notification.error(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -65,11 +71,10 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
       )}
       <div className="field">
         <label>Embedding 模型</label>
-        <select
+        <Select
           value={compound}
           disabled={busy}
-          onChange={(e) => {
-            const value = e.target.value;
+          onChange={(value) => {
             if (!value) {
               void applyRetrievalChange(
                 { embeddingProviderId: "", embeddingModel: "" },
@@ -86,46 +91,37 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
               Boolean(cfg.embeddingModel),
             );
           }}
-        >
-          <option value="">未选择</option>
-          {items.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+          options={[
+            { key: "", label: "未选择" },
+            ...items.map((item) => ({ key: item.value, label: item.label })),
+          ]}
+          aria-label="Embedding 模型"
+        />
       </div>
       <div className="field">
         <label>topK（每次检索条数）</label>
-        <input
-          type="number"
-          min={1}
-          max={20}
-          value={cfg.topK}
-          onChange={(e) => update({ topK: Number(e.target.value) || 5 })}
-        />
+        <Input shadow type="number"
+        min={1}
+        max={20} value={cfg.topK} onChange={(e) => update({ topK: Number(e.target.value) || 5 })} />
       </div>
       <div className="field">
         <label>匹配度阈值（%）</label>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          step={1}
-          value={Math.round(cfg.scoreThreshold * 100)}
-          onChange={(e) =>
-            update({
-              scoreThreshold: clampInt(e.target.value, 0, 100, 50) / 100,
-            })
-          }
-        />
+        <Input shadow type="number"
+        min={0}
+        max={100}
+        step={1} value={Math.round(cfg.scoreThreshold * 100)} onChange={(e) =>
+          update({
+            scoreThreshold: clampInt(e.target.value, 0, 100, 50) / 100,
+          })
+        } />
         <p className="field-hint field-hint--after">
           余弦相似度低于此值的分块视为不相关，不注入对话、不作为工具命中。0 表示不过滤。改此项不重建索引。
         </p>
       </div>
       <div className="field">
         <label>chunkSize</label>
-        <input
+        <Input
+          shadow
           type="number"
           min={128}
           max={8192}
@@ -141,7 +137,8 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
       </div>
       <div className="field">
         <label>chunkOverlap</label>
-        <input
+        <Input
+          shadow
           type="number"
           min={0}
           max={4096}
@@ -162,10 +159,9 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
       </p>
       <div className="field">
         <label>描述生成 LLM</label>
-        <select
+        <Select
           value={descCompound}
-          onChange={(e) => {
-            const value = e.target.value;
+          onChange={(value) => {
             if (!value) {
               update({ descriptionProviderId: "", descriptionModel: "" });
               return;
@@ -176,21 +172,20 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
               descriptionModel: value.slice(sep + 2),
             });
           }}
-        >
-          <option value="">未选择（不自动生成描述）</option>
-          {chatItems.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
+          options={[
+            { key: "", label: "未选择（不自动生成描述）" },
+            ...chatItems.map((item) => ({ key: item.value, label: item.label })),
+          ]}
+          aria-label="描述生成 LLM"
+        />
         <p className="field-hint field-hint--after">
           入库时会自动用该模型生成 200–500 字的文件描述，可手动编辑。未选择或调用失败时，需手动填写描述才能参与筛选。
         </p>
       </div>
       <div className="field">
         <label>半结构化单文件大小上限（KB）</label>
-        <input
+        <Input
+          shadow
           type="number"
           min={1}
           max={10240}
@@ -204,7 +199,8 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
       </div>
       <div className="field">
         <label>单次注入最多文件数</label>
-        <input
+        <Input
+          shadow
           type="number"
           min={1}
           max={10}
@@ -219,6 +215,7 @@ export default function KnowledgeSettingsSection({ settings, onChange }: Props) 
           LLM 每次最多为一次提问挑出这么多文件，全部整篇注入 system message。
         </p>
       </div>
+      {confirmDialog}
     </section>
   );
 }

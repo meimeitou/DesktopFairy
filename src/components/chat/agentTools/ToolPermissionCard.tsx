@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import { formatToolSummary, getToolDisplayName } from "../../../shared/toolCallDisplay";
 import { getToolCommandLine } from "./toolUtils";
@@ -41,49 +42,43 @@ export default function ToolPermissionCard({
           {command ? "将执行的命令" : "将执行的操作"}
         </div>
         {display ? (
-          <TerminalOutput content={display} commandMode={!!command} />
+          <TerminalOutput
+            content={display}
+            commandMode={!!command}
+            tone={command ? "terminal" : "code"}
+          />
         ) : (
           <p className="agent-tool-permission-empty">正在等待模型返回参数…</p>
         )}
       </div>
       <div className="agent-tool-permission-actions">
-        <button
-          type="button"
-          className="agent-tool-btn agent-tool-btn-always-allow"
+        <Button
+          type="default"
+          size="small"
           disabled={submitting || !canApprove}
           onClick={() => msg.toolApprovalId && onAlwaysAllow?.(msg.toolApprovalId)}
           title="批准本次并切换为全自动模式，后续工具调用不再询问"
+          icon={<Icon name="Check" size={12} />}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
           {alwaysAllowLabel}
-        </button>
-        <button
-          type="button"
-          className="agent-tool-btn agent-tool-btn-deny"
+        </Button>
+        <Button
+          type="default"
+          size="small"
+          danger
           disabled={submitting || !msg.toolApprovalId}
           onClick={() => msg.toolApprovalId && onDeny?.(msg.toolApprovalId)}
         >
           拒绝
-        </button>
-        <button
-          type="button"
-          className="agent-tool-btn agent-tool-btn-approve"
+        </Button>
+        <Button
+          type="primary"
+          size="small"
           disabled={submitting || !canApprove}
           onClick={() => msg.toolApprovalId && onApprove?.(msg.toolApprovalId)}
         >
           允许
-        </button>
+        </Button>
       </div>
     </div>
   );

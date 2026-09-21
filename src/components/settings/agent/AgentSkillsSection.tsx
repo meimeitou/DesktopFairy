@@ -1,3 +1,4 @@
+import { Button, Input } from "animal-island-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import HintTip from "../../HintTip";
 import type { AgentConfig, AgentSkillDescriptor } from "../../../shared/agent";
@@ -88,28 +89,28 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
     <section className="settings-section agent-subsection">
       <div className="agent-skills-toolbar">
         <div className="agent-skills-toolbar-actions">
-          <button
-            type="button"
-            className="btn-secondary"
+          <Button
+            type="primary"
+            size="small"
             disabled={importingSkill}
             onClick={() => void importLocalSkill()}
           >
             {importingSkill ? "导入中…" : "导入本地技能"}
-          </button>
-          <button
-            type="button"
-            className="btn-ghost"
+          </Button>
+          <Button
+            type="default"
+            size="small"
             onClick={() => void openSkillsDir()}
           >
             打开目录
-          </button>
-          <button
-            type="button"
-            className="btn-ghost"
+          </Button>
+          <Button
+            type="default"
+            size="small"
             onClick={() => void loadSkills()}
           >
             刷新
-          </button>
+          </Button>
         </div>
         <HintTip tip="打开后，技能名称与简介会注入模型上下文，可通过 Skills 工具加载。关闭的技能不进上下文，只能用 /技能id 调用。导入或安装不会自动打开。" />
       </div>
@@ -118,13 +119,9 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
       )}
 
       <div className="field agent-tool-search">
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="搜索技能…"
-          aria-label="搜索技能"
-        />
+        <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="搜索技能…"
+        aria-label="搜索技能" />
       </div>
 
       {loadingSkills ? (

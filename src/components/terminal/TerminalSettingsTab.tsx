@@ -1,4 +1,7 @@
+import { Button, Form, FormItem, Icon, Input, Modal, Notification as AnimalNotification, useForm } from "animal-island-ui";
+import Select from "../Select";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useConfirm } from "../../hooks/useConfirm";
 import type { AppSettings } from "../../shared/settings";
 import type { SshHost, SshCredential, SshAuthMethod, CursorStyle } from "../../shared/terminalSettings";
 import { SSH_UNGROUPED_LABEL } from "../../shared/terminalSettings";
@@ -72,6 +75,7 @@ export default function TerminalSettingsTab({
 }: Props) {
   const [activeSection, setActiveSection] = useState<Section>(initialSection);
   const [formMode, setFormMode] = useState<FormMode | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<HostForm>(EMPTY_FORM);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -90,6 +94,9 @@ export default function TerminalSettingsTab({
   const [revealedCreds, setRevealedCreds] = useState<Record<string, boolean>>({});
   // 弹窗中密码显示/隐藏
   const [showCredPassword, setShowCredPassword] = useState(false);
+  // 库 Form 实例：主机 / 凭据 / 分组 三张表单（选文件等命令式写入走 setFieldValue）
+  const [hostFormApi] = useForm();
+  const [credFormApi] = useForm();
 
   const { terminal, sshHosts, sshGroups, sshCredentials } = settings;
 
@@ -136,22 +143,23 @@ export default function TerminalSettingsTab({
   // - add: 追加到 sshHosts 并持久化
   // - edit: 替换 sshHosts 中 editingId 对应项并持久化
   // - quick: 构造临时 SshHost（不持久化）直接触发连接
-  const handleSubmit = () => {
-    if (!form.name.trim() || !form.host.trim() || !form.user.trim()) return;
-    const hasJump = !!form.proxyJump.trim();
-    const groupName = form.group.trim() || undefined;
+  // values 来自库 Form 校验通过后的 onFinish；hostForm state 是字段联动的镜像。
+  const handleSubmit = (values: Record<string, unknown>) => {
+    const v = values as unknown as HostForm;
+    const hasJump = !!v.proxyJump.trim();
+    const groupName = v.group.trim() || undefined;
     const baseHost: Omit<SshHost, "id"> = {
-      name: form.name.trim(),
-      host: form.host.trim(),
-      port: form.port || 22,
-      user: form.user.trim(),
-      authMethod: form.authMethod,
+      name: v.name.trim(),
+      host: v.host.trim(),
+      port: v.port || 22,
+      user: v.user.trim(),
+      authMethod: v.authMethod,
       // 凭据引用：agent 模式下 credentialId 仍保留（用户可同时绑 agent + 兜底密码）
-      credentialId: form.credentialId || undefined,
+      credentialId: v.credentialId || undefined,
       group: groupName,
-      proxyJump: form.proxyJump.trim() || undefined,
-      proxyJumpAuthMethod: hasJump ? form.proxyJumpAuthMethod : undefined,
-      proxyJumpCredentialId: hasJump && form.proxyJumpCredentialId ? form.proxyJumpCredentialId : undefined,
+      proxyJump: v.proxyJump.trim() || undefined,
+      proxyJumpAuthMethod: hasJump ? v.proxyJumpAuthMethod : undefined,
+      proxyJumpCredentialId: hasJump && v.proxyJumpCredentialId ? v.proxyJumpCredentialId : undefined,
     };
     const nextSshGroups = groupName ? sshGroups.filter((g) => g !== groupName) : sshGroups;
 
@@ -215,10 +223,10 @@ export default function TerminalSettingsTab({
     setFormMode("duplicate");
   };
 
-  const handleDeleteHost = (id: string) => {
+  const handleDeleteHost = async (id: string) => {
     const host = sshHosts.find((h) => h.id === id);
     if (!host) return;
-    if (!window.confirm(`确定删除主机「${host.name}」吗？`)) return;
+    if (!(await confirm({ title: "删除主机", content: `确定删除主机「${host.name}」吗？` }))) return;
     onChange({ sshHosts: sshHosts.filter((h) => h.id !== id) });
   };
 
@@ -356,7 +364,7 @@ export default function TerminalSettingsTab({
       hosts?: SshHost[];
     } | null;
     if (!parsed?.hosts?.length) {
-      window.alert("未从所选文件中解析到任何 SSH 主机");
+      AnimalNotification.warning("未从所选文件中解析到任何 SSH 主机");
       return;
     }
     // 去重合并：以 host|user|port 为键
@@ -365,11 +373,11 @@ export default function TerminalSettingsTab({
       (h) => !existingKeys.has(`${h.host}|${h.user}|${h.port}`),
     );
     if (newHosts.length === 0) {
-      window.alert("导入的主机均已存在，已跳过");
+      AnimalNotification.warning("导入的主机均已存在，已跳过");
       return;
     }
     onChange({ sshHosts: [...sshHosts, ...newHosts] });
-    window.alert(
+    AnimalNotification.warning(
       `已导入 ${newHosts.length} 个主机（跳过 ${parsed.hosts.length - newHosts.length} 个重复）`,
     );
   };
@@ -384,20 +392,15 @@ export default function TerminalSettingsTab({
     setShowCredPassword(false);
   };
 
-  const handleSubmitCred = () => {
-    const name = credForm.name.trim();
-    if (!name) return;
-    // 密码与私钥至少填一个
-    if (!credForm.password && !credForm.privateKeyPath.trim()) {
-      window.alert("密码和私钥路径至少填写一项");
-      return;
-    }
+  // values 来自库 Form onFinish；「密码/私钥至少一项」由 FormItem rules validator 校验。
+  const handleSubmitCred = (values: Record<string, unknown>) => {
+    const v = values as unknown as CredForm;
     const cred: SshCredential = {
       id: editingCredId || `cred_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      name,
-      password: credForm.password || undefined,
-      privateKeyPath: credForm.privateKeyPath.trim() || undefined,
-      note: credForm.note.trim() || undefined,
+      name: v.name.trim(),
+      password: v.password || undefined,
+      privateKeyPath: v.privateKeyPath.trim() || undefined,
+      note: v.note.trim() || undefined,
     };
     if (credFormMode === "edit" && editingCredId) {
       onChange({ sshCredentials: sshCredentials.map((c) => (c.id === editingCredId ? cred : c)) });
@@ -418,7 +421,7 @@ export default function TerminalSettingsTab({
     setCredFormMode("edit");
   };
 
-  const handleDeleteCred = (id: string) => {
+  const handleDeleteCred = async (id: string) => {
     const cred = sshCredentials.find((c) => c.id === id);
     if (!cred) return;
     // 扫描引用：sshHosts + sshRecent
@@ -428,7 +431,7 @@ export default function TerminalSettingsTab({
     const msg = refCount > 0
       ? `凭据「${cred.name}」被 ${refCount} 处主机引用，删除后这些主机将无法连接。确定删除？`
       : `确定删除凭据「${cred.name}」吗？`;
-    if (!window.confirm(msg)) return;
+    if (!(await confirm({ title: "删除凭据", content: msg }))) return;
     // 删除凭据，并解除主机侧 + 最近连接侧的引用（置空 credentialId）
     onChange({
       sshCredentials: sshCredentials.filter((c) => c.id !== id),
@@ -448,13 +451,14 @@ export default function TerminalSettingsTab({
     });
   };
 
+  // 选私钥文件后直接写入 Form store（setFieldValue 会触发 onValuesChange 镜像刷新）
   const handlePickCredKeyFile = async () => {
     const result = await api.invoke("file:select", {
       properties: ["openFile"],
       filters: [{ name: "All Files", extensions: ["*"] }],
     });
     if (Array.isArray(result) && result.length > 0 && result[0]?.path) {
-      setCredForm((f) => ({ ...f, privateKeyPath: result[0].path }));
+      credFormApi.setFieldValue("privateKeyPath", result[0].path);
     }
   };
 
@@ -488,27 +492,27 @@ export default function TerminalSettingsTab({
   return (
     <div className={`terminal-settings-tab${isActive ? " active" : ""}`}>
       <div className="terminal-settings-tabstrip">
-        <button
-          type="button"
+        <Button
+          type="text"
           className={`terminal-tabstrip-btn${activeSection === "appearance" ? " active" : ""}`}
           onClick={() => setActiveSection("appearance")}
         >
           终端外观
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          type="text"
           className={`terminal-tabstrip-btn${activeSection === "ssh" ? " active" : ""}`}
           onClick={() => setActiveSection("ssh")}
         >
           SSH 主机
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          type="text"
           className={`terminal-tabstrip-btn${activeSection === "credentials" ? " active" : ""}`}
           onClick={() => setActiveSection("credentials")}
         >
           凭据
-        </button>
+        </Button>
       </div>
 
       <main className="terminal-settings-content">
@@ -517,7 +521,7 @@ export default function TerminalSettingsTab({
             <div className="terminal-appearance-grid">
               <div className="field-row">
                 <label>字号</label>
-                <input
+                <Input
                   type="number"
                   min={8}
                   max={32}
@@ -528,19 +532,21 @@ export default function TerminalSettingsTab({
 
               <div className="field-row">
                 <label>光标样式</label>
-                <select
+                <Select
                   value={terminal.cursorStyle}
-                  onChange={(e) => updateTerminal({ cursorStyle: e.target.value as CursorStyle })}
-                >
-                  <option value="block">方块</option>
-                  <option value="beam">竖线</option>
-                  <option value="underline">下划线</option>
-                </select>
+                  onChange={(key) => updateTerminal({ cursorStyle: key as CursorStyle })}
+                  options={[
+                    { key: "block", label: "方块" },
+                    { key: "beam", label: "竖线" },
+                    { key: "underline", label: "下划线" },
+                  ]}
+                  aria-label="光标样式"
+                />
               </div>
 
               <div className="field-row">
                 <label>字体</label>
-                <input
+                <Input
                   type="text"
                   value={terminal.fontFamily}
                   onChange={(e) => updateTerminal({ fontFamily: e.target.value })}
@@ -551,7 +557,7 @@ export default function TerminalSettingsTab({
 
               <div className="field-row">
                 <label>回滚行数</label>
-                <input
+                <Input
                   type="number"
                   min={1000}
                   max={100000}
@@ -567,34 +573,26 @@ export default function TerminalSettingsTab({
         {activeSection === "ssh" && (
           <section className="settings-section">
             <div className="ssh-section-actions">
-              <button
-                type="button"
-                className="ssh-primary-btn"
-                onClick={handleAddGroup}
-              >
+              <Button type="primary" size="small" onClick={handleAddGroup}>
                 + 新增分组
-              </button>
-              <button
-                type="button"
-                className="ssh-primary-btn"
+              </Button>
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => { setForm(EMPTY_FORM); setFormMode("add"); }}
               >
                 + 添加主机
-              </button>
-              <button
-                type="button"
-                className="ssh-primary-btn"
+              </Button>
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => { setForm(EMPTY_FORM); setFormMode("quick"); }}
               >
                 快速连接
-              </button>
-              <button
-                type="button"
-                className="ssh-primary-btn"
-                onClick={handleImportConfig}
-              >
+              </Button>
+              <Button type="primary" size="small" onClick={handleImportConfig}>
                 导入 SSH Config
-              </button>
+              </Button>
             </div>
 
             {groups.map(([groupName, hosts]) => {
@@ -608,7 +606,7 @@ export default function TerminalSettingsTab({
                   >
                     <span className="toggle-arrow">▼</span>
                     {renamingGroup === groupName ? (
-                      <input
+                      <Input
                         className="ssh-group-rename-input"
                         autoFocus
                         value={renameValue}
@@ -643,20 +641,17 @@ export default function TerminalSettingsTab({
                     )}
                     <span className="ssh-group-count">({hosts.length})</span>
                     {!isUngrouped && renamingGroup !== groupName && (
-                      <button
-                        type="button"
+                      <Button
+                        type="text"
+                        size="small"
                         className="ssh-group-rename-btn"
+                        icon={<Icon name="Edit" size={12} />}
                         onClick={(e) => {
                           e.stopPropagation();
                           startRenameGroup(groupName);
                         }}
                         title="重命名分组"
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
+                      />
                     )}
                   </div>
                   <div className={`ssh-group-hosts${collapsed ? " collapsed" : ""}`}>
@@ -672,46 +667,48 @@ export default function TerminalSettingsTab({
                             </span>
                           </div>
                           <div className="ssh-host-actions">
-                            <button
-                              type="button"
-                              className="ssh-host-connect-btn"
+                            <Button
+                              type="primary"
+                              size="small"
                               onClick={() => onConnectSsh(host.id)}
                             >
                               连接
-                            </button>
-                            <button
-                              type="button"
+                            </Button>
+                            <Button
+                              type="text"
+                              size="small"
                               className={`ssh-host-icon-btn test-btn ${status || ""}`}
                               onClick={() => handleTestHost(host)}
                               disabled={status === "testing"}
                               title={status === "testing" ? "测试中" : status === "ok" ? "连接正常" : status === "fail" ? "连接失败" : "测试连接"}
                             >
                               {status === "testing" ? "···" : status === "ok" ? "✓" : status === "fail" ? "✗" : "测试"}
-                            </button>
-                            <button
-                              type="button"
+                            </Button>
+                            <Button
+                              type="text"
+                              size="small"
                               className="ssh-host-icon-btn"
+                              icon={<Icon name="Edit" size={13} />}
                               onClick={() => handleEditHost(host)}
                               title="编辑"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            <button
-                              type="button"
+                            />
+                            <Button
+                              type="text"
+                              size="small"
                               className="ssh-host-icon-btn"
+                              icon={<Icon name="File" size={13} />}
                               onClick={() => handleDuplicateHost(host)}
                               title="复制"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                            </button>
-                            <button
-                              type="button"
+                            />
+                            <Button
+                              type="default"
+                              size="small"
+                              danger
                               className="ssh-host-icon-btn danger"
-                              onClick={() => handleDeleteHost(host.id)}
+                              icon={<Icon name="Trash" size={13} />}
+                              onClick={() => void handleDeleteHost(host.id)}
                               title="删除"
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                            </button>
+                            />
                           </div>
                         </div>
                       );
@@ -726,9 +723,9 @@ export default function TerminalSettingsTab({
         {activeSection === "credentials" && (
           <section className="settings-section">
             <div className="ssh-section-actions">
-              <button
-                type="button"
-                className="ssh-primary-btn"
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => {
                   setCredForm(EMPTY_CRED_FORM);
                   setEditingCredId(null);
@@ -736,7 +733,7 @@ export default function TerminalSettingsTab({
                 }}
               >
                 + 添加凭据
-              </button>
+              </Button>
             </div>
 
             {sshCredentials.length === 0 ? (
@@ -766,16 +763,16 @@ export default function TerminalSettingsTab({
                               <span className="ssh-credential-value-text">
                                 {revealedCreds[cred.id] ? cred.password : "••••••"}
                               </span>
-                              <button
-                                type="button"
+                              <Button
+                                type="text"
+                                size="small"
                                 className="ssh-credential-toggle"
+                                icon={<Icon name="Eye" size={13} />}
                                 onClick={() =>
                                   setRevealedCreds((prev) => ({ ...prev, [cred.id]: !prev[cred.id] }))
                                 }
                                 title={revealedCreds[cred.id] ? "隐藏" : "显示"}
-                              >
-                                {revealedCreds[cred.id] ? "🙈" : "👁"}
-                              </button>
+                              />
                             </>
                           )}
                           {cred.privateKeyPath && (
@@ -788,22 +785,23 @@ export default function TerminalSettingsTab({
                         {cred.note && <div className="ssh-credential-note">{cred.note}</div>}
                       </div>
                       <div className="ssh-credential-actions">
-                        <button
-                          type="button"
+                        <Button
+                          type="text"
+                          size="small"
                           className="ssh-host-icon-btn"
+                          icon={<Icon name="Edit" size={13} />}
                           onClick={() => handleEditCred(cred)}
                           title="编辑"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                        <button
-                          type="button"
+                        />
+                        <Button
+                          type="default"
+                          size="small"
+                          danger
                           className="ssh-host-icon-btn danger"
-                          onClick={() => handleDeleteCred(cred.id)}
+                          icon={<Icon name="Trash" size={13} />}
+                          onClick={() => void handleDeleteCred(cred.id)}
                           title="删除"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-                        </button>
+                        />
                       </div>
                     </div>
                   );
@@ -815,343 +813,268 @@ export default function TerminalSettingsTab({
       </main>
 
       {formMode !== null && (
-        <div className="ssh-modal-overlay" onClick={handleCancelForm}>
-          <div className="ssh-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="ssh-modal-header">
-              <span className="ssh-modal-title">{formTitle}</span>
-              <button
-                type="button"
-                className="ssh-modal-close"
-                onClick={handleCancelForm}
-                title="关闭"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div className="ssh-modal-body">
-              <div className="ssh-form-group">
-                <span className="ssh-form-group-label">基本信息</span>
-                <div className="field-row">
-                  <label>名称</label>
-                  <input
-                    type="text"
-                    value={form.name}
-                    placeholder="我的服务器"
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  />
-                </div>
-                <div className="ssh-form-row-2">
-                  <div className="field-row ssh-form-host">
-                    <label>主机</label>
-                    <input
-                      type="text"
-                      value={form.host}
-                      placeholder="example.com 或 IP"
-                      onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))}
-                    />
-                  </div>
-                  <div className="field-row ssh-form-port">
-                    <label>端口</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={65535}
-                      value={form.port}
-                      onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) }))}
-                    />
-                  </div>
-                </div>
-                <div className="field-row">
-                  <label>用户名</label>
-                  <input
-                    type="text"
-                    value={form.user}
-                    placeholder="root"
-                    onChange={(e) => setForm((f) => ({ ...f, user: e.target.value }))}
-                  />
-                </div>
-                <div className="field-row">
-                  <label>分组</label>
-                  <input
-                    type="text"
-                    list="ssh-group-list"
-                    value={form.group}
-                    placeholder="未分组"
-                    onChange={(e) => setForm((f) => ({ ...f, group: e.target.value }))}
-                  />
-                  <datalist id="ssh-group-list">
-                    {groups.map(([g]) => g !== UNGROUPED && <option key={g} value={g} />)}
-                  </datalist>
-                </div>
+        <Modal open title={formTitle} onClose={handleCancelForm} footer={null} typewriter={false} width={520} className="ssh-form-modal">
+          <Form
+            form={hostFormApi}
+            layout="vertical"
+            colon={false}
+            requiredMark
+            initialValues={form as unknown as Record<string, unknown>}
+            onValuesChange={(_, all) => setForm(all as unknown as HostForm)}
+            onFinish={(values) => handleSubmit(values)}
+          >
+            <div className="ssh-form-group">
+              <span className="ssh-form-group-label">基本信息</span>
+              <FormItem label="名称" name="name" rules={[{ required: true, whitespace: true, message: "请输入名称" }]}>
+                <Input type="text" placeholder="我的服务器" />
+              </FormItem>
+              <div className="ssh-form-row-2">
+                <FormItem label="主机" name="host" className="ssh-form-host" rules={[{ required: true, whitespace: true, message: "请输入主机" }]}>
+                  <Input type="text" placeholder="example.com 或 IP" />
+                </FormItem>
+                <FormItem label="端口" name="port" className="ssh-form-port" normalize={(v) => Number(v) || 22}>
+                  <Input type="number" min={1} max={65535} />
+                </FormItem>
               </div>
+              <FormItem label="用户名" name="user" rules={[{ required: true, whitespace: true, message: "请输入用户名" }]}>
+                <Input type="text" placeholder="root" />
+              </FormItem>
+              <FormItem label="分组" name="group">
+                <Input type="text" list="ssh-group-list" placeholder="未分组" />
+              </FormItem>
+              <datalist id="ssh-group-list">
+                {groups.map(([g]) => g !== UNGROUPED && <option key={g} value={g} />)}
+              </datalist>
+            </div>
 
-              <div className="ssh-form-group">
-                <span className="ssh-form-group-label">认证</span>
-                <div className="field-row">
-                  <label>认证方式</label>
-                  <select
-                    value={form.authMethod}
-                    onChange={(e) => setForm((f) => ({ ...f, authMethod: e.target.value as SshAuthMethod }))}
+            <div className="ssh-form-group">
+              <span className="ssh-form-group-label">认证</span>
+              <FormItem label="认证方式" name="authMethod">
+                <Select
+                  value=""
+                  onChange={() => {}}
+                  options={[
+                    { key: "auto", label: "自动（推荐）" },
+                    { key: "password", label: "密码" },
+                    { key: "privateKey", label: "私钥文件" },
+                    { key: "agent", label: "SSH Agent" },
+                  ]}
+                />
+              </FormItem>
+              {form.authMethod !== "agent" && (
+                <div className="ssh-form-cred-row">
+                  <FormItem label="凭据" name="credentialId" className="ssh-form-cred-item">
+                    <Select
+                      value=""
+                      onChange={() => {}}
+                      options={[
+                        { key: "", label: "（无，靠 Agent / 默认私钥）" },
+                        ...sshCredentials
+                          .filter((c) => {
+                            if (form.authMethod === "password") return !!c.password;
+                            if (form.authMethod === "privateKey") return !!c.privateKeyPath;
+                            return true;
+                          })
+                          .map((c) => ({
+                            key: c.id,
+                            label: `${c.name}${c.password && c.privateKeyPath ? "（密码+私钥）" : c.password ? "（密码）" : "（私钥）"}`,
+                          })),
+                      ]}
+                    />
+                  </FormItem>
+                  <Button
+                    type="link"
+                    size="small"
+                    htmlType="button"
+                    className="ssh-form-cred-manage"
+                    onClick={() => setActiveSection("credentials")}
+                    title="去凭据 tab 管理"
                   >
-                    <option value="auto">自动（推荐）</option>
-                    <option value="password">密码</option>
-                    <option value="privateKey">私钥文件</option>
-                    <option value="agent">SSH Agent</option>
-                  </select>
+                    管理
+                  </Button>
                 </div>
-                {form.authMethod !== "agent" && (
-                  <div className="field-row">
-                    <label>凭据</label>
-                    <select
-                      value={form.credentialId}
-                      onChange={(e) => setForm((f) => ({ ...f, credentialId: e.target.value }))}
-                    >
-                      <option value="">（无，靠 Agent / 默认私钥）</option>
-                      {sshCredentials
-                        .filter((c) => {
-                          // password 模式：只列有密码的；privateKey 模式：只列有私钥的；auto 模式：全列
-                          if (form.authMethod === "password") return !!c.password;
-                          if (form.authMethod === "privateKey") return !!c.privateKeyPath;
-                          return true;
-                        })
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}{c.password && c.privateKeyPath ? "（密码+私钥）" : c.password ? "（密码）" : "（私钥）"}
-                          </option>
-                        ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => setActiveSection("credentials")}
-                      title="去凭据 tab 管理"
-                    >
-                      管理
-                    </button>
-                  </div>
-                )}
-                {form.authMethod !== "agent" && !form.credentialId && (
-                  <div className="ssh-form-hint">
-                    未选择凭据时，{form.authMethod === "auto" ? "将依赖 SSH Agent 或 ~/.ssh/ 默认私钥" : "连接将失败"}。可在「凭据」tab 创建凭据。
-                  </div>
-                )}
-              </div>
+              )}
+              {form.authMethod !== "agent" && !form.credentialId && (
+                <div className="ssh-form-hint">
+                  未选择凭据时，{form.authMethod === "auto" ? "将依赖 SSH Agent 或 ~/.ssh/ 默认私钥" : "连接将失败"}。可在「凭据」tab 创建凭据。
+                </div>
+              )}
+            </div>
 
-              <div className="ssh-form-group">
-                <span className="ssh-form-group-label">高级</span>
-                <div className="field-row">
-                  <label>跳板机</label>
-                  <input
-                    type="text"
-                    value={form.proxyJump}
-                    placeholder="user@jump-host:port（可选）"
-                    onChange={(e) => setForm((f) => ({ ...f, proxyJump: e.target.value }))}
-                  />
-                </div>
-                {form.proxyJump.trim() && (
-                  <>
-                    <div className="field-row">
-                      <label>跳板认证方式</label>
-                      <select
-                        value={form.proxyJumpAuthMethod}
-                        onChange={(e) =>
-                          setForm((f) => ({
-                            ...f,
-                            proxyJumpAuthMethod: e.target.value as SshAuthMethod,
-                          }))
-                        }
+            <div className="ssh-form-group">
+              <span className="ssh-form-group-label">高级</span>
+              <FormItem label="跳板机" name="proxyJump">
+                <Input type="text" placeholder="user@jump-host:port（可选）" />
+              </FormItem>
+              {form.proxyJump.trim() && (
+                <>
+                  <FormItem label="跳板认证方式" name="proxyJumpAuthMethod">
+                    <Select
+                      value=""
+                      onChange={() => {}}
+                      options={[
+                        { key: "auto", label: "自动（推荐）" },
+                        { key: "password", label: "密码" },
+                        { key: "privateKey", label: "私钥文件" },
+                        { key: "agent", label: "SSH Agent" },
+                      ]}
+                    />
+                  </FormItem>
+                  {form.proxyJumpAuthMethod !== "agent" && (
+                    <div className="ssh-form-cred-row">
+                      <FormItem label="跳板凭据" name="proxyJumpCredentialId" className="ssh-form-cred-item">
+                        <Select
+                          value=""
+                          onChange={() => {}}
+                          options={[
+                            { key: "", label: "（无，靠 Agent / 默认私钥）" },
+                            ...sshCredentials
+                              .filter((c) => {
+                                if (form.proxyJumpAuthMethod === "password") return !!c.password;
+                                if (form.proxyJumpAuthMethod === "privateKey") return !!c.privateKeyPath;
+                                return true;
+                              })
+                              .map((c) => ({
+                                key: c.id,
+                                label: `${c.name}${c.password && c.privateKeyPath ? "（密码+私钥）" : c.password ? "（密码）" : "（私钥）"}`,
+                              })),
+                          ]}
+                        />
+                      </FormItem>
+                      <Button
+                        type="link"
+                        size="small"
+                        htmlType="button"
+                        className="ssh-form-cred-manage"
+                        onClick={() => setActiveSection("credentials")}
+                        title="去凭据 tab 管理"
                       >
-                        <option value="auto">自动（推荐）</option>
-                        <option value="password">密码</option>
-                        <option value="privateKey">私钥文件</option>
-                        <option value="agent">SSH Agent</option>
-                      </select>
+                        管理
+                      </Button>
                     </div>
-                    {form.proxyJumpAuthMethod !== "agent" && (
-                      <div className="field-row">
-                        <label>跳板凭据</label>
-                        <select
-                          value={form.proxyJumpCredentialId}
-                          onChange={(e) =>
-                            setForm((f) => ({ ...f, proxyJumpCredentialId: e.target.value }))
-                          }
-                        >
-                          <option value="">（无，靠 Agent / 默认私钥）</option>
-                          {sshCredentials
-                            .filter((c) => {
-                              if (form.proxyJumpAuthMethod === "password") return !!c.password;
-                              if (form.proxyJumpAuthMethod === "privateKey") return !!c.privateKeyPath;
-                              return true;
-                            })
-                            .map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}{c.password && c.privateKeyPath ? "（密码+私钥）" : c.password ? "（密码）" : "（私钥）"}
-                              </option>
-                            ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="link-btn"
-                          onClick={() => setActiveSection("credentials")}
-                          title="去凭据 tab 管理"
-                        >
-                          管理
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                  )}
+                </>
+              )}
             </div>
-            <div className="ssh-modal-footer">
-              <button type="button" className="link-btn" onClick={handleCancelForm}>
+            <div className="provider-modal-footer">
+              <Button type="primary" htmlType="button" onClick={handleCancelForm}>
                 取消
-              </button>
-              <button type="button" className="ssh-modal-submit" onClick={handleSubmit}>
+              </Button>
+              <Button type="primary" htmlType="submit">
                 {submitLabel}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </Form>
+        </Modal>
       )}
 
       {showAddGroupModal && (
-        <div className="ssh-modal-overlay" onClick={cancelAddGroup}>
-          <div className="ssh-modal-card ssh-modal-card--compact" onClick={(e) => e.stopPropagation()}>
-            <div className="ssh-modal-header">
-              <span className="ssh-modal-title">新增分组</span>
-              <button
-                type="button"
-                className="ssh-modal-close"
-                onClick={cancelAddGroup}
-                title="关闭"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div className="ssh-modal-body">
-              <div className="field-row">
-                <label>分组名称</label>
-                <input
-                  type="text"
-                  autoFocus
-                  value={addGroupName}
-                  placeholder="例如：生产环境"
-                  onChange={(e) => {
-                    setAddGroupName(e.target.value);
-                    if (addGroupError) setAddGroupError("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      commitAddGroup();
-                    }
-                  }}
-                />
-              </div>
-              {addGroupError && <div className="ssh-form-hint ssh-form-error">{addGroupError}</div>}
-            </div>
-            <div className="ssh-modal-footer">
-              <button type="button" className="link-btn" onClick={cancelAddGroup}>
+        <Modal open title="新增分组" onClose={cancelAddGroup} footer={null} typewriter={false} className="ssh-form-modal">
+          <Form layout="vertical" colon={false} requiredMark onFinish={() => commitAddGroup()}>
+            <FormItem
+              label="分组名称"
+              name="groupName"
+              rules={[{ required: true, whitespace: true, message: "请输入分组名称" }]}
+            >
+              <Input
+                type="text"
+                autoFocus
+                placeholder="例如：生产环境"
+                onChange={(e) => {
+                  setAddGroupName(e.target.value);
+                  if (addGroupError) setAddGroupError("");
+                }}
+              />
+            </FormItem>
+            {addGroupError && <div className="ssh-form-hint ssh-form-error">{addGroupError}</div>}
+            <div className="provider-modal-footer">
+              <Button type="primary" htmlType="button" onClick={cancelAddGroup}>
                 取消
-              </button>
-              <button type="button" className="ssh-modal-submit" onClick={commitAddGroup}>
+              </Button>
+              <Button type="primary" htmlType="submit">
                 创建
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </Form>
+        </Modal>
       )}
 
       {credFormMode !== null && (
-        <div className="ssh-modal-overlay" onClick={handleCancelCredForm}>
-          <div className="ssh-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="ssh-modal-header">
-              <span className="ssh-modal-title">{credTitle}</span>
-              <button
-                type="button"
-                className="ssh-modal-close"
-                onClick={handleCancelCredForm}
-                title="关闭"
+        <Modal open title={credTitle} onClose={handleCancelCredForm} footer={null} typewriter={false} width={520} className="ssh-form-modal">
+          <Form
+            form={credFormApi}
+            layout="vertical"
+            colon={false}
+            requiredMark
+            initialValues={credForm as unknown as Record<string, unknown>}
+            onValuesChange={(_, all) => setCredForm(all as unknown as CredForm)}
+            onFinish={(values) => handleSubmitCred(values)}
+          >
+            <div className="ssh-form-group">
+              <span className="ssh-form-group-label">凭据信息</span>
+              <FormItem
+                label="名称"
+                name="name"
+                help="密码和私钥路径至少填写一项"
+                rules={[
+                  { required: true, whitespace: true, message: "请输入名称" },
+                  // 库 validator 空值短路，跨字段校验挂在必填字段上才能执行
+                  {
+                    validator: (_rule, _value) =>
+                      credForm.password || credForm.privateKeyPath.trim()
+                        ? Promise.resolve()
+                        : Promise.reject("密码和私钥路径至少填写一项"),
+                  },
+                ]}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div className="ssh-modal-body">
-              <div className="ssh-form-group">
-                <span className="ssh-form-group-label">凭据信息</span>
-                <div className="field-row">
-                  <label>名称</label>
-                  <input
-                    type="text"
-                    value={credForm.name}
-                    placeholder="例如：公司跳板机密钥"
-                    onChange={(e) => setCredForm((f) => ({ ...f, name: e.target.value }))}
-                  />
-                </div>
-                <div className="field-row">
-                  <label>密码</label>
-                  <input
-                    type={showCredPassword ? "text" : "password"}
-                    value={credForm.password}
-                    placeholder="（可选）留空则不使用密码"
-                    onChange={(e) => setCredForm((f) => ({ ...f, password: e.target.value }))}
-                  />
-                  <button
-                    type="button"
-                    className="link-btn"
-                    onClick={() => setShowCredPassword((v) => !v)}
-                    title={showCredPassword ? "隐藏" : "显示"}
-                  >
-                    {showCredPassword ? "隐藏" : "显示"}
-                  </button>
-                </div>
-                <div className="field-row">
-                  <label>私钥路径</label>
-                  <input
-                    type="text"
-                    value={credForm.privateKeyPath}
-                    placeholder="（可选）如 ~/.ssh/id_ed25519"
-                    onChange={(e) => setCredForm((f) => ({ ...f, privateKeyPath: e.target.value }))}
-                  />
-                  <button type="button" className="link-btn" onClick={handlePickCredKeyFile}>
-                    选择
-                  </button>
-                </div>
-                <div className="field-row">
-                  <label>备注</label>
-                  <input
-                    type="text"
-                    value={credForm.note}
-                    placeholder="（可选）"
-                    onChange={(e) => setCredForm((f) => ({ ...f, note: e.target.value }))}
-                  />
-                </div>
-                <div className="ssh-form-hint">
-                  密码和私钥路径至少填写一项。一个凭据可同时持有两者（适配「自动」认证模式）。
-                </div>
+                <Input type="text" placeholder="例如：公司跳板机密钥" />
+              </FormItem>
+              <div className="ssh-form-cred-row">
+                <FormItem
+                  label="密码"
+                  name="password"
+                  className="ssh-form-cred-item"
+                >
+                  <Input type={showCredPassword ? "text" : "password"} placeholder="（可选）留空则不使用密码" />
+                </FormItem>
+                <Button
+                  type="link"
+                  size="small"
+                  htmlType="button"
+                  className="ssh-form-cred-manage"
+                  onClick={() => setShowCredPassword((v) => !v)}
+                  title={showCredPassword ? "隐藏" : "显示"}
+                >
+                  {showCredPassword ? "隐藏" : "显示"}
+                </Button>
+              </div>
+              <div className="ssh-form-cred-row">
+                <FormItem label="私钥路径" name="privateKeyPath" className="ssh-form-cred-item">
+                  <Input type="text" placeholder="（可选）如 ~/.ssh/id_ed25519" />
+                </FormItem>
+                <Button type="link" size="small" htmlType="button" className="ssh-form-cred-manage" onClick={handlePickCredKeyFile}>
+                  选择
+                </Button>
+              </div>
+              <FormItem label="备注" name="note">
+                <Input type="text" placeholder="（可选）" />
+              </FormItem>
+              <div className="ssh-form-hint">
+                一个凭据可同时持有密码和私钥（适配「自动」认证模式）。
               </div>
             </div>
-            <div className="ssh-modal-footer">
-              <button type="button" className="link-btn" onClick={handleCancelCredForm}>
+            <div className="provider-modal-footer">
+              <Button type="primary" htmlType="button" onClick={handleCancelCredForm}>
                 取消
-              </button>
-              <button type="button" className="ssh-modal-submit" onClick={handleSubmitCred}>
+              </Button>
+              <Button type="primary" htmlType="submit">
                 {credFormMode === "edit" ? "保存" : "添加"}
-              </button>
+              </Button>
             </div>
-          </div>
-        </div>
+          </Form>
+        </Modal>
       )}
+      {confirmDialog}
     </div>
   );
 }

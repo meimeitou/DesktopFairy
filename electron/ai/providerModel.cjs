@@ -2,7 +2,6 @@ const { createOpenAI } = require('@ai-sdk/openai');
 const { createOpenAICompatible } = require('@ai-sdk/openai-compatible');
 const { createAnthropic } = require('@ai-sdk/anthropic');
 const { createOllama } = require('ollama-ai-provider-v2');
-const { filterHermesSseChunk, flushHermesSseCarry } = require('./hermesSseFilter.cjs');
 
 function withoutTrailingSlash(url) {
   return String(url || '').trim().replace(/\/+$/, '');
@@ -37,53 +36,11 @@ function isOfficialOpenAIHost(apiHost) {
 }
 
 /**
- * Filter Hermes tool-status SSE events that aren't valid OpenAI completion chunks.
- * Hermes streams `{"tool":…,"toolCallId":…,"status":…}` alongside regular chunks;
- * the AI SDK's schema validator rejects them with "Type validation failed".
- */
-function createHermesFilterFetch() {
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  return async function hermesFetch(url, options) {
-    const resp = await globalThis.fetch(url, options);
-    if (!resp.body) return resp;
-    const ct = resp.headers.get('content-type') || '';
-    if (!ct.includes('event-stream')) return resp;
-
-    const reader = resp.body.getReader();
-    let carry = '';
-    const filtered = new ReadableStream({
-      async pull(controller) {
-        const { done, value } = await reader.read();
-        if (done) {
-          const tail = decoder.decode();
-          const result = filterHermesSseChunk(tail, carry);
-          const out = result.out + flushHermesSseCarry(result.carry);
-          if (out) controller.enqueue(encoder.encode(out));
-          controller.close();
-          return;
-        }
-        const text = decoder.decode(value, { stream: true });
-        const result = filterHermesSseChunk(text, carry);
-        carry = result.carry;
-        if (result.out) controller.enqueue(encoder.encode(result.out));
-      },
-      cancel() { reader.cancel(); },
-    });
-    return new Response(filtered, {
-      status: resp.status,
-      statusText: resp.statusText,
-      headers: resp.headers,
-    });
-  };
-}
-
-/**
  * Resolve an AI SDK language model from DesktopFairy apiConfig.
- * @param {{ apiHost: string, apiKey?: string, providerType?: string, providerId?: string, modelName: string }} apiConfig
+ * @param {{ apiHost: string, apiKey?: string, providerType?: string, modelName: string }} apiConfig
  */
 function resolveProviderModel(apiConfig) {
-  const { apiHost, apiKey, providerType, providerId, modelName } = apiConfig || {};
+  const { apiHost, apiKey, providerType, modelName } = apiConfig || {};
   if (!apiHost || !modelName) {
     throw new Error('resolveProviderModel: missing apiHost or modelName');
   }
@@ -122,7 +79,6 @@ function resolveProviderModel(apiConfig) {
     name: 'desktop-fairy',
     apiKey: key,
     baseURL,
-    ...(providerId === 'hermes' ? { fetch: createHermesFilterFetch() } : {}),
   });
   return compatible(modelName);
 }

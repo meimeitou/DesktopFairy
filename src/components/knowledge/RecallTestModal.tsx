@@ -1,3 +1,4 @@
+import { Button, Input, Modal } from "animal-island-ui";
 import { useMemo, useState } from "react";
 import type { KnowledgeHit } from "../../shared/knowledge";
 import {
@@ -86,27 +87,22 @@ export default function RecallTestModal({
   };
 
   return (
-    <div className="kb-modal" onClick={onClose}>
-      <div
-        className="kb-modal-card kb-recall-modal-card"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header className="kb-settings-modal-header">
-          <div>
-            <h3>召回测试</h3>
-            <p className="field-hint">
-              对「{baseName}」走与对话相同的向量检索。低于匹配度阈值的分块不会进入对话。
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn-ghost kb-settings-close"
-            onClick={onClose}
-            aria-label="关闭"
-          >
-            关闭
-          </button>
-        </header>
+    <Modal
+      open
+      title={
+        <span>
+          召回测试
+          <small className="kb-recall-title-hint">
+            对「{baseName}」走与对话相同的向量检索。低于匹配度阈值的分块不会进入对话。
+          </small>
+        </span>
+      }
+      onClose={onClose}
+      footer={null}
+      width={640}
+      typewriter={false}
+      className="kb-recall-modal"
+    >
         <div className="field">
           <label htmlFor="kb-recall-query">问题</label>
           <textarea
@@ -127,7 +123,7 @@ export default function RecallTestModal({
         <div className="kb-recall-toolbar">
           <label className="kb-recall-topk">
             <span>topK</span>
-            <input
+            <Input
               type="number"
               min={1}
               max={20}
@@ -139,7 +135,7 @@ export default function RecallTestModal({
           </label>
           <label className="kb-recall-topk">
             <span>匹配度</span>
-            <input
+            <Input
               type="number"
               min={0}
               max={100}
@@ -152,14 +148,14 @@ export default function RecallTestModal({
             <span>%</span>
           </label>
           <span className="kb-modal-spacer" />
-          <button
-            type="button"
-            className="btn-secondary"
+          <Button
+            type="primary"
+            size="small"
             disabled={!query.trim() || searching}
             onClick={() => void runSearch()}
           >
             {searching ? "检索中…" : "检索"}
-          </button>
+          </Button>
         </div>
         {error && <p className="kb-item-error">{error}</p>}
         {hits && hits.length === 0 && !error && (
@@ -186,14 +182,15 @@ export default function RecallTestModal({
                 >
                   <div className="kb-recall-hit-head">
                     <span className="kb-recall-rank">{index + 1}</span>
-                    <button
-                      type="button"
+                    <Button
+                      type="link"
+                      size="small"
                       className="kb-recall-source"
                       title="预览该条目"
                       onClick={() => onOpenItem(hit.itemId, hit.sourceName)}
                     >
                       {hit.sourceName}
-                    </button>
+                    </Button>
                     <span className="kb-recall-meta">
                       {hit.itemType === "note" ? "笔记" : "文件"} · 分块 {hit.chunkIndex + 1}
                       {relevant ? "" : " · 未达阈值"}
@@ -209,7 +206,6 @@ export default function RecallTestModal({
             })}
           </ol>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }

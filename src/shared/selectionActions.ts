@@ -19,14 +19,14 @@ export const DEFAULT_SELECTION_ACTIONS: SelectionActionItem[] = [
     name: "询问",
     enabled: true,
     isBuiltIn: true,
-    icon: "💬",
+    icon: "Chat",
   },
   {
     id: "translate",
     name: "翻译",
     enabled: true,
     isBuiltIn: true,
-    icon: "🌐",
+    icon: "Globe",
     prompt: "请翻译以下内容，只输出译文：\n\n{{text}}",
   },
   {
@@ -34,7 +34,7 @@ export const DEFAULT_SELECTION_ACTIONS: SelectionActionItem[] = [
     name: "解释",
     enabled: true,
     isBuiltIn: true,
-    icon: "💡",
+    icon: "Bulb",
     prompt: "请解释以下内容：\n\n{{text}}",
   },
   {
@@ -42,7 +42,7 @@ export const DEFAULT_SELECTION_ACTIONS: SelectionActionItem[] = [
     name: "总结",
     enabled: true,
     isBuiltIn: true,
-    icon: "📝",
+    icon: "Edit",
     prompt: "请总结以下内容的要点：\n\n{{text}}",
   },
   {
@@ -50,7 +50,7 @@ export const DEFAULT_SELECTION_ACTIONS: SelectionActionItem[] = [
     name: "搜索",
     enabled: true,
     isBuiltIn: true,
-    icon: "🔍",
+    icon: "Search",
     searchEngine: DEFAULT_SEARCH_ENGINE,
   },
   {
@@ -58,14 +58,14 @@ export const DEFAULT_SELECTION_ACTIONS: SelectionActionItem[] = [
     name: "复制",
     enabled: true,
     isBuiltIn: true,
-    icon: "📋",
+    icon: "Copy",
   },
   {
     id: "quote",
     name: "引用",
     enabled: false,
     isBuiltIn: true,
-    icon: "❝",
+    icon: "Book",
   },
 ];
 

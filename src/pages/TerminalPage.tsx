@@ -1,6 +1,8 @@
+import { Button, Icon } from "animal-island-ui";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Terminal } from "@xterm/xterm";
 import type { Terminal as TerminalType } from "@xterm/xterm";
+import { useConfirm } from "../hooks/useConfirm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon } from "@xterm/addon-search";
@@ -60,6 +62,7 @@ function TerminalInstance({
   onSearchAddonReady,
   onSearchAddonDispose,
   onContextMenu,
+  requestPasteConfirm,
 }: {
   isActive: boolean;
   tabId: string;
@@ -76,6 +79,7 @@ function TerminalInstance({
   onSearchAddonReady?: (tabId: string, xterm: TerminalType, searchAddon: SearchAddon) => void;
   onSearchAddonDispose?: (tabId: string) => void;
   onContextMenu?: (tabId: string, x: number, y: number) => void;
+  requestPasteConfirm: (normalized: string) => Promise<boolean>;
 }) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
@@ -112,10 +116,11 @@ function TerminalInstance({
       // horizontal rescale for GB18030-style column alignment.
       rescaleOverlappingGlyphs: true,
       theme: {
-        background: "transparent",
-        foreground: "rgba(255, 255, 255, 0.85)",
-        cursor: "rgba(255, 255, 255, 0.7)",
-        selectionBackground: "rgba(255, 255, 255, 0.15)",
+        // 官方 CodeBlock 配色：暖深棕底 + 奶油字（animal-island-ui demo）
+        background: "#2b2118",
+        foreground: "#e8d5bc",
+        cursor: "#a8d4a0",
+        selectionBackground: "rgba(25, 200, 185, 0.30)",
       },
     });
 
@@ -274,7 +279,7 @@ function TerminalInstance({
       const normalized = text.replace(/\r\n|\n/g, "\r");
       if (
         normalized.includes("\r") &&
-        !window.confirm("粘贴内容包含多行，确定继续？")
+        !(await requestPasteConfirm(normalized))
       ) {
         return;
       }
@@ -508,6 +513,7 @@ export default function TerminalPage({
     tabId: string;
   } | null>(null);
   const settings = useSettings();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [sshPickerOpen, setSshPickerOpen] = useState(false);
   const [sshPickerStyle, setSshPickerStyle] = useState<React.CSSProperties>({});
   const [settingsInitialSection, setSettingsInitialSection] = useState<"appearance" | "ssh">("appearance");
@@ -799,14 +805,18 @@ export default function TerminalPage({
           const detail = result.comm
             ? `「${result.comm}」正在运行，`
             : "有命令正在执行，";
-          if (!window.confirm(`${detail}确定关闭此终端标签页吗？`)) return;
+          if (!(await confirm({ title: "关闭终端", content: `${detail}确定关闭此终端标签页吗？` }))) return;
         }
       } catch {
-        if (!window.confirm("无法确认终端状态，确定关闭此标签页吗？")) return;
+        if (!(await confirm({ title: "关闭终端", content: "无法确认终端状态，确定关闭此标签页吗？" }))) return;
       }
     }
     closeTabById(id);
-  }, [closeTabById]);
+  }, [closeTabById, confirm]);
+
+  const requestPasteConfirm = useCallback(async () => {
+    return confirm({ title: "粘贴多行内容", okText: "粘贴", content: "粘贴内容包含多行，确定继续？" });
+  }, [confirm]);
 
   const handleCloseTab = useCallback(
     (id: string, e: React.MouseEvent) => {
@@ -900,6 +910,7 @@ export default function TerminalPage({
                   onSearchAddonReady={handleSearchAddonReady}
                   onSearchAddonDispose={handleSearchAddonDispose}
                   onContextMenu={handleContextMenu}
+                  requestPasteConfirm={requestPasteConfirm}
                 />
               )
             )
@@ -950,88 +961,46 @@ export default function TerminalPage({
               className={`terminal-tab-item${tab.id === activeTabId ? " active" : ""}`}
               onClick={() => setActiveTabId(tab.id)}
             >
-              <span>{tab.title}</span>
-              <div
+              <span className="terminal-tab-title">{tab.title}</span>
+              <span
                 className="terminal-tab-close"
+                role="button"
+                tabIndex={-1}
+                aria-label="关闭标签页"
                 onClick={(e) => handleCloseTab(tab.id, e)}
               >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </div>
+                ×
+              </span>
             </button>
           ))}
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="terminal-tab-add"
+            icon={<Icon name="Plus" size={14} />}
             onClick={handleAddTab}
             title="新建终端 (Cmd+T)"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
+          />
           <div className="terminal-tab-ssh-wrap">
-            <button
-              ref={sshBtnRef}
-              type="button"
+            <span ref={sshBtnRef as React.RefObject<HTMLSpanElement>} className="terminal-tab-ssh-anchor">
+            <Button
+              type="text"
+              size="small"
               className={`terminal-tab-ssh${sshPickerOpen ? " active" : ""}`}
+              icon={<Icon name="Video" size={15} />}
               onClick={handleToggleSshPicker}
               title="SSH 连接"
-            >
-              <svg
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="2" y="3" width="20" height="6" rx="1" />
-                <rect x="2" y="13" width="20" height="8" rx="1" />
-                <line x1="6" y1="17" x2="6" y2="17" />
-                <line x1="10" y1="17" x2="10" y2="17" />
-              </svg>
-            </button>
+            />
+            </span>
           </div>
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="terminal-tab-settings"
+            icon={<Icon name="Settings" size={14} />}
             onClick={handleOpenSettings}
             title="终端设置"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
+          />
         </div>
       </div>
 
@@ -1058,32 +1027,16 @@ export default function TerminalPage({
       )}
 
       {hasSessionTab && (
-        <button
-          type="button"
+        <Button
+          type="default"
           className={`terminal-agent-toggle${drawerOpen ? " open" : ""}`}
           onClick={() => setDrawerOpen((v) => !v)}
           title="AI 助手"
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 3a9 9 0 0 1 9 9 9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9Z" />
-            <path d="M9 10h.01" />
-            <path d="M15 10h.01" />
-            <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
-            <path d="M12 3v2" />
-            <path d="M4.2 7.5l1.4-1.4" />
-            <path d="M18.4 6.1l1.4 1.4" />
-          </svg>
-        </button>
+          <Icon name="Smile" size={18} />
+        </Button>
       )}
+      {confirmDialog}
     </div>
   );
 }

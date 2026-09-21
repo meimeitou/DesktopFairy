@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button, Icon } from "animal-island-ui";
 import Live2DCanvas from "../components/Live2DCanvas";
 import {
   normalizeSpeechBubbleMaxChars,
@@ -119,19 +120,23 @@ export default function MainView() {
           />
         ) : (
           <div className="char-default">
-            <span className="char-emoji">🧚</span>
+            <span className="char-emoji"><Icon name="Butterfly" size={72} /></span>
           </div>
         )}
       </div>
 
       {isHovered && (
         <div className="hover-overlay">
-          <button
-            className="hover-btn primary"
+          <Button
+            type="primary"
+            size="small"
+            className="hover-chat-btn"
+            icon={<Icon name="Chat" size={12} />}
+            title="开始聊天"
             onClick={() => api.invoke("open_chat_window")}
           >
-            💬 开始聊天
-          </button>
+            开始聊天
+          </Button>
         </div>
       )}
     </div>

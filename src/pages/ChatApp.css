@@ -8,7 +8,6 @@ html.chat-window-shell body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--ink-900);
   color: var(--bone-300);
   overflow: hidden;
 }
@@ -21,7 +20,7 @@ html.chat-window-shell body {
   height: 44px;
   padding: 0 12px;
   border-bottom: 1px solid var(--hairline);
-  background: var(--ink-900);
+  background: rgba(245, 248, 224, 0.75);
   -webkit-app-region: drag;
 }
 
@@ -44,30 +43,13 @@ html.chat-window-shell body {
 }
 
 .chat-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
   min-width: 72px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
   color: var(--bone-500);
   font-size: 13px;
   font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.chat-tab:hover {
-  background: var(--hairline);
-  color: var(--bone-200);
 }
 
 .chat-tab.active {
-  background: var(--persimmon-softer);
   color: var(--bone-100);
 }
 
@@ -83,34 +65,7 @@ html.chat-window-shell body {
 }
 
 .chat-window-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--bone-500);
-  cursor: pointer;
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
-  transition: background 0.15s, color 0.15s;
-}
-
-.chat-window-close:hover {
-  background: var(--rust-soft);
-  color: var(--rust-bright);
-}
-
-.chat-app-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--hairline);
-  background: rgba(0, 0, 0, 0.10);
   -webkit-app-region: no-drag;
 }
 
@@ -120,6 +75,7 @@ html.chat-window-shell body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 12px;
 }
 
 .chat-app-panel {

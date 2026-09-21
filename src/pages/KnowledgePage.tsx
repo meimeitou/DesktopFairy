@@ -1,3 +1,6 @@
+import { Button, Icon, Input } from "animal-island-ui";
+import Select from "../components/Select";
+import { useConfirm } from "../hooks/useConfirm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   KnowledgeBase,
@@ -51,115 +54,27 @@ function formatItemTime(ts: number): string {
 }
 
 function MoreIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="5" r="1.7" />
-      <circle cx="12" cy="12" r="1.7" />
-      <circle cx="12" cy="19" r="1.7" />
-    </svg>
-  );
+  return <Icon name="Plus" size={14} />;
 }
 
 function NoteAddIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-      <polyline points="10 9 9 9 8 9" />
-    </svg>
-  );
+  return <Icon name="Edit" size={20} />;
 }
 
 function FileAddIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-      <polyline points="13 2 13 9 20 9" />
-    </svg>
-  );
+  return <Icon name="File" size={20} />;
 }
 
 function DeleteIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="3 6 5 6 21 6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </svg>
-  );
+  return <Icon name="Trash" size={12} />;
 }
 
 function EditIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 20h9" />
-      <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-    </svg>
-  );
+  return <Icon name="Edit" size={12} />;
 }
 
 function SettingsGearIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
+  return <Icon name="Settings" size={14} />;
 }
 
 export default function KnowledgePage({
@@ -168,6 +83,7 @@ export default function KnowledgePage({
   isActive?: boolean;
 }) {
   const settings = useSettings();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const embeddingReady =
     Boolean(getEmbeddingApiConfig(settings)) &&
     knowledgeSettingsConfigured(settings.knowledge);
@@ -378,7 +294,7 @@ export default function KnowledgePage({
   };
 
   const deleteBase = async (base: KnowledgeBase) => {
-    if (!window.confirm(`删除知识库「${base.name}」？`)) return;
+    if (!(await confirm({ title: "删除知识库", content: `删除知识库「${base.name}」？` }))) return;
     await api.invoke("knowledge:delete_base", { baseId: base.id });
     if (activeId === base.id) setActiveId(null);
     await reload();
@@ -397,12 +313,13 @@ export default function KnowledgePage({
   const deleteItems = async (ids: string[]) => {
     if (!active || ids.length === 0) return;
     const first = items.find((item) => item.id === ids[0]);
-    const ok = window.confirm(
-      ids.length === 1
-        ? `删除「${first?.sourceName || "该条目"}」？`
-        : `删除选中的 ${ids.length} 条？`,
-    );
-    if (!ok) return;
+    if (!(await confirm({
+      title: "删除条目",
+      content:
+        ids.length === 1
+          ? `删除「${first?.sourceName || "该条目"}」？`
+          : `删除选中的 ${ids.length} 条？`,
+    }))) return;
     setItemMenu(null);
     for (const itemId of ids) {
       await api.invoke("knowledge:delete_item", { baseId: active.id, itemId });
@@ -570,34 +487,36 @@ export default function KnowledgePage({
           <span>
             尚未配置全局 embedding 模型，请在左侧底部打开设置完成配置。
           </span>
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="kb-banner-dismiss"
             onClick={() => setSettingsOpen(true)}
           >
             打开设置
-          </button>
+          </Button>
         </div>
       )}
       {error && (
         <div className="kb-banner kb-banner-error">
           <span>{error}</span>
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="kb-banner-dismiss"
             onClick={() => setError("")}
           >
             关闭
-          </button>
+          </Button>
         </div>
       )}
       <div className="kb-layout">
         <aside className="kb-nav">
           <div className="kb-nav-add">
-            <button
-              type="button"
-              className="btn-secondary"
-              style={{ width: "100%" }}
+            <Button
+              type="primary"
+              size="small"
+              block
               onClick={() => {
                 setCreating("");
                 setNewKind("vector");
@@ -605,7 +524,7 @@ export default function KnowledgePage({
               }}
             >
               + 新建知识库
-            </button>
+            </Button>
           </div>
           {bases.length === 0 ? (
             <p className="kb-nav-empty">还没有知识库</p>
@@ -617,7 +536,7 @@ export default function KnowledgePage({
                   className={`kb-nav-item${base.id === active?.id ? " active" : ""}`}
                 >
                   {renamingId === base.id ? (
-                    <input
+                    <Input
                       className="kb-nav-rename"
                       value={renameText}
                       autoFocus
@@ -639,8 +558,8 @@ export default function KnowledgePage({
                     />
                   ) : (
                     <>
-                      <button
-                        type="button"
+                      <Button
+                        type="text"
                         className="kb-nav-item-main"
                         onClick={() => setActiveId(base.id)}
                       >
@@ -660,27 +579,28 @@ export default function KnowledgePage({
                             半
                           </span>
                         )}
-                      </button>
+                      </Button>
                       <span className="kb-nav-item-count">
                         {base.items?.length || 0}
                       </span>
                       <div className="kb-nav-item-actions">
-                        <button
-                          type="button"
+                        <Button
+                          type="text"
+                          size="small"
                           className="kb-nav-action"
                           title="重命名"
+                          icon={<EditIcon />}
                           onClick={() => startRename(base)}
-                        >
-                          <EditIcon />
-                        </button>
-                        <button
-                          type="button"
-                          className="kb-nav-action danger"
+                        />
+                        <Button
+                          type="default"
+                          size="small"
+                          danger
+                          className="kb-nav-action"
                           title="删除"
+                          icon={<DeleteIcon />}
                           onClick={() => void deleteBase(base)}
-                        >
-                          <DeleteIcon />
-                        </button>
+                        />
                       </div>
                     </>
                   )}
@@ -689,14 +609,15 @@ export default function KnowledgePage({
             </ul>
           )}
           <div className="kb-nav-footer">
-            <button
-              type="button"
+            <Button
+              type="text"
+              size="small"
               className="kb-nav-settings"
+              icon={<SettingsGearIcon />}
               onClick={() => setSettingsOpen(true)}
             >
-              <SettingsGearIcon />
               <span>设置</span>
-            </button>
+            </Button>
           </div>
         </aside>
         <section className="kb-detail">
@@ -715,9 +636,9 @@ export default function KnowledgePage({
                   {selectedItems.length > 0 && (
                     <div className="kb-bulk-actions">
                       <span>已选 {selectedItems.length}</span>
-                      <button
-                        type="button"
-                        className="btn-ghost"
+                      <Button
+                        type="default"
+                        size="small"
                         onClick={() =>
                           void reindexItems(
                             selectedItems.map((item) => item.id),
@@ -725,33 +646,34 @@ export default function KnowledgePage({
                         }
                       >
                         重建索引
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost kb-danger"
+                      </Button>
+                      <Button
+                        type="default"
+                        size="small"
+                        danger
                         onClick={() =>
                           void deleteItems(selectedItems.map((item) => item.id))
                         }
                       >
                         删除
-                      </button>
+                      </Button>
                     </div>
                   )}
                   <span className="kb-modal-spacer" />
-                  <button
-                    type="button"
-                    className="btn-ghost"
+                  <Button
+                    type="default"
+                    size="small"
                     onClick={() => setRecallOpen(true)}
                   >
                     召回测试
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
+                  </Button>
+                  <Button
+                    type="primary"
+                    size="small"
                     onClick={() => setAddOpen(true)}
                   >
                     添加数据
-                  </button>
+                  </Button>
                 </div>
                 {items.length === 0 ? (
                   <div className="kb-empty-state kb-list-empty">
@@ -800,14 +722,15 @@ export default function KnowledgePage({
                               </td>
                               <td className="kb-col-name">
                                 {item.type === "note" ? (
-                                  <button
-                                    type="button"
+                                  <Button
+                                    type="text"
+                                    size="small"
                                     className="kb-item-name-btn"
                                     onClick={() => openEditNote(item)}
                                     title={item.sourceName}
                                   >
                                     {item.sourceName}
-                                  </button>
+                                  </Button>
                                 ) : (
                                   <span
                                     className="kb-item-name"
@@ -830,32 +753,27 @@ export default function KnowledgePage({
                               {activeSemi && (
                                 <td className="kb-col-desc">
                                   {item.description ? (
-                                    <button
-                                      type="button"
+                                    <Button
+                                      type="text"
+                                      size="small"
                                       className="kb-item-name-btn"
                                       onClick={() => openDescEditor(item)}
                                       title={item.description}
-                                      style={{
-                                        textAlign: "left",
-                                        maxWidth: 280,
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
+                                      style={{ maxWidth: 280 }}
                                     >
                                       {item.description}
-                                    </button>
+                                    </Button>
                                   ) : item.descriptionStatus ===
                                     "generating" ? (
                                     <span className="kb-empty">生成中…</span>
                                   ) : (
-                                    <button
-                                      type="button"
-                                      className="btn-ghost"
+                                    <Button
+                                      type="default"
+                                      size="small"
                                       onClick={() => openDescEditor(item)}
                                     >
                                       未设置，去添加
-                                    </button>
+                                    </Button>
                                   )}
                                 </td>
                               )}
@@ -872,10 +790,12 @@ export default function KnowledgePage({
                                 )}
                               </td>
                               <td className="kb-col-action">
-                                <button
-                                  type="button"
+                                <Button
+                                  type="text"
+                                  size="small"
                                   className="kb-row-more"
                                   title="操作"
+                                  icon={<MoreIcon />}
                                   onMouseDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -885,9 +805,7 @@ export default function KnowledgePage({
                                     }
                                     openItemMenu(item.id, e.currentTarget);
                                   }}
-                                >
-                                  <MoreIcon />
-                                </button>
+                                />
                               </td>
                             </tr>
                           );
@@ -912,39 +830,39 @@ export default function KnowledgePage({
               style={{ top: itemMenu.top, left: itemMenu.left }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <button type="button" onClick={() => void openPreview(menuItem)}>
+              <Button type="text" onClick={() => void openPreview(menuItem)}>
                 预览
-              </button>
+              </Button>
               {menuItem.type === "note" && (
-                <button
-                  type="button"
+                <Button
+                  type="text"
                   onClick={() => {
                     setItemMenu(null);
                     openEditNote(menuItem);
                   }}
                 >
                   编辑
-                </button>
+                </Button>
               )}
               {activeSemi && menuItem.type === "file" && (
-                <button type="button" onClick={() => openDescEditor(menuItem)}>
+                <Button type="text" onClick={() => openDescEditor(menuItem)}>
                   编辑描述
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
+              <Button
+                type="text"
                 disabled={reindexDisabled}
                 onClick={() => void reindexItems([menuItem.id])}
               >
                 重建索引
-              </button>
-              <button
-                type="button"
-                className="danger"
+              </Button>
+              <Button
+                type="default"
+                danger
                 onClick={() => void deleteItems([menuItem.id])}
               >
                 删除
-              </button>
+              </Button>
             </div>
           );
         })()}
@@ -961,14 +879,15 @@ export default function KnowledgePage({
                   {preview === "loading" ? "读取中…" : preview.title}
                 </p>
               </div>
-              <button
-                type="button"
-                className="btn-ghost kb-settings-close"
+              <Button
+                type="default"
+                size="small"
+                className="kb-settings-close"
                 onClick={() => setPreview(null)}
                 aria-label="关闭"
               >
                 关闭
-              </button>
+              </Button>
             </header>
             {preview === "loading" ? (
               <p className="kb-empty">正在读取内容…</p>
@@ -1030,8 +949,8 @@ export default function KnowledgePage({
                 : "选择要加入当前知识库的类型。"}
             </p>
             <div className="kb-add-choices">
-              <button
-                type="button"
+              <Button
+                type="text"
                 className="kb-add-choice"
                 onClick={() => void addFiles()}
               >
@@ -1042,16 +961,16 @@ export default function KnowledgePage({
                     ? "md / txt / json / yaml"
                     : "txt / md / docx / pdf"}
                 </span>
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                type="text"
                 className="kb-add-choice"
                 onClick={openCreateNote}
               >
                 <NoteAddIcon />
                 <span className="kb-add-choice-title">笔记</span>
                 <span className="kb-add-choice-desc">标题 + Markdown 正文</span>
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1064,18 +983,19 @@ export default function KnowledgePage({
           >
             <header className="kb-settings-modal-header">
               <h3>{editingNote ? "编辑笔记" : "新建笔记"}</h3>
-              <button
-                type="button"
-                className="btn-ghost kb-settings-close"
+              <Button
+                type="default"
+                size="small"
+                className="kb-settings-close"
                 onClick={resetNote}
                 aria-label="关闭"
               >
                 关闭
-              </button>
+              </Button>
             </header>
             <div className="field">
               <label>标题</label>
-              <input
+              <Input
                 type="text"
                 value={noteTitle}
                 placeholder="笔记标题"
@@ -1102,24 +1022,24 @@ export default function KnowledgePage({
               )}
             </div>
             <div className="kb-note-tools">
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 onClick={() => setNotePreview((v) => !v)}
               >
                 {notePreview ? "编辑" : "预览"}
-              </button>
+              </Button>
               <span className="kb-modal-spacer" />
-              <button type="button" className="btn-ghost" onClick={resetNote}>
+              <Button type="primary" size="small" onClick={resetNote}>
                 取消
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
+              </Button>
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => void saveNote()}
               >
                 {editingNote ? "保存" : "添加"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1132,18 +1052,19 @@ export default function KnowledgePage({
           >
             <header className="kb-settings-modal-header">
               <h3>新建知识库</h3>
-              <button
-                type="button"
-                className="btn-ghost kb-settings-close"
+              <Button
+                type="default"
+                size="small"
+                className="kb-settings-close"
                 onClick={() => setCreateOpen(false)}
                 aria-label="关闭"
               >
                 关闭
-              </button>
+              </Button>
             </header>
             <div className="field">
               <label>名称</label>
-              <input
+              <Input
                 type="text"
                 autoFocus
                 value={creating}
@@ -1228,20 +1149,20 @@ export default function KnowledgePage({
             </div>
             <div className="kb-note-tools">
               <span className="kb-modal-spacer" />
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 onClick={() => setCreateOpen(false)}
               >
                 取消
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
+              </Button>
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => void createBase()}
               >
                 创建
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1257,14 +1178,15 @@ export default function KnowledgePage({
                 <h3>编辑描述</h3>
                 <p className="field-hint">{descEditing.item.sourceName}</p>
               </div>
-              <button
-                type="button"
-                className="btn-ghost kb-settings-close"
+              <Button
+                type="default"
+                size="small"
+                className="kb-settings-close"
                 onClick={() => setDescEditing(null)}
                 aria-label="关闭"
               >
                 关闭
-              </button>
+              </Button>
             </header>
             <div className="field">
               <label>描述（LLM 将根据它筛选文件，200-500 字为佳）</label>
@@ -1284,30 +1206,30 @@ export default function KnowledgePage({
               </p>
             </div>
             <div className="kb-note-tools">
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 disabled={!descReady || descEditing.regenerating}
                 onClick={() => void regenerateDescription()}
                 title={descReady ? "" : "需在设置中选择描述生成 LLM"}
               >
                 {descEditing.regenerating ? "生成中…" : "AI 重新生成"}
-              </button>
+              </Button>
               <span className="kb-modal-spacer" />
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 onClick={() => setDescEditing(null)}
               >
                 取消
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
+              </Button>
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => void saveDescription()}
               >
                 保存
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1323,14 +1245,15 @@ export default function KnowledgePage({
                 <h3>知识库设置</h3>
                 <p className="field-hint">全局 embedding、分块与召回条数</p>
               </div>
-              <button
-                type="button"
-                className="btn-ghost kb-settings-close"
+              <Button
+                type="default"
+                size="small"
+                className="kb-settings-close"
                 onClick={() => setSettingsOpen(false)}
                 aria-label="关闭"
               >
                 关闭
-              </button>
+              </Button>
             </header>
             <KnowledgeSettingsSection
               settings={settings}
@@ -1351,10 +1274,10 @@ export default function KnowledgePage({
             {conflicts.map((file, idx) => (
               <label key={file.path} className="kb-conflict-row">
                 <span className="kb-conflict-name">{file.name}</span>
-                <select
+                <Select
                   value={file.action}
-                  onChange={(e) => {
-                    const action = e.target.value as "keep" | "replace";
+                  onChange={(key) => {
+                    const action = key as "keep" | "replace";
                     setConflicts(
                       (prev) =>
                         prev?.map((row, i) =>
@@ -1362,16 +1285,18 @@ export default function KnowledgePage({
                         ) || null,
                     );
                   }}
-                >
-                  <option value="keep">保留两者</option>
-                  <option value="replace">替换已有</option>
-                </select>
+                  options={[
+                    { key: "keep", label: "保留两者" },
+                    { key: "replace", label: "替换已有" },
+                  ]}
+                  aria-label={`冲突处理：${file.name}`}
+                />
               </label>
             ))}
             <div className="kb-modal-actions">
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 onClick={() =>
                   setConflicts(
                     (prev) =>
@@ -1380,10 +1305,10 @@ export default function KnowledgePage({
                 }
               >
                 全部保留
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
+              </Button>
+              <Button
+                type="default"
+                size="small"
                 onClick={() =>
                   setConflicts(
                     (prev) =>
@@ -1393,26 +1318,27 @@ export default function KnowledgePage({
                 }
               >
                 全部替换
-              </button>
+              </Button>
               <span className="kb-modal-spacer" />
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 onClick={() => setConflicts(null)}
               >
                 取消
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
+              </Button>
+              <Button
+                type="primary"
+                size="small"
                 onClick={() => void confirmConflicts()}
               >
                 确定
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

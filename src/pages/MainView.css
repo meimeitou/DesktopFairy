@@ -28,7 +28,7 @@
   font-size: 80px;
   line-height: 1;
   user-select: none;
-  filter: drop-shadow(0 4px 24px rgba(0, 185, 107, 0.35));
+  filter: drop-shadow(0 4px 24px rgba(25, 200, 185, 0.35));
 }
 
 /* Hover overlay — pill buttons at bottom center */
@@ -44,6 +44,13 @@
   pointer-events: auto;
 }
 
+/* Chat button: collapse to icon-only when the pet window is too narrow */
+@media (max-width: 120px) {
+  .hover-chat-btn > span:last-child {
+    display: none;
+  }
+}
+
 @keyframes overlay-in {
   from {
     opacity: 0;
@@ -55,39 +62,7 @@
   }
 }
 
-.hover-btn {
-  padding: 7px 14px;
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  background: rgba(28, 28, 28, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  white-space: nowrap;
-  user-select: none;
-  transition:
-    background 0.15s,
-    transform 0.1s;
-}
-.hover-btn:hover {
-  background: rgba(42, 42, 42, 0.94);
-  color: rgba(255, 255, 255, 0.95);
-  transform: translateY(-1px);
-}
-.hover-btn:active {
-  transform: translateY(0);
-}
-.hover-btn.primary {
-  background: rgba(0, 185, 107, 0.88);
-  border-color: rgba(34, 209, 122, 0.45);
-  color: #fff;
-}
-.hover-btn.primary:hover {
-  background: rgba(34, 209, 122, 0.92);
-}
+/* hover-btn skin removed — library primary variant (cream bg, brown text, 3D shadow) is the official look */
 
 /* Live2D loading/error overlays (used by Live2DCanvas) */
 .live2d-status {
@@ -101,17 +76,17 @@
   pointer-events: none;
 }
 .live2d-status > * {
-  background: rgba(28, 28, 28, 0.75);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(248, 244, 232, 0.88);
+  color: var(--bone-300);
   font-size: 13px;
   padding: 6px 14px;
-  border-radius: 8px;
+  border-radius: 12px;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 .live2d-error > * {
-  background: rgba(60, 10, 10, 0.85);
-  color: rgba(255, 120, 120, 0.95);
+  background: rgba(224, 90, 90, 0.14);
+  color: var(--rust);
 }
 .live2d-error small {
   font-size: 11px;

@@ -1,6 +1,4 @@
-import { useState } from "react";
-import { FieldHead } from "../HintTip";
-import RadioGroup from "../RadioGroup";
+import { Form, FormItem, Button, Input, Modal, Radio } from "animal-island-ui";
 import type { ProviderType } from "../../shared/providers";
 
 interface Props {
@@ -9,60 +7,60 @@ interface Props {
 }
 
 export default function AddProviderModal({ onClose, onConfirm }: Props) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState<ProviderType>("openai");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    onConfirm(name.trim(), type);
-  };
-
   return (
-    <div className="provider-modal-overlay" onClick={onClose}>
-      <form
-        className="provider-modal"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
+    <Modal
+      open
+      title="添加服务商"
+      onClose={onClose}
+      width={420}
+      className="provider-form-modal"
+      footer={null}
+      typewriter={false}
+    >
+      <Form
+        layout="vertical"
+        colon={false}
+        requiredMark
+        initialValues={{ name: "", type: "openai" as ProviderType }}
+        onFinish={(values) => {
+          const name = String(values.name ?? "").trim();
+          if (!name) return;
+          onConfirm(name, values.type as ProviderType);
+        }}
       >
-        <h4>添加服务商</h4>
-        <div className="field">
-          <FieldHead htmlFor="add-provider-name">名称</FieldHead>
-          <input
-            id="add-provider-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="例如：DeepSeek、本地 Ollama"
-            autoFocus
-          />
-        </div>
-        <div className="field">
-          <FieldHead hint="决定请求怎么拼、模型列表从哪拉。多数第三方选 OpenAI 兼容。">
-            类型
-          </FieldHead>
-          <RadioGroup<ProviderType>
-            name="providerType"
-            ariaLabel="服务商类型"
-            value={type}
+        <FormItem
+          label="名称"
+          name="name"
+          rules={[
+            { required: true, whitespace: true, message: "请输入名称" },
+          ]}
+        >
+          <Input type="text" shadow placeholder="例如：DeepSeek、本地 Ollama" autoFocus />
+        </FormItem>
+        <FormItem
+          label="类型"
+          name="type"
+          help="决定请求怎么拼、模型列表从哪拉。多数第三方选 OpenAI 兼容。"
+        >
+          <Radio
+            direction="vertical"
             options={[
               { value: "openai", label: "OpenAI 兼容 API" },
               { value: "openai-response", label: "OpenAI Responses API" },
               { value: "anthropic", label: "Anthropic Messages API" },
               { value: "ollama", label: "Ollama" },
             ]}
-            onChange={setType}
           />
-        </div>
+        </FormItem>
         <div className="provider-modal-footer">
-          <button type="button" onClick={onClose}>
+          <Button type="primary" htmlType="button" onClick={onClose}>
             取消
-          </button>
-          <button type="submit" disabled={!name.trim()}>
+          </Button>
+          <Button type="primary" htmlType="submit">
             添加
-          </button>
+          </Button>
         </div>
-      </form>
-    </div>
+      </Form>
+    </Modal>
   );
 }

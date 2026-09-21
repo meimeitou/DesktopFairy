@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { memo, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import AgentToolRenderer from "./agentTools/AgentToolRenderer";
@@ -123,8 +124,8 @@ export const ToolCallGroup = memo(
         <div
           className={`msg-tool-group-card${allSettled && !expanded ? " msg-tool-group-collapsed" : ""}`}
         >
-          <button
-            type="button"
+          <Button
+            type="text"
             className="msg-tool-group-head"
             onClick={() => {
               if (!allSettled) return;
@@ -139,10 +140,10 @@ export const ToolCallGroup = memo(
                 className={`msg-tool-group-chevron${expanded ? " open" : ""}`}
                 aria-hidden
               >
-                ▾
+                <Icon name="Play" size={12} />
               </span>
             )}
-          </button>
+          </Button>
           {expanded && (
             <ul className="agent-tool-steps">
               {tools.map((tool) => (

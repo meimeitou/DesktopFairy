@@ -142,7 +142,6 @@ function registerAgentHandlers(ipcMain, deps) {
     const resolved = settingsSnapshot.resolveForSend({
       agentConfig: payload?.agentConfig,
       apiConfig: payload?.apiConfig,
-      forceAgent: true,
     });
     if (!resolved.ok || !resolved.apiConfig || !resolved.agentConfig) {
       throw new Error(resolved.error || 'agent:run missing API config');

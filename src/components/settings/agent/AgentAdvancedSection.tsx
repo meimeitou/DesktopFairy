@@ -1,5 +1,5 @@
 import { FieldHead } from "../../HintTip";
-import RadioGroup from "../../RadioGroup";
+import { Input, Radio } from "animal-island-ui";
 import type { AgentConfig, ToolApprovalMode } from "../../../shared/agent";
 
 interface Props {
@@ -39,13 +39,13 @@ export default function AgentAdvancedSection({ agent, onChange }: Props) {
         <FieldHead hint="每次确认：执行工具前弹出审批。自动批准：跳过确认直接执行，仅建议在可信环境使用。">
           工具审批
         </FieldHead>
-        <RadioGroup
-          name="toolApprovalMode"
-          ariaLabel="工具审批模式"
-          layout="inline"
+        <Radio
           value={agent.toolApprovalMode}
-          options={APPROVAL_MODES}
-          onChange={(toolApprovalMode) => onChange({ toolApprovalMode })}
+          direction="horizontal"
+          options={APPROVAL_MODES.map((m) => ({ value: m.value, label: m.label }))}
+          onChange={(value) =>
+            onChange({ toolApprovalMode: value as typeof agent.toolApprovalMode })
+          }
         />
       </div>
 
@@ -57,16 +57,12 @@ export default function AgentAdvancedSection({ agent, onChange }: Props) {
           最大工具轮次
         </FieldHead>
         <div className="field-number-row">
-          <input
-            id="agent-max-turns"
-            type="number"
-            min={1}
-            max={100}
-            value={agent.maxTurns}
-            onChange={(e) =>
-              onChange({ maxTurns: Math.max(1, Number(e.target.value) || 30) })
-            }
-          />
+          <Input shadow id="agent-max-turns"
+          type="number"
+          min={1}
+          max={100} value={agent.maxTurns} onChange={(e) =>
+            onChange({ maxTurns: Math.max(1, Number(e.target.value) || 30) })
+          } />
           <span className="field-number-suffix">次</span>
         </div>
       </div>

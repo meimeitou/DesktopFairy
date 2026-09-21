@@ -14,26 +14,10 @@
 .model-selector-input {
   flex: 1;
   min-width: 0;
-  padding: 8px 11px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 8px;
+}
+
+.model-selector-input input {
   font-size: 13px;
-  color: var(--bone-100);
-  outline: none;
-  font-family: inherit;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-}
-
-.model-selector-input:focus {
-  border-color: var(--persimmon-focus);
-  background: var(--persimmon-softer);
-}
-
-.model-selector-input::placeholder {
-  color: rgba(255, 255, 255, 0.2);
 }
 
 .model-selector-combo {
@@ -47,37 +31,64 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 8px 11px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--bone-100);
-  outline: none;
-  font-family: inherit;
-  cursor: pointer;
   text-align: left;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px #d4c9b4;
+}
+
+/* Library Button wraps children in a bare <span> — make it a flex link in the
+   min-width:0 chain so the value span's ellipsis can take effect. */
+.model-selector-trigger > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .model-selector-trigger:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: var(--hairline-bold);
-}
-
-.model-selector-trigger:focus,
-.model-selector-combo.open .model-selector-trigger {
-  border-color: var(--persimmon-focus);
-  background: rgba(255, 255, 255, 0.07);
+  background: #fffdf7;
+  box-shadow: 0 2px #c4b89e;
 }
 
 .model-selector-trigger:disabled {
   opacity: 0.6;
-  cursor: not-allowed;
+}
+
+.model-selector-trigger .model-selector-value {
+  font-size: 12px;
+  color: var(--bone-200);
+}
+
+.model-selector-trigger .model-selector-caret {
+  font-size: 8px;
+}
+
+/* Settings/context form style: milk box with a soft bottom edge, matches inputs. */
+.model-selector-trigger.variant-field {
+  background: #faf8f3;
+  border: 1px solid transparent;
+  box-shadow: 0 3px #d4c9b4;
+  border-radius: 12px;
+  padding: 6px 14px;
+}
+
+.model-selector-trigger.variant-field:hover:not(:disabled) {
+  background: #fdfcf9;
+}
+
+.model-selector-trigger.variant-field .model-selector-value {
+  font-size: 13px;
+  color: var(--bone-100);
+}
+
+.model-selector-trigger.variant-field .model-selector-caret {
+  font-size: 10px;
 }
 
 .model-selector-value {
@@ -94,7 +105,6 @@
 
 .model-selector-caret {
   flex: 0 0 auto;
-  font-size: 10px;
   color: var(--bone-500);
   transition: transform 0.15s ease;
 }
@@ -114,11 +124,10 @@
   max-width: 320px;
   display: flex;
   flex-direction: column;
-  background: rgba(34, 30, 26, 0.98);
-  backdrop-filter: blur(14px);
+  background: var(--ink-850);
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 20px rgba(121, 79, 39, 0.18);
   z-index: 1000;
   overflow: hidden;
   animation: model-selector-panel-in 0.12s ease;
@@ -131,64 +140,48 @@
   max-width: 320px;
 }
 
+/* Upward panels never stretch the page: cap against the trigger's own height
+   budget so absolutely-positioned children can't extend document scroll. */
 .model-selector-combo.drop-up .model-selector-panel {
   top: auto;
   bottom: calc(100% + 4px);
+  max-height: min(320px, 60vh);
   animation: model-selector-panel-in-up 0.12s ease;
 }
 
 @keyframes model-selector-panel-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 @keyframes model-selector-panel-in-up {
   from {
     opacity: 0;
-    transform: translateY(-4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
 .model-selector-search-wrap {
-  padding: 6px;
+  padding: 4px 6px;
   border-bottom: 1px solid var(--hairline);
 }
 
-.model-selector-search {
+.model-selector-search-wrap [class^="animal-wrapper"] {
   width: 100%;
-  box-sizing: border-box;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
+}
+
+.model-selector-search-wrap [class^="animal-wrapper"] input {
   font-size: 12px;
-  color: var(--bone-100);
-  outline: none;
-  font-family: inherit;
-  transition: border-color 0.15s;
-}
-
-.model-selector-search:focus {
-  border-color: var(--persimmon-focus);
-  background: var(--persimmon-softer);
-}
-
-.model-selector-search::placeholder {
-  color: rgba(255, 255, 255, 0.2);
 }
 
 .model-selector-list {
-  max-height: 240px;
+  max-height: 224px;
   overflow-y: auto;
   padding: 4px;
   display: flex;
@@ -198,32 +191,24 @@
 .model-selector-option {
   display: block;
   width: 100%;
-  padding: 6px 10px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--bone-200);
-  font-size: 12px;
-  font-family: inherit;
   text-align: left;
-  cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
-  transition:
-    background 0.12s,
-    color 0.12s;
+  height: 30px;
+  border-radius: 8px;
 }
 
-.model-selector-option:hover {
-  background: var(--hairline);
+.model-selector-option:hover:not(:disabled):not(.selected) {
+  background: var(--persimmon-softer);
+}
+
+.model-selector-option.selected,
+.model-selector-option.selected:hover:not(:disabled) {
   color: var(--bone-100);
-}
-
-.model-selector-option.selected {
   background: var(--persimmon-soft);
-  color: var(--bone-100);
+  font-weight: 600;
 }
 
 .model-selector-empty {
@@ -234,22 +219,5 @@
 }
 
 .model-selector-mode-btn {
-  padding: 0 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 8px;
-  color: var(--bone-500);
-  font-size: 12px;
-  cursor: pointer;
   white-space: nowrap;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
-}
-
-.model-selector-mode-btn:hover {
-  background: var(--hairline);
-  border-color: var(--hairline-bold);
-  color: var(--bone-300);
 }

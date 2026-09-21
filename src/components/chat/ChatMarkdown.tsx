@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { memo, type MouseEvent } from "react";
 import {
   Streamdown,
@@ -22,9 +23,21 @@ interface Props {
   streaming?: boolean;
 }
 
-const SHELL_LANGS = ["bash", "sh", "shell", "zsh", "fish", "console", "terminal"];
+const SHELL_LANGS = [
+  "bash",
+  "sh",
+  "shell",
+  "zsh",
+  "fish",
+  "console",
+  "terminal",
+];
 
-function ShellCodeRenderer({ code: src, language, isIncomplete }: CustomRendererProps) {
+function ShellCodeRenderer({
+  code: src,
+  language,
+  isIncomplete,
+}: CustomRendererProps) {
   const handleRunInTerminal = () => {
     window.dispatchEvent(
       new CustomEvent("terminal:run-command", { detail: { command: src } }),
@@ -35,27 +48,16 @@ function ShellCodeRenderer({ code: src, language, isIncomplete }: CustomRenderer
       <div className="sd-shell-header">
         <span className="sd-shell-lang">{language || "code"}</span>
         <div className="sd-shell-actions">
-          <button
-            type="button"
+          <Button
+            type="text"
+            size="small"
             className="sd-shell-run"
             onClick={handleRunInTerminal}
             title="在终端运行"
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="4 17 10 11 4 5" />
-              <line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
+            <Icon name="Play" size={12} />
             在终端运行
-          </button>
+          </Button>
           <CodeBlockCopyButton code={src} title="复制代码" />
         </div>
       </div>
@@ -138,16 +140,21 @@ function ChatMarkdown({ content, streaming }: Props) {
   if (!content && streaming) return null;
 
   return (
-    <div className={`chat-markdown${streaming ? " chat-markdown-streaming" : ""}`}>
+    <div
+      className={`chat-markdown${streaming ? " chat-markdown-streaming" : ""}`}
+    >
       <Streamdown
         mode={streaming ? "streaming" : "static"}
         isAnimating={streaming}
         caret="block"
         plugins={plugins}
-        shikiTheme={["github-dark", "github-dark"]}
+        shikiTheme={["gruvbox-dark-soft", "gruvbox-dark-soft"]}
         lineNumbers={false}
         codeBlockMaxHeight={480}
-        controls={{ table: { fullscreen: true }, mermaid: { fullscreen: true } }}
+        controls={{
+          table: { fullscreen: true },
+          mermaid: { fullscreen: true },
+        }}
         translations={translations}
         components={components}
       >

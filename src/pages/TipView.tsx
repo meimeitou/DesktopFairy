@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   buildSearchUrl,
@@ -105,10 +106,10 @@ export default function TipView({ text: initialText }: Props) {
   if (enabledActions.length === 0) {
     return (
       <div className="tip-toolbar" ref={toolbarRef}>
-        <button type="button" className="tip-action-btn" onClick={() => openChat(formatFencedText(text))}>
-          <span>💬</span>
+        <Button type="text" className="tip-action-btn" onClick={() => openChat(formatFencedText(text))}>
+          <Icon name="Chat" size={14} />
           <span>询问</span>
-        </button>
+        </Button>
       </div>
     );
   }
@@ -116,16 +117,16 @@ export default function TipView({ text: initialText }: Props) {
   return (
     <div className="tip-toolbar" ref={toolbarRef}>
       {enabledActions.map((action) => (
-        <button
+        <Button
           key={action.id}
-          type="button"
+          type="text"
           className="tip-action-btn"
           title={action.name}
           onClick={() => handleAction(action)}
         >
-          <span className="tip-action-icon">{action.icon}</span>
+          <span className="tip-action-icon"><Icon name={action.icon as never} size={14} /></span>
           <span className="tip-action-label">{action.name}</span>
-        </button>
+        </Button>
       ))}
     </div>
   );

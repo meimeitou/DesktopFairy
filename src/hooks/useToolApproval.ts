@@ -1,3 +1,4 @@
+import { Notification } from "animal-island-ui";
 import { useCallback, useState, type MutableRefObject } from "react";
 import type { ChatMsg } from "../shared/chatMessages";
 
@@ -22,10 +23,10 @@ export function useToolApproval(
           approved,
         })) as boolean;
         if (!ok) {
-          alert("审批请求已失效，可能任务已结束。");
+          Notification.warning("审批请求已失效，可能任务已结束。");
         }
       } catch (e) {
-        alert(e instanceof Error ? e.message : "审批失败");
+        Notification.error(e instanceof Error ? e.message : "审批失败");
       } finally {
         setSubmittingApprovalId(null);
       }
@@ -42,12 +43,12 @@ export function useToolApproval(
           answers,
         })) as boolean;
         if (!ok) {
-          alert("提问已失效，可能任务已结束。");
+          Notification.warning("提问已失效，可能任务已结束。");
           return false;
         }
         return true;
       } catch (e) {
-        alert(e instanceof Error ? e.message : "提交回答失败");
+        Notification.error(e instanceof Error ? e.message : "提交回答失败");
         return false;
       } finally {
         setSubmittingApprovalId(null);

@@ -1,6 +1,8 @@
-import { useContext, type KeyboardEvent, type ReactNode } from "react";
-import { getToolDisplayName, getToolIcon } from "../../../shared/toolCallDisplay";
-import { ToolCancelContext } from "./ToolCancelContext";
+import type { KeyboardEvent, ReactNode } from "react";
+import {
+  getToolDisplayName,
+  getToolIcon,
+} from "../../../shared/toolCallDisplay";
 
 interface Props {
   toolName: string;
@@ -9,8 +11,6 @@ interface Props {
   collapsible?: boolean;
   expanded?: boolean;
   onToggle?: () => void;
-  /** 正在执行中时显示取消按钮，toolCallId 用于 per-tool cancel */
-  cancelToolCallId?: string;
 }
 
 export default function ToolHeader({
@@ -20,11 +20,7 @@ export default function ToolHeader({
   collapsible = false,
   expanded = true,
   onToggle,
-  cancelToolCallId,
 }: Props) {
-  const cancelTool = useContext(ToolCancelContext);
-  const showCancelBtn = !!cancelToolCallId && !!cancelTool;
-
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!collapsible || !onToggle) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -52,19 +48,6 @@ export default function ToolHeader({
         </div>
         {params && <div className="agent-tool-header-params">{params}</div>}
       </div>
-      {showCancelBtn && (
-        <button
-          type="button"
-          className="agent-tool-cancel-btn"
-          onClick={(e) => {
-            // 阻止冒泡：collapsible header 的 onClick 会展开/收起卡片
-            e.stopPropagation();
-            if (cancelToolCallId) cancelTool(cancelToolCallId);
-          }}
-        >
-          取消
-        </button>
-      )}
       {collapsible && (
         <span
           className={`agent-tool-chevron${expanded ? " agent-tool-chevron-expanded" : ""}`}

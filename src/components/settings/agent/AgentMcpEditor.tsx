@@ -1,5 +1,6 @@
+import { Button, Input, Switch } from "animal-island-ui";
+import Select from "../../Select";
 import { useMemo, useState } from "react";
-import Checkbox from "../../Checkbox";
 import HintTip, { FieldHead } from "../../HintTip";
 import type { McpServer, McpServerType } from "../../../shared/mcpServer";
 import {
@@ -149,36 +150,30 @@ export default function AgentMcpEditor({
 
       <div className="field">
         <label>名称</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={server.installSource === "builtin"}
-        />
+        <Input shadow type="text" value={name} onChange={(e) => setName(e.target.value)}
+        disabled={server.installSource === "builtin"} />
       </div>
 
       <div className="field">
         <label>描述</label>
-        <input
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="可选"
-        />
+        <Input shadow type="text" value={description} onChange={(e) => setDescription(e.target.value)}
+        placeholder="可选" />
       </div>
 
       <div className="field">
         <FieldHead hint="远程 MCP 暂不支持智能体运行时，请先使用 stdio。">
           传输类型
         </FieldHead>
-        <select
+        <Select
           value={type}
-          onChange={(e) => setType(e.target.value as McpServerType)}
-        >
-          <option value="stdio">stdio（本地进程）</option>
-          <option value="sse">SSE（远程）</option>
-          <option value="streamableHttp">Streamable HTTP（远程）</option>
-        </select>
+          onChange={(key) => setType(key as McpServerType)}
+          options={[
+            { key: "stdio", label: "stdio（本地进程）" },
+            { key: "sse", label: "SSE（远程）" },
+            { key: "streamableHttp", label: "Streamable HTTP（远程）" },
+          ]}
+          aria-label="传输类型"
+        />
         {type !== "stdio" && (
           <p className="field-hint field-hint--after warn">
             远程 MCP 暂不支持智能体运行时，请改用 stdio。
@@ -190,12 +185,8 @@ export default function AgentMcpEditor({
         <>
           <div className="field">
             <label>命令</label>
-            <input
-              type="text"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="npx"
-            />
+            <Input shadow type="text" value={command} onChange={(e) => setCommand(e.target.value)}
+            placeholder="npx" />
           </div>
           <div className="field">
             <FieldHead htmlFor="mcp-args" hint="每行一个参数。需要目录时，点下方按钮写入最后一行。">
@@ -210,13 +201,14 @@ export default function AgentMcpEditor({
               placeholder={"-y\n@modelcontextprotocol/server-fetch"}
             />
             {server.shouldConfig && (
-              <button
-                type="button"
-                className="btn-ghost agent-mcp-pick-dir"
+              <Button
+                type="default"
+                size="small"
+                className="agent-mcp-pick-dir"
                 onClick={() => void pickDirectoryForArgs()}
               >
                 选择目录（写入最后一行参数）
-              </button>
+              </Button>
             )}
           </div>
           <div className="field">
@@ -237,12 +229,8 @@ export default function AgentMcpEditor({
         <>
           <div className="field">
             <label>Base URL</label>
-            <input
-              type="text"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://example.com/mcp"
-            />
+            <Input shadow type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://example.com/mcp" />
           </div>
           <div className="field">
             <FieldHead htmlFor="mcp-headers" hint="每行一个 KEY=value。">
@@ -265,24 +253,20 @@ export default function AgentMcpEditor({
           工具超时
         </FieldHead>
         <div className="field-number-row">
-          <input
-            id="mcp-timeout"
-            type="number"
-            min={1}
-            value={timeoutSec}
-            onChange={(e) => setTimeoutSec(e.target.value)}
-            placeholder="60"
-          />
+          <Input shadow id="mcp-timeout"
+          type="number"
+          min={1} value={timeoutSec} onChange={(e) => setTimeoutSec(e.target.value)}
+          placeholder="60" />
           <span className="field-number-suffix">秒</span>
         </div>
       </div>
 
       <div className="field">
         <div className="agent-inline-check">
-          <Checkbox
+          <Switch
             checked={longRunning}
             onChange={setLongRunning}
-            label="长时间运行"
+            aria-label="长时间运行"
           />
           <HintTip tip="收到 MCP 进度时重置超时，最长 10 分钟。" />
         </div>
@@ -306,25 +290,25 @@ export default function AgentMcpEditor({
       )}
 
       <div className="agent-mcp-form-actions">
-        <button
-          type="button"
-          className="btn-secondary"
+        <Button
+          type="primary"
+          size="small"
           disabled={saving}
           onClick={() => void handleSave()}
         >
           {saving ? "保存中…" : "保存"}
-        </button>
-        <button
-          type="button"
-          className="btn-ghost"
+        </Button>
+        <Button
+          type="primary"
+          size="small"
           disabled={testing || type !== "stdio"}
           onClick={() => void handleTest()}
         >
           {testing ? "测试中…" : "测试连接"}
-        </button>
-        <button type="button" className="btn-ghost" onClick={onCancel}>
+        </Button>
+        <Button type="primary" size="small" onClick={onCancel}>
           取消
-        </button>
+        </Button>
       </div>
     </div>
   );

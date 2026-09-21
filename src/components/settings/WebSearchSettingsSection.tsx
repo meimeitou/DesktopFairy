@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import RadioGroup from "../RadioGroup";
+import { Button, Icon, Input, Radio } from "animal-island-ui";
 import {
   WEB_SEARCH_PROVIDERS,
   getWebSearchProviderMeta,
@@ -8,21 +8,7 @@ import {
 } from "../../shared/webSearch";
 import type { AppSettings } from "../../shared/settings";
 
-const RESET_ICON = (
-  <svg
-    width="12"
-    height="12"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <polyline points="1 4 1 10 7 10" />
-    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-  </svg>
-);
+const RESET_ICON = <Icon name="Refresh" size={12} />;
 
 type TestResult =
   | { status: "idle" }
@@ -101,19 +87,22 @@ export default function WebSearchSettingsSection({
 
       <div className="field">
         <label>提供商</label>
-        <RadioGroup
-          name="webSearchProvider"
-          ariaLabel="网络搜索提供商"
+        <Radio
           value={cfg.provider}
-          options={WEB_SEARCH_PROVIDERS.map((p) => ({
-            value: p.id,
-            label: p.label,
-            description: p.description,
-          }))}
-          onChange={(provider) => {
-            updateCfg({ provider });
+          direction="vertical"
+          onChange={(value) => {
+            updateCfg({ provider: value as WebSearchProviderId });
             setTestResult({ status: "idle" });
           }}
+          options={WEB_SEARCH_PROVIDERS.map((p) => ({
+            value: p.id,
+            label: (
+              <span className="radio-option-label">
+                {p.label}
+                <small className="radio-desc">{p.description}</small>
+              </span>
+            ),
+          }))}
         />
       </div>
 
@@ -121,26 +110,23 @@ export default function WebSearchSettingsSection({
         <div className="field">
           <label>{meta.apiKeyLabel}</label>
           <div className="field-with-action">
-            <input
-              type="password"
-              value={cfg[getApiKeyFieldName(cfg.provider)] || ""}
-              onChange={(e) =>
-                updateCfg({
-                  [getApiKeyFieldName(cfg.provider)]: e.target.value,
-                } as Partial<WebSearchConfig>)
-              }
-              placeholder={meta.apiKeyPlaceholder}
-              autoComplete="off"
-            />
-            <button
-              type="button"
+            <Input shadow type="password" value={cfg[getApiKeyFieldName(cfg.provider)] || ""} onChange={(e) =>
+              updateCfg({
+                [getApiKeyFieldName(cfg.provider)]: e.target.value,
+              } as Partial<WebSearchConfig>)
+            }
+            placeholder={meta.apiKeyPlaceholder}
+            autoComplete="off" />
+            <Button
+              type="default"
+              size="small"
               className={`settings-check-btn${testResult.status === "success" ? " success" : ""}${testResult.status === "error" ? " failed" : ""}`}
               onClick={() => void handleTest()}
               disabled={!isTestable || testResult.status === "loading"}
               title="检测 API Key 是否可用"
             >
               {testResult.status === "loading" ? "检测中…" : "检测"}
-            </button>
+            </Button>
           </div>
           {testResult.status === "success" && (
             <div
@@ -167,7 +153,7 @@ export default function WebSearchSettingsSection({
           {testResult.status === "error" && (
             <div
               className="field-hint"
-              style={{ color: "#ef4444", marginTop: 6 }}
+              style={{ color: "#e05a5a", marginTop: 6 }}
             >
               ✗ 检测失败：{testResult.error}
             </div>
@@ -250,22 +236,18 @@ function ApiUrlField({ label, value, defaultValue, placeholder, onChange, onRese
         )}
       </label>
       <div className="field-with-action">
-        <input
-          type="url"
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-        />
-        <button
-          type="button"
+        <Input shadow type="url" value={value || ""} onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder} />
+        <Button
+          type="text"
+          size="small"
           className="field-icon-btn"
+          icon={RESET_ICON}
           onClick={onReset}
           title={`恢复默认值 ${defaultValue}`}
           disabled={!isCustom}
           aria-label="恢复默认 URL"
-        >
-          {RESET_ICON}
-        </button>
+        />
       </div>
       <p className="field-hint">
         默认：<code>{defaultValue}</code>

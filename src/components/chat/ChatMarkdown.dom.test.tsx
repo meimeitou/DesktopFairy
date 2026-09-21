@@ -5,14 +5,24 @@ import ChatMarkdown from "./ChatMarkdown";
 const CODE = "line one\nline two\n\nline four";
 
 describe("streamdown CSS bug fixes (SSR DOM shape)", () => {
-  it("code block: every line is a top-level span under code (display:block via CSS)", () => {
+  it("fenced code renders via streamdown code-block-body for every language", () => {
     const html = renderToString(
       <ChatMarkdown content={"```ts\n" + CODE + "\n```"} />,
     );
-    const i = html.indexOf('data-streamdown="code-block-body"');
+    // generic fences now use streamdown's own block (shiki gruvbox theming)
+    const t = html.indexOf('data-streamdown="code-block-body"');
+    expect(t).toBeGreaterThan(-1);
+    // shell fences keep the streamdown code-block-body DOM (run-in-terminal UI)
+    const shell = renderToString(
+      <ChatMarkdown content={"```bash\n" + CODE + "\n```"} />,
+    );
+    const i = shell.indexOf('data-streamdown="code-block-body"');
     expect(i).toBeGreaterThan(-1);
-    const code = html.slice(html.indexOf("<code", i), html.indexOf("</code>", i));
-    const lineSpans = code.match(/<span class="block">/g) ?? [];
+    const code = shell.slice(
+      shell.indexOf("<code", i),
+      shell.indexOf("</code>", i),
+    );
+    const lineSpans = code.match(/<span class="block[ "]/g) ?? [];
     expect(lineSpans.length).toBe(4); // 4 lines incl. empty
     // empty line = raw "\n" text node; non-empty lines carry no newline text
     const textOnly = code.replace(/<[^>]+>/g, "");
@@ -42,9 +52,7 @@ describe("streamdown CSS bug fixes (SSR DOM shape)", () => {
   });
 
   it("streaming mode sets caret var on streamdown root div", () => {
-    const html = renderToString(
-      <ChatMarkdown content={"hello"} streaming />,
-    );
+    const html = renderToString(<ChatMarkdown content={"hello"} streaming />);
     // caret suppresses when last block is an open fence; plain text keeps it
     expect(html).toContain("--streamdown-caret");
   });

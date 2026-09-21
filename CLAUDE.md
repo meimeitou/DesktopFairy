@@ -38,7 +38,7 @@ macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React 19 + T
 
 **Live2D reactions** (`src/shared/live2dReactions.ts`): Chat lifecycle events (send, streaming, done, error) trigger `notifyLive2DIfReactive` → IPC `live2d:command` with `react:<reaction>`. Controller intersects candidate expressions against model's available expressions; no match falls back to random motion. When `live2dReactive` is on, the 8-second random expression timer is disabled.
 
-**Shared state layer** (`src/shared/`): No Zustand/Redux — state lives in React `useState` + `localStorage`. Cross-window sync via IPC events. Key modules: `settings.ts` (AppSettings, load/save, provider/model resolution), `providers.ts` (LlmProvider type, SYSTEM_PROVIDERS including Hermes Agent), `chatMessages.ts` (API message building, context trimming to 40 msgs / 24k chars), `live2dPaths.ts` (bundled vs local model path resolution).
+**Shared state layer** (`src/shared/`): No Zustand/Redux — state lives in React `useState` + `localStorage`. Cross-window sync via IPC events. Key modules: `settings.ts` (AppSettings, load/save, provider/model resolution), `providers.ts` (LlmProvider type, SYSTEM_PROVIDERS), `chatMessages.ts` (API message building, context trimming to 40 msgs / 24k chars), `live2dPaths.ts` (bundled vs local model path resolution).
 
 **Frontend → Main process IPC**: `window.electronAPI.invoke('command_name', args)` exposed via `contextBridge` in `electron/preload.cjs`. Main process handlers are in `electron/main.cjs` and various `electron/*Service.cjs` files, registered via `ipcMain.handle()`.
 
@@ -80,7 +80,7 @@ macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React 19 + T
 | `src/live2d/Live2DController.ts` | WebGL context owner, render loop, public motion/expression/drag API |
 | `src/live2d/Live2DModel.ts` | Model loading chain, per-frame update, draw |
 | `src/shared/settings.ts` | AppSettings interface, load/save, provider merging, model resolution |
-| `src/shared/providers.ts` | LlmProvider type, SYSTEM_PROVIDERS (OpenAI, Ollama, Hermes) |
+| `src/shared/providers.ts` | LlmProvider type, SYSTEM_PROVIDERS (OpenAI, Ollama) |
 | `src/shared/live2dReactions.ts` | Chat-to-Live2D expression mapping, `notifyLive2DIfReactive` |
 | `electron/agentService.cjs` | `buildAgentSystemPrompt`, legacy `agent:run` |
 | `electron/aiStreamService.cjs` | `ai:stream_*` IPC, topic agent streams |

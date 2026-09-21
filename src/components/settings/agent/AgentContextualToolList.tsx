@@ -1,3 +1,5 @@
+import { Switch } from "animal-island-ui";
+
 interface CatalogItem {
   id: string;
   name: string;
@@ -78,21 +80,20 @@ export default function AgentContextualToolList({
                         : "启用"
                   }
                 >
-                  <label
-                    className={`toggle agent-toggle-switch agent-contextual-tool-toggle${
-                      forcedOff ? " forced-off" : ""
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      disabled={forcedOff}
-                      onChange={(e) =>
-                        !forcedOff && ctx.onToggle(item.id, e.target.checked)
-                      }
-                    />
-                    <span className="toggle-track" />
-                  </label>
+                  <Switch
+                    checked={enabled}
+                    disabled={forcedOff}
+                    onChange={(checked) =>
+                      !forcedOff && ctx.onToggle(item.id, checked)
+                    }
+                    aria-label={
+                      forcedOff
+                        ? "此场景下不可用"
+                        : enabled
+                          ? "禁用"
+                          : "启用"
+                    }
+                  />
                 </div>
               );
             })}

@@ -1,4 +1,4 @@
-const { ToolLoopAgent, stepCountIs, streamText: aiStreamText, generateText } = require('ai');
+const { ToolLoopAgent, stepCountIs, streamText: aiStreamText } = require('ai');
 const { resolveProviderModel } = require('./providerModel.cjs');
 const { toCoreMessages } = require('./messages.cjs');
 const { buildToolSet } = require('./buildToolSet.cjs');
@@ -87,17 +87,4 @@ async function streamPlainText({
   return { aborted: Boolean(signal?.aborted), usage };
 }
 
-/**
- * Connectivity check via AI SDK generateText (all provider types).
- */
-async function checkConnection({ apiConfig, signal }) {
-  const model = resolveProviderModel(apiConfig);
-  await generateText({
-    model,
-    prompt: 'hi',
-    maxOutputTokens: 1,
-    abortSignal: signal,
-  });
-}
-
-module.exports = { streamText, streamPlainText, checkConnection };
+module.exports = { streamText, streamPlainText };

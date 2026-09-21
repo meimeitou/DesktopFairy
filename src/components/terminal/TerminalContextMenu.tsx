@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { useEffect, useRef, useState } from "react";
 import type { SshCredential } from "../../shared/settings";
 
@@ -75,25 +76,20 @@ export default function TerminalContextMenu({
       className="terminal-context-menu"
       style={{ left: pos.left, top: pos.top }}
     >
-      <button
-        type="button"
+      <Button
+        type="text"
         className="terminal-context-menu-item"
         onClick={() => {
           onSearch();
           onClose();
         }}
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
+        <Icon name="Search" size={13} />
         <span>搜索</span>
-      </button>
+      </Button>
       <div className="terminal-context-menu-divider" />
       <div className="terminal-context-menu-item terminal-context-menu-item--has-sub">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3" />
-        </svg>
+        <Icon name="Share" size={13} />
         <span>密码凭证</span>
         <span className="terminal-context-menu-arrow">▸</span>
         <div className={`terminal-context-submenu terminal-context-submenu--${submenuSide}`}>
@@ -103,9 +99,9 @@ export default function TerminalContextMenu({
             </div>
           ) : (
             fillable.map((cred) => (
-              <button
+              <Button
                 key={cred.id}
-                type="button"
+                type="text"
                 className="terminal-context-menu-item"
                 title={cred.note || cred.name}
                 onMouseDown={(e) => e.preventDefault()}
@@ -115,7 +111,7 @@ export default function TerminalContextMenu({
                 }}
               >
                 <span className="terminal-context-menu-cred-name">{cred.name}</span>
-              </button>
+              </Button>
             ))
           )}
         </div>

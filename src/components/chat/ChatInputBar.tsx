@@ -11,7 +11,7 @@ import {
 import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 import ModelSelector from "../ModelSelector";
-import Tooltip from "../Tooltip";
+import { Button, Icon, Notification, Tooltip } from "animal-island-ui";
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
 import ContextUsageMeter from "./ContextUsageMeter";
@@ -36,123 +36,6 @@ const api = window.electronAPI;
 const MAX_INPUT_HEIGHT = 160;
 const UNSUPPORTED_FILES_HINT =
   "部分文件格式不支持，仅支持文本文件与常见图片格式。";
-
-function CameraIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-      <circle cx="12" cy="13" r="4" />
-    </svg>
-  );
-}
-
-function PaperclipIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-    </svg>
-  );
-}
-
-function EraserIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.6 1.6c.8-.8 2-.8 2.8 0l5 5c.8.8.8 2 0 2.8L11 20" />
-      <path d="M6 11l7 7" />
-    </svg>
-  );
-}
-
-function ClearIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M3 6h18" />
-      <path d="M8 6V4h8v2" />
-      <path d="M19 6l-1 14H6L5 6" />
-    </svg>
-  );
-}
-
-function CompactIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <line x1="4" y1="4" x2="20" y2="4" />
-      <line x1="4" y1="20" x2="20" y2="20" />
-      <polyline points="9 9 12 12 15 9" />
-      <polyline points="9 15 12 12 15 15" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M22 2L11 13" />
-      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-    </svg>
-  );
-}
-
-function StopIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden
-    >
-      <rect x="6" y="6" width="12" height="12" rx="2" />
-    </svg>
-  );
-}
 
 interface Props {
   input: string;
@@ -266,7 +149,7 @@ function ChatInputBar({
       if (files.length === 0) return;
       const supported = files.filter((f) => f.kind !== "other");
       if (supported.length < files.length) {
-        alert(UNSUPPORTED_FILES_HINT);
+        Notification.warning(UNSUPPORTED_FILES_HINT);
       }
       if (supported.length === 0) return;
       const existing = new Set(attachments.map((f) => f.path));
@@ -294,11 +177,11 @@ function ChatInputBar({
       isSupportedFileName(guessAttachmentFileName(file)),
     );
     if (files.length > 0 && attachable.length === 0) {
-      alert(UNSUPPORTED_FILES_HINT);
+      Notification.warning(UNSUPPORTED_FILES_HINT);
       return [];
     }
     if (attachable.length < files.length) {
-      alert(UNSUPPORTED_FILES_HINT);
+      Notification.warning(UNSUPPORTED_FILES_HINT);
     }
 
     return Promise.all(
@@ -329,8 +212,7 @@ function ChatInputBar({
     selectingRef.current = true;
     try {
       const picked = (await api.invoke("file:select")) as
-        | ChatAttachment[]
-        | null;
+        ChatAttachment[] | null;
       if (picked?.length) addAttachments(picked);
     } catch (e) {
       console.error(e);
@@ -361,7 +243,9 @@ function ChatInputBar({
         const loaded = await attachmentsFromFiles(files);
         addAttachments(loaded);
       } catch (err) {
-        alert(err instanceof Error ? err.message : "无法读取粘贴的文件");
+        Notification.error(
+          err instanceof Error ? err.message : "无法读取粘贴的文件",
+        );
       }
     },
     [addAttachments, attachmentsFromFiles, composerDisabled],
@@ -375,7 +259,8 @@ function ChatInputBar({
   const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types)) return;
+    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types))
+      return;
     dragDepthRef.current += 1;
     setDragOver(true);
   };
@@ -390,7 +275,8 @@ function ChatInputBar({
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types)) return;
+    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types))
+      return;
     e.dataTransfer.dropEffect = "copy";
   };
 
@@ -408,7 +294,9 @@ function ChatInputBar({
         const loaded = await attachmentsFromFiles(files);
         addAttachments(loaded);
       } catch (err) {
-        alert(err instanceof Error ? err.message : "无法读取拖拽的文件");
+        Notification.error(
+          err instanceof Error ? err.message : "无法读取拖拽的文件",
+        );
       }
     },
     [addAttachments, attachmentsFromFiles, composerDisabled],
@@ -416,7 +304,13 @@ function ChatInputBar({
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (showSlashMenu) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape" || e.key === "Tab") {
+      if (
+        e.key === "ArrowDown" ||
+        e.key === "ArrowUp" ||
+        e.key === "Enter" ||
+        e.key === "Escape" ||
+        e.key === "Tab"
+      ) {
         e.preventDefault();
       }
       return;
@@ -452,152 +346,151 @@ function ChatInputBar({
           松开以添加文件
         </div>
       )}
-        <AttachmentPreview
-          files={attachments}
-          onRemove={(id) =>
-            onAttachmentsChange(attachments.filter((f) => f.id !== id))
-          }
-        />
+      <AttachmentPreview
+        files={attachments}
+        onRemove={(id) =>
+          onAttachmentsChange(attachments.filter((f) => f.id !== id))
+        }
+      />
 
-        <div className="chat-input-editor" ref={slashHostRef}>
-          {showSlashMenu && slashCommands && onSlashCommand && (
-            <SlashCommandMenu
-              commands={slashCommands}
-              query={slashQuery}
-              onSelect={onSlashCommand}
-              onClose={closeSlashMenu}
+      <div className="chat-input-editor" ref={slashHostRef}>
+        {showSlashMenu && slashCommands && onSlashCommand && (
+          <SlashCommandMenu
+            commands={slashCommands}
+            query={slashQuery}
+            onSelect={onSlashCommand}
+            onClose={closeSlashMenu}
+          />
+        )}
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          placeholder={placeholder}
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          disabled={composerDisabled}
+          autoFocus
+        />
+      </div>
+
+      <div className="chat-input-toolbar">
+        <div className="chat-input-tools-left">
+          <Tooltip title={"上传文件"}>
+            <Button
+              type="text"
+              size="small"
+              className="chat-tool-btn"
+              icon={<Icon name="Bookmark" size={16} />}
+              onClick={handleSelectFiles}
+              disabled={composerDisabled}
+            />
+          </Tooltip>
+          <Tooltip title={"区域截图"}>
+            <Button
+              type="text"
+              size="small"
+              className="chat-tool-btn"
+              icon={<Icon name="Camera" size={16} />}
+              onClick={handleScreenshot}
+              disabled={composerDisabled}
+            />
+          </Tooltip>
+          {onKnowledgeBaseIdsChange && (
+            <KnowledgePicker
+              selectedIds={knowledgeBaseIds || []}
+              onChange={onKnowledgeBaseIdsChange}
+              disabled={composerDisabled}
             />
           )}
-          <textarea
-            ref={textareaRef}
-            rows={1}
-            placeholder={placeholder}
-            value={input}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            disabled={composerDisabled}
-            autoFocus
-          />
+          <Tooltip title={"清除上下文"}>
+            <Button
+              type="text"
+              size="small"
+              className="chat-tool-btn"
+              icon={<Icon name="Edit" size={16} />}
+              onClick={onClearContext}
+              disabled={composerDisabled || !hasMessages}
+            />
+          </Tooltip>
+          <Tooltip title={"压缩上下文"}>
+            <Button
+              type="text"
+              size="small"
+              className="chat-tool-btn"
+              icon={<Icon name="Chat" size={16} />}
+              onClick={onCompact}
+              disabled={composerDisabled || !hasMessages}
+            />
+          </Tooltip>
+          <Tooltip title={"清空消息"}>
+            <Button
+              type="text"
+              size="small"
+              className="chat-tool-btn"
+              icon={<Icon name="Trash" size={16} />}
+              onClick={onClearMessages}
+              disabled={composerDisabled || !hasMessages}
+            />
+          </Tooltip>
+          {showModeSelector && (
+            <ChatModeSelector
+              mode={chatMode}
+              onChange={onChatModeChange}
+              disabled={composerDisabled}
+            />
+          )}
+          {showModeSelector && (
+            <ReasoningEffortSelector
+              value={reasoningEffort}
+              onChange={onReasoningEffortChange}
+              disabled={composerDisabled}
+            />
+          )}
         </div>
 
-        <div className="chat-input-toolbar">
-          <div className="chat-input-tools-left">
-            <Tooltip tip={"上传文件"}>
-              <button
-                type="button"
-                className="chat-tool-btn"
-                onClick={handleSelectFiles}
-                disabled={composerDisabled}
-              >
-                <PaperclipIcon />
-              </button>
-            </Tooltip>
-            <Tooltip tip={"区域截图"}>
-              <button
-                type="button"
-                className="chat-tool-btn"
-                onClick={handleScreenshot}
-                disabled={composerDisabled}
-              >
-                <CameraIcon />
-              </button>
-            </Tooltip>
-            {onKnowledgeBaseIdsChange && (
-              <KnowledgePicker
-                selectedIds={knowledgeBaseIds || []}
-                onChange={onKnowledgeBaseIdsChange}
-                disabled={composerDisabled}
-              />
-            )}
-            <Tooltip tip={"清除上下文"}>
-              <button
-                type="button"
-                className="chat-tool-btn"
-                onClick={onClearContext}
-                disabled={composerDisabled || !hasMessages}
-              >
-                <EraserIcon />
-              </button>
-            </Tooltip>
-            <Tooltip tip={"压缩上下文"}>
-              <button
-                type="button"
-                className="chat-tool-btn"
-                onClick={onCompact}
-                disabled={composerDisabled || !hasMessages}
-              >
-                <CompactIcon />
-              </button>
-            </Tooltip>
-            <Tooltip tip={"清空消息"}>
-              <button
-                type="button"
-                className="chat-tool-btn chat-tool-btn-danger"
-                onClick={onClearMessages}
-                disabled={composerDisabled || !hasMessages}
-              >
-                <ClearIcon />
-              </button>
-            </Tooltip>
-            {showModeSelector && (
-              <ChatModeSelector
-                mode={chatMode}
-                onChange={onChatModeChange}
-                disabled={composerDisabled}
-              />
-            )}
-            {showModeSelector && (
-              <ReasoningEffortSelector
-                value={reasoningEffort}
-                onChange={onReasoningEffortChange}
-                disabled={composerDisabled}
-              />
-            )}
+        <div className="chat-input-toolbar-right">
+          {contextUsage && (
+            <ContextUsageMeter
+              usage={contextUsage}
+              disabled={composerDisabled}
+            />
+          )}
+          <div className="chat-input-model">
+            <ModelSelector
+              models={models}
+              value={modelName}
+              onChange={onModelChange}
+              allowCustom={false}
+              modelLabels={modelLabels}
+              disabled={composerDisabled}
+              variant="toolbar"
+            />
           </div>
-
-          <div className="chat-input-toolbar-right">
-            {contextUsage && (
-              <ContextUsageMeter
-                usage={contextUsage}
-                disabled={composerDisabled}
+          {streaming ? (
+            <Tooltip title="停止生成" placement="top">
+              <Button
+                type="text"
+                className="chat-send-btn chat-stop-btn"
+                icon={<Icon name="Close" size={16} />}
+                onClick={onStop}
+                aria-label="停止生成"
               />
-            )}
-            <div className="chat-input-model">
-              <ModelSelector
-                models={models}
-                value={modelName}
-                onChange={onModelChange}
-                allowCustom={false}
-                modelLabels={modelLabels}
-                disabled={composerDisabled}
+            </Tooltip>
+          ) : (
+            <Tooltip title="发送消息 (Enter)" placement="top">
+              <Button
+                type="text"
+                className="chat-send-btn"
+                icon={<Icon name="Play" size={16} />}
+                onClick={onSend}
+                disabled={!canSend}
+                aria-label="发送消息"
               />
-            </div>
-            {streaming ? (
-              <Tooltip tip="停止生成" placement="top">
-                <button
-                  type="button"
-                  className="chat-send-btn chat-stop-btn"
-                  onClick={onStop}
-                  aria-label="停止生成"
-                >
-                  <StopIcon />
-                </button>
-              </Tooltip>
-            ) : (
-              <Tooltip tip="发送消息 (Enter)" placement="top">
-                <button
-                  type="button"
-                  className="chat-send-btn"
-                  onClick={onSend}
-                  disabled={!canSend}
-                  aria-label="发送消息"
-                >
-                  <SendIcon />
-                </button>
-              </Tooltip>
-            )}
-          </div>
+            </Tooltip>
+          )}
+        </div>
       </div>
     </div>
   );

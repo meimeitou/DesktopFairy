@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
@@ -67,30 +68,25 @@ export default function TerminalSelectionTooltip({
       className="terminal-selection-tooltip"
       style={{ left: pos.left, top: pos.top }}
     >
-      <button
-        type="button"
+      <Button
+        type="text"
         className="terminal-selection-tooltip-btn primary"
         onClick={onAddToChat}
         title="发送到 AI 助手输入框"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-        </svg>
+        <Icon name="Chat" size={13} />
         <span>Add to chat</span>
-      </button>
+      </Button>
       <div className="terminal-selection-tooltip-divider" />
-      <button
-        type="button"
+      <Button
+        type="text"
         className="terminal-selection-tooltip-btn"
         onClick={handleCopy}
         title="复制到剪贴板"
       >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </svg>
+        <Icon name="File" size={13} />
         <span>Copy</span>
-      </button>
+      </Button>
     </div>
   );
 }

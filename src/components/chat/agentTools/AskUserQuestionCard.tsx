@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import RadioGroup, { CheckGroup } from "../../RadioGroup";
+import { Button, Checkbox, Input, Radio } from "animal-island-ui";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import { getToolDisplayName } from "../../../shared/toolCallDisplay";
 import {
@@ -17,10 +17,24 @@ function questionChoiceOptions(q: QuestionItem) {
   return [
     ...q.options.map((opt) => ({
       value: opt.label,
-      label: opt.label,
-      description: opt.description,
+      label: opt.description ? (
+        <span className="radio-option-label">
+          {opt.label}
+          <small className="radio-desc">{opt.description}</small>
+        </span>
+      ) : (
+        opt.label
+      ),
     })),
-    { value: OTHER_VALUE, label: "其他", description: "自行输入" },
+    {
+      value: OTHER_VALUE,
+      label: (
+        <span className="radio-option-label">
+          其他
+          <small className="radio-desc">自行输入</small>
+        </span>
+      ),
+    },
   ];
 }
 
@@ -104,48 +118,46 @@ export default function AskUserQuestionCard({
               )}
               <div className="agent-tool-ask-question-text">{q.question}</div>
               {q.multiSelect ? (
-                <CheckGroup
-                  name={`ask-${msg.id}-${q.question}`}
-                  ariaLabel={q.question}
+                <Checkbox
                   disabled={submitting || submitted || !answerReady}
-                  values={[
+                  value={[
                     ...(selected[q.question] || []),
                     ...(otherSelected[q.question] ? [OTHER_VALUE] : []),
                   ]}
                   options={questionChoiceOptions(q)}
                   onChange={(next) => {
-                    const useOther = next.includes(OTHER_VALUE);
+                    const values = next.map(String);
+                    const useOther = values.includes(OTHER_VALUE);
                     setOtherSelected((prev) => ({ ...prev, [q.question]: useOther }));
                     setSelected((prev) => ({
                       ...prev,
-                      [q.question]: next.filter((v) => v !== OTHER_VALUE),
+                      [q.question]: values.filter((v) => v !== OTHER_VALUE),
                     }));
                   }}
                 />
               ) : (
-                <RadioGroup
-                  name={`ask-${msg.id}-${q.question}`}
-                  ariaLabel={q.question}
+                <Radio
                   disabled={submitting || submitted || !answerReady}
                   value={
                     otherSelected[q.question]
                       ? OTHER_VALUE
-                      : (selected[q.question]?.[0] ?? null)
+                      : (selected[q.question]?.[0] ?? "")
                   }
                   options={questionChoiceOptions(q)}
                   onChange={(next) => {
-                    if (next === OTHER_VALUE) {
+                    const value = String(next);
+                    if (value === OTHER_VALUE) {
                       setOtherSelected((prev) => ({ ...prev, [q.question]: true }));
                       setSelected((prev) => ({ ...prev, [q.question]: [] }));
                       return;
                     }
                     setOtherSelected((prev) => ({ ...prev, [q.question]: false }));
-                    setSelected((prev) => ({ ...prev, [q.question]: [next] }));
+                    setSelected((prev) => ({ ...prev, [q.question]: [value] }));
                   }}
                 />
               )}
               {otherSelected[q.question] && (
-                <input
+                <Input
                   className="agent-tool-ask-other-input"
                   type="text"
                   value={otherText[q.question] || ""}
@@ -167,14 +179,14 @@ export default function AskUserQuestionCard({
         )}
       </div>
       <div className="agent-tool-ask-actions">
-        <button
-          type="button"
-          className="agent-tool-btn agent-tool-btn-approve"
+        <Button
+          type="primary"
+          size="small"
           disabled={submitting || submitted || !canSubmit}
           onClick={handleSubmit}
         >
           {submitted ? "已提交" : answerReady ? "提交回答" : "等待工具就绪…"}
-        </button>
+        </Button>
       </div>
     </div>
   );

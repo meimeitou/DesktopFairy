@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   filterAfterContextClear,
-  filterForApi,
   trimMessagesForApi,
   findLastAssistantReplyIndex,
   isEmptyAssistantPlaceholder,
@@ -61,35 +60,6 @@ describe('chatMessages', () => {
     })
   })
 
-  describe('filterForApi', () => {
-    it('should filter out tool type messages', () => {
-      const msgs = [
-        makeMsg('user', 'hello'),
-        makeMsg('assistant', '', { type: 'tool', toolName: 'Bash' }),
-        makeMsg('assistant', 'hi'),
-      ]
-      const result = filterForApi(msgs)
-      expect(result).toHaveLength(2)
-    })
-
-    it('should filter out error messages', () => {
-      const msgs = [makeMsg('user', 'hello'), makeMsg('assistant', 'error', { error: true })]
-      const result = filterForApi(msgs)
-      expect(result).toHaveLength(1)
-    })
-
-    it('should filter out empty assistant messages', () => {
-      const msgs = [makeMsg('user', 'hello'), makeMsg('assistant', '')]
-      const result = filterForApi(msgs)
-      expect(result).toHaveLength(1)
-    })
-
-    it('should keep empty user messages', () => {
-      const msgs = [makeMsg('user', ''), makeMsg('assistant', 'response')]
-      const result = filterForApi(msgs)
-      expect(result).toHaveLength(2)
-    })
-  })
 
   describe('trimMessagesForApi', () => {
     it('should return all messages when under token budget', () => {

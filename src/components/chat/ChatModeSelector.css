@@ -8,54 +8,7 @@
   display: inline-flex;
 }
 
-.chat-mode-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 5px 10px 5px 9px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  color: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.08s ease;
-}
-
-.chat-mode-selector-icon .chat-mode-trigger {
-  padding: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: 8px;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.chat-mode-selector-icon .chat-mode-trigger:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.chat-mode-selector-icon .chat-mode-trigger.active {
-  background: var(--persimmon-softer);
-}
-
-.chat-mode-trigger:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--hairline-bold);
-}
-
-.chat-mode-trigger:active {
-  transform: scale(0.97);
-}
+/* .chat-mode-trigger: official Button skin, no overrides */
 
 .chat-mode-label {
   font-size: 12px;
@@ -66,16 +19,16 @@
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  width: 300px;
-  max-width: min(300px, calc(100vw - 24px));
+  width: 380px;
+  max-width: min(380px, calc(100vw - 24px));
   padding: 8px 0;
-  background: rgba(34, 30, 26, 0.98);
+  background: rgba(248, 244, 232, 0.98);
   backdrop-filter: blur(16px);
   border: 1px solid var(--hairline-strong);
   border-radius: 14px;
   box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 16px 40px rgba(121, 79, 39, 0.25),
+    inset 0 1px 0 rgba(121, 79, 39, 0.04);
   z-index: 1200;
   animation: chat-mode-popover-in 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -126,26 +79,43 @@
 }
 
 .chat-mode-item {
+  height: auto;
+  width: 100%;
+  color: inherit;
+  text-align: left;
+  border-radius: 12px;
+}
+
+.chat-mode-item:hover:not(:disabled):not(.active) {
+  background: #d6dff0;
+}
+
+/* Library Button wraps children in a bare <span>; re-establish the intended
+   icon/body two-column flex on that wrapper. */
+.chat-mode-item > span {
   display: flex;
   align-items: flex-start;
+  justify-content: flex-start;
   gap: 10px;
   width: 100%;
-  padding: 9px 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: 10px;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  min-width: 0;
 }
 
-.chat-mode-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+.chat-mode-item.active,
+.chat-mode-item.active:hover:not(:disabled) {
+  /* demo-nav mist blue selected pill */
+  background: #b7c6e5;
+  color: #fff;
 }
 
-.chat-mode-item.active {
-  background: rgba(255, 255, 255, 0.07);
+.chat-mode-item.active .chat-mode-item-icon,
+.chat-mode-item.active .chat-mode-item-title,
+.chat-mode-item.active .chat-mode-item-desc {
+  color: #fff;
+}
+
+.chat-mode-item.active .chat-mode-item-icon svg {
+  filter: drop-shadow(0 1px 1px rgba(74, 54, 32, 0.25));
 }
 
 .chat-mode-item-icon {

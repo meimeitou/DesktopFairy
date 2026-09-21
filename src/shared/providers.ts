@@ -45,18 +45,6 @@ export const SYSTEM_PROVIDERS: LlmProvider[] = [
     embeddingModels: [],
     rerankModels: [],
   },
-  {
-    id: "hermes",
-    name: "Hermes Agent",
-    type: "openai",
-    apiHost: "http://127.0.0.1:8642/v1",
-    apiKey: "",
-    enabled: false,
-    isSystem: true,
-    models: ["hermes-agent"],
-    embeddingModels: [],
-    rerankModels: [],
-  },
 ];
 
 export function createProviderId(): string {
@@ -183,18 +171,15 @@ export function getModelsListEndpointLabel(type: ProviderType): string {
   }
 }
 
-/** Ollama and local Hermes typically accept empty keys. */
+/** Ollama typically accepts empty keys. */
 export function providerNeedsApiKey(
   typeOrProvider: ProviderType | Pick<LlmProvider, "type" | "id">
 ): boolean {
   if (typeof typeOrProvider === "string") {
     return typeOrProvider !== "ollama";
   }
-  if (typeOrProvider.type === "ollama") return false;
-  if (typeOrProvider.id === "hermes") return false;
-  return true;
+  return typeOrProvider.type !== "ollama";
 }
-
 export function getProviderTypeLabel(type: ProviderType): string {
   switch (type) {
     case "ollama":

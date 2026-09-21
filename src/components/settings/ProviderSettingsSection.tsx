@@ -1,7 +1,8 @@
+import { Button, Icon, Input, Notification, Switch } from "animal-island-ui";
+import { useConfirm } from "../../hooks/useConfirm";
 import { useEffect, useMemo, useState } from "react";
 import ManageModelsPanel from "../ManageModelsPanel";
 import HintTip, { FieldHead } from "../HintTip";
-import ModelSelector from "../ModelSelector";
 import AddModelModal from "./AddModelModal";
 import AddProviderModal from "./AddProviderModal";
 import {
@@ -13,11 +14,7 @@ import {
   type ProviderType,
 } from "../../shared/providers";
 import type { AppSettings } from "../../shared/settings";
-import {
-  getSelectableModels,
-  resolveModelNameForProvider,
-  updateProviderInSettings,
-} from "../../shared/settings";
+import { updateProviderInSettings } from "../../shared/settings";
 import {
   addModelToLists,
   enabledModelCount,
@@ -47,6 +44,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
   const [showAddModel, setShowAddModel] = useState(false);
   const [checkStatus, setCheckStatus] = useState<CheckStatus>("idle");
   const [checkMessage, setCheckMessage] = useState("");
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const selected = useMemo(
     () =>
@@ -72,14 +70,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
 
   const selectProvider = (provider: LlmProvider) => {
     setSelectedId(provider.id);
-    onChange({
-      ...settings,
-      activeProviderId: provider.id,
-      modelName:
-        provider.models.includes(settings.modelName) && settings.modelName
-          ? settings.modelName
-          : provider.models[0] || settings.modelName,
-    });
+    onChange({ ...settings, activeProviderId: provider.id });
   };
 
   const handleAddProvider = (name: string, type: ProviderType) => {
@@ -93,8 +84,8 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     setShowAddProvider(false);
   };
 
-  const handleRemoveProvider = (provider: LlmProvider) => {
-    if (!window.confirm(`确定删除服务商「${provider.name}」吗？`)) return;
+  const handleRemoveProvider = async (provider: LlmProvider) => {
+    if (!(await confirm({ title: "删除服务商", content: `确定删除服务商「${provider.name}」吗？` }))) return;
     const nextProviders = settings.providers.filter(
       (p) => p.id !== provider.id,
     );
@@ -129,7 +120,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     if (!id) return;
     const existingKind = findEnabledModelKind(selected, id);
     if (existingKind) {
-      alert(`模型「${id}」已在${MODEL_KIND_LABELS[existingKind]}列表中`);
+      Notification.warning(`模型「${id}」已在${MODEL_KIND_LABELS[existingKind]}列表中`);
       return;
     }
     patchProvider(selected.id, addModelToLists(selected, id, kind));
@@ -141,30 +132,10 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     patchProvider(selected.id, removeModelFromLists(selected, modelId));
   };
 
-  const defaultModelValue = useMemo(() => {
-    if (!selected) return "";
-    // When editing the active provider, keep the raw modelName so custom IDs work.
-    if (settings.activeProviderId === selected.id) {
-      return settings.modelName;
-    }
-    return resolveModelNameForProvider(
-      { ...settings, activeProviderId: selected.id },
-      selected,
-    );
-  }, [selected, settings]);
-
-  const modelToCheck = defaultModelValue;
-
   useEffect(() => {
     setCheckStatus("idle");
     setCheckMessage("");
-  }, [
-    selected?.id,
-    selected?.apiHost,
-    selected?.apiKey,
-    selected?.type,
-    modelToCheck,
-  ]);
+  }, [selected?.id, selected?.apiHost, selected?.apiKey, selected?.type]);
 
   const handleCheckConnection = async () => {
     if (!selected) return;
@@ -178,11 +149,6 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
       setCheckMessage("请填写 API Key");
       return;
     }
-    if (!modelToCheck) {
-      setCheckStatus("failed");
-      setCheckMessage("请先选择或添加模型");
-      return;
-    }
 
     setCheckStatus("checking");
     setCheckMessage("");
@@ -191,18 +157,17 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
         apiHost: selected.apiHost,
         apiKey: selected.apiKey,
         providerType: selected.type,
-        providerId: selected.id,
-        model: modelToCheck,
-      })) as { ok: boolean; latencyMs: number; model: string };
+      })) as { ok: boolean; latencyMs: number; models: number };
       setCheckStatus("success");
       setCheckMessage(
-        `连接成功 · 模型 ${result.model} · ${result.latencyMs}ms`,
+        `连接成功 · ${result.models} 个可用模型 · ${result.latencyMs}ms`,
       );
     } catch (e) {
       setCheckStatus("failed");
       setCheckMessage(e instanceof Error ? e.message : "连接失败");
     }
   };
+
 
   if (!selected) {
     return (
@@ -212,10 +177,6 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     );
   }
 
-  const selectable = getSelectableModels({
-    ...settings,
-    activeProviderId: selected.id,
-  });
   const endpointPreview = getEndpointPreview(selected.apiHost, selected.type);
 
   return (
@@ -223,38 +184,50 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
       <div className="provider-settings-layout">
         <aside className="provider-list-pane">
           <div className="provider-list-toolbar">
-            <input
-              type="search"
-              placeholder="搜索…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="搜索服务商"
-            />
-            <button
-              type="button"
-              className="btn-ghost provider-add-btn"
+            <Input
+            shadow
+            placeholder="搜索…" value={search} onChange={(e) => setSearch(e.target.value)}
+            aria-label="搜索服务商" />
+            <Button
+              type="default"
+              size="small"
+              className="provider-add-btn"
               onClick={() => setShowAddProvider(true)}
             >
               添加
-            </button>
+            </Button>
           </div>
           <div className="provider-list">
             {filteredProviders.length === 0 ? (
               <p className="provider-empty">无匹配的服务商</p>
             ) : (
               filteredProviders.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
                   className={`provider-list-item${selected.id === p.id ? " active" : ""}${!p.enabled ? " disabled" : ""}`}
                   onClick={() => selectProvider(p)}
                 >
-                  <span className="provider-list-name">{p.name}</span>
-                  <span className="provider-list-meta">
-                    {getProviderTypeLabel(p.type)}
-                    {!p.enabled ? " 停用" : ""}
-                  </span>
-                </button>
+                  <div className="provider-item-info">
+                    <span className="provider-list-name">{p.name}</span>
+                    <span className="provider-list-meta">
+                      {getProviderTypeLabel(p.type)}
+                      {!p.enabled ? " 停用" : ""}
+                    </span>
+                  </div>
+                  <Button
+                    type="default"
+                    size="small"
+                    danger
+                    className="provider-item-del"
+                    icon={<Icon name="Trash" size={12} />}
+                    title={`删除 ${p.name}`}
+                    aria-label={`删除 ${p.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleRemoveProvider(p);
+                    }}
+                  />
+                </div>
               ))
             )}
           </div>
@@ -266,15 +239,21 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
               {selected.isSystem ? (
                 <h4>{selected.name}</h4>
               ) : (
-                <input
+                <>
+                  <FieldHead
+                    htmlFor="provider-name"
+                    hint="显示在服务商列表和模型选择器里。"
+                  >
+                    服务商名称
+                  </FieldHead>
+                  <Input
                   className="provider-name-input"
                   type="text"
-                  value={selected.name}
-                  onChange={(e) =>
+                  shadow value={selected.name} onChange={(e) =>
                     patchProvider(selected.id, { name: e.target.value })
                   }
-                  aria-label="服务商名称"
-                />
+                  aria-label="服务商名称" />
+                </>
               )}
               <span className="provider-detail-type">
                 {getProviderTypeLabel(selected.type)}
@@ -284,25 +263,14 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
               <div className="provider-enable">
                 <span>启用</span>
                 <HintTip tip="关闭后不会出现在模型选择器里。" />
-                <label className="toggle" title={selected.enabled ? "停用" : "启用"}>
-                  <input
-                    type="checkbox"
-                    checked={selected.enabled}
-                    onChange={(e) =>
-                      patchProvider(selected.id, { enabled: e.target.checked })
-                    }
-                    aria-label="启用此服务商"
-                  />
-                  <span className="toggle-track" />
-                </label>
+                <Switch
+                  checked={selected.enabled}
+                  onChange={(checked) =>
+                    patchProvider(selected.id, { enabled: checked })
+                  }
+                  aria-label="启用此服务商"
+                />
               </div>
-              <button
-                type="button"
-                className="provider-delete-btn"
-                onClick={() => handleRemoveProvider(selected)}
-              >
-                删除
-              </button>
             </div>
           </div>
 
@@ -313,21 +281,18 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             >
               API Host
             </FieldHead>
-            <input
-              id="provider-api-host"
-              type="text"
-              value={selected.apiHost}
-              onChange={(e) =>
-                patchProvider(selected.id, { apiHost: e.target.value })
-              }
-              placeholder={
-                selected.type === "ollama"
-                  ? "http://localhost:11434"
-                  : selected.type === "anthropic"
-                    ? "https://api.anthropic.com/v1"
-                    : "https://api.openai.com/v1"
-              }
-            />
+            <Input
+            type="text"
+            shadow value={selected.apiHost} onChange={(e) =>
+              patchProvider(selected.id, { apiHost: e.target.value })
+            }
+            placeholder={
+              selected.type === "ollama"
+                ? "http://localhost:11434"
+                : selected.type === "anthropic"
+                  ? "https://api.anthropic.com/v1"
+                  : "https://api.openai.com/v1"
+            } />
             {endpointPreview ? (
               <p className="provider-endpoint">{endpointPreview}</p>
             ) : null}
@@ -337,49 +302,49 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             <div className="field">
               <FieldHead
                 htmlFor="provider-api-key"
-                hint="密钥只保存在本机。检测会用当前默认模型发一次请求。"
+                hint="密钥只保存在本机。检测会探测模型列表接口，不消耗 tokens。"
               >
                 API Key
               </FieldHead>
               <div className="provider-api-key-row">
-                <input
+                <Input
                   id="provider-api-key"
                   type="password"
-                  value={selected.apiKey}
+                  shadow
                   onChange={(e) =>
                     patchProvider(selected.id, { apiKey: e.target.value })
                   }
                   placeholder="sk-..."
                 />
-                <button
-                  type="button"
+                <Button
+                  type="default"
+                  size="small"
                   className={`provider-check-btn${checkStatus === "success" ? " success" : ""}${checkStatus === "failed" ? " failed" : ""}`}
                   onClick={() => void handleCheckConnection()}
                   disabled={checkStatus === "checking"}
                 >
                   {checkStatus === "checking" ? "检测中…" : "检测"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
 
           {!providerNeedsApiKey(selected) && (
             <div className="field">
-              <FieldHead hint="用当前默认模型发一次请求，确认 Host 可用。">
+              <FieldHead hint="探测模型列表接口，确认 Host 与网络可达，不消耗 tokens。">
                 连接
               </FieldHead>
               <div className="provider-check-row">
-                <button
-                  type="button"
+                <Button
+                  type="default"
+                  size="small"
                   className={`provider-check-btn${checkStatus === "success" ? " success" : ""}${checkStatus === "failed" ? " failed" : ""}`}
                   onClick={() => void handleCheckConnection()}
                   disabled={checkStatus === "checking"}
                 >
                   {checkStatus === "checking" ? "检测中…" : "检测连接"}
-                </button>
-                {modelToCheck ? (
-                  <span className="provider-check-model">{modelToCheck}</span>
-                ) : null}
+                </Button>
+
               </div>
             </div>
           )}
@@ -391,49 +356,25 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
           )}
 
           <div className="field">
-            <FieldHead hint="普通对话使用的模型。智能体在「智能体 → 基础」里另选。">
-              默认模型
+            <FieldHead hint="拉取或手动添加要启用的对话 / Embedding / Rerank 模型。">
+              模型
             </FieldHead>
-            <ModelSelector
-              models={selectable}
-              value={defaultModelValue}
-              onChange={(modelName) =>
-                onChange({
-                  ...settings,
-                  modelName,
-                  activeProviderId: selected.id,
-                })
-              }
-            />
             <div className="provider-model-actions">
               <ManageModelsPanel
                 provider={selected}
-                onChange={(lists) => {
-                  let next = updateProviderInSettings(settings, selected.id, lists);
-                  if (
-                    settings.activeProviderId === selected.id &&
-                    settings.modelName &&
-                    selected.models.includes(settings.modelName) &&
-                    !lists.models.includes(settings.modelName)
-                  ) {
-                    next = {
-                      ...next,
-                      modelName: lists.models[0] ?? settings.modelName,
-                    };
-                  }
-                  onChange(next);
-                }}
+                onChange={(lists) =>
+                  onChange(updateProviderInSettings(settings, selected.id, lists))
+                }
               />
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 onClick={() => setShowAddModel(true)}
               >
                 手动添加
-              </button>
+              </Button>
             </div>
           </div>
-
           {enabledModelCount(selected) > 0 && (
             <div className="field">
               <FieldHead hint="已启用的对话 / Embedding / Rerank 模型。可从列表移除。">
@@ -446,36 +387,18 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                       {MODEL_KIND_LABELS[m.kind]}
                     </span>
                     {m.id}
-                    <button
-                      type="button"
+                    <Button
+                      type="text"
                       onClick={() => handleRemoveModel(m.id)}
                       title="移除"
                     >
                       ×
-                    </button>
+                    </Button>
                   </span>
                 ))}
               </div>
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="provider-tts">
-        <div className="provider-tts-row">
-          <span>语音播报</span>
-          <HintTip tip="打开后，可以用系统语音朗读 AI 回复。" />
-          <label className="toggle" title="启用语音播报">
-            <input
-              type="checkbox"
-              checked={settings.ttsEnabled}
-              onChange={(e) =>
-                onChange({ ...settings, ttsEnabled: e.target.checked })
-              }
-              aria-label="启用语音播报"
-            />
-            <span className="toggle-track" />
-          </label>
         </div>
       </div>
 
@@ -492,6 +415,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
           onConfirm={handleAddModel}
         />
       )}
+      {confirmDialog}
     </section>
   );
 }

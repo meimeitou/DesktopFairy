@@ -3,7 +3,6 @@ import { isImageExt } from "./chatAttachments";
 import type { ChatMsg } from "./chatMessages";
 import { formatToolEvidenceForApi } from "./toolEvidence";
 import {
-  isAgentBackend,
   parseModelCompound,
   resolveAgentModelName,
   type AppSettings,
@@ -47,7 +46,6 @@ const CONTEXT_WINDOW_BY_PREFIX: [string, number][] = [
   ["llama3.3", 128_000],
   ["gemini-2", 1_000_000],
   ["gemini-1.5", 1_000_000],
-  ["hermes-agent", 128_000],
 ];
 
 const CJK_RE = /[\u3000-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
@@ -125,16 +123,19 @@ export function estimateAgentSystemPromptTokens(agent: {
   return tokens;
 }
 
+/**
+ * Model actually in effect for a chat session: the session-locked override
+ * (already validated) when present, otherwise the agent default model.
+ */
 export function resolveActiveModelName(
   settings: AppSettings,
-  chatBackend: string,
+  sessionModel?: string,
 ): string {
-  if (isAgentBackend(chatBackend)) {
-    return resolveAgentModelName(settings) || settings.agent.modelName.trim();
+  if (sessionModel) {
+    const { modelName } = parseModelCompound(sessionModel, "");
+    if (modelName) return modelName;
   }
-  const providerId = settings.activeProviderId;
-  const { modelName } = parseModelCompound(chatBackend, providerId);
-  return modelName;
+  return resolveAgentModelName(settings) || settings.agent.modelName.trim();
 }
 
 export function buildTrimOptions(params: {

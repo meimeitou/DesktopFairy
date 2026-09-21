@@ -1,3 +1,4 @@
+import { Button } from "animal-island-ui";
 import { FieldHead } from "../../HintTip";
 import {
   DEFAULT_SOUL,
@@ -25,14 +26,14 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
               SOUL.md
             </FieldHead>
             <div className="agent-manuscript-actions">
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 disabled={isDefaultSoul}
                 onClick={() => onChange({ soul: DEFAULT_SOUL })}
               >
                 恢复默认
-              </button>
+              </Button>
             </div>
           </div>
           <textarea
@@ -54,22 +55,22 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
               USER.md
             </FieldHead>
             <div className="agent-manuscript-actions">
-              <button
-                type="button"
-                className="btn-ghost"
+              <Button
+                type="default"
+                size="small"
                 disabled={!!agent.user.trim()}
                 onClick={() => onChange({ user: DEFAULT_USER_TEMPLATE })}
               >
                 载入模板
-              </button>
-              <button
-                type="button"
-                className="btn-ghost"
+              </Button>
+              <Button
+                type="default"
+                size="small"
                 disabled={!agent.user.trim()}
                 onClick={() => onChange({ user: "" })}
               >
                 清空
-              </button>
+              </Button>
             </div>
           </div>
           <textarea

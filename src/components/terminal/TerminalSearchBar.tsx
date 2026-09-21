@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -11,12 +12,12 @@ interface Props {
 // 装饰颜色必须用 #RRGGBB 字面值（SearchAddon 类型要求），不能用 CSS 变量。
 // ink-600 用于所有匹配项的淡底；品牌绿用于当前活跃匹配。
 const DECORATIONS = {
-  matchBackground: "#3f3f3f",
-  matchBorder: "#525252",
-  matchOverviewRuler: "#3f3f3f",
-  activeMatchBackground: "#00b96b",
+  matchBackground: "#d8c9ae",
+  matchBorder: "#c4b89e",
+  matchOverviewRuler: "#d8c9ae",
+  activeMatchBackground: "#19c8b9",
   activeMatchBorder: "#22d17a",
-  activeMatchColorOverviewRuler: "#00b96b",
+  activeMatchColorOverviewRuler: "#19c8b9",
 };
 
 export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props) {
@@ -102,14 +103,15 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
 
   return (
     <div className="terminal-search-bar">
-      <button
-        type="button"
+      <Button
+        type="text"
+        size="small"
         className={`terminal-search-toggle${caseSensitive ? " active" : ""}`}
         onClick={() => setCaseSensitive((v) => !v)}
         title="区分大小写"
       >
         Aa
-      </button>
+      </Button>
       <input
         ref={inputRef}
         className="terminal-search-input"
@@ -123,39 +125,32 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
       />
       <span className="terminal-search-count">{countLabel}</span>
       <div className="terminal-search-divider" />
-      <button
-        type="button"
+      <Button
+        type="text"
+        size="small"
         className="terminal-search-btn"
+        icon={<Icon name="Play" size={12} className="search-nav-icon up" />}
         onClick={findPrevious}
         title="上一个匹配 (Shift+Enter)"
         disabled={!query}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="18 15 12 9 6 15" />
-        </svg>
-      </button>
-      <button
-        type="button"
+      />
+      <Button
+        type="text"
+        size="small"
         className="terminal-search-btn"
+        icon={<Icon name="Play" size={12} className="search-nav-icon down" />}
         onClick={findNext}
         title="下一个匹配 (Enter)"
         disabled={!query}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      <button
-        type="button"
+      />
+      <Button
+        type="text"
+        size="small"
         className="terminal-search-btn"
+        icon={<Icon name="Close" size={12} />}
         onClick={handleClose}
         title="关闭 (Esc)"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
+      />
     </div>
   );
 }

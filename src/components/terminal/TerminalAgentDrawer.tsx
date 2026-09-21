@@ -10,10 +10,9 @@ import MessageList, { type MessageListHandle } from "../chat/MessageList";
 import { ToolCancelContext } from "../chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
+import { useConfirm } from "../../hooks/useConfirm";
 import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
 import {
-  getAgentBackendLabel,
-  AGENT_BACKEND_KEY,
   type AgentConfig,
   type AgentSkillDescriptor,
 } from "../../shared/agent";
@@ -22,13 +21,14 @@ import ChatModeSelector from "../chat/ChatModeSelector";
 import ContextUsageMeter from "../chat/ContextUsageMeter";
 import SlashCommandMenu from "../chat/SlashCommandMenu";
 import ComposerBusyHalo from "../chat/ComposerBusyHalo";
+import ModelSelector from "../ModelSelector";
 import KnowledgePicker from "../knowledge/KnowledgePicker";
 import {
   type ChatMsg,
   buildAgentApiMessages,
   filterForAgentHistory,
-  findLastAssistantReplyIndex,
   findFirstAssistantReplyIndex,
+  findLastAssistantReplyIndex,
   pruneEmptyAssistantMessages,
   reconcileToolMessages,
   upsertAgentToolMessage,
@@ -43,6 +43,7 @@ import {
 } from "../../shared/contextUsage";
 import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
+  getSelectableModelItems,
   getChatApiConfig,
   getAgentBackendGuidance,
 } from "../../shared/settings";
@@ -61,7 +62,12 @@ import {
   withEnabledSkillId,
   type SlashCommand,
 } from "../../shared/slashCommands";
-import Tooltip from "../Tooltip";
+import {
+  Button,
+  Icon,
+  Notification as AnimalNotification,
+  Tooltip,
+} from "animal-island-ui";
 import {
   attachTopicStream,
   detachTopicStream,
@@ -87,89 +93,23 @@ function clampDrawerWidth(width: number): number {
 const api = window.electronAPI;
 
 function EraserIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.6 1.6c.8-.8 2-.8 2.8 0l5 5c.8.8.8 2 0 2.8L11 20" />
-      <path d="M6 11l7 7" />
-    </svg>
-  );
+  return <Icon name="Edit" size={16} />;
 }
 
 function CompactIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <line x1="4" y1="4" x2="20" y2="4" />
-      <line x1="4" y1="20" x2="20" y2="20" />
-      <polyline points="9 9 12 12 15 9" />
-      <polyline points="9 15 12 12 15 15" />
-    </svg>
-  );
+  return <Icon name="Chat" size={16} />;
 }
 
 function TrashIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d="M3 6h18" />
-      <path d="M8 6V4h8v2" />
-      <path d="M19 6l-1 14H6L5 6" />
-    </svg>
-  );
+  return <Icon name="Trash" size={16} />;
 }
 
 function SendIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M22 2L11 13" />
-      <path d="M22 2l-7 20-4-9-9-4 20-7z" />
-    </svg>
-  );
+  return <Icon name="Play" size={16} />;
 }
 
 function StopIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden
-    >
-      <rect x="6" y="6" width="12" height="12" rx="2" />
-    </svg>
-  );
+  return <Icon name="Close" size={14} />;
 }
 
 interface TerminalAgentDrawerProps {
@@ -186,6 +126,8 @@ interface DrawerTabState {
   input: string;
   streaming: boolean;
   requestId: string | null;
+  /** Session-locked model override ("" = follow agent default). In-memory only. */
+  sessionModel: string;
   lastPromptTokens?: number;
   lastCompletionTokens?: number;
   lastUsageMessageCount?: number;
@@ -197,6 +139,7 @@ function emptyTabState(): DrawerTabState {
     input: "",
     streaming: false,
     requestId: null,
+    sessionModel: "",
   };
 }
 
@@ -218,6 +161,7 @@ export default function TerminalAgentDrawer({
     {},
   );
   const settings = useSettings();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -313,27 +257,6 @@ export default function TerminalAgentDrawer({
   const activeState = tabStates[activeTabId] ?? emptyTabState();
   const composerDisabled = activeState.streaming || !!editingMsgId;
 
-  const contextUsage = useMemo(() => {
-    const modelName = resolveActiveModelName(settings, AGENT_BACKEND_KEY);
-    const contextWindow = resolveContextWindow(modelName);
-    return estimateContextUsage({
-      messages: filterForAgentHistory(activeState.messages),
-      input: activeState.input,
-      systemTokens: estimateAgentSystemPromptTokens(settings.agent),
-      contextWindow,
-      lastPromptTokens: activeState.lastPromptTokens,
-      lastCompletionTokens: activeState.lastCompletionTokens,
-      lastUsageMessageCount: activeState.lastUsageMessageCount,
-    });
-  }, [
-    settings,
-    activeState.messages,
-    activeState.input,
-    activeState.lastPromptTokens,
-    activeState.lastCompletionTokens,
-    activeState.lastUsageMessageCount,
-  ]);
-
   const slashCommands = useMemo(
     () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
     [skills],
@@ -343,11 +266,7 @@ export default function TerminalAgentDrawer({
     query: slashQuery,
     hostRef: slashHostRef,
     close: closeSlashMenu,
-  } = useSlashCommandMenu(
-    activeState.input,
-    composerDisabled,
-    slashCommands,
-  );
+  } = useSlashCommandMenu(activeState.input, composerDisabled, slashCommands);
 
   useEffect(() => {
     let cancelled = false;
@@ -423,6 +342,58 @@ export default function TerminalAgentDrawer({
     },
     [],
   );
+
+  const selectableModels = useMemo(
+    () => getSelectableModelItems(settings).map((i) => i.value),
+    [settings],
+  );
+  const modelLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        getSelectableModelItems(settings).map((i) => [i.value, i.label]),
+      ),
+    [settings],
+  );
+  /** Dropdown shows the session override, or the agent default when unlocked. */
+  const agentDefaultModel = useMemo(() => {
+    const provider = settings.providers.find(
+      (p) => p.id === settings.agent.providerId && p.enabled,
+    );
+    if (!provider || !settings.agent.modelName) return "";
+    return `${provider.id}::${settings.agent.modelName}`;
+  }, [settings]);
+
+  const handleSessionModelChange = useCallback(
+    (model: string) => {
+      updateTabState(activeTabId, (s) => ({ ...s, sessionModel: model }));
+    },
+    [updateTabState, activeTabId],
+  );
+
+  const contextUsage = useMemo(() => {
+    const modelName = resolveActiveModelName(
+      settings,
+      activeState.sessionModel,
+    );
+    const contextWindow = resolveContextWindow(modelName);
+    return estimateContextUsage({
+      messages: filterForAgentHistory(activeState.messages),
+      input: activeState.input,
+      systemTokens: estimateAgentSystemPromptTokens(settings.agent),
+      contextWindow,
+      lastPromptTokens: activeState.lastPromptTokens,
+      lastCompletionTokens: activeState.lastCompletionTokens,
+      lastUsageMessageCount: activeState.lastUsageMessageCount,
+    });
+  }, [
+    settings,
+    activeState.sessionModel,
+    activeState.messages,
+    activeState.input,
+    activeState.lastPromptTokens,
+    activeState.lastCompletionTokens,
+    activeState.lastUsageMessageCount,
+  ]);
 
   const mergeToolMessage = useCallback(
     (tabId: string, event: AgentStreamToolEvent) => {
@@ -718,121 +689,143 @@ export default function TerminalAgentDrawer({
 
       agentSendLockRef.current.add(activeTabId);
       try {
-      let finalText = text;
-      let invokedSkillId: string | undefined;
-      if (!overrideText) {
-        const applied = applySkillSlashCommand(
-          text,
-          skills.map((s) => s.id),
-        );
-        if (applied) {
-          finalText = applied.text;
-          invokedSkillId = applied.skillId;
+        let finalText = text;
+        let invokedSkillId: string | undefined;
+        if (!overrideText) {
+          const applied = applySkillSlashCommand(
+            text,
+            skills.map((s) => s.id),
+          );
+          if (applied) {
+            finalText = applied.text;
+            invokedSkillId = applied.skillId;
+          }
         }
-      }
 
-      await flushSettingsSave();
-      const currentSettings = getSettingsSnapshot();
-      const guidance = getAgentBackendGuidance(currentSettings);
-      if (guidance) {
+        await flushSettingsSave();
+        const currentSettings = getSettingsSnapshot();
+        const guidance = getAgentBackendGuidance(currentSettings);
+        if (guidance) {
+          const now = Date.now();
+          updateTabState(activeTabId, (s) => ({
+            ...s,
+            messages: [
+              ...s.messages,
+              { id: genId(), role: "user", content: finalText, timestamp: now },
+              {
+                id: genId(),
+                role: "assistant",
+                content: guidance,
+                error: true,
+                timestamp: now,
+              },
+            ],
+            input: isResend ? s.input : "",
+            streaming: false,
+            requestId: null,
+          }));
+          scrollToBottom();
+          return;
+        }
+
+        const apiConfig = getChatApiConfig(currentSettings);
+        if (!apiConfig?.apiHost || !apiConfig.modelName) {
+          AnimalNotification.warning(
+            "请先在设置中配置 Agent 后端 Provider 与模型。",
+          );
+          return;
+        }
+
+        const sessionId = getActiveSessionId();
+        const history = trimMessagesForApi(
+          filterForAgentHistory(state.messages),
+          buildTrimOptions({
+            contextWindow: resolveContextWindow(
+              resolveActiveModelName(currentSettings, state.sessionModel),
+            ),
+            systemTokens: estimateAgentSystemPromptTokens(
+              currentSettings.agent,
+            ),
+            draftInput: finalText,
+          }),
+        );
+        const payloadMessages = buildAgentApiMessages(
+          history,
+          finalText,
+          { textFiles: [], images: [] },
+          undefined,
+        );
+
+        const requestId = genId();
+        const topicId = `terminal:${activeTabId}`;
+        topicIdRef.current = topicId;
+        requestIdToTabIdRef.current.set(requestId, activeTabId);
+        if (isCompactRequest) {
+          compactRequestIdRef.current = requestId;
+        }
         const now = Date.now();
+
+        const agentConfig: AgentConfig = {
+          ...currentSettings.agent,
+          chatMode,
+          enabledSkillIds: invokedSkillId
+            ? withEnabledSkillId(
+                currentSettings.agent.enabledSkillIds,
+                invokedSkillId,
+              )
+            : currentSettings.agent.enabledSkillIds,
+        };
+
         updateTabState(activeTabId, (s) => ({
           ...s,
           messages: [
             ...s.messages,
             { id: genId(), role: "user", content: finalText, timestamp: now },
-            {
-              id: genId(),
-              role: "assistant",
-              content: guidance,
-              error: true,
-              timestamp: now,
-            },
+            { id: genId(), role: "assistant", content: "", timestamp: now },
           ],
           input: isResend ? s.input : "",
-          streaming: false,
-          requestId: null,
+          streaming: true,
+          requestId,
         }));
         scrollToBottom();
-        return;
-      }
 
-      const apiConfig = getChatApiConfig(currentSettings);
-      if (!apiConfig?.apiHost || !apiConfig.modelName) {
-        alert("请先在设置中配置 Agent 后端 Provider 与模型。");
-        return;
-      }
-
-      const sessionId = getActiveSessionId();
-      if (!sessionId) {
-        alert("当前终端会话尚未就绪，请稍后再试。");
-        return;
-      }
-
-      const history = trimMessagesForApi(
-        filterForAgentHistory(state.messages),
-        buildTrimOptions({
-          contextWindow: resolveContextWindow(apiConfig.modelName),
-          systemTokens: estimateAgentSystemPromptTokens(currentSettings.agent),
-          draftInput: finalText,
-        }),
-      );
-      const payloadMessages = buildAgentApiMessages(
-        history,
-        finalText,
-        { textFiles: [], images: [] },
-        undefined,
-      );
-
-      const requestId = genId();
-      const topicId = `terminal:${activeTabId}`;
-      topicIdRef.current = topicId;
-      requestIdToTabIdRef.current.set(requestId, activeTabId);
-      if (isCompactRequest) {
-        compactRequestIdRef.current = requestId;
-      }
-      const now = Date.now();
-
-      const agentConfig: AgentConfig = {
-        ...currentSettings.agent,
-        chatMode,
-        enabledSkillIds: invokedSkillId
-          ? withEnabledSkillId(
-              currentSettings.agent.enabledSkillIds,
-              invokedSkillId,
-            )
-          : currentSettings.agent.enabledSkillIds,
-      };
-
-      updateTabState(activeTabId, (s) => ({
-        ...s,
-        messages: [
-          ...s.messages,
-          { id: genId(), role: "user", content: finalText, timestamp: now },
-          { id: genId(), role: "assistant", content: "", timestamp: now },
-        ],
-        input: isResend ? s.input : "",
-        streaming: true,
-        requestId,
-      }));
-      scrollToBottom();
-
-      try {
-        const result = await openAgentStream({
-          topicId,
-          requestId,
-          messages: payloadMessages,
-          apiConfig: {
-            apiHost: apiConfig.apiHost,
-            apiKey: apiConfig.apiKey,
-            providerType: apiConfig.providerType,
-            modelName: apiConfig.modelName,
-          },
-          agentConfig,
-          terminalSessionId: sessionId,
-          knowledgeBaseIds: knowledgeIdsByTabRef.current[activeTabId] || [],
-        });
-        if (result.mode === "blocked") {
+        try {
+          const result = await openAgentStream({
+            topicId,
+            requestId,
+            messages: payloadMessages,
+            apiConfig: {
+              apiHost: apiConfig.apiHost,
+              apiKey: apiConfig.apiKey,
+              providerType: apiConfig.providerType,
+              modelName: apiConfig.modelName,
+            },
+            agentConfig,
+            sessionModel: state.sessionModel,
+            terminalSessionId: sessionId,
+          });
+          if (result.mode === "blocked") {
+            if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
+              return;
+            requestIdToTabIdRef.current.delete(requestId);
+            updateTabState(activeTabId, (s) => {
+              const owns = s.requestId === requestId;
+              const idx = findLastAssistantReplyIndex(s.messages);
+              if (idx < 0) {
+                return owns ? { ...s, streaming: false, requestId: null } : s;
+              }
+              const next = s.messages.slice();
+              next[idx] = {
+                ...next[idx],
+                content: "该终端已有进行中的会话，请等待完成或先停止。",
+                error: true,
+              };
+              return owns
+                ? { ...s, messages: next, streaming: false, requestId: null }
+                : { ...s, messages: next };
+            });
+          }
+        } catch (e) {
           if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
             return;
           requestIdToTabIdRef.current.delete(requestId);
@@ -845,7 +838,7 @@ export default function TerminalAgentDrawer({
             const next = s.messages.slice();
             next[idx] = {
               ...next[idx],
-              content: "该终端已有进行中的会话，请等待完成或先停止。",
+              content: `请求失败：${e instanceof Error ? e.message : String(e)}`,
               error: true,
             };
             return owns
@@ -853,31 +846,18 @@ export default function TerminalAgentDrawer({
               : { ...s, messages: next };
           });
         }
-      } catch (e) {
-        if (requestIdToTabIdRef.current.get(requestId) !== activeTabId) return;
-        requestIdToTabIdRef.current.delete(requestId);
-        updateTabState(activeTabId, (s) => {
-          const owns = s.requestId === requestId;
-          const idx = findLastAssistantReplyIndex(s.messages);
-          if (idx < 0) {
-            return owns ? { ...s, streaming: false, requestId: null } : s;
-          }
-          const next = s.messages.slice();
-          next[idx] = {
-            ...next[idx],
-            content: `请求失败：${e instanceof Error ? e.message : String(e)}`,
-            error: true,
-          };
-          return owns
-            ? { ...s, messages: next, streaming: false, requestId: null }
-            : { ...s, messages: next };
-        });
-      }
       } finally {
         agentSendLockRef.current.delete(activeTabId);
       }
     },
-    [activeTabId, chatMode, getActiveSessionId, updateTabState, scrollToBottom, skills],
+    [
+      activeTabId,
+      chatMode,
+      getActiveSessionId,
+      updateTabState,
+      scrollToBottom,
+      skills,
+    ],
   );
 
   useEffect(() => {
@@ -986,7 +966,13 @@ export default function TerminalAgentDrawer({
                 timestamp: Date.now(),
               } as ChatMsg,
             ];
-      return { ...s, messages: nextMessages, lastPromptTokens: undefined, lastCompletionTokens: undefined, lastUsageMessageCount: undefined };
+      return {
+        ...s,
+        messages: nextMessages,
+        lastPromptTokens: undefined,
+        lastCompletionTokens: undefined,
+        lastUsageMessageCount: undefined,
+      };
     });
     scrollToBottom();
   }, [
@@ -1026,10 +1012,15 @@ export default function TerminalAgentDrawer({
     void handleSend(COMPACT_PROMPT);
   }, [activeState.streaming, activeState.messages.length, handleSend]);
 
-  const handleClearMessages = useCallback(() => {
+  const handleClearMessages = useCallback(async () => {
     if (activeState.streaming) return;
     if (activeState.messages.length === 0) return;
-    if (!window.confirm("确定清空当前终端标签的 Agent 对话吗？")) return;
+    const ok = await confirm({
+      title: "清空对话",
+      okText: "清空",
+      content: "确定清空当前终端标签的 Agent 对话吗？",
+    });
+    if (!ok) return;
     updateTabState(activeTabId, (s) => ({
       ...s,
       messages: [],
@@ -1043,6 +1034,7 @@ export default function TerminalAgentDrawer({
     activeState.messages.length,
     activeTabId,
     updateTabState,
+    confirm,
   ]);
 
   useEffect(() => {
@@ -1071,15 +1063,12 @@ export default function TerminalAgentDrawer({
     return () => window.removeEventListener("terminal:add-to-chat", handler);
   }, [activeTabId, updateTabState]);
 
-  const agentLabel = useMemo(
-    () => getAgentBackendLabel(settings.agent),
-    [settings.agent],
-  );
-
   const emptyContent = useMemo(
     () => (
       <div className="terminal-agent-empty">
-        <span className="terminal-agent-empty-icon">🧚‍♀️</span>
+        <span className="terminal-agent-empty-icon">
+          <Icon name="Butterfly" size={36} />
+        </span>
         <p>开始和终端 Agent 对话</p>
         <small>Agent 可以发送命令到当前终端并读取结果</small>
       </div>
@@ -1111,48 +1100,46 @@ export default function TerminalAgentDrawer({
         )}
         <div className="terminal-agent-header">
           <div className="terminal-agent-title">
-            <span className="terminal-agent-subtitle">{agentLabel}</span>
+            <ModelSelector
+              models={selectableModels}
+              value={activeState.sessionModel || agentDefaultModel}
+              modelLabels={modelLabels}
+              onChange={handleSessionModelChange}
+              allowCustom={false}
+              disabled={composerDisabled}
+              variant="toolbar"
+            />
           </div>
           <div className="terminal-agent-header-actions">
-            <button
-              type="button"
+            <Button
+              type="text"
+              size="small"
               className="terminal-agent-header-btn"
+              icon={<Icon name="Close" size={14} />}
               onClick={onToggle}
               title="关闭抽屉"
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
+            />
           </div>
         </div>
         <ToolCancelContext.Provider value={handleCancelTool}>
-            <MessageList
-              ref={messageListRef}
-              className="terminal-agent-messages"
-              messages={activeState.messages}
-              streaming={activeState.streaming}
-              onApprove={handleApproveTool}
-              onDeny={handleDenyTool}
-              onAlwaysAllow={handleAlwaysAllowTool}
-              onAnswer={submitToolAnswer}
-              submittingApprovalId={submittingApprovalId}
-              alwaysAllowLabel="本次全部允许"
-              onRetry={activeState.streaming ? undefined : handleRetry}
-              onStartEdit={activeState.streaming ? undefined : handleStartEdit}
-              onConfirmEdit={handleConfirmEdit}
-              onCancelEdit={handleCancelEdit}
-              editingMsgId={editingMsgId}
-              emptyContent={emptyContent}
-            />
+          <MessageList
+            ref={messageListRef}
+            className="terminal-agent-messages"
+            messages={activeState.messages}
+            streaming={activeState.streaming}
+            onApprove={handleApproveTool}
+            onDeny={handleDenyTool}
+            onAlwaysAllow={handleAlwaysAllowTool}
+            onAnswer={submitToolAnswer}
+            submittingApprovalId={submittingApprovalId}
+            alwaysAllowLabel="本次全部允许"
+            onRetry={activeState.streaming ? undefined : handleRetry}
+            onStartEdit={activeState.streaming ? undefined : handleStartEdit}
+            onConfirmEdit={handleConfirmEdit}
+            onCancelEdit={handleCancelEdit}
+            editingMsgId={editingMsgId}
+            emptyContent={emptyContent}
+          />
         </ToolCancelContext.Provider>
 
         <div
@@ -1160,118 +1147,119 @@ export default function TerminalAgentDrawer({
           className={`terminal-agent-dock${activeState.streaming ? " is-busy" : ""}`}
           aria-busy={activeState.streaming}
         >
-            <ComposerBusyHalo />
-            <div className="terminal-agent-editor" ref={slashHostRef}>
-              {showSlashMenu && (
-                <SlashCommandMenu
-                  commands={slashCommands}
-                  query={slashQuery}
-                  onSelect={handleSlashCommand}
-                  onClose={closeSlashMenu}
-                />
-              )}
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                placeholder={
-                  composerDisabled
-                    ? editingMsgId
-                      ? "正在编辑上方消息…"
-                      : "生成中…"
-                    : "输入消息，Enter 发送…"
+          <ComposerBusyHalo />
+          <div className="terminal-agent-editor" ref={slashHostRef}>
+            {showSlashMenu && (
+              <SlashCommandMenu
+                commands={slashCommands}
+                query={slashQuery}
+                onSelect={handleSlashCommand}
+                onClose={closeSlashMenu}
+              />
+            )}
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              placeholder={
+                composerDisabled
+                  ? editingMsgId
+                    ? "正在编辑上方消息…"
+                    : "生成中…"
+                  : "输入消息，Enter 发送…"
+              }
+              value={activeState.input}
+              onChange={(e) => setActiveInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={composerDisabled}
+            />
+          </div>
+          <div className="chat-input-toolbar">
+            <div className="chat-input-tools-left">
+              <KnowledgePicker
+                selectedIds={knowledgeIdsByTab[activeTabId] || []}
+                onChange={(ids) =>
+                  setKnowledgeIdsByTab((prev) => ({
+                    ...prev,
+                    [activeTabId]: ids,
+                  }))
                 }
-                value={activeState.input}
-                onChange={(e) => setActiveInput(e.target.value)}
-                onKeyDown={handleKeyDown}
                 disabled={composerDisabled}
               />
-            </div>
-            <div className="chat-input-toolbar">
-              <div className="chat-input-tools-left">
-                <KnowledgePicker
-                  selectedIds={knowledgeIdsByTab[activeTabId] || []}
-                  onChange={(ids) =>
-                    setKnowledgeIdsByTab((prev) => ({
-                      ...prev,
-                      [activeTabId]: ids,
-                    }))
+              <ChatModeSelector
+                mode={chatMode}
+                onChange={setChatMode}
+                disabled={composerDisabled}
+              />
+              <Tooltip title={"清空上下文"}>
+                <Button
+                  type="text"
+                  size="small"
+                  className="chat-tool-btn"
+                  icon={<EraserIcon />}
+                  onClick={handleClearContext}
+                  disabled={
+                    composerDisabled || activeState.messages.length === 0
                   }
-                  disabled={composerDisabled}
                 />
-                <ChatModeSelector
-                  mode={chatMode}
-                  onChange={setChatMode}
-                  disabled={composerDisabled}
+              </Tooltip>
+              <Tooltip title={"压缩上下文"}>
+                <Button
+                  type="text"
+                  size="small"
+                  className="chat-tool-btn"
+                  icon={<CompactIcon />}
+                  onClick={handleCompact}
+                  disabled={
+                    composerDisabled || activeState.messages.length === 0
+                  }
                 />
-                <Tooltip tip={"清空上下文"}>
-                  <button
-                    type="button"
-                    className="chat-tool-btn"
-                    onClick={handleClearContext}
-                    disabled={
-                      composerDisabled || activeState.messages.length === 0
-                    }
-                  >
-                    <EraserIcon />
-                  </button>
-                </Tooltip>
-                <Tooltip tip={"压缩上下文"}>
-                  <button
-                    type="button"
-                    className="chat-tool-btn"
-                    onClick={handleCompact}
-                    disabled={
-                      composerDisabled || activeState.messages.length === 0
-                    }
-                  >
-                    <CompactIcon />
-                  </button>
-                </Tooltip>
-                <Tooltip tip={"删除上下文"}>
-                  <button
-                    type="button"
-                    className="chat-tool-btn chat-tool-btn-danger"
-                    onClick={handleClearMessages}
-                    disabled={
-                      composerDisabled || activeState.messages.length === 0
-                    }
-                  >
-                    <TrashIcon />
-                  </button>
-                </Tooltip>
-              </div>
-              <div className="chat-input-toolbar-right">
-                <ContextUsageMeter
-                  usage={contextUsage}
-                  disabled={composerDisabled}
+              </Tooltip>
+              <Tooltip title={"删除上下文"}>
+                <Button
+                  type="text"
+                  size="small"
+                  className="chat-tool-btn chat-tool-btn-danger"
+                  icon={<TrashIcon />}
+                  onClick={() => void handleClearMessages()}
+                  disabled={
+                    composerDisabled || activeState.messages.length === 0
+                  }
                 />
-                {activeState.streaming ? (
-                  <button
-                    type="button"
-                    className="chat-send-btn chat-stop-btn"
-                    onClick={handleStop}
-                    aria-label="停止生成"
-                    title="停止生成"
-                  >
-                    <StopIcon />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="chat-send-btn"
-                    onClick={() => void handleSend()}
-                    disabled={composerDisabled || !activeState.input.trim()}
-                    aria-label="发送消息"
-                    title="发送消息 (Enter)"
-                  >
-                    <SendIcon />
-                  </button>
-                )}
-              </div>
+              </Tooltip>
+            </div>
+            <div className="chat-input-toolbar-right">
+              <ContextUsageMeter
+                usage={contextUsage}
+                disabled={composerDisabled}
+              />
+              {activeState.streaming ? (
+                <Button
+                  type="text"
+                  size="small"
+                  className="chat-send-btn chat-stop-btn"
+                  icon={<StopIcon />}
+                  onClick={handleStop}
+                  aria-label="停止生成"
+                  title="停止生成"
+                />
+              ) : (
+                <Button
+                  type="text"
+                  size="small"
+                  className="chat-send-btn"
+                  icon={<SendIcon />}
+                  onClick={() => void handleSend()}
+                  disabled={composerDisabled || !activeState.input.trim()}
+                  aria-label="发送消息"
+                  title="发送消息 (Enter)"
+                />
+              )}
             </div>
           </div>
         </div>
-      </aside>
+      </div>
+      {confirmDialog}
+    </aside>
   );
 }
 

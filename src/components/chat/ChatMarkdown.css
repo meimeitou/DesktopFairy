@@ -27,12 +27,22 @@
   font-weight: 600;
   line-height: 1.35;
 }
-.chat-markdown [data-streamdown="heading-1"] { font-size: 1.25em; }
-.chat-markdown [data-streamdown="heading-2"] { font-size: 1.15em; }
-.chat-markdown [data-streamdown="heading-3"] { font-size: 1.05em; }
-.chat-markdown [data-streamdown="heading-4"] { font-size: 1em; }
+.chat-markdown [data-streamdown="heading-1"] {
+  font-size: 1.25em;
+}
+.chat-markdown [data-streamdown="heading-2"] {
+  font-size: 1.15em;
+}
+.chat-markdown [data-streamdown="heading-3"] {
+  font-size: 1.05em;
+}
+.chat-markdown [data-streamdown="heading-4"] {
+  font-size: 1em;
+}
 .chat-markdown [data-streamdown="heading-5"],
-.chat-markdown [data-streamdown="heading-6"] { font-size: 1em; }
+.chat-markdown [data-streamdown="heading-6"] {
+  font-size: 1em;
+}
 
 .chat-markdown ul,
 .chat-markdown ol {
@@ -65,8 +75,8 @@
 .chat-markdown [data-streamdown="inline-code"] {
   padding: 0.1em 0.35em;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(121, 79, 39, 0.18);
+  border: 1px solid rgba(121, 79, 39, 0.08);
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
@@ -97,20 +107,21 @@
   margin: 0.6em 0;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid var(--hairline-strong);
-  background: var(--ink-850);
+  /* gruvbox-dark-soft: match the shiki bg the body will carry */
+  border: 1px solid #45403d;
+  background: #32302f;
 }
 .chat-markdown [data-streamdown="code-block-header"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid var(--hairline-strong);
+  background: rgba(235, 219, 178, 0.06);
+  border-bottom: 1px solid #45403d;
 }
 .chat-markdown [data-streamdown="code-block-header"] span {
   font-size: 11px;
-  color: var(--bone-500);
+  color: #a89984;
   text-transform: lowercase;
   font-family: var(--font-mono);
 }
@@ -126,17 +137,20 @@
   gap: 3px;
   padding: 2px 8px;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(235, 219, 178, 0.2);
   border-radius: 4px;
   font-size: 11px;
-  color: var(--bone-400);
+  color: #a89984;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 .chat-markdown [data-streamdown="code-block-copy-button"]:hover,
 .chat-markdown [data-streamdown="code-block-download-button"]:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--bone-100);
+  background: rgba(235, 219, 178, 0.08);
+  color: #ebdbb2;
 }
 .chat-markdown [data-streamdown="code-block-body"] {
   margin: 0;
@@ -144,8 +158,10 @@
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.5;
-  background: var(--sdm-bg, var(--ink-850));
-  color: var(--sdm-fg, var(--bone-100));
+  /* shiki writes --sdm-bg/--sdm-fg inline on the inner <pre>, which does not
+   * cascade up to this div — pin the gruvbox palette here directly. */
+  background: #32302f;
+  color: #ebdbb2;
   font-family: var(--font-mono);
 }
 .chat-markdown [data-streamdown="code-block-body"] pre {
@@ -172,24 +188,26 @@
 }
 
 /* Shell code block with "在终端运行" — replaces the deleted CodeBlock.tsx */
+/* Shell block rides shiki gruvbox-dark-soft: wrapper + header follow the
+ * theme's dark warm palette (#32302f bg, #ebdbb2 fg family). */
 .sd-shell-block {
   margin: 0.6em 0;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid var(--hairline-strong);
-  background: var(--ink-850);
+  border: 1px solid #45403d;
+  background: #32302f;
 }
 .sd-shell-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid var(--hairline-strong);
+  background: rgba(235, 219, 178, 0.06);
+  border-bottom: 1px solid #45403d;
 }
 .sd-shell-lang {
   font-size: 11px;
-  color: var(--bone-500);
+  color: #a89984;
   text-transform: lowercase;
   font-family: var(--font-mono);
 }
@@ -198,28 +216,18 @@
   align-items: center;
   gap: 6px;
 }
-.sd-shell-run {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  font-size: 11px;
-  color: var(--bone-400);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-.sd-shell-run:hover {
-  background: rgba(120, 200, 120, 0.12);
-  color: rgba(180, 255, 180, 0.9);
-  border-color: rgba(120, 200, 120, 0.25);
-}
+/* .sd-shell-run: official Button skin, no overrides */
 .sd-shell-block [data-streamdown="code-block"] {
   margin: 0;
   border: none;
   border-radius: 0;
+}
+/* Shiki writes --sdm-bg/--sdm-fg as INLINE vars on the inner <pre>; they do
+ * not bubble to this div, so its var() falls back to the cream token. Paint
+ * the gruvbox bg here directly. */
+.sd-shell-block [data-streamdown="code-block-body"] {
+  background: #32302f;
+  color: #ebdbb2;
 }
 .sd-shell-block [data-streamdown="code-block-header"] {
   display: none; /* shell header row replaces streamdown's own */
@@ -229,7 +237,7 @@
   margin: 0.5em 0;
   padding: 0.2em 0 0.2em 0.8em;
   border-left: 3px solid var(--persimmon-focus);
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(121, 79, 39, 0.75);
 }
 
 /* Tables */
@@ -237,18 +245,27 @@
   margin: 0.6em 0;
   overflow-x: auto;
   border-radius: 6px;
-  border: 1px solid var(--hairline-strong);
+  border: 1px solid #45403d;
+  /* gruvbox base so the controls row tint composites like code-block-header */
+  background: #32302f;
 }
 
 /* Table controls row (copy / download / fullscreen) — streamdown gives it
  * only Tailwind classes (flex items-center justify-end gap-1); inert here.
  * It is the first child div of table-wrapper when controls are enabled. */
+/* Controls row styled like code-block-header: a full-width bar with its own
+ * background + bottom border, buttons right-aligned — not floating icons. */
 .chat-markdown [data-streamdown="table-wrapper"] > div:first-child,
-[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > div:first-child {
+[data-streamdown="table-fullscreen"]
+  [data-streamdown="table-wrapper"]
+  > div:first-child {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
+  padding: 4px 10px;
+  background: rgba(235, 219, 178, 0.06);
+  border-bottom: 1px solid #45403d;
 }
 /* Dropdown anchors (copy/download format menus wrap button + menu in a
  * div.relative — also a Tailwind-only class). */
@@ -265,9 +282,9 @@
   min-width: 120px;
   overflow: hidden;
   border-radius: 6px;
-  border: 1px solid var(--hairline-strong);
-  background: var(--ink-850);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid #45403d;
+  background: #3c3836;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 .chat-markdown [data-streamdown="table-wrapper"] [class*="absolute"] button {
   display: block;
@@ -280,39 +297,59 @@
   color: inherit;
   cursor: pointer;
 }
-.chat-markdown [data-streamdown="table-wrapper"] [class*="absolute"] button:hover {
-  background: rgba(255, 255, 255, 0.06);
+.chat-markdown
+  [data-streamdown="table-wrapper"]
+  [class*="absolute"]
+  button:hover {
+  background: rgba(235, 219, 178, 0.08);
 }
 /* Icon buttons in the controls row (svg-only, p-1). */
 .chat-markdown [data-streamdown="table-wrapper"] > div:first-child button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  padding: 2px 8px;
   background: transparent;
-  border: none;
-  color: var(--bone-400);
+  border: 1px solid rgba(235, 219, 178, 0.25);
+  border-radius: 4px;
+  color: #bdae93;
   cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
-.chat-markdown [data-streamdown="table-wrapper"] > div:first-child button:hover {
-  color: var(--bone-100);
+.chat-markdown
+  [data-streamdown="table-wrapper"]
+  > div:first-child
+  button:hover {
+  background: rgba(235, 219, 178, 0.1);
+  color: #ebdbb2;
 }
 
 .chat-markdown [data-streamdown="table"] {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  background: #32302f;
 }
 .chat-markdown [data-streamdown="table-cell"],
 .chat-markdown [data-streamdown="table-header-cell"] {
   padding: 6px 10px;
-  border-bottom: 1px solid var(--hairline);
+  border-bottom: 1px solid #45403d;
   text-align: left;
+  color: #fabd2f;
+  font-weight: 600;
+}
+/* gruvbox zebra: even body rows on bg1 */
+.chat-markdown [data-streamdown="table-cell"] {
+  background: rgba(60, 56, 54, 0.5);
 }
 
 /* Mermaid controls row — has the attribute but flex classes are inert. */
 .chat-markdown [data-streamdown="mermaid-block-actions"],
-[data-streamdown="mermaid-fullscreen"] [data-streamdown="mermaid-block-actions"] {
+[data-streamdown="mermaid-fullscreen"]
+  [data-streamdown="mermaid-block-actions"] {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -322,7 +359,9 @@
   padding: 4px 6px;
 }
 .chat-markdown [data-streamdown="mermaid-block-actions"] button,
-[data-streamdown="mermaid-fullscreen"] [data-streamdown="mermaid-block-actions"] button {
+[data-streamdown="mermaid-fullscreen"]
+  [data-streamdown="mermaid-block-actions"]
+  button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -333,7 +372,9 @@
   cursor: pointer;
 }
 .chat-markdown [data-streamdown="mermaid-block-actions"] button:hover,
-[data-streamdown="mermaid-fullscreen"] [data-streamdown="mermaid-block-actions"] button:hover {
+[data-streamdown="mermaid-fullscreen"]
+  [data-streamdown="mermaid-block-actions"]
+  button:hover {
   color: var(--bone-100);
 }
 
@@ -349,8 +390,8 @@
   z-index: 50;
   display: flex;
   flex-direction: column;
-  background: var(--ink-900);
-  color: var(--bone-200);
+  background: #32302f;
+  color: #ebdbb2;
   -webkit-app-region: no-drag;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] {
@@ -362,25 +403,32 @@
   border: none;
   overflow: hidden;
 }
-[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > div:first-child > div {
+[data-streamdown="table-fullscreen"]
+  [data-streamdown="table-wrapper"]
+  > div:first-child
+  > div {
   position: relative;
 }
-[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] > div:nth-child(2) {
+[data-streamdown="table-fullscreen"]
+  [data-streamdown="table-wrapper"]
+  > div:nth-child(2) {
   flex: 1;
   overflow: auto;
-  border: 1px solid var(--hairline-strong);
+  border: 1px solid #45403d;
   border-radius: 6px;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table-header-cell"] {
-  background: rgba(255, 255, 255, 0.04);
+  background: #3c3836;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: #fabd2f;
   white-space: nowrap;
 }
 
 /* Portal renders into <body>, outside .chat-markdown — dropdown menus and
  * icon buttons inside fullscreen need unscoped selectors. */
-[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] [class*="absolute"] {
+[data-streamdown="table-fullscreen"]
+  [data-streamdown="table-wrapper"]
+  [class*="absolute"] {
   position: absolute;
   top: 100%;
   right: 0;
@@ -389,11 +437,14 @@
   min-width: 120px;
   overflow: hidden;
   border-radius: 6px;
-  border: 1px solid var(--hairline-strong);
-  background: var(--ink-850);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border: 1px solid #45403d;
+  background: #3c3836;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
-[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] [class*="absolute"] button {
+[data-streamdown="table-fullscreen"]
+  [data-streamdown="table-wrapper"]
+  [class*="absolute"]
+  button {
   display: block;
   width: 100%;
   padding: 6px 12px;
@@ -404,8 +455,11 @@
   color: inherit;
   cursor: pointer;
 }
-[data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] [class*="absolute"] button:hover {
-  background: rgba(255, 255, 255, 0.06);
+[data-streamdown="table-fullscreen"]
+  [data-streamdown="table-wrapper"]
+  [class*="absolute"]
+  button:hover {
+  background: rgba(235, 219, 178, 0.08);
 }
 
 /* Mermaid fullscreen: center diagram; controls pinned top-right. */
@@ -466,12 +520,12 @@
 
 /* User bubble: simpler markdown */
 .msg-user .chat-markdown {
-  color: #fff;
+  color: var(--bone-100);
 }
 .msg-user .chat-markdown a {
-  color: rgba(230, 220, 255, 1);
+  color: #0e7a70;
 }
 .msg-user .chat-markdown [data-streamdown="inline-code"] {
-  background: rgba(0, 0, 0, 0.25);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(121, 79, 39, 0.13);
+  border-color: rgba(121, 79, 39, 0.15);
 }

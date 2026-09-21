@@ -3,11 +3,12 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--hairline);
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--animal-bg-color);
+  border-radius: 16px;
+  box-shadow: var(--animal-shadow-lg);
+  overflow: hidden;
   user-select: none;
   position: relative;
-  padding-left: 2px;
 }
 
 .topic-sidebar-header {
@@ -15,41 +16,7 @@
   border-bottom: 1px solid var(--hairline);
 }
 
-.topic-new-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--persimmon-softer);
-  border: 1px solid rgba(0, 185, 107, 0.35);
-  border-radius: 10px;
-  color: var(--persimmon-bright);
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s,
-    transform 0.12s ease;
-}
-
-.topic-new-btn:hover {
-  background: var(--persimmon-soft);
-  border-color: rgba(0, 185, 107, 0.55);
-  color: var(--bone-100);
-}
-
-.topic-new-btn:active {
-  transform: scale(0.98);
-}
-
-.topic-new-btn svg {
-  flex-shrink: 0;
-}
+/* .topic-new-btn: official Button (block prop in tsx), no CSS overrides */
 
 .topic-sidebar-toolbar {
   display: flex;
@@ -72,29 +39,13 @@
   flex-shrink: 0;
 }
 
-.topic-search input {
+.topic-search [class^="animal-wrapper"] {
   flex: 1;
   min-width: 0;
-  padding: 5px 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  color: var(--bone-100);
+}
+
+.topic-search [class^="animal-wrapper"] input {
   font-size: 12px;
-  font-family: inherit;
-  outline: none;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-}
-
-.topic-search input:focus {
-  border-color: var(--persimmon-focus);
-  background: var(--persimmon-softer);
-}
-
-.topic-search input::placeholder {
-  color: var(--bone-600);
 }
 
 .topic-list {
@@ -125,15 +76,26 @@
     background 0.15s,
     border-color 0.15s;
   border: 1px solid transparent;
+  animation: topic-enter var(--motion-base) var(--ease-island) backwards;
+  animation-delay: calc(var(--topic-index, 0) * 30ms);
+}
+
+@keyframes topic-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-item { animation: none; }
 }
 
 .topic-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(121, 79, 39, 0.05);
 }
 
 .topic-item.active {
   background: var(--persimmon-softer);
-  border-color: rgba(0, 185, 107, 0.28);
+  border-color: rgba(25, 200, 185, 0.28);
 }
 
 .topic-item.active::before {
@@ -166,30 +128,7 @@
   display: flex;
 }
 
-.topic-item-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--bone-500);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.topic-item-action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--bone-100);
-}
-
-.topic-item-action-btn.danger:hover {
-  background: var(--rust-soft);
-  color: var(--rust-bright);
-}
+/* .topic-item-action-btn: official Button skin, no overrides */
 
 .topic-item-icon {
   display: flex;
@@ -232,61 +171,6 @@
 
 .topic-rename-input {
   width: 100%;
-  padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--persimmon-focus);
-  border-radius: 6px;
-  color: var(--bone-100);
-  font-size: 13px;
-  font-family: inherit;
-  outline: none;
-}
-
-.topic-context-menu {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: rgba(34, 30, 26, 0.98);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 8px;
-  padding: 4px;
-  z-index: 10;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
-}
-
-.topic-context-menu button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--bone-200);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.topic-context-menu button:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.topic-context-menu button.danger {
-  color: var(--rust-bright);
-}
-
-.topic-context-menu button.danger:hover {
-  background: var(--rust-soft);
-}
-
-.topic-context-menu button svg {
-  flex-shrink: 0;
 }
 
 .topic-menu-backdrop {
@@ -299,12 +183,12 @@
   position: absolute;
   right: 4px;
   top: calc(100% + 4px);
-  background: rgba(34, 30, 26, 0.98);
+  background: rgba(248, 244, 232, 0.98);
   border: 1px solid rgba(199, 90, 79, 0.45);
   border-radius: 10px;
   padding: 10px 12px;
   z-index: 20;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 22px rgba(121, 79, 39, 0.25);
   min-width: 160px;
 }
 
@@ -321,49 +205,23 @@
   justify-content: flex-end;
 }
 
-.topic-cancel-btn,
-.topic-delete-btn {
-  padding: 4px 10px;
-  border-radius: 7px;
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.topic-cancel-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--hairline-strong);
-  color: var(--bone-300);
-}
-
-.topic-cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.topic-delete-btn {
-  background: var(--rust);
-  border: 1px solid transparent;
-  color: var(--bone-100);
-}
-
-.topic-delete-btn:hover {
-  background: var(--rust-bright);
-}
 
 .topic-sidebar.collapsed {
   width: 44px;
 }
 
 .topic-sidebar.collapsed .topic-sidebar-header {
-  padding: 8px 6px;
+  padding: 6px 4px;
 }
 
 .topic-sidebar.collapsed .topic-new-btn {
-  width: 32px;
-  height: 32px;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0;
-  font-size: 0;
+  justify-content: center;
 }
 
 .topic-sidebar.collapsed .topic-sidebar-toolbar {
@@ -394,30 +252,9 @@
   }
 }
 
-.topic-collapse-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  color: var(--bone-600);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.topic-collapse-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--bone-200);
-  border-color: var(--hairline-strong);
-}
+/* .topic-collapse-btn: official Button skin, no overrides */
 
 @media (prefers-reduced-motion: reduce) {
-  .topic-new-btn,
   .topic-loading-icon {
     transition: none;
     animation: none;

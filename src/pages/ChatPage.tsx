@@ -1,3 +1,5 @@
+import { Icon, Notification } from "animal-island-ui";
+import { useConfirm } from "../hooks/useConfirm";
 import {
   useState,
   useEffect,
@@ -19,11 +21,9 @@ import type { ChatAttachment } from "../shared/chatAttachments";
 import MaxTurnsCard from "../components/chat/MaxTurnsCard";
 import {
   type ChatMsg,
-  buildApiMessages,
   buildAgentApiMessages,
   buildAgentHistoryMessages,
   filterForAgentHistory,
-  filterForApi,
   findLastAssistantReplyIndex,
   findFirstAssistantReplyIndex,
   pruneEmptyAssistantMessages,
@@ -46,11 +46,10 @@ import {
   type ChatTopic,
 } from "../shared/chatSession";
 import {
-  getChatBackendItems,
-  getActiveChatBackend,
-  isAgentBackend,
+  getSelectableModelItems,
   getChatApiConfig,
   getAgentBackendGuidance,
+  AGENT_BACKEND_KEY,
   type AppSettings,
 } from "../shared/settings";
 import {
@@ -98,6 +97,8 @@ type TopicPageState = {
   requestBackend: string | null;
   sessionReady: boolean;
   invalidAttachmentPaths: Set<string>;
+  /** Session-locked model override ("" = follow agent default). */
+  sessionModel: string;
   lastPromptTokens?: number;
   lastCompletionTokens?: number;
   lastUsageMessageCount?: number;
@@ -113,6 +114,7 @@ function emptyTopicState(): TopicPageState {
     requestBackend: null,
     sessionReady: false,
     invalidAttachmentPaths: new Set(),
+    sessionModel: "",
   };
 }
 
@@ -164,6 +166,7 @@ export default function ChatPage({
   const [topicStates, setTopicStates] = useState<
     Record<string, TopicPageState>
   >({});
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [topics, setTopics] = useState<ChatTopic[]>([]);
   const topicsRef = useRef<ChatTopic[]>([]);
@@ -278,30 +281,36 @@ export default function ChatPage({
   );
 
   const selectableModels = useMemo(
-    () => getChatBackendItems(chatSettings).map((i) => i.value),
+    () => getSelectableModelItems(chatSettings).map((i) => i.value),
     [chatSettings],
   );
   const modelLabels = useMemo(
     () =>
       Object.fromEntries(
-        getChatBackendItems(chatSettings).map((i) => [i.value, i.label]),
+        getSelectableModelItems(chatSettings).map((i) => [i.value, i.label]),
       ),
     [chatSettings],
   );
-  const activeBackend = getActiveChatBackend(chatSettings);
-  const usingAgent = isAgentBackend(activeBackend);
+  /** Session-locked model override for the active topic ("" = agent default). */
+  const sessionModel = activeState.sessionModel ?? "";
+  /** Dropdown shows the session override, or the agent default when unlocked. */
+  const agentDefaultModel = useMemo(() => {
+    const provider = chatSettings.providers.find(
+      (p) => p.id === chatSettings.agent.providerId && p.enabled,
+    );
+    if (!provider || !chatSettings.agent.modelName) return "";
+    return `${provider.id}::${chatSettings.agent.modelName}`;
+  }, [chatSettings]);
 
-  const contextMessages = useMemo(() => {
-    if (usingAgent) return filterForAgentHistory(messages);
-    return filterForApi(messages);
-  }, [messages, usingAgent]);
+  const contextMessages = useMemo(
+    () => filterForAgentHistory(messages),
+    [messages],
+  );
 
   const contextUsage = useMemo(() => {
-    const modelName = resolveActiveModelName(chatSettings, activeBackend);
+    const modelName = resolveActiveModelName(chatSettings, sessionModel);
     const contextWindow = resolveContextWindow(modelName);
-    const systemTokens = usingAgent
-      ? estimateAgentSystemPromptTokens(chatSettings.agent)
-      : 0;
+    const systemTokens = estimateAgentSystemPromptTokens(chatSettings.agent);
     return estimateContextUsage({
       messages: contextMessages,
       input,
@@ -314,8 +323,7 @@ export default function ChatPage({
     });
   }, [
     chatSettings,
-    activeBackend,
-    usingAgent,
+    sessionModel,
     contextMessages,
     input,
     attachments,
@@ -343,6 +351,7 @@ export default function ChatPage({
               messageCount: state.lastUsageMessageCount,
             }
           : undefined,
+        state.sessionModel || undefined,
       ),
     );
     await api.invoke("chat:session:save", { topicId: tid, session });
@@ -413,6 +422,7 @@ export default function ChatPage({
           requestBackend: null,
           sessionReady: true,
           invalidAttachmentPaths: invalid,
+          sessionModel: session.sessionModel ?? "",
           lastPromptTokens: session.lastServerUsage?.promptTokens,
           lastCompletionTokens: session.lastServerUsage?.completionTokens,
           lastUsageMessageCount: session.lastServerUsage?.messageCount,
@@ -494,13 +504,9 @@ export default function ChatPage({
   const handleDeleteTopic = useCallback(
     async (topicId: string) => {
       const state = topicStatesRef.current[topicId];
-      if (state?.requestId && state.requestBackend) {
-        if (isAgentBackend(state.requestBackend)) {
-          abortTopicStream(topicId, state.requestId);
-          void api.invoke("agent:abort", { requestId: state.requestId });
-        } else {
-          void api.invoke("chat:abort", { requestId: state.requestId });
-        }
+      if (state?.requestId) {
+        abortTopicStream(topicId, state.requestId);
+        void api.invoke("agent:abort", { requestId: state.requestId });
       }
 
       const result = (await api.invoke("chat:topics:delete", topicId)) as {
@@ -581,7 +587,6 @@ export default function ChatPage({
         result.status === "streaming" &&
         result.requestId
       ) {
-        const requestBackend = getActiveChatBackend(getSettingsSnapshot());
         setTopicStates((prev) => {
           const state = prev[activeTopicId];
           if (!state) return prev;
@@ -591,7 +596,7 @@ export default function ChatPage({
               ...state,
               streaming: true,
               requestId: result.requestId!,
-              requestBackend,
+              requestBackend: AGENT_BACKEND_KEY,
             },
           };
         });
@@ -759,10 +764,7 @@ export default function ChatPage({
               ? {
                   lastPromptTokens: usage.promptTokens,
                   lastCompletionTokens: usage.completionTokens,
-                  lastUsageMessageCount: (isAgentBackend(state.requestBackend)
-                    ? filterForAgentHistory(messages)
-                    : filterForApi(messages)
-                  ).length,
+                  lastUsageMessageCount: filterForAgentHistory(messages).length,
                 }
               : {}),
           };
@@ -1014,12 +1016,20 @@ export default function ChatPage({
     scrollToBottom();
   }, [activeTopicId, scrollToBottom]);
 
-  const handleBackendChange = useCallback((backend: string) => {
-    persistSettingsWithAlert({
-      ...getSettingsSnapshot(),
-      chatBackend: backend,
-    });
-  }, []);
+  /** Session-locked model override: pick in the dropdown locks this topic. */
+  const handleSessionModelChange = useCallback(
+    (model: string) => {
+      const topicId = activeTopicIdRef.current;
+      if (!topicId) return;
+      setTopicStates((prev) => {
+        const state = prev[topicId];
+        if (!state) return prev;
+        return { ...prev, [topicId]: { ...state, sessionModel: model } };
+      });
+      scheduleTopicSave(topicId);
+    },
+    [scheduleTopicSave],
+  );
 
   const handleChatModeChange = useCallback((mode: ChatMode) => {
     const current = getSettingsSnapshot();
@@ -1052,11 +1062,8 @@ export default function ChatPage({
   );
 
   const slashCommands = useMemo(
-    () => [
-      ...getBuiltinCommands(),
-      ...(usingAgent ? buildSkillCommands(skills) : []),
-    ],
-    [skills, usingAgent],
+    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
+    [skills],
   );
 
   const loadAttachmentPayloads = useCallback(
@@ -1139,10 +1146,10 @@ export default function ChatPage({
         if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
         const agent = settings.agent;
-        const backend = getActiveChatBackend(settings);
+        const sessionModel = state.sessionModel || "";
         const trimOpts = buildTrimOptions({
           contextWindow: resolveContextWindow(
-            resolveActiveModelName(settings, backend),
+            resolveActiveModelName(settings, sessionModel),
           ),
           systemTokens: estimateAgentSystemPromptTokens(agent),
         });
@@ -1171,7 +1178,7 @@ export default function ChatPage({
           ],
           streaming: true,
           requestId,
-          requestBackend: getActiveChatBackend(settings),
+          requestBackend: AGENT_BACKEND_KEY,
         };
         topicStatesRef.current = {
           ...topicStatesRef.current,
@@ -1193,6 +1200,7 @@ export default function ChatPage({
             modelName: apiConfig.modelName,
           },
           agentConfig: agent,
+          sessionModel,
           knowledgeBaseIds:
             topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
             [],
@@ -1255,12 +1263,10 @@ export default function ChatPage({
         // Always resolve from the latest store snapshot.
         await flushSettingsSave();
         const settings = getSettingsSnapshot();
-        const requestBackend = getActiveChatBackend(settings);
-        const agentMode = isAgentBackend(requestBackend);
+        const sessionModel = state.sessionModel || "";
         const apiConfig = getChatApiConfig(settings);
-
         let invokedSkillId: string | undefined;
-        if (agentMode && !isCompactRequest && !overrideText) {
+        if (!isCompactRequest && !overrideText) {
           const applied = applySkillSlashCommand(
             text,
             skills.map((s) => s.id),
@@ -1271,7 +1277,7 @@ export default function ChatPage({
           }
         }
 
-        if (agentMode) {
+        {
           const guidance = getAgentBackendGuidance(settings);
           if (guidance) {
             const now = Date.now();
@@ -1312,17 +1318,10 @@ export default function ChatPage({
             scheduleTopicSave(topicId);
             return;
           }
-        } else if (!apiConfig?.apiHost || !apiConfig.modelName) {
-          alert("请先在设置中配置服务商 API Host 和模型。");
-          return;
         }
 
         if (!apiConfig?.apiHost || !apiConfig.modelName) {
-          alert(
-            agentMode
-              ? "请先在智能体设置中配置后端 Provider 与模型。"
-              : "请先在设置中配置服务商 API Host 和模型。",
-          );
+          Notification.warning("请先在智能体设置中配置后端 Provider 与模型。");
           return;
         }
 
@@ -1345,16 +1344,15 @@ export default function ChatPage({
             attachmentPayloads = await loadAttachmentPayloads(sendAttachments);
           }
         } catch (e) {
-          alert(e instanceof Error ? e.message : "读取附件失败");
+          Notification.error(e instanceof Error ? e.message : "读取附件失败");
           return;
         }
 
-        const backend = getActiveChatBackend(settings);
         const trimOpts = buildTrimOptions({
           contextWindow: resolveContextWindow(
-            resolveActiveModelName(settings, backend),
+            resolveActiveModelName(settings, sessionModel),
           ),
-          systemTokens: agentMode ? estimateAgentSystemPromptTokens(agent) : 0,
+          systemTokens: estimateAgentSystemPromptTokens(agent),
           draftInput: finalText,
           draftAttachments: sendAttachments,
         });
@@ -1363,24 +1361,12 @@ export default function ChatPage({
           filterForAgentHistory(state.messages),
           trimOpts,
         );
-        const history = trimMessagesForApi(
-          filterForApi(state.messages),
-          trimOpts,
+        const payloadMessages = buildAgentApiMessages(
+          agentHistory,
+          finalText,
+          attachmentPayloads,
+          agent.soul,
         );
-        const systemPrompt = agentMode ? agent.soul : undefined;
-        const payloadMessages = agentMode
-          ? buildAgentApiMessages(
-              agentHistory,
-              finalText,
-              attachmentPayloads,
-              systemPrompt,
-            )
-          : buildApiMessages(
-              history,
-              finalText,
-              attachmentPayloads,
-              systemPrompt,
-            );
 
         const now = Date.now();
         const userMsg: ChatMsg = {
@@ -1417,7 +1403,7 @@ export default function ChatPage({
           attachments: isResend ? live.attachments : [],
           streaming: true,
           requestId,
-          requestBackend,
+          requestBackend: AGENT_BACKEND_KEY,
         };
         topicStatesRef.current = {
           ...topicStatesRef.current,
@@ -1449,41 +1435,25 @@ export default function ChatPage({
         setSidebarCollapsed(true);
 
         notifyLive2DScene("userSend");
-        notifyLive2DScene("thinking");
-
-        const invokePromise = agentMode
-          ? openAgentStream({
-              topicId,
-              requestId,
-              messages: payloadMessages,
-              apiConfig: {
-                apiHost: apiConfig.apiHost,
-                apiKey: apiConfig.apiKey,
-                providerType: apiConfig.providerType,
-                modelName: apiConfig.modelName,
-              },
-              agentConfig: agent,
-              knowledgeBaseIds:
-                topicsRef.current.find((t) => t.id === topicId)
-                  ?.knowledgeBaseIds || [],
-            })
-          : api.invoke("chat:send", {
-              requestId,
-              messages: payloadMessages,
-              knowledgeBaseIds:
-                topicsRef.current.find((t) => t.id === topicId)
-                  ?.knowledgeBaseIds || [],
-              apiConfig: {
-                apiHost: apiConfig.apiHost,
-                apiKey: apiConfig.apiKey,
-                providerType: apiConfig.providerType,
-                modelName: apiConfig.modelName,
-              },
-            });
-
+        const invokePromise = openAgentStream({
+          topicId,
+          requestId,
+          messages: payloadMessages,
+          apiConfig: {
+            apiHost: apiConfig.apiHost,
+            apiKey: apiConfig.apiKey,
+            providerType: apiConfig.providerType,
+            modelName: apiConfig.modelName,
+          },
+          agentConfig: agent,
+          sessionModel,
+          knowledgeBaseIds:
+            topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
+            [],
+        });
         invokePromise
           .then((result) => {
-            if (!agentMode || !result || typeof result !== "object") return;
+            if (!result || typeof result !== "object") return;
             if ((result as { mode?: string }).mode !== "blocked") return;
             failAgentOpen(
               topicId,
@@ -1518,13 +1488,9 @@ export default function ChatPage({
     const topicId = activeTopicIdRef.current;
     if (!topicId) return;
     const state = topicStatesRef.current[topicId];
-    if (!state?.requestId || !state.requestBackend) return;
-    if (isAgentBackend(state.requestBackend)) {
-      abortTopicStream(topicId, state.requestId);
-      void api.invoke("agent:abort", { requestId: state.requestId });
-    } else {
-      void api.invoke("chat:abort", { requestId: state.requestId });
-    }
+    if (!state?.requestId) return;
+    abortTopicStream(topicId, state.requestId);
+    void api.invoke("agent:abort", { requestId: state.requestId });
   }, []);
 
   const handleCancelTool = useCallback((toolCallId: string) => {
@@ -1593,12 +1559,17 @@ export default function ChatPage({
     [handleSend, setActiveInput, handleClearContext],
   );
 
-  const handleClearMessages = useCallback(() => {
+  const handleClearMessages = useCallback(async () => {
     const topicId = activeTopicIdRef.current;
     if (!topicId) return;
     const state = topicStatesRef.current[topicId];
     if (!state || state.streaming || state.messages.length === 0) return;
-    if (!window.confirm("确定清空所有消息吗？")) return;
+    const ok = await confirm({
+      title: "清空消息",
+      okText: "清空",
+      content: "确定清空所有消息吗？",
+    });
+    if (!ok) return;
     setTopicStates((prev) => ({
       ...prev,
       [topicId]: {
@@ -1613,7 +1584,7 @@ export default function ChatPage({
       },
     }));
     flushSessionSave(topicId);
-  }, [flushSessionSave]);
+  }, [flushSessionSave, confirm]);
 
   const resendFromUserMessage = useCallback(
     (msgId: string, newText: string) => {
@@ -1734,8 +1705,11 @@ export default function ChatPage({
   const emptyContent = useMemo(
     () => (
       <div className="chat-empty">
-        <span className="chat-empty-icon">🧚‍♀️</span>
+        <span className="chat-empty-icon">
+          <Icon name="Butterfly" size={40} />
+        </span>
         <p>开始聊天</p>
+        <small>输入消息，或用 / 唤起命令、⌘V 粘贴图片、拖入文件</small>
       </div>
     ),
     [],
@@ -1766,31 +1740,31 @@ export default function ChatPage({
       )}
       <div className="chat-main-area">
         <ToolCancelContext.Provider value={handleCancelTool}>
-            <MessageList
-              ref={messageListRef}
-              messages={messages}
-              streaming={streaming}
-              invalidAttachmentPaths={invalidAttachmentPaths}
-              onApprove={handleApproveTool}
-              onDeny={handleDenyTool}
-              onAlwaysAllow={handleAlwaysAllowTool}
-              onAnswer={submitToolAnswer}
-              submittingApprovalId={submittingApprovalId}
-              onRetry={streaming ? undefined : handleRetry}
-              onStartEdit={streaming ? undefined : handleStartEdit}
-              onConfirmEdit={handleConfirmEdit}
-              onCancelEdit={handleCancelEdit}
-              editingMsgId={editingMsgId}
-              onDelete={handleDeleteMessage}
-              onOpenCitation={(citation) => {
-                window.dispatchEvent(
-                  new CustomEvent("knowledge:reveal", {
-                    detail: { baseId: citation.baseId, itemId: citation.itemId },
-                  }),
-                );
-              }}
-              emptyContent={emptyContent}
-            />
+          <MessageList
+            ref={messageListRef}
+            messages={messages}
+            streaming={streaming}
+            invalidAttachmentPaths={invalidAttachmentPaths}
+            onApprove={handleApproveTool}
+            onDeny={handleDenyTool}
+            onAlwaysAllow={handleAlwaysAllowTool}
+            onAnswer={submitToolAnswer}
+            submittingApprovalId={submittingApprovalId}
+            onRetry={streaming ? undefined : handleRetry}
+            onStartEdit={streaming ? undefined : handleStartEdit}
+            onConfirmEdit={handleConfirmEdit}
+            onCancelEdit={handleCancelEdit}
+            editingMsgId={editingMsgId}
+            onDelete={handleDeleteMessage}
+            onOpenCitation={(citation) => {
+              window.dispatchEvent(
+                new CustomEvent("knowledge:reveal", {
+                  detail: { baseId: citation.baseId, itemId: citation.itemId },
+                }),
+              );
+            }}
+            emptyContent={emptyContent}
+          />
         </ToolCancelContext.Provider>
 
         {activeTopicId &&
@@ -1812,6 +1786,7 @@ export default function ChatPage({
         <ChatInputBar
           input={input}
           onInputChange={setActiveInput}
+          modelName={sessionModel || agentDefaultModel}
           attachments={attachments}
           onAttachmentsChange={setActiveAttachments}
           streaming={streaming}
@@ -1819,12 +1794,11 @@ export default function ChatPage({
           hasMessages={messages.length > 0}
           focusSignal={inputFocusSignal}
           models={selectableModels}
-          modelName={activeBackend}
           modelLabels={modelLabels}
-          onModelChange={handleBackendChange}
+          onModelChange={handleSessionModelChange}
           chatMode={chatSettings.chatMode}
           onChatModeChange={handleChatModeChange}
-          showModeSelector={usingAgent}
+          showModeSelector={true}
           reasoningEffort={chatSettings.agent.reasoningEffort}
           onReasoningEffortChange={handleReasoningEffortChange}
           onSend={handleSendClick}
@@ -1852,6 +1826,7 @@ export default function ChatPage({
           }}
         />
       </div>
+      {confirmDialog}
     </div>
   );
 }

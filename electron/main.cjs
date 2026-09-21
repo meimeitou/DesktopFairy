@@ -159,9 +159,6 @@ const resolveStartupSettings = () => ({
 }
 
 
-// In-flight chat completion requests, keyed by requestId
-const inflightChats = new Map();
-
 const TRAY_GUID = 'com.desktop.fairy.status';
 
 const getTrayIcon = () => {
@@ -308,13 +305,13 @@ const createChatWindow = (options = {}) => {
     show: false,
     skipTaskbar: true,
     autoHideMenuBar: true,
-    backgroundColor: '#0f0f19',
+    backgroundColor: '#f5f8e0',
     ...(process.platform === 'darwin'
       ? {
           titleBarStyle: 'hidden',
           titleBarOverlay: {
-            color: '#0f0f19',
-            symbolColor: 'rgba(255, 255, 255, 0.72)',
+            color: '#f5f8e0',
+            symbolColor: 'rgba(74, 54, 32, 0.75)',
             height: 44,
           },
           trafficLightPosition: { x: 14, y: 13 },
@@ -827,33 +824,71 @@ const setupIPC = () => {
     return u.href;
   }
 
+  // Fetch the provider's model catalog (chat/embedding/rerank) — shared by
+  // chat:list_models and chat:check (connectivity probe without a model).
+  async function fetchModelCatalog(apiHost, apiKey, providerType, signal) {
+    const host = String(apiHost);
+    if (providerType === 'ollama') {
+      const base = host.replace(/\/$/, '').replace(/\/v1$/, '').replace(/\/api$/, '');
+      const res = await fetch(`${base}/api/tags`, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+      const json = await res.json();
+      return classifyCatalog(Array.isArray(json?.models) ? json.models : []);
+    }
+
+    if (providerType === 'anthropic') {
+      const base = host.replace(/\/$/, '').replace(/\/v1$/, '');
+      const res = await fetch(`${base}/v1/models`, {
+        headers: {
+          'x-api-key': apiKey || '',
+          'anthropic-version': '2023-06-01',
+        },
+        signal,
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
+      return classifyCatalog(list);
+    }
+
+    const trimmed = host.replace(/\/$/, '');
+    const base = trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
+    const res = await fetch(`${base}/models`, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const json = await res.json();
+    const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
+    return classifyCatalog(list);
+  }
+
+
   ipcMain.handle('chat:check', async (_event, payload) => {
-    const { apiHost, apiKey, providerType, providerId, model, timeoutMs } = payload || {};
+    const { apiHost, apiKey, providerType, timeoutMs } = payload || {};
     if (!apiHost) throw new Error('请填写 API Host');
-    if (!model) throw new Error('请选择或添加模型');
-    const needsKey =
-      providerType !== 'ollama' && providerId !== 'hermes';
+    const needsKey = providerType !== 'ollama';
     if (needsKey && !apiKey) throw new Error('请填写 API Key');
 
     assertHttpUrl(apiHost);
 
-    const { checkConnection } = require('./ai/AiService.cjs');
     const controller = new AbortController();
     const timeout = typeof timeoutMs === 'number' ? timeoutMs : 15000;
     const timer = setTimeout(() => controller.abort(), timeout);
     const start = Date.now();
 
     try {
-      await checkConnection({
-        apiConfig: {
-          apiHost,
-          apiKey,
-          providerType,
-          modelName: model,
-        },
-        signal: controller.signal,
-      });
-      return { ok: true, latencyMs: Date.now() - start, model };
+      const catalog = await fetchModelCatalog(apiHost, apiKey, providerType, controller.signal);
+      return { ok: true, latencyMs: Date.now() - start, models: catalog.length };
     } catch (e) {
       if (e?.name === 'AbortError' || controller.signal.aborted) {
         throw new Error(`检测超时（${timeout / 1000}s）`);
@@ -873,150 +908,12 @@ const setupIPC = () => {
     }
   });
 
-  ipcMain.handle('chat:send', async (event, payload) => {
-    const { requestId, messages } = payload || {};
-    if (!requestId || !Array.isArray(messages)) {
-      throw new Error('chat:send invalid payload');
-    }
-
-    // Authoritative resolve from main snapshot (ignore stale renderer apiConfig).
-    const resolved = settingsSnapshot.resolveForSend({
-      apiConfig: payload?.apiConfig,
-      forceAgent: false,
-    });
-    if (!resolved.ok || !resolved.apiConfig) {
-      throw new Error(resolved.error || 'chat:send invalid apiConfig');
-    }
-    if (settingsSnapshot.isAgentBackend(resolved.backend)) {
-      throw new Error('chat:send does not support agent backend; use ai:stream_open');
-    }
-    assertHttpUrl(resolved.apiConfig.apiHost);
-
-    const { streamPlainText } = require('./ai/AiService.cjs');
-    const controller = new AbortController();
-    inflightChats.set(requestId, controller);
-    const sender = event.sender;
-    const safeSend = (channel, data) => {
-      try {
-        if (!sender.isDestroyed()) sender.send(channel, data);
-      } catch { /* receiver gone */ }
-    };
-
-    try {
-      const knowledgeBaseIds = Array.isArray(payload?.knowledgeBaseIds)
-        ? payload.knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
-        : [];
-      let messages = payload.messages;
-      if (knowledgeBaseIds.length > 0) {
-        try {
-          const injected = await buildKnowledgeInjection({
-            messages,
-            knowledgeBaseIds,
-            apiConfig: resolved.apiConfig,
-            signal: controller.signal,
-          });
-          if (injected.systemMessage) {
-            messages = [{ role: 'system', content: injected.systemMessage }, ...messages];
-          }
-          if (injected.citations?.length) {
-            safeSend('chat:stream:citations', {
-              requestId,
-              citations: injected.citations,
-            });
-          }
-          if (injected.errors?.length) {
-            safeSend('chat:stream:knowledge_error', {
-              requestId,
-              errors: injected.errors,
-            });
-          }
-        } catch (e) {
-          if (e?.name === 'AbortError') throw e;
-          console.warn('[knowledge] pre-inject failed:', e?.message || e);
-          safeSend('chat:stream:knowledge_error', {
-            requestId,
-            errors: [{ kind: 'unknown', message: String(e?.message || e) }],
-          });
-        }
-      }
-      const { aborted, usage } = await streamPlainText({
-        requestId,
-        messages: prependSystemDate(messages),
-        apiConfig: resolved.apiConfig,
-        signal: controller.signal,
-        safeSend,
-      });
-      safeSend('chat:stream:done', {
-        requestId,
-        aborted: Boolean(aborted),
-        usage: usage || undefined,
-      });
-    } catch (e) {
-      if (e && e.name === 'AbortError') {
-        safeSend('chat:stream:done', { requestId, aborted: true });
-      } else {
-        safeSend('chat:stream:error', { requestId, message: String(e?.message || e) });
-      }
-    } finally {
-      inflightChats.delete(requestId);
-    }
-  });
-
-  ipcMain.handle('chat:abort', async (_event, payload) => {
-    const requestId = payload?.requestId;
-    const controller = requestId ? inflightChats.get(requestId) : null;
-    if (controller) controller.abort();
-  });
-
   ipcMain.handle('chat:list_models', async (_event, payload) => {
     const { apiHost, apiBaseUrl, apiKey, providerType } = payload || {};
     const host = apiHost || apiBaseUrl;
     if (!host) throw new Error('apiHost required');
     assertHttpUrl(host);
-
-    if (providerType === 'ollama') {
-      const base = String(host).replace(/\/$/, '').replace(/\/v1$/, '').replace(/\/api$/, '');
-      const res = await fetch(`${base}/api/tags`, {
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-      }
-      const json = await res.json();
-      return classifyCatalog(Array.isArray(json?.models) ? json.models : []);
-    }
-
-    if (providerType === 'anthropic') {
-      const base = String(host).replace(/\/$/, '').replace(/\/v1$/, '');
-      try {
-        const res = await fetch(`${base}/v1/models`, {
-          headers: {
-            'x-api-key': apiKey || '',
-            'anthropic-version': '2023-06-01',
-          },
-        });
-        if (!res.ok) return [];
-        const json = await res.json();
-        const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
-        return classifyCatalog(list);
-      } catch {
-        return [];
-      }
-    }
-
-    const trimmed = String(host).replace(/\/$/, '');
-    const base = trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`;
-    const res = await fetch(`${base}/models`, {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const json = await res.json();
-    const list = Array.isArray(json?.data) ? json.data : Array.isArray(json?.models) ? json.models : [];
-    return classifyCatalog(list);
+    return fetchModelCatalog(host, apiKey, providerType);
   });
 
   registerFileHandlers(ipcMain);
@@ -1027,7 +924,6 @@ const setupIPC = () => {
     onScreenshotCopyText: notifyScreenshotCopyBubble,
   });
 };
-
 // ── Menu helpers ──────────────────────────────────────────────────────────────
 
 const toggleMainWindow = () => {
@@ -1307,10 +1203,6 @@ app.on('before-quit', () => {
   selectionService.stopAll();
   chatShortcutService.stopChatShortcut();
   globalShortcut.unregisterAll();
-  for (const controller of inflightChats.values()) {
-    controller.abort();
-  }
-  inflightChats.clear();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.removeAllListeners('close');
     mainWindow.close();

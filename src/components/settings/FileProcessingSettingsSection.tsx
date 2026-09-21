@@ -1,10 +1,11 @@
 import { useState } from "react";
-import RadioGroup from "../RadioGroup";
+import { Button, Input, Radio } from "animal-island-ui";
 import type { AppSettings } from "../../shared/settings";
 import {
   FILE_PROCESSOR_LABELS,
   MINERU_DEFAULT_HOST,
   OPEN_MINERU_DEFAULT_HOST,
+  type FileProcessorId,
 } from "../../shared/fileProcessing";
 
 const api = window.electronAPI;
@@ -62,26 +63,35 @@ export default function FileProcessingSettingsSection({ settings, onChange }: Pr
       </p>
       <div className="field">
         <label>文档处理方式</label>
-        <RadioGroup
-          name="fileProcessor"
-          ariaLabel="文档处理方式"
+        <Radio
           value={processorId}
+          direction="vertical"
+          onChange={(value) => {
+            update({ processorId: value as FileProcessorId });
+            setTest(null);
+          }}
           options={[
             {
               value: "mineru",
-              label: FILE_PROCESSOR_LABELS.mineru,
-              description: "官方云端解析，需要 API Key。",
+              label: (
+                <span className="radio-option-label">
+                  {FILE_PROCESSOR_LABELS.mineru}
+                  <small className="radio-desc">官方云端解析，需要 API Key。</small>
+                </span>
+              ),
             },
             {
               value: "open-mineru",
-              label: FILE_PROCESSOR_LABELS["open-mineru"],
-              description: "自托管服务，填写可访问的服务地址；API Key 可选。",
+              label: (
+                <span className="radio-option-label">
+                  {FILE_PROCESSOR_LABELS["open-mineru"]}
+                  <small className="radio-desc">
+                    自托管服务，填写可访问的服务地址；API Key 可选。
+                  </small>
+                </span>
+              ),
             },
           ]}
-          onChange={(next) => {
-            update({ processorId: next });
-            setTest(null);
-          }}
         />
       </div>
 
@@ -89,55 +99,39 @@ export default function FileProcessingSettingsSection({ settings, onChange }: Pr
         <>
           <div className="field">
             <label>API Key</label>
-            <input
-              type="password"
-              value={fp.mineru.apiKey}
-              autoComplete="off"
-              onChange={(e) => updateMineru({ apiKey: e.target.value })}
-            />
+            <Input shadow type="password" value={fp.mineru.apiKey} autoComplete="off"
+            onChange={(e) => updateMineru({ apiKey: e.target.value })} />
           </div>
           <div className="field">
             <label>API 地址</label>
-            <input
-              type="text"
-              value={fp.mineru.apiHost}
-              placeholder={MINERU_DEFAULT_HOST}
-              onChange={(e) => updateMineru({ apiHost: e.target.value })}
-            />
+            <Input shadow type="text" value={fp.mineru.apiHost} placeholder={MINERU_DEFAULT_HOST}
+            onChange={(e) => updateMineru({ apiHost: e.target.value })} />
           </div>
         </>
       ) : (
         <>
           <div className="field">
             <label>服务地址</label>
-            <input
-              type="text"
-              value={fp.openMineru.apiHost}
-              placeholder={OPEN_MINERU_DEFAULT_HOST}
-              onChange={(e) => updateOpen({ apiHost: e.target.value })}
-            />
+            <Input shadow type="text" value={fp.openMineru.apiHost} placeholder={OPEN_MINERU_DEFAULT_HOST}
+            onChange={(e) => updateOpen({ apiHost: e.target.value })} />
           </div>
           <div className="field">
             <label>API Key（可选）</label>
-            <input
-              type="password"
-              value={fp.openMineru.apiKey}
-              autoComplete="off"
-              onChange={(e) => updateOpen({ apiKey: e.target.value })}
-            />
+            <Input shadow type="password" value={fp.openMineru.apiKey} autoComplete="off"
+            onChange={(e) => updateOpen({ apiKey: e.target.value })} />
           </div>
         </>
       )}
 
       <div className="field file-processing-test">
-        <button
-          type="button"
-          className="btn-secondary"
-          disabled={busy}
+        <Button
+          type="primary"
+          size="small"
+          loading={busy}
           onClick={() => void handleTest()}
         >
           {busy ? "检测中…" : "测试连接"}
-        </button>
+        </Button>
         {test && test.status !== "loading" && (
           <p className={hintClass}>{test.message}</p>
         )}

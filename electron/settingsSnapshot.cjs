@@ -2,7 +2,7 @@
 
 /**
  * Main-process settings snapshot + send-time API/agent resolution.
- * Source of truth for ai:stream_open / chat:send after settings:sync.
+ * Source of truth for ai:stream_open after settings:sync.
  */
 
 const AGENT_BACKEND_KEY = 'agent';
@@ -90,42 +90,29 @@ function getAgentApiConfig(settings) {
     providerId: provider.id,
   };
 }
-
-function getActiveChatBackend(settings) {
-  const chatBackend = settings?.chatBackend;
-  if (isAgentBackend(chatBackend)) return AGENT_BACKEND_KEY;
-  if (typeof chatBackend === 'string' && chatBackend.includes('::')) {
-    const { providerId, modelName } = parseModelCompound(
-      chatBackend,
-      settings?.activeProviderId || '',
-    );
-    const provider = (settings?.providers || []).find(
-      (p) => p.id === providerId && p.enabled,
-    );
-    if (provider && modelName) return chatBackend;
+/**
+ * Session-locked model override → apiConfig, or null when invalid/absent.
+ * Validates the provider is enabled and the model is in its list; anything
+ * else silently falls back to the agent default (renderer clears its lock).
+ */
+function resolveSessionModelApiConfig(settings, sessionModel) {
+  if (typeof sessionModel !== 'string' || !sessionModel.includes('::')) {
+    return null;
   }
-  return AGENT_BACKEND_KEY;
-}
-
-function getChatApiConfig(settings) {
-  const backend = getActiveChatBackend(settings);
-  if (isAgentBackend(backend)) {
-    return getAgentApiConfig(settings);
-  }
-  const { providerId, modelName } = parseModelCompound(
-    backend,
-    settings?.activeProviderId || '',
-  );
+  const { providerId, modelName } = parseModelCompound(sessionModel, '');
   const provider = (settings?.providers || []).find(
     (p) => p.id === providerId && p.enabled,
   );
   if (!provider || !modelName) return null;
+  if (provider.models.length > 0 && !provider.models.includes(modelName)) {
+    return null;
+  }
   return {
     apiHost: provider.apiHost,
     apiKey: provider.apiKey,
     providerType: provider.type,
     modelName,
-    providerId,
+    providerId: provider.id,
   };
 }
 
@@ -144,8 +131,8 @@ function getRevision() {
 }
 
 /**
- * Resolve authoritative apiConfig (+ merged agentConfig) for a stream/send.
- * @param {{ agentConfig?: object, apiConfig?: object, forceAgent?: boolean }} payload
+ * Resolve authoritative apiConfig (+ merged agentConfig) for agent streams.
+ * @param {{ agentConfig?: object, apiConfig?: object, sessionModel?: string }} payload
  */
 function resolveForSend(payload = {}) {
   const settings = snapshot;
@@ -155,65 +142,51 @@ function resolveForSend(payload = {}) {
       error: '设置尚未加载，请稍后重试',
       apiConfig: null,
       agentConfig: payload.agentConfig || null,
-      backend: null,
+      backend: AGENT_BACKEND_KEY,
     };
   }
 
-  const forceAgent = Boolean(payload.forceAgent);
-  const backend = forceAgent
-    ? AGENT_BACKEND_KEY
-    : getActiveChatBackend(settings);
-  const agentMode = isAgentBackend(backend);
-
-  if (agentMode) {
-    const guidance = getAgentBackendGuidance(settings);
-    if (guidance) {
-      return {
-        ok: false,
-        error: guidance,
-        apiConfig: null,
-        agentConfig: payload.agentConfig || settings.agent,
-        backend,
-      };
-    }
-    const apiConfig = getAgentApiConfig(settings);
-    if (!apiConfig) {
-      return {
-        ok: false,
-        error: '请先在智能体设置中配置后端 Provider 与模型。',
-        apiConfig: null,
-        agentConfig: payload.agentConfig || settings.agent,
-        backend,
-      };
-    }
-    const diskAgent = settings.agent || {};
-    const incoming = payload.agentConfig || {};
-    // Disk owns provider/model; payload may override session chatMode / tools.
-    const agentConfig = {
-      ...diskAgent,
-      ...incoming,
-      providerId: diskAgent.providerId,
-      modelName: diskAgent.modelName,
-    };
-    return { ok: true, error: null, apiConfig, agentConfig, backend };
-  }
-
-  const apiConfig = getChatApiConfig(settings);
-  if (!apiConfig?.apiHost || !apiConfig?.modelName) {
+  const guidance = getAgentBackendGuidance(settings);
+  if (guidance) {
     return {
       ok: false,
-      error: '请先在设置中配置服务商 API Host 和模型。',
+      error: guidance,
       apiConfig: null,
-      agentConfig: payload.agentConfig || null,
-      backend,
+      agentConfig: payload.agentConfig || settings.agent,
+      backend: AGENT_BACKEND_KEY,
     };
   }
+  const apiConfig = getAgentApiConfig(settings);
+  if (!apiConfig) {
+    return {
+      ok: false,
+      error: '请先在智能体设置中配置后端 Provider 与模型。',
+      apiConfig: null,
+      agentConfig: payload.agentConfig || settings.agent,
+      backend: AGENT_BACKEND_KEY,
+    };
+  }
+  const diskAgent = settings.agent || {};
+  const incoming = payload.agentConfig || {};
+  // Disk owns provider/model; payload may override session chatMode / tools.
+  const agentConfig = {
+    ...diskAgent,
+    ...incoming,
+    providerId: diskAgent.providerId,
+    modelName: diskAgent.modelName,
+  };
+  // Session-locked model override wins when valid; silently falls back
+  // to the disk default otherwise (per-session temporary model).
+  const sessionApiConfig = resolveSessionModelApiConfig(
+    settings,
+    payload.sessionModel,
+  );
   return {
     ok: true,
     error: null,
-    apiConfig,
-    agentConfig: payload.agentConfig || null,
-    backend,
+    apiConfig: sessionApiConfig || apiConfig,
+    agentConfig,
+    backend: AGENT_BACKEND_KEY,
   };
 }
 
@@ -223,9 +196,5 @@ module.exports = {
   setSnapshot,
   getSnapshot,
   getRevision,
-  getChatApiConfig,
-  getAgentApiConfig,
-  getAgentBackendGuidance,
-  getActiveChatBackend,
   resolveForSend,
 };

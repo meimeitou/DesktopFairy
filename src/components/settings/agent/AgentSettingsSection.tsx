@@ -1,3 +1,4 @@
+import { Button } from "animal-island-ui";
 import { useState } from "react";
 import type { AppSettings } from "../../../shared/settings";
 import type { AgentConfig } from "../../../shared/agent";
@@ -68,15 +69,15 @@ export default function AgentSettingsSection({ settings, onChange }: Props) {
     <div className="agent-settings">
       <nav className="agent-section-nav" aria-label="智能体配置分区">
         {AGENT_CONFIG_SECTIONS.map((item) => (
-          <button
+          <Button
             key={item.id}
-            type="button"
+            type="text"
             className={`agent-section-nav-item${section === item.id ? " active" : ""}`}
             aria-current={section === item.id ? "page" : undefined}
             onClick={() => setSection(item.id)}
           >
             {item.label}
-          </button>
+          </Button>
         ))}
       </nav>
 

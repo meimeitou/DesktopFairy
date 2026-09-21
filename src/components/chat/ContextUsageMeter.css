@@ -4,42 +4,39 @@
   z-index: 4;
 }
 
+/* Library text-Button sized to the 18px pie gauge */
 .context-usage-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 26px;
   height: 26px;
   padding: 0;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--bone-500);
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
+  color: var(--animal-text-color-secondary);
 }
 
-.context-usage-btn:hover:not(:disabled),
+.context-usage-btn > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.context-usage-btn svg {
+  display: block;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0.5px var(--hairline-bold);
+}
+
 .context-usage-btn.open {
-  background: var(--ink-700);
-  color: var(--bone-300);
-}
-
-.context-usage-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
+  color: var(--animal-primary-color);
 }
 
 .context-usage-track {
-  stroke: var(--ink-650);
+  stroke: var(--ink-500);
 }
 
 .context-usage-fill {
+  stroke-linecap: butt;
   transition:
-    stroke-dashoffset 0.25s ease,
-    stroke 0.2s ease;
+    stroke-dashoffset var(--motion-base) var(--ease-island),
+    stroke var(--motion-fast) var(--ease-island);
 }
 
 .context-usage-panel {
@@ -53,8 +50,8 @@
   background: var(--ink-800);
   border: 0.5px solid var(--hairline-strong);
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    0 4px 16px rgba(121, 79, 39, 0.18),
+    inset 0 1px 0 rgba(121, 79, 39, 0.04);
 }
 
 .context-usage-panel-header {

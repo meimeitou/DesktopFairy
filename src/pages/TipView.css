@@ -12,18 +12,19 @@ html.tip-window #root {
   align-items: stretch;
   gap: 1px;
   padding: 4px;
-  background: rgba(34, 30, 26, 0.92);
+  background: rgba(248, 244, 232, 0.92);
   border: 1px solid var(--hairline-strong);
-  border-radius: 10px;
+  border-radius: 12px;
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(0, 0, 0, 0.2);
+    0 8px 24px rgba(61, 52, 40, 0.15),
+    0 0 0 1px rgba(196, 184, 158, 0.3);
   user-select: none;
   outline: none;
 }
 
+/* .tip-action-btn: official text Button skin; vertical icon+label layout only */
 .tip-action-btn {
   display: flex;
   flex-direction: column;
@@ -31,23 +32,6 @@ html.tip-window #root {
   justify-content: center;
   gap: 2px;
   min-width: 44px;
-  padding: 5px 9px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-  outline: none;
-}
-
-.tip-action-btn:focus,
-.tip-action-btn:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
-.tip-action-btn:hover {
-  background: var(--persimmon-soft);
 }
 
 .tip-action-icon {

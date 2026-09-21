@@ -57,21 +57,13 @@
 
 ### 其他
 
-- 接入云端或本地：OpenAI / Anthropic / Ollama / vLLM / LM Studio / Hermes Agent 等
+- 接入云端或本地：OpenAI / Anthropic / Ollama / vLLM / LM Studio 等
 - 系统托盘，菜单栏快捷操作
 - 划词助手（快捷键 / 自动弹出）
 - 区域截图（macOS `screencapture`）；托盘「截图复制」走系统 OCR
 - 应用内浏览器：对话中的链接在独立窗口打开
 - 全局快捷键可配置（伴侣窗口、划词触发）
 - Cmd+W 关闭窗口
-
-## Hermes Agent 快速接入
-
-DesktopFairy 内置 Hermes 系统 Provider（设置 → AI 模型 → 启用 **Hermes Agent**）：
-
-1. 在 Hermes 项目中启用 API Server（例如 `API_SERVER_ENABLED=true`）并启动 gateway（默认 `http://127.0.0.1:8642/v1`）
-2. 在 DesktopFairy 设置中将 Hermes 的 **API Key** 填为 Hermes 的 `API_SERVER_KEY`
-3. 选择模型 **hermes-agent**，即可流式对话；tools/skills 在 Hermes 服务端执行
 
 ## Live2D 模型
 

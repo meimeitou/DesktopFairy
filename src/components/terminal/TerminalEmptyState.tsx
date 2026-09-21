@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import type { SshRecentEntry } from "../../shared/terminalSettings";
 
 function describeHost(h: { user: string; host: string; port: number }): string {
@@ -17,38 +18,24 @@ export default function TerminalEmptyState({
     <div className="terminal-empty">
       <div className="terminal-empty-inner">
         <div className="terminal-empty-hero">
-          <svg
-            className="terminal-empty-mark"
-            width="52"
-            height="52"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="4 17 10 11 4 5" />
-            <line x1="12" y1="19" x2="20" y2="19" />
-          </svg>
-          <button
-            type="button"
+          <Icon name="Code" size={52} className="terminal-empty-mark" />
+          <Button
+            type="text"
             className="terminal-empty-local"
             autoFocus
             onClick={onOpenLocal}
           >
             <span className="terminal-empty-cursor" aria-hidden="true" />
             打开本地终端
-          </button>
+          </Button>
         </div>
         {recent.length > 0 && (
           <div className="terminal-empty-recent">
             <div className="terminal-empty-recent-label">最近连接</div>
             {recent.map((entry) => (
-              <button
+              <Button
                 key={`${entry.host.id}-${entry.connectedAt}`}
-                type="button"
+                type="text"
                 className="terminal-empty-recent-item"
                 onClick={() => onOpenRecent(entry)}
               >
@@ -56,7 +43,7 @@ export default function TerminalEmptyState({
                 <span className="terminal-empty-recent-detail">
                   {describeHost(entry.host)}
                 </span>
-              </button>
+              </Button>
             ))}
           </div>
         )}

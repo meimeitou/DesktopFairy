@@ -81,8 +81,7 @@ function enqueuePersist(): Promise<SettingsSyncResult> {
 }
 
 /**
- * Flush any debounced save and wait for in-flight persists so the main
- * snapshot matches the renderer before ai:stream_open / chat:send.
+ * snapshot matches the renderer before ai:stream_open.
  */
 export async function flushSettingsSave(): Promise<void> {
   if (saveTimer) {

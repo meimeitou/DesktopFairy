@@ -1,13 +1,11 @@
+import { Button, Icon, Input } from "animal-island-ui";
 import { useEffect, useMemo, useState } from "react";
 import { FieldHead } from "../../HintTip";
 import ModelSelector from "../../ModelSelector";
 import type { AppSettings } from "../../../shared/settings";
 import { getSelectableModelItems } from "../../../shared/settings";
 import type { AgentConfig } from "../../../shared/agent";
-import {
-  DEFAULT_AGENT_AVATAR,
-  isImageAvatar,
-} from "../../../shared/agentAvatar";
+import { isImageAvatar } from "../../../shared/agentAvatar";
 
 const api = window.electronAPI;
 
@@ -94,28 +92,24 @@ export default function AgentBasicSection({
             {imageAvatar && avatarSrc ? (
               <img src={avatarSrc} alt="" />
             ) : (
-              DEFAULT_AGENT_AVATAR
+              <Icon name="Butterfly" size={40} />
             )}
           </span>
-          <button
-            type="button"
-            className="btn-ghost agent-avatar-upload"
+          <Button
+            type="default"
+            size="small"
             onClick={() => void selectAvatarImage()}
           >
             更换头像
-          </button>
+          </Button>
         </div>
 
         <div className="agent-identity-fields">
           <div className="field">
             <FieldHead htmlFor="agent-name">名称</FieldHead>
-            <input
-              id="agent-name"
-              type="text"
-              value={agent.name}
-              onChange={(e) => onChange({ name: e.target.value })}
-              placeholder="个人助手"
-            />
+            <Input shadow id="agent-name"
+            type="text" value={agent.name} onChange={(e) => onChange({ name: e.target.value })}
+            placeholder="个人助手" />
           </div>
 
           <div className="field">

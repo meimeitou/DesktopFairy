@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { Button } from "animal-island-ui";
+import { memo, useContext, useEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import {
   extractFilePath,
@@ -9,6 +10,7 @@ import {
 } from "./toolUtils";
 import TerminalOutput from "./TerminalOutput";
 import ToolHeader from "./ToolHeader";
+import { ToolCancelContext } from "./ToolCancelContext";
 import { parseAskUserQuestions } from "./askUserQuestionParse";
 
 function StatusBadge({ status, label }: { status: string; label: string }) {
@@ -88,7 +90,9 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
           <TerminalOutput content={command} commandMode />
         </>
       )}
-      {(outText || msg.toolStatus === "running" || msg.toolStatus === "streaming") && (
+      {(outText ||
+        msg.toolStatus === "running" ||
+        msg.toolStatus === "streaming") && (
         <>
           <div className="agent-tool-section-label">输出</div>
           <TerminalOutput content={outText || "…"} />
@@ -127,7 +131,7 @@ function ReadToolBody({ msg }: { msg: ChatMsg }) {
       {text && (
         <>
           <div className="agent-tool-section-label">内容</div>
-          <TerminalOutput content={text} />
+          <TerminalOutput content={text} tone="code" />
         </>
       )}
     </div>
@@ -150,7 +154,7 @@ function GenericToolBody({ msg }: { msg: ChatMsg }) {
       {hasInput && (
         <>
           <div className="agent-tool-section-label">参数</div>
-          <TerminalOutput content={JSON.stringify(input, null, 2)} />
+          <TerminalOutput content={JSON.stringify(input, null, 2)} tone="code" />
         </>
       )}
       {outputText &&
@@ -158,7 +162,7 @@ function GenericToolBody({ msg }: { msg: ChatMsg }) {
         msg.toolStatus !== "streaming" && (
           <>
             <div className="agent-tool-section-label">结果</div>
-            <TerminalOutput content={outputText} />
+            <TerminalOutput content={outputText} tone="code" />
           </>
         )}
     </div>
@@ -186,7 +190,7 @@ function SkillToolBody({ msg }: { msg: ChatMsg }) {
       {content && (
         <>
           <div className="agent-tool-section-label">说明</div>
-          <TerminalOutput content={content} />
+          <TerminalOutput content={content} tone="code" />
         </>
       )}
     </div>
@@ -216,7 +220,7 @@ function SkillsToolBody({ msg }: { msg: ChatMsg }) {
         msg.toolStatus !== "streaming" && (
           <>
             <div className="agent-tool-section-label">结果</div>
-            <TerminalOutput content={outputText} />
+            <TerminalOutput content={outputText} tone="code" />
           </>
         )}
     </div>
@@ -264,7 +268,7 @@ function AskUserQuestionBody({ msg }: { msg: ChatMsg }) {
       {!answers && msg.toolResultPreview && (
         <>
           <div className="agent-tool-section-label">结果</div>
-          <TerminalOutput content={msg.toolResultPreview} />
+          <TerminalOutput content={msg.toolResultPreview} tone="code" />
         </>
       )}
     </div>
@@ -290,6 +294,7 @@ function renderToolBody(msg: ChatMsg) {
 }
 
 function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
+  const cancelTool = useContext(ToolCancelContext);
   const status = msg.toolStatus || "streaming";
   const label = STATUS_LABEL[status] || status;
   const isCollapsible = status === "done";
@@ -334,9 +339,20 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
         collapsible={isCollapsible}
         expanded={expanded}
         onToggle={() => setExpanded((v) => !v)}
-        cancelToolCallId={isRunning ? msg.toolCallId : undefined}
       />
       {showBody && renderToolBody(msg)}
+      {isRunning && cancelTool && msg.toolCallId && (
+        <div className="agent-tool-card-actions">
+          <Button
+            type="primary"
+            size="small"
+            className="agent-tool-cancel-btn"
+            onClick={() => cancelTool(msg.toolCallId!)}
+          >
+            取消
+          </Button>
+        </div>
+      )}
       {msg.toolMessage && (status === "error" || status === "denied") && (
         <p className="agent-tool-error-text">{msg.toolMessage}</p>
       )}

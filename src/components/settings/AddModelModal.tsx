@@ -1,9 +1,6 @@
-import { useState } from "react";
-import { FieldHead } from "../HintTip";
-import {
-  MODEL_KIND_LABELS,
-  type CuratedModelKind,
-} from "../../shared/modelKind";
+import { Form, FormItem, Button, Input, Modal, Radio } from "animal-island-ui";
+import type { CuratedModelKind } from "../../shared/modelKind";
+import { MODEL_KIND_LABELS } from "../../shared/modelKind";
 
 interface Props {
   providerName: string;
@@ -12,60 +9,60 @@ interface Props {
 }
 
 export default function AddModelModal({ providerName, onClose, onConfirm }: Props) {
-  const [modelId, setModelId] = useState("");
-  const [kind, setKind] = useState<CuratedModelKind>("chat");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const id = modelId.trim();
-    if (!id) return;
-    onConfirm(id, kind);
-  };
-
   return (
-    <div className="provider-modal-overlay" onClick={onClose}>
-      <form
-        className="provider-modal"
-        onClick={(e) => e.stopPropagation()}
-        onSubmit={handleSubmit}
+    <Modal
+      open
+      title="添加模型"
+      onClose={onClose}
+      width={420}
+      className="provider-form-modal"
+      footer={null}
+      typewriter={false}
+    >
+      <Form
+        layout="vertical"
+        colon={false}
+        requiredMark
+        initialValues={{ modelId: "", kind: "chat" as CuratedModelKind }}
+        onFinish={(values) => {
+          const id = String(values.modelId ?? "").trim();
+          if (!id) return;
+          onConfirm(id, values.kind as CuratedModelKind);
+        }}
       >
-        <h4>添加模型</h4>
-        <div className="field">
-          <FieldHead
-            htmlFor="add-model-id"
-            hint={`为「${providerName}」填写模型 ID，并指定对话 / Embedding / Rerank。`}
-          >
-            模型 ID
-          </FieldHead>
-          <input
-            id="add-model-id"
+        <FormItem
+          label="模型 ID"
+          name="modelId"
+          rules={[
+            { required: true, whitespace: true, message: "请输入模型 ID" },
+          ]}
+        >
+          <Input
             type="text"
-            value={modelId}
-            onChange={(e) => setModelId(e.target.value)}
+            shadow
             placeholder="gpt-4o-mini / text-embedding-3-small"
             autoFocus
           />
-        </div>
-        <div className="field">
-          <label>类型</label>
-          <select
-            value={kind}
-            onChange={(e) => setKind(e.target.value as CuratedModelKind)}
-          >
-            <option value="chat">{MODEL_KIND_LABELS.chat}</option>
-            <option value="embedding">{MODEL_KIND_LABELS.embedding}</option>
-            <option value="rerank">{MODEL_KIND_LABELS.rerank}</option>
-          </select>
-        </div>
+        </FormItem>
+        <FormItem label="类型" name="kind">
+          <Radio
+            direction="vertical"
+            options={[
+              { value: "chat", label: MODEL_KIND_LABELS.chat },
+              { value: "embedding", label: MODEL_KIND_LABELS.embedding },
+              { value: "rerank", label: MODEL_KIND_LABELS.rerank },
+            ]}
+          />
+        </FormItem>
         <div className="provider-modal-footer">
-          <button type="button" onClick={onClose}>
+          <Button type="primary" htmlType="button" onClick={onClose}>
             取消
-          </button>
-          <button type="submit" disabled={!modelId.trim()}>
+          </Button>
+          <Button type="primary" htmlType="submit">
             添加
-          </button>
+          </Button>
         </div>
-      </form>
-    </div>
+      </Form>
+    </Modal>
   );
 }

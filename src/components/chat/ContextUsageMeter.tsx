@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import Tooltip from "../Tooltip";
+import { Button, Tooltip } from "animal-island-ui";
 import type { ContextUsageResult } from "../../shared/contextUsage";
 import "./ContextUsageMeter.css";
 
@@ -13,7 +13,7 @@ function formatTokenCount(n: number): string {
 function ringColor(percent: number): string {
   if (percent >= 80) return "var(--rust-bright)";
   if (percent >= 60) return "var(--persimmon)";
-  return "var(--bone-500)";
+  return "var(--bone-300)";
 }
 
 interface Props {
@@ -25,7 +25,8 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const percent = Math.min(100, Math.max(0, usage.percent));
-  const radius = 7;
+  // Stroke is centered on r; r=4 + stroke 8 fills the 18×18 disc (true pie).
+  const radius = 4;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - percent / 100);
 
@@ -54,9 +55,9 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
 
   return (
     <div className="context-usage-meter" ref={containerRef}>
-      <Tooltip tip={tip} placement="top">
-        <button
-          type="button"
+      <Tooltip title={tip} placement="top">
+        <Button
+          type="text"
           className={`context-usage-btn${open ? " open" : ""}`}
           onClick={() => !disabled && setOpen((v) => !v)}
           disabled={disabled}
@@ -75,7 +76,7 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
               cy="9"
               r={radius}
               fill="none"
-              strokeWidth="2.5"
+              strokeWidth="8"
             />
             <circle
               className="context-usage-fill"
@@ -83,14 +84,14 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
               cy="9"
               r={radius}
               fill="none"
-              strokeWidth="2.5"
+              strokeWidth="8"
               stroke={ringColor(percent)}
               strokeDasharray={circumference}
               strokeDashoffset={offset}
               transform="rotate(-90 9 9)"
             />
           </svg>
-        </button>
+        </Button>
       </Tooltip>
 
       {open && (

@@ -64,15 +64,6 @@ export function filterAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
   return messages.slice(clearIndex + 1);
 }
 
-export function filterForApi(messages: ChatMsg[]): ChatMsg[] {
-  return filterAfterContextClear(messages).filter(
-    (m) =>
-      m.type !== "clear" &&
-      m.type !== "tool" &&
-      !m.error &&
-      !(m.role === "assistant" && !m.content?.trim()),
-  );
-}
 
 /** Agent history: keep tool messages and non-empty assistant/user turns. */
 export function filterForAgentHistory(messages: ChatMsg[]): ChatMsg[] {
@@ -361,49 +352,6 @@ export function buildAgentApiMessages(
   const textWithFiles = appendTextFileBlocks(
     userText,
     attachmentPayloads.textFiles,
-  );
-
-  if (attachmentPayloads.images.length === 0) {
-    result.push({ role: "user", content: textWithFiles });
-    return result;
-  }
-
-  const parts: ApiContentPart[] = [];
-  if (textWithFiles.trim()) {
-    parts.push({ type: "text", text: textWithFiles });
-  }
-  for (const img of attachmentPayloads.images) {
-    parts.push({
-      type: "image_url",
-      image_url: { url: img.dataUrl },
-    });
-  }
-  result.push({ role: "user", content: parts.length > 0 ? parts : textWithFiles });
-  return result;
-}
-
-export function buildApiMessages(
-  history: ChatMsg[],
-  userText: string,
-  attachmentPayloads: {
-    textFiles: { name: string; text: string }[];
-    images: { name: string; dataUrl: string }[];
-  },
-  systemPrompt?: string
-): ApiMessage[] {
-  const result: ApiMessage[] = [];
-  if (systemPrompt?.trim()) {
-    result.push({ role: "system", content: systemPrompt.trim() });
-  }
-
-  for (const m of history) {
-    if (m.type === "clear" || m.error) continue;
-    result.push({ role: m.role, content: m.content });
-  }
-
-  const textWithFiles = appendTextFileBlocks(
-    userText,
-    attachmentPayloads.textFiles
   );
 
   if (attachmentPayloads.images.length === 0) {

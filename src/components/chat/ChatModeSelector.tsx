@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { Button, Icon } from "animal-island-ui";
+import { useEffect, useRef, useState } from "react";
+import type { IconName } from "animal-island-ui";
 import type { ChatMode, ChatModeCard } from "../../shared/chatMode";
 import { CHAT_MODE_CARDS, getChatModeCard } from "../../shared/chatMode";
 import "./ChatModeSelector.css";
@@ -9,26 +11,20 @@ interface Props {
   disabled?: boolean;
 }
 
+const MODE_ICON: Record<ChatMode, IconName> = {
+  normal: "Thermometer",
+  plan: "Book",
+  "auto-edit": "Edit",
+  "full-auto": "Play",
+};
+
 function ModeIcon({ card, size = 16 }: { card: ChatModeCard; size?: number }) {
-  const s = size;
   return (
-    <svg
+    <Icon
       className="chat-mode-icon"
-      width={s}
-      height={s}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {card.mode === "normal" && <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" fill="currentColor" /></>}
-      {card.mode === "plan" && <><path d="M9 6h10" /><path d="M9 12h10" /><path d="M9 18h6" /><circle cx="5" cy="6" r="1.5" fill="currentColor" /><circle cx="5" cy="12" r="1.5" fill="currentColor" /><circle cx="5" cy="18" r="1.5" fill="currentColor" /></>}
-      {card.mode === "auto-edit" && <><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" /></>}
-      {card.mode === "full-auto" && <><path d="M21 12a9 9 0 1 1-3-6.7" /><polyline points="21 3 21 9 15 9" /></>}
-    </svg>
+      name={MODE_ICON[card.mode] ?? "Thermometer"}
+      size={size}
+    />
   );
 }
 
@@ -60,8 +56,8 @@ export default function ChatModeSelector({ mode, onChange, disabled = false }: P
 
   return (
     <div className="chat-mode-selector chat-mode-selector-icon" ref={hostRef}>
-      <button
-        type="button"
+      <Button
+        type="text"
         className={`chat-mode-trigger chat-tool-btn${open ? " active" : ""}`}
         style={{
           color: current.accent,
@@ -74,7 +70,7 @@ export default function ChatModeSelector({ mode, onChange, disabled = false }: P
         title={`当前模式：${current.title}`}
       >
         <ModeIcon card={current} />
-      </button>
+      </Button>
       {open && (
         <div className="chat-mode-popover chat-mode-popover-up" role="menu">
           <div className="chat-mode-popover-header">
@@ -85,30 +81,29 @@ export default function ChatModeSelector({ mode, onChange, disabled = false }: P
               const active = card.mode === mode;
               return (
                 <li key={card.mode}>
-                  <button
-                    type="button"
+                  <Button
+                    type="text"
                     role="menuitemradio"
                     aria-checked={active}
                     className={`chat-mode-item${active ? " active" : ""}`}
-                    style={{
-                      borderColor: active ? card.accent : "transparent",
-                      background: active ? `${card.accent}14` : "transparent",
-                    }}
                     onClick={() => handleSelect(card.mode)}
                   >
                     <span
                       className="chat-mode-item-icon"
-                      style={{ color: card.accent }}
+                      style={{ color: active ? "#fff" : card.accent }}
                     >
                       <ModeIcon card={card} />
                     </span>
                     <span className="chat-mode-item-body">
-                      <span className="chat-mode-item-title" style={{ color: card.accent }}>
+                      <span
+                        className="chat-mode-item-title"
+                        style={{ color: active ? "#fff" : card.accent }}
+                      >
                         {card.title}
                       </span>
                       <span className="chat-mode-item-desc">{card.description}</span>
                     </span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}

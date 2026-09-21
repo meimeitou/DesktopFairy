@@ -1,3 +1,5 @@
+import { Switch } from "animal-island-ui";
+
 interface CatalogItem {
   id: string;
   name: string;
@@ -48,14 +50,11 @@ export default function AgentCatalogToggleList({
               </div>
               {item.description && <p>{item.description}</p>}
             </div>
-            <label className="toggle agent-toggle-switch" title={enabled ? "禁用" : "启用"}>
-              <input
-                type="checkbox"
-                checked={enabled}
-                onChange={(e) => onToggle(item.id, e.target.checked)}
-              />
-              <span className="toggle-track" />
-            </label>
+            <Switch
+              checked={enabled}
+              onChange={(checked) => onToggle(item.id, checked)}
+              aria-label={enabled ? "禁用" : "启用"}
+            />
           </li>
         );
       })}

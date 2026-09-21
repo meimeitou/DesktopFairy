@@ -1,8 +1,11 @@
+import { Button } from "animal-island-ui";
 import { memo, useState } from "react";
 
 interface Props {
   content: string;
   commandMode?: boolean;
+  /** `code` = GitHub-style light well (files/JSON). Commands stay dark. */
+  tone?: "terminal" | "code";
   /** Soft cap for rendered characters; expand to show full content. */
   maxChars?: number;
 }
@@ -12,6 +15,7 @@ const DEFAULT_MAX_CHARS = 4_000;
 function TerminalOutput({
   content,
   commandMode = false,
+  tone = "terminal",
   maxChars = DEFAULT_MAX_CHARS,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
@@ -22,23 +26,25 @@ function TerminalOutput({
   const needsTruncate = content.length > limit;
   const truncated = needsTruncate && !expanded;
   const shown = truncated ? content.slice(0, limit) : content;
+  const wellTone = commandMode ? "terminal" : tone;
 
   return (
     <div className="agent-tool-terminal-wrap">
       <pre
-        className={`agent-tool-terminal${commandMode ? " agent-tool-terminal-command" : ""}`}
+        className={`agent-tool-terminal${commandMode ? " agent-tool-terminal-command" : ""}${wellTone === "code" ? " agent-tool-code" : ""}`}
       >
         {shown}
         {truncated ? "…" : ""}
       </pre>
       {needsTruncate && (
-        <button
-          type="button"
+        <Button
+          type="link"
+          size="small"
           className="agent-tool-terminal-expand"
           onClick={() => setExpanded((v) => !v)}
         >
           {expanded ? "收起" : `展开全部（${content.length.toLocaleString()} 字符）`}
-        </button>
+        </Button>
       )}
     </div>
   );

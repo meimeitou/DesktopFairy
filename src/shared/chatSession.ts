@@ -23,6 +23,12 @@ export interface ChatSession {
   draftAttachments?: ChatAttachment[];
   /** Last API usage snapshot for context meter calibration (not sent to model). */
   lastServerUsage?: ChatSessionServerUsage;
+  /**
+   * Session-locked agent backend model (`providerId::modelName`).
+   * Missing/empty = follow the agent default. One-way lock: changing the
+   * agent default in settings does not affect locked sessions.
+   */
+  sessionModel?: string;
 }
 
 export const CHAT_TOPICS_VERSION = 1 as const;
@@ -64,14 +70,18 @@ export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
         .map((t) => ({
           ...t,
           knowledgeBaseIds: Array.isArray(t.knowledgeBaseIds)
-            ? t.knowledgeBaseIds.filter((id): id is string => typeof id === "string")
+            ? t.knowledgeBaseIds.filter(
+                (id): id is string => typeof id === "string",
+              )
             : undefined,
         }))
     : [];
   return {
     version: CHAT_TOPICS_VERSION,
     activeId:
-      typeof data.activeId === "string" ? data.activeId : topics[0]?.id ?? null,
+      typeof data.activeId === "string"
+        ? data.activeId
+        : (topics[0]?.id ?? null),
     topics,
   };
 }
@@ -79,9 +89,11 @@ export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
 export function createChatTopic(id?: string, name?: string): ChatTopic {
   const now = Date.now();
   return {
-    id: id ?? (typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `topic-${now}-${Math.random().toString(36).slice(2, 10)}`),
+    id:
+      id ??
+      (typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `topic-${now}-${Math.random().toString(36).slice(2, 10)}`),
     name: name ?? "",
     createdAt: now,
     updatedAt: now,
@@ -137,7 +149,8 @@ function normalizeToolFields(m: ChatMsg): ChatMsg {
     toolResultRef:
       typeof m.toolResultRef === "string" ? m.toolResultRef : undefined,
     toolResultBytes:
-      typeof m.toolResultBytes === "number" && Number.isFinite(m.toolResultBytes)
+      typeof m.toolResultBytes === "number" &&
+      Number.isFinite(m.toolResultBytes)
         ? m.toolResultBytes
         : undefined,
   };
@@ -189,7 +202,7 @@ function normalizeAttachments(value: unknown): ChatAttachment[] {
       typeof item === "object" &&
       typeof (item as ChatAttachment).id === "string" &&
       typeof (item as ChatAttachment).name === "string" &&
-      typeof (item as ChatAttachment).path === "string"
+      typeof (item as ChatAttachment).path === "string",
   );
 }
 
@@ -228,6 +241,10 @@ export function normalizeChatSession(raw: unknown): ChatSession {
     }
   }
 
+  const rawSessionModel =
+    "sessionModel" in data ? data.sessionModel : undefined;
+  const sessionModel = normalizeSessionModel(rawSessionModel);
+
   return {
     version,
     updatedAt:
@@ -238,7 +255,16 @@ export function normalizeChatSession(raw: unknown): ChatSession {
     draftInput: typeof data.draftInput === "string" ? data.draftInput : "",
     draftAttachments: normalizeAttachments(data.draftAttachments),
     lastServerUsage,
+    ...(sessionModel ? { sessionModel } : {}),
   };
+}
+
+const SESSION_MODEL_PATTERN = /^[^:]+::.+$/;
+
+export function normalizeSessionModel(raw: unknown): string {
+  return typeof raw === "string" && SESSION_MODEL_PATTERN.test(raw.trim())
+    ? raw.trim()
+    : "";
 }
 
 export function buildChatSession(
@@ -246,6 +272,7 @@ export function buildChatSession(
   draftInput: string,
   draftAttachments: ChatAttachment[],
   lastServerUsage?: ChatSessionServerUsage,
+  sessionModel?: string,
 ): ChatSession {
   return {
     version: CHAT_SESSION_VERSION,
@@ -254,6 +281,7 @@ export function buildChatSession(
     draftInput,
     draftAttachments,
     ...(lastServerUsage ? { lastServerUsage } : {}),
+    ...(sessionModel ? { sessionModel } : {}),
   };
 }
 

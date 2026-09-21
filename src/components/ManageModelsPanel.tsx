@@ -1,3 +1,4 @@
+import { Button, Input, Modal, Notification } from "animal-island-ui";
 import { useMemo, useState } from "react";
 import {
   getModelsListEndpointLabel,
@@ -56,7 +57,7 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
 
   const fetchRemote = async () => {
     if (!provider.apiHost) {
-      alert("请先填写 API Host");
+      Notification.warning("请先填写 API Host");
       return;
     }
     setLoading(true);
@@ -78,10 +79,10 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
         : [];
       setRemoteModels(catalog);
       if (catalog.length === 0) {
-        alert("未返回可用的对话 / Embedding / Rerank 模型");
+        Notification.warning("未返回可用的对话 / Embedding / Rerank 模型");
       }
     } catch (e) {
-      alert(`拉取失败：${(e as Error).message || e}`);
+      Notification.error(`拉取失败：${(e as Error).message || e}`);
     } finally {
       setLoading(false);
     }
@@ -145,12 +146,12 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
   if (!open) {
     return (
       <div className="manage-models-trigger">
-        <button type="button" className="manage-models-open-btn" onClick={openPanel}>
+        <Button type="default" size="small" onClick={openPanel}>
           管理模型
           {enabledCount > 0 && (
             <span className="manage-models-count">{enabledCount}</span>
           )}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -161,82 +162,94 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
       : "没有符合筛选的模型";
 
   return (
-    <div className="manage-models-overlay" onClick={() => setOpen(false)}>
-      <div className="manage-models-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="manage-models-header">
-          <h4>管理模型 - {provider.name}</h4>
-          <button type="button" className="manage-models-close" onClick={() => setOpen(false)}>
-            ×
-          </button>
-        </div>
-        <p className="manage-models-desc">
-          从 {getModelsListEndpointLabel(provider.type)}{" "}
-          拉取列表，点选要启用的模型。对话模型会出现在下拉框中，Embedding / Rerank
-          供后续知识库使用
-        </p>
-        <div className="manage-models-toolbar">
-          <input
-            type="search"
-            placeholder="搜索模型…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <button type="button" onClick={fetchRemote} disabled={loading}>
-            {loading ? "拉取中…" : "拉取模型"}
-          </button>
-          <button type="button" onClick={selectAll}>
-            全选
-          </button>
-          <button type="button" onClick={selectNone}>
+    <Modal
+      open
+      title={`管理模型 - ${provider.name}`}
+      onClose={() => setOpen(false)}
+      width={520}
+      className="manage-models-modal"
+      typewriter={false}
+      footer={
+        <>
+          <Button type="primary" onClick={() => setOpen(false)}>
             取消
-          </button>
-        </div>
-        <div className="manage-models-filters" role="tablist" aria-label="按类型筛选">
-          {MODEL_KIND_FILTERS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={kindFilter === tab.id}
-              className={kindFilter === tab.id ? "active" : ""}
-              onClick={() => setKindFilter(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <div className="manage-models-list" role="listbox" aria-multiselectable="true" aria-label="模型列表">
-          {filtered.length === 0 ? (
-            <p className="manage-models-empty">{emptyMessage}</p>
-          ) : (
-            filtered.map((id) => {
-              const kind = displayModelKind(id, originalLists, remoteKind);
-              const selected = draft.has(id);
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  className={`manage-models-item${selected ? " selected" : ""}`}
-                  onClick={() => toggle(id)}
-                >
-                  <span className="manage-models-id">{id}</span>
-                  <span className={`manage-models-kind kind-${kind}`}>
-                    {MODEL_KIND_LABELS[kind]}
-                  </span>
-                </button>
-              );
-            })
-          )}
-        </div>
-        <div className="manage-models-footer">
-          <span className="manage-models-selected">已选 {draft.size} 个</span>
-          <button type="button" className="manage-models-save" onClick={save}>
+          </Button>
+          <Button type="primary" onClick={save}>
             保存
-          </button>
-        </div>
+          </Button>
+        </>
+      }
+    >
+      <p className="manage-models-desc">
+        从 {getModelsListEndpointLabel(provider.type)}{" "}
+        拉取列表，点选要启用的模型。
+      </p>
+      <div className="manage-models-toolbar">
+        <Input
+          type="search"
+          shadow
+          placeholder="搜索模型…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <Button type="primary" size="small" onClick={fetchRemote} disabled={loading}>
+          {loading ? "拉取中…" : "拉取模型"}
+        </Button>
       </div>
-    </div>
+      <div className="manage-models-filters" role="tablist" aria-label="按类型筛选">
+        {MODEL_KIND_FILTERS.map((tab) => (
+          <Button
+            key={tab.id}
+            type="text"
+            role="tab"
+            aria-selected={kindFilter === tab.id}
+            className={kindFilter === tab.id ? "active" : ""}
+            onClick={() => setKindFilter(tab.id)}
+          >
+            {tab.label}
+          </Button>
+        ))}
+      </div>
+      <div className="manage-models-list" role="listbox" aria-multiselectable="true" aria-label="模型列表">
+        <div className="manage-models-cols" aria-hidden="true">
+          <span>模型</span>
+          <span>类型</span>
+        </div>
+        {filtered.length === 0 ? (
+          <p className="manage-models-empty">{emptyMessage}</p>
+        ) : (
+          filtered.map((id) => {
+            const kind = displayModelKind(id, originalLists, remoteKind);
+            const selected = draft.has(id);
+            return (
+              <Button
+                key={id}
+                type="text"
+                role="option"
+                aria-selected={selected}
+                className={`manage-models-item${selected ? " selected" : ""}`}
+                onClick={() => toggle(id)}
+              >
+                <span className="manage-models-id">{id}</span>
+                <span className={`manage-models-kind kind-${kind}`}>
+                  {MODEL_KIND_LABELS[kind]}
+                </span>
+              </Button>
+            );
+          })
+        )}
+      </div>
+      <div className="manage-models-footer">
+        <span className="manage-models-selected">已选 {draft.size} 个</span>
+        <span className="manage-models-bulk">
+          <Button type="text" size="small" onClick={selectAll}>
+            全选
+          </Button>
+          <Button type="text" size="small" onClick={selectNone}>
+            取消
+          </Button>
+        </span>
+      </div>
+    </Modal>
   );
 }

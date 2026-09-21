@@ -1,3 +1,4 @@
+import { Button, Icon } from "animal-island-ui";
 import { useState, useRef, useEffect } from "react";
 import type { ReasoningEffort, ReasoningEffortCard } from "../../shared/reasoningEffort";
 import {
@@ -13,25 +14,7 @@ interface Props {
 }
 
 function EffortIcon({ size = 16 }: { size?: number }) {
-  const s = size;
-  return (
-    <svg
-      className="chat-mode-icon"
-      width={s}
-      height={s}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M9 18h6" />
-      <path d="M10 22h4" />
-      <path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.2 1 2v.3h6V17c0-.8.4-1.5 1-2A7 7 0 0 0 12 2Z" />
-    </svg>
-  );
+  return <Icon className="chat-mode-icon" name="Bulb" size={size} />;
 }
 
 export default function ReasoningEffortSelector({
@@ -66,8 +49,8 @@ export default function ReasoningEffortSelector({
 
   return (
     <div className="chat-mode-selector chat-mode-selector-icon" ref={hostRef}>
-      <button
-        type="button"
+      <Button
+        type="text"
         className={`chat-mode-trigger chat-tool-btn${open ? " active" : ""}`}
         style={{
           color: current.accent,
@@ -80,7 +63,7 @@ export default function ReasoningEffortSelector({
         title={`思维链长度：${current.title}`}
       >
         <EffortIcon />
-      </button>
+      </Button>
       {open && (
         <div className="chat-mode-popover chat-mode-popover-up" role="menu">
           <div className="chat-mode-popover-header">
@@ -91,35 +74,29 @@ export default function ReasoningEffortSelector({
               const active = card.value === value;
               return (
                 <li key={card.value}>
-                  <button
-                    type="button"
+                  <Button
+                    type="text"
                     role="menuitemradio"
                     aria-checked={active}
                     className={`chat-mode-item${active ? " active" : ""}`}
-                    style={{
-                      borderColor: active ? card.accent : "transparent",
-                      background: active ? `${card.accent}14` : "transparent",
-                    }}
                     onClick={() => handleSelect(card.value)}
                   >
                     <span
                       className="chat-mode-item-icon"
-                      style={{ color: card.accent }}
+                      style={{ color: active ? "#fff" : card.accent }}
                     >
                       <EffortIcon />
                     </span>
                     <span className="chat-mode-item-body">
                       <span
                         className="chat-mode-item-title"
-                        style={{ color: card.accent }}
+                        style={{ color: active ? "#fff" : card.accent }}
                       >
                         {card.title}
                       </span>
-                      <span className="chat-mode-item-desc">
-                        {card.description}
-                      </span>
+                      <span className="chat-mode-item-desc">{card.description}</span>
                     </span>
-                  </button>
+                  </Button>
                 </li>
               );
             })}

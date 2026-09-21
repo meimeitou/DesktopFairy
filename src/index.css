@@ -1,44 +1,61 @@
 :root {
-  /* Surfaces — Cherry Studio dark neutrals (cool gray, not warm ink) */
-  --ink-900: #1c1c1c;
-  --ink-850: #242424;
-  --ink-800: #2a2a2a;
-  --ink-750: #2e2e2e;
-  --ink-700: #333333;
-  --ink-600: #3f3f3f;
-  --ink-500: #525252;
+  /* ============ animal-island-ui alias layer ============
+     Legacy Cherry-dark token names remapped to warm parchment
+     values so all 30 CSS files' existing var() references flip
+     without touching each file. Real animal tokens come from
+     'animal-island-ui/style' (imported once in src/main.tsx). */
 
-  /* Text — Cherry Studio dark foreground scale */
-  --bone-100: #ececec;
-  --bone-200: #d4d4d4;
-  --bone-300: #b8b8b8;
-  --bone-400: #a3a3a3;
-  --bone-500: #8a8a8a;
-  --bone-600: #737373;
+  /* Surfaces — parchment hierarchy (light, warm) */
+  --ink-900: #f5f8e0;
+  --ink-850: #f7f3df;
+  --ink-800: #f0ece2;
+  --ink-750: #f8f4e8;
+  --ink-700: #f0ebdd;
+  --ink-600: #e8e2d2;
+  --ink-500: #ddd5c2;
 
-  /* Signature: Cherry Studio brand green */
-  --persimmon: #00b96b;
-  --persimmon-bright: #22d17a;
-  --persimmon-soft: rgba(0, 185, 107, 0.16);
-  --persimmon-softer: rgba(0, 185, 107, 0.10);
-  --persimmon-focus: rgba(0, 185, 107, 0.55);
+  /* Text — warm brown scale (no pure black) */
+  --bone-100: #4a3620;
+  --bone-200: #5a442c;
+  --bone-300: #6d5436;
+  --bone-400: #794f27;
+  --bone-500: #725d42;
+  --bone-600: #9f927d;
 
-  /* Supporting: phosphor amber — terminal active only, used sparingly */
-  --amber: #f59e0b;
-  --amber-soft: rgba(245, 158, 11, 0.14);
+  /* Signature: animal primary — mint green */
+  --persimmon: var(--animal-primary-color);
+  --persimmon-bright: var(--animal-primary-color-hover);
+  --persimmon-soft: rgba(25, 200, 185, 0.14);
+  --persimmon-softer: rgba(25, 200, 185, 0.09);
+  --persimmon-focus: rgba(25, 200, 185, 0.45);
 
-  /* Hairlines — cool white, matching Cherry dark borders */
-  --hairline: rgba(255, 255, 255, 0.05);
-  --hairline-strong: rgba(255, 255, 255, 0.10);
-  --hairline-bold: rgba(255, 255, 255, 0.20);
+  /* Supporting: animal warning amber */
+  --amber: var(--animal-warning-color);
+  --amber-soft: rgba(245, 195, 28, 0.15);
 
-  /* Destructive — Cherry red */
-  --rust: #ef4444;
-  --rust-bright: #f87171;
-  --rust-soft: rgba(239, 68, 68, 0.22);
+  /* Hairlines — warm brown strokes (visible on parchment) */
+  --hairline: #e8dcc8;
+  --hairline-strong: #d8c9ae;
+  --hairline-bold: #c4b89e;
+
+  /* Destructive — animal error */
+  --rust: var(--animal-error-color);
+  --rust-bright: var(--animal-error-color-hover);
+  --rust-soft: rgba(224, 90, 90, 0.14);
+
+  /* Motion & shape — animal library tokens */
+  --motion-fast: var(--animal-motion-duration-fast);   /* .15s */
+  --motion-base: var(--animal-motion-duration-base);   /* .25s */
+  --motion-slow: var(--animal-motion-duration-slow);   /* .35s */
+  --ease-island: var(--animal-motion-ease);            /* cubic-bezier(.4,0,.2,1) */
+  --radius-sm: var(--animal-border-radius-sm);         /* 16px */
+  --radius-base: var(--animal-border-radius-base);     /* 18px */
+  --radius-lg: var(--animal-border-radius-lg);         /* 24px */
+  --shadow-sm: var(--animal-shadow-sm);
+  --shadow-base: var(--animal-shadow-base);
+  --shadow-lg: var(--animal-shadow-lg);
 
   /* Type */
-  --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
 *, *::before, *::after {
@@ -52,21 +69,21 @@ html, body {
   height: 100%;
   background: transparent;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-family: var(--animal-font-family);
   font-size: 14px;
   color: var(--bone-200);
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 ::selection {
-  background: rgba(0, 185, 107, 0.35);
-  color: var(--bone-100);
+  background: rgba(25, 200, 185, 0.30);
+  color: #4a3620;
 }
 
 input,
 textarea,
 select {
-  color-scheme: dark;
+  color-scheme: light;
   caret-color: var(--persimmon-bright);
 }
 
@@ -96,9 +113,10 @@ select:-webkit-autofill:focus {
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill:focus,
 select:-webkit-autofill:focus {
-  box-shadow: 0 0 0 1000px #24352c inset;
-  -webkit-box-shadow: 0 0 0 1000px #24352c inset;
+  box-shadow: 0 0 0 1000px #f0ece2 inset;
+  -webkit-box-shadow: 0 0 0 1000px #f0ece2 inset;
 }
+
 
 #root {
   width: 100%;
@@ -112,11 +130,28 @@ select:-webkit-autofill:focus {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(121, 79, 39, 0.25);
   border-radius: 2px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(121, 79, 39, 0.4);
+}
 
-button {
+/* Tactile press feedback — skill 4.5: physical push on :active.
+   Only transform/opacity; gated behind reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  button:not([class^="animal-"]):not(.animal-no-press):active,
+  .press:active {
+    transform: translateY(1px) scale(0.98);
+  }
+  button:not([class^="animal-"]):not(.animal-no-press):active,
+  .press:active {
+    transition: transform var(--motion-fast) var(--ease-island);
+  }
+}
+
+/* Bare-button reset only for non-library buttons; library <Button> owns its own skin */
+button:not([class^="animal-"]) {
   cursor: pointer;
   border: none;
   background: none;
@@ -127,4 +162,13 @@ button {
 input {
   font: inherit;
   color: inherit;
+}
+
+/* 库 Form label 默认冷黑 rgba(0,0,0,.85)，全局对齐暖棕文本令牌 */
+[class*="animal-island-form"] label[class*="form-item-label"] {
+  color: var(--animal-text-color) !important;
+}
+
+[class*="animal-island-form"] [class*="form-item-explain"]:not([class*="explain-error"]) {
+  color: var(--animal-text-color-secondary) !important;
 }

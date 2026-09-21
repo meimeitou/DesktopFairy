@@ -1,10 +1,10 @@
 .thinking-block {
   margin-bottom: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(121, 79, 39, 0.08);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(121, 79, 39, 0.03);
   overflow: hidden;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--motion-fast) var(--ease-island), background 0.15s ease;
 }
 
 .thinking-block.thinking-active {
@@ -13,24 +13,12 @@
 }
 
 .thinking-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   width: 100%;
-  padding: 7px 10px;
-  border: none;
-  background: transparent;
+  justify-content: flex-start;
+  text-align: left;
   color: inherit;
   font-size: 12px;
   font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease;
-}
-
-.thinking-header:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .thinking-bulb {
@@ -51,7 +39,7 @@
 .thinking-label {
   flex: 1 1 auto;
   min-width: 0;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(121, 79, 39, 0.75);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -64,20 +52,20 @@
 .thinking-chevron {
   flex: 0 0 auto;
   display: inline-flex;
-  color: rgba(255, 255, 255, 0.4);
-  transition: transform 0.15s ease, color 0.15s ease;
+  color: rgba(121, 79, 39, 0.4);
+  transition: transform var(--motion-fast) var(--ease-island), color 0.15s ease;
 }
 
 .thinking-block.thinking-expanded .thinking-chevron {
   transform: rotate(90deg);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(121, 79, 39, 0.6);
 }
 
 .thinking-body {
   position: relative;
   padding: 4px 12px 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  transition: max-height 0.2s ease;
+  border-top: 1px solid rgba(121, 79, 39, 0.06);
+  transition: max-height var(--motion-base) var(--ease-island);
 }
 
 /* Half-fold: pin the latest suffix to the bottom and clip the top.
@@ -91,32 +79,17 @@
   overflow: hidden;
 }
 
+/* .thinking-copy: official Button skin; pinned position only */
 .thinking-copy {
   position: absolute;
   top: 6px;
   right: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.4);
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-
-.thinking-copy:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
 }
 
 .thinking-body .chat-markdown {
   flex: 0 0 auto;
   font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(121, 79, 39, 0.6);
 }
 
 .thinking-body-half .chat-markdown {

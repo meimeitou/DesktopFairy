@@ -1,7 +1,7 @@
+import { Button, Icon, Tooltip } from "animal-island-ui";
 import { useEffect, useRef, useState } from "react";
 import type { KnowledgeBase } from "../../shared/knowledge";
 import type { KnowledgeCitation } from "../../shared/knowledge";
-import Tooltip from "../Tooltip";
 import "./KnowledgePicker.css";
 
 const api = window.electronAPI;
@@ -12,24 +12,6 @@ interface Props {
   disabled?: boolean;
 }
 
-function BookIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    </svg>
-  );
-}
 
 export default function KnowledgePicker({ selectedIds, onChange, disabled }: Props) {
   const [open, setOpen] = useState(false);
@@ -63,19 +45,20 @@ export default function KnowledgePicker({ selectedIds, onChange, disabled }: Pro
 
   return (
     <div className="kb-picker" ref={rootRef}>
-      <Tooltip tip={tip}>
-        <button
-          type="button"
+      <Tooltip title={tip}>
+        <Button
+          type="text"
+          size="small"
           className={`chat-tool-btn${selectedIds.length || open ? " active" : ""}`}
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
           aria-label={tip}
+          icon={<Icon name="Book" size={16} />}
         >
-          <BookIcon />
           {selectedIds.length > 0 && (
             <span className="kb-picker-count">{selectedIds.length}</span>
           )}
-        </button>
+        </Button>
       </Tooltip>
       {open && (
         <div className="kb-picker-menu" role="menu" aria-label="选择知识库">
@@ -85,9 +68,9 @@ export default function KnowledgePicker({ selectedIds, onChange, disabled }: Pro
             bases.map((base) => {
               const selected = selectedIds.includes(base.id);
               return (
-                <button
+                <Button
                   key={base.id}
-                  type="button"
+                  type="text"
                   role="menuitemcheckbox"
                   aria-checked={selected}
                   className={`kb-picker-row${selected ? " selected" : ""}`}
@@ -107,7 +90,7 @@ export default function KnowledgePicker({ selectedIds, onChange, disabled }: Pro
                       半
                     </span>
                   )}
-                </button>
+                </Button>
               );
             })
           )}
@@ -132,15 +115,20 @@ export function KnowledgeCitations({
         const key = `${c.itemId}-${i}`;
         return (
           <div key={key} className="kb-citation">
-            <button
-              type="button"
+            <Button
+              type="link"
+              size="small"
               className="kb-citation-btn"
               onClick={() => setOpenId(openId === key ? null : key)}
-              title={c.kind === "semi_structured" ? "半结构化文件（全文注入）" : "向量片段"}
+              title={
+                c.kind === "semi_structured"
+                  ? "半结构化文件（全文注入）"
+                  : "向量片段"
+              }
             >
               {c.kind === "semi_structured" ? "📄 " : ""}
               {c.baseName} / {c.sourceName}
-            </button>
+            </Button>
             {openId === key && (
               <div className="kb-citation-pop">
                 {c.kind === "semi_structured" ? (
@@ -154,9 +142,9 @@ export function KnowledgeCitations({
                   <pre>{c.text}</pre>
                 )}
                 {onOpen && (
-                  <button type="button" onClick={() => onOpen(c)}>
+                  <Button type="text" onClick={() => onOpen(c)}>
                     在知识库中查看
-                  </button>
+                  </Button>
                 )}
               </div>
             )}

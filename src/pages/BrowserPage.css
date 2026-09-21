@@ -1,6 +1,6 @@
 html.browser-window-shell,
 html.browser-window-shell body {
-  background: #0f0f19;
+  background: var(--ink-900);
 }
 
 .browser-page {
@@ -8,7 +8,7 @@ html.browser-window-shell body {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #0f0f19;
+  background: var(--ink-900);
   color: var(--bone-300, #d4d0c8);
   overflow: hidden;
 }
@@ -20,10 +20,11 @@ html.browser-window-shell body {
   flex-shrink: 0;
   height: 44px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
-  background: #0f0f19;
+  border-bottom: 1px solid var(--hairline, rgba(121, 79, 39, 0.08));
+  background: var(--ink-900);
   -webkit-app-region: drag;
 }
+
 
 .browser-page-mac .browser-topbar {
   padding-left: 78px;
@@ -45,31 +46,14 @@ html.browser-window-shell body {
 }
 
 .browser-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
   max-width: 180px;
-  padding: 0 8px 0 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
   color: var(--bone-500, #9a958c);
   font-size: 12px;
   font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
-}
-
-.browser-tab:hover {
-  background: var(--hairline, rgba(255, 255, 255, 0.08));
-  color: var(--bone-200);
 }
 
 .browser-tab.active {
-  background: var(--persimmon-softer);
   color: var(--bone-100);
 }
 
@@ -96,29 +80,12 @@ html.browser-window-shell body {
 
 .browser-tab-close:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(121, 79, 39, 0.1);
 }
 
+/* .browser-tab-add: official Button skin, no overrides */
 .browser-tab-add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--bone-500, #9a958c);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.15s, color 0.15s;
-}
-
-.browser-tab-add:hover {
-  background: var(--hairline, rgba(255, 255, 255, 0.08));
-  color: var(--bone-200);
 }
 
 .browser-topbar-drag {
@@ -134,8 +101,8 @@ html.browser-window-shell body {
   flex-shrink: 0;
   height: 36px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
-  background: #0f0f19;
+  border-bottom: 1px solid var(--hairline, rgba(121, 79, 39, 0.08));
+  background: var(--ink-900);
   -webkit-app-region: drag;
 }
 
@@ -148,9 +115,9 @@ html.browser-window-shell body {
   min-width: 0;
   height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--hairline, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--hairline, rgba(121, 79, 39, 0.08));
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(121, 79, 39, 0.04);
   color: var(--bone-200);
   font-size: 12px;
   font-family: Menlo, Monaco, "Courier New", monospace;
@@ -169,27 +136,15 @@ html.browser-window-shell body {
 
 .browser-url-action {
   flex-shrink: 0;
-  height: 26px;
-  padding: 0 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--bone-500, #9a958c);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
   -webkit-app-region: no-drag;
-  transition: background 0.15s, color 0.15s;
 }
 
-.browser-url-action:hover:not(:disabled) {
-  background: var(--hairline, rgba(255, 255, 255, 0.08));
-  color: var(--bone-200);
-}
-
-.browser-url-action:disabled {
-  opacity: 0.4;
-  cursor: default;
+.browser-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--bone-600);
 }
 
 .browser-content {
@@ -212,12 +167,3 @@ html.browser-window-shell body {
   display: flex;
 }
 
-.browser-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--bone-600);
-  font-size: 13px;
-  background: #0f0f19;
-}
