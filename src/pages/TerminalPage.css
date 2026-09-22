@@ -176,12 +176,30 @@
   opacity: 1;
 }
 
-.terminal-instance .xterm {
+/* FitAddon 用这个元素的 border-box 算行列，所以这里不能再加 padding。 */
+.terminal-xterm-host {
+  width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
+.terminal-instance .xterm {
+  width: 100%;
+  height: 100%;
+  background: #2b2118;
+}
+
+/* 字符网格高度是「行数 × 行高」，比容器矮不到一行。
+   viewport 用 top/bottom 拉满父级，且 xterm.css 把它涂成 #000，
+   底部缝隙就会露出黑边。背景改透明，由 .xterm 的主题色补上。 */
 .terminal-instance .xterm-viewport {
   padding: 0 !important;
+  background-color: transparent !important;
+}
+
+/* 滚动层默认只跟 canvas 一样高，底边和拉满的 viewport 对不齐。 */
+.terminal-instance .xterm-scrollable-element {
+  height: 100%;
 }
 
 .terminal-tabs-bottom {
@@ -629,18 +647,25 @@
   animation: terminal-tooltip-in 0.12s ease-out;
 }
 
-.terminal-context-menu-item {
+.terminal-context-menu-item,
+button.terminal-context-menu-item {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
-  padding: 6px 10px;
+  height: 30px;
+  margin: 0;
+  padding: 0 10px;
   border: none;
   border-radius: 6px;
   background: transparent;
   color: var(--bone-300);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 500;
+  line-height: 1;
+  text-align: left;
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
   white-space: nowrap;

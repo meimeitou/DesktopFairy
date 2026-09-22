@@ -1,4 +1,4 @@
-import { Button, Icon } from "animal-island-ui";
+import { Icon } from "animal-island-ui";
 import { useEffect, useRef, useState } from "react";
 import type { SshCredential } from "../../shared/settings";
 
@@ -76,8 +76,8 @@ export default function TerminalContextMenu({
       className="terminal-context-menu"
       style={{ left: pos.left, top: pos.top }}
     >
-      <Button
-        type="text"
+      <button
+        type="button"
         className="terminal-context-menu-item"
         onClick={() => {
           onSearch();
@@ -86,7 +86,7 @@ export default function TerminalContextMenu({
       >
         <Icon name="Search" size={13} />
         <span>搜索</span>
-      </Button>
+      </button>
       <div className="terminal-context-menu-divider" />
       <div className="terminal-context-menu-item terminal-context-menu-item--has-sub">
         <Icon name="Share" size={13} />
@@ -99,9 +99,9 @@ export default function TerminalContextMenu({
             </div>
           ) : (
             fillable.map((cred) => (
-              <Button
+              <button
                 key={cred.id}
-                type="text"
+                type="button"
                 className="terminal-context-menu-item"
                 title={cred.note || cred.name}
                 onMouseDown={(e) => e.preventDefault()}
@@ -111,7 +111,7 @@ export default function TerminalContextMenu({
                 }}
               >
                 <span className="terminal-context-menu-cred-name">{cred.name}</span>
-              </Button>
+              </button>
             ))
           )}
         </div>

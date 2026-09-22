@@ -82,6 +82,7 @@ function TerminalInstance({
   requestPasteConfirm: (normalized: string) => Promise<boolean>;
 }) {
   const terminalRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string>("");
@@ -150,7 +151,7 @@ function TerminalInstance({
 
     // Visual bell — CSS shake animation on the terminal element.
     xterm.onBell(() => {
-      const bellEl = terminalRef.current;
+      const bellEl = shellRef.current;
       if (!bellEl) return;
       bellEl.classList.remove("terminal-bell-shake");
       void bellEl.offsetWidth; // force reflow to restart animation
@@ -316,7 +317,7 @@ function TerminalInstance({
       return true;
     });
 
-    const el = terminalRef.current;
+    const el = shellRef.current;
     const handleMouseUp = (e: MouseEvent) => {
       const selection = xterm.getSelection();
       if (selection?.trim() && el) {
@@ -475,9 +476,13 @@ function TerminalInstance({
 
   return (
     <div
-      ref={terminalRef}
+      ref={shellRef}
       className={`terminal-instance${isActive ? " active" : ""}`}
-    />
+    >
+      {/* xterm 必须挂在无 padding 的内容盒上。FitAddon 读的是父元素 border-box，
+          padding 留在外层时画面会按外框尺寸布局，再被内边距挤偏。 */}
+      <div ref={terminalRef} className="terminal-xterm-host" />
+    </div>
   );
 }
 
@@ -1026,11 +1031,11 @@ export default function TerminalPage({
         />
       )}
 
-      {hasSessionTab && (
+      {hasSessionTab && !drawerOpen && (
         <Button
           type="default"
-          className={`terminal-agent-toggle${drawerOpen ? " open" : ""}`}
-          onClick={() => setDrawerOpen((v) => !v)}
+          className="terminal-agent-toggle"
+          onClick={() => setDrawerOpen(true)}
           title="AI 助手"
         >
           <Icon name="Smile" size={18} />
