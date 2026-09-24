@@ -637,14 +637,16 @@ export default function TerminalPage({
   const handleToggleSshPicker = useCallback(() => {
     setSshPickerOpen((open) => {
       if (!open) {
-        const rect = sshBtnRef.current?.getBoundingClientRect();
+        const anchor = sshBtnRef.current;
+        const btn = anchor?.querySelector("button") ?? anchor;
+        const rect = btn?.getBoundingClientRect();
         if (rect) {
           const PICKER_WIDTH = 320;
           const GAP = 6;
           const MARGIN = 8;
           let left = rect.left;
           if (left + PICKER_WIDTH > window.innerWidth - MARGIN) {
-            left = window.innerWidth - MARGIN - PICKER_WIDTH;
+            left = rect.right - PICKER_WIDTH;
           }
           if (left < MARGIN) left = MARGIN;
           const bottom = window.innerHeight - rect.top + GAP;
