@@ -69,7 +69,7 @@ function ShellCodeRenderer({
 const plugins: PluginConfig = {
   code,
   cjk,
-  math: createMathPlugin({ singleDollarTextMath: true }),
+  math: createMathPlugin({ singleDollarTextMath: false }),
   mermaid,
   renderers: [{ language: SHELL_LANGS, component: ShellCodeRenderer }],
 };
@@ -151,6 +151,7 @@ function ChatMarkdown({ content, streaming }: Props) {
         shikiTheme={["gruvbox-dark-soft", "gruvbox-dark-soft"]}
         lineNumbers={false}
         codeBlockMaxHeight={480}
+        tableMaxHeight={0}
         controls={{
           table: { fullscreen: true },
           mermaid: { fullscreen: true },

@@ -11,7 +11,10 @@ import { ToolCancelContext } from "../chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 import { useConfirm } from "../../hooks/useConfirm";
-import { createStreamChunkBuffer } from "../../hooks/createStreamChunkBuffer";
+import {
+  createStreamChunkBuffer,
+  type StreamTextPart,
+} from "../../hooks/createStreamChunkBuffer";
 import {
   type AgentConfig,
   type AgentSkillDescriptor,
@@ -26,6 +29,7 @@ import KnowledgePicker from "../knowledge/KnowledgePicker";
 import {
   type ChatMsg,
   buildAgentApiMessages,
+  applyStreamTextPart,
   filterForAgentHistory,
   findFirstAssistantReplyIndex,
   findLastAssistantReplyIndex,
@@ -448,26 +452,27 @@ export default function TerminalAgentDrawer({
   useEffect(() => {
     const applyChunk = (
       requestId: string,
-      delta: string,
+      parts: StreamTextPart[],
       reasoning: string,
     ) => {
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
+      if (parts.length === 0 && !reasoning) return;
       updateTabState(tabId, (state) => {
-        const idx = findLastAssistantReplyIndex(state.messages);
-        if (idx < 0) return state;
-        const next = state.messages.slice();
-        if (delta) {
-          next[idx] = { ...next[idx], content: next[idx].content + delta };
+        let messages = state.messages;
+        for (const part of parts) {
+          messages = applyStreamTextPart(messages, part.partId, part.text);
         }
         if (reasoning) {
-          const ri = Math.max(0, findFirstAssistantReplyIndex(state.messages));
+          const ri = Math.max(0, findFirstAssistantReplyIndex(messages));
+          const next = messages.slice();
           next[ri] = {
             ...next[ri],
             reasoning: (next[ri].reasoning ?? "") + reasoning,
           };
+          messages = next;
         }
-        return { ...state, messages: next };
+        return { ...state, messages };
       });
     };
 
@@ -475,16 +480,18 @@ export default function TerminalAgentDrawer({
 
     const handleChatChunk = ({
       requestId,
+      partId,
       delta,
       reasoning,
     }: {
       requestId: string;
+      partId?: string;
       delta?: string;
       reasoning?: string;
     }) => {
       const tabId = requestIdToTabIdRef.current.get(requestId);
       if (!tabId) return;
-      chunkBuffer.push(requestId, delta, reasoning);
+      chunkBuffer.push(requestId, partId, delta, reasoning);
     };
 
     const handleChatDone = ({
@@ -594,6 +601,7 @@ export default function TerminalAgentDrawer({
     const offError = api.onChatStreamError?.(handleChatError);
 
     const offTool = api.onAgentStreamTool?.((event) => {
+      chunkBuffer.flushRequest(event.requestId);
       const tabId = requestIdToTabIdRef.current.get(event.requestId);
       if (!tabId) return;
       mergeToolMessage(tabId, event);
@@ -604,9 +612,9 @@ export default function TerminalAgentDrawer({
       onChatDone: handleChatDone,
       onChatError: handleChatError,
       onAgentTool: (data) => {
-        const tabId = requestIdToTabIdRef.current.get(
-          String(data.requestId || ""),
-        );
+        const requestId = String(data.requestId || "");
+        chunkBuffer.flushRequest(requestId);
+        const tabId = requestIdToTabIdRef.current.get(requestId);
         if (!tabId) return;
         mergeToolMessage(tabId, data as unknown as AgentStreamToolEvent);
       },

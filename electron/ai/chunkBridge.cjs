@@ -19,7 +19,7 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
     switch (chunk.type) {
       case 'text-delta':
         if (chunk.delta) {
-          safeSend('chat:stream:chunk', { requestId, delta: chunk.delta });
+          safeSend('chat:stream:chunk', { requestId, delta: chunk.delta, partId: chunk.id });
         }
         break;
 

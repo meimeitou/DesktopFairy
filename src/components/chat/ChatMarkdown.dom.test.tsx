@@ -51,6 +51,15 @@ describe("streamdown CSS bug fixes (SSR DOM shape)", () => {
     expect(html).toContain('data-streamdown="table-header-cell"');
   });
 
+  it("does not swallow prose after a single dollar sign", () => {
+    const html = renderToString(
+      <ChatMarkdown content={"价格 $12，环境变量 $PATH，后面还有正文"} />,
+    );
+    expect(html).toContain("$12");
+    expect(html).toContain("$PATH");
+    expect(html).toContain("后面还有正文");
+  });
+
   it("streaming mode sets caret var on streamdown root div", () => {
     const html = renderToString(<ChatMarkdown content={"hello"} streaming />);
     // caret suppresses when last block is an open fence; plain text keeps it

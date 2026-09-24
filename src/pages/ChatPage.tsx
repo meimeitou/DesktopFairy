@@ -15,7 +15,10 @@ import MessageList, {
 } from "../components/chat/MessageList";
 import { ToolCancelContext } from "../components/chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../hooks/useToolApproval";
-import { createStreamChunkBuffer } from "../hooks/createStreamChunkBuffer";
+import {
+  createStreamChunkBuffer,
+  type StreamTextPart,
+} from "../hooks/createStreamChunkBuffer";
 import type { ToolTerminalState } from "../shared/ai/stream";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import MaxTurnsCard from "../components/chat/MaxTurnsCard";
@@ -23,6 +26,7 @@ import {
   type ChatMsg,
   buildAgentApiMessages,
   buildAgentHistoryMessages,
+  applyStreamTextPart,
   filterForAgentHistory,
   findLastAssistantReplyIndex,
   findFirstAssistantReplyIndex,
@@ -687,26 +691,27 @@ export default function ChatPage({
   useEffect(() => {
     const applyChunk = (
       requestId: string,
-      delta: string,
+      parts: StreamTextPart[],
       reasoning: string,
     ) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
+      if (parts.length === 0 && !reasoning) return;
       patchTopicState(topicId, (state) => {
-        const idx = findLastAssistantReplyIndex(state.messages);
-        if (idx < 0) return state;
-        const next = state.messages.slice();
-        if (delta) {
-          next[idx] = { ...next[idx], content: next[idx].content + delta };
+        let messages = state.messages;
+        for (const part of parts) {
+          messages = applyStreamTextPart(messages, part.partId, part.text);
         }
         if (reasoning) {
-          const ri = Math.max(0, findFirstAssistantReplyIndex(state.messages));
+          const ri = Math.max(0, findFirstAssistantReplyIndex(messages));
+          const next = messages.slice();
           next[ri] = {
             ...next[ri],
             reasoning: (next[ri].reasoning ?? "") + reasoning,
           };
+          messages = next;
         }
-        return { ...state, messages: next };
+        return { ...state, messages };
       });
       // Do not persist on every chunk — flush on done/error/tool events.
     };
@@ -715,16 +720,18 @@ export default function ChatPage({
 
     const handleChatChunk = ({
       requestId,
+      partId,
       delta,
       reasoning,
     }: {
       requestId: string;
+      partId?: string;
       delta?: string;
       reasoning?: string;
     }) => {
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
-      chunkBuffer.push(requestId, delta, reasoning);
+      chunkBuffer.push(requestId, partId, delta, reasoning);
     };
 
     const handleChatDone = ({
@@ -912,6 +919,8 @@ export default function ChatPage({
       message?: string;
       resultPreview?: string;
     }) => {
+      // Land buffered text on the pre-tool bubble before the tool row is inserted.
+      chunkBuffer.flushRequest(requestId);
       const topicId = requestIdToTopicIdRef.current.get(requestId);
       if (!topicId) return;
       patchTopicState(topicId, (state) => ({

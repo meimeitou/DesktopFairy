@@ -2,6 +2,8 @@
   font-size: 13px;
   line-height: 1.6;
   word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .chat-markdown > :first-child {
@@ -243,10 +245,22 @@
 /* Tables */
 .chat-markdown [data-streamdown="table-wrapper"] {
   margin: 0.6em 0;
-  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+  /* no inner scrollbar: the table wraps to the bubble and the message list scrolls */
+  overflow: visible;
   border-radius: 6px;
   border: 1px solid #45403d;
   /* gruvbox base so the controls row tint composites like code-block-header */
+  background: #32302f;
+}
+/* streamdown's scroll div sits between the controls row and the table.
+ * Drop its default max-height so rows grow the message instead of painting over it. */
+.chat-markdown [data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"]) {
+  max-width: 100%;
+  max-height: none !important;
+  height: auto;
+  overflow: visible;
   background: #32302f;
 }
 
@@ -329,21 +343,33 @@
 
 .chat-markdown [data-streamdown="table"] {
   width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
   background: #32302f;
+}
+.chat-markdown [data-streamdown="table-header-cell"] {
+  background: #3c3836;
 }
 .chat-markdown [data-streamdown="table-cell"],
 .chat-markdown [data-streamdown="table-header-cell"] {
   padding: 6px 10px;
   border-bottom: 1px solid #45403d;
   text-align: left;
-  color: #fabd2f;
+  /* same fg as ```text / code-block-body */
+  color: #ebdbb2;
   font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
-/* gruvbox zebra: even body rows on bg1 */
+/* gruvbox zebra: even body rows on bg1. Opaque so the cream bubble cannot show through. */
 .chat-markdown [data-streamdown="table-cell"] {
-  background: rgba(60, 56, 54, 0.5);
+  background: #32302f;
+}
+.chat-markdown [data-streamdown="table-body"] [data-streamdown="table-row"]:nth-child(even) [data-streamdown="table-cell"] {
+  background: #3c3836;
 }
 
 /* Mermaid controls row — has the attribute but flex classes are inert. */
@@ -417,11 +443,27 @@
   border: 1px solid #45403d;
   border-radius: 6px;
 }
+[data-streamdown="table-fullscreen"] [data-streamdown="table"] {
+  width: 100%;
+  table-layout: fixed;
+}
 [data-streamdown="table-fullscreen"] [data-streamdown="table-header-cell"] {
   background: #3c3836;
   font-weight: 600;
-  color: #fabd2f;
-  white-space: nowrap;
+  color: #ebdbb2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-cell"] {
+  background: #32302f;
+  color: #ebdbb2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+[data-streamdown="table-fullscreen"] [data-streamdown="table-body"] [data-streamdown="table-row"]:nth-child(even) [data-streamdown="table-cell"] {
+  background: #3c3836;
 }
 
 /* Portal renders into <body>, outside .chat-markdown — dropdown menus and

@@ -45,7 +45,7 @@ declare global {
       ) => () => void;
       onSwitchModel: (callback: (modelPath: string) => void) => () => void;
       onChatStreamChunk: (
-        callback: (payload: { requestId: string; delta?: string; reasoning?: string }) => void
+        callback: (payload: { requestId: string; partId?: string; delta?: string; reasoning?: string }) => void
       ) => () => void;
       onChatStreamDone: (
         callback: (payload: {

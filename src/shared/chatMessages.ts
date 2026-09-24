@@ -13,6 +13,8 @@ export interface ChatMsg {
   content: string;
   /** Model reasoning / chain-of-thought text (from `reasoning_content`). Display-only, never replayed to the model. */
   reasoning?: string;
+  /** Runtime-only: UIMessageChunk text part id that fills this bubble. Routing key while streaming. */
+  partId?: string;
   type?: "clear" | "tool";
   error?: boolean;
   attachments?: ChatAttachment[];
@@ -130,6 +132,49 @@ export function isEmptyAssistantPlaceholder(m: ChatMsg): boolean {
 /** Drop leftover empty assistant shells (e.g. after tools with no follow-up text). */
 export function pruneEmptyAssistantMessages(messages: ChatMsg[]): ChatMsg[] {
   return messages.filter((m) => !isEmptyAssistantPlaceholder(m));
+}
+
+/**
+ * Apply one text delta routed by part identity.
+ * - Trailing plain assistant with same partId (both undefined counts) → append in place.
+ * - Trailing plain assistant that is an empty placeholder → adopt it, stamping partId.
+ * - Otherwise (different partId, tool/clear/error/user trailing, or empty list) → new bubble.
+ */
+export function applyStreamTextPart(
+  messages: ChatMsg[],
+  partId: string | undefined,
+  delta: string,
+): ChatMsg[] {
+  if (!delta) return messages;
+  const last = messages[messages.length - 1];
+  const lastIsPlain =
+    !!last &&
+    last.role === "assistant" &&
+    last.type !== "tool" &&
+    last.type !== "clear" &&
+    !last.error;
+  if (
+    lastIsPlain &&
+    (last.partId === partId || isEmptyAssistantPlaceholder(last))
+  ) {
+    const next = messages.slice();
+    next[next.length - 1] = {
+      ...last,
+      content: last.content + delta,
+      partId: last.partId ?? partId,
+    };
+    return next;
+  }
+  return [
+    ...messages,
+    {
+      id: newChatMsgId(),
+      role: "assistant",
+      content: delta,
+      partId,
+      timestamp: Date.now(),
+    },
+  ];
 }
 
 export type AgentToolUpsertFields = {

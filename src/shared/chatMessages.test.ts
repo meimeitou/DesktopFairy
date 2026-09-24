@@ -5,6 +5,7 @@ import {
   findLastAssistantReplyIndex,
   isEmptyAssistantPlaceholder,
   isSupportedFileName,
+  applyStreamTextPart,
   pruneEmptyAssistantMessages,
   upsertAgentToolMessage,
   type ChatMsg,
@@ -239,6 +240,82 @@ describe('chatMessages', () => {
         'think',
         'boom',
       ])
+    })
+  })
+
+  describe('applyStreamTextPart', () => {
+    it('appends a new assistant on an empty list', () => {
+      const next = applyStreamTextPart([], 'a', '你好')
+      expect(next).toHaveLength(1)
+      expect(next[0].role).toBe('assistant')
+      expect(next[0].content).toBe('你好')
+      expect(next[0].partId).toBe('a')
+    })
+
+    it('appends in place when the trailing plain assistant has the same partId', () => {
+      const msgs = [makeMsg('assistant', '你好', { partId: 'a' })]
+      const next = applyStreamTextPart(msgs, 'a', '世界')
+      expect(next).toHaveLength(1)
+      expect(next[0].id).toBe(msgs[0].id)
+      expect(next[0].content).toBe('你好世界')
+      expect(next[0].partId).toBe('a')
+    })
+
+    it('adopts a trailing empty placeholder and stamps partId', () => {
+      const msgs = [makeMsg('assistant', '')]
+      const next = applyStreamTextPart(msgs, 'b', 'x')
+      expect(next).toHaveLength(1)
+      expect(next[0].id).toBe(msgs[0].id)
+      expect(next[0].content).toBe('x')
+      expect(next[0].partId).toBe('b')
+    })
+
+    it('opens a new bubble when the trailing partId differs', () => {
+      const msgs = [makeMsg('assistant', '你好', { partId: 'a' })]
+      const next = applyStreamTextPart(msgs, 'b', 'x')
+      expect(next).toHaveLength(2)
+      expect(next[0].content).toBe('你好')
+      expect(next[1].content).toBe('x')
+      expect(next[1].partId).toBe('b')
+    })
+
+    it('opens a new bubble after a tool message', () => {
+      const msgs = [
+        makeMsg('assistant', '', {
+          type: 'tool',
+          toolCallId: 'c1',
+          toolName: 'Read',
+          toolStatus: 'done',
+        }),
+      ]
+      const next = applyStreamTextPart(msgs, 'b', 'x')
+      expect(next).toHaveLength(2)
+      expect(next[0].type).toBe('tool')
+      expect(next[1].content).toBe('x')
+      expect(next[1].partId).toBe('b')
+    })
+
+    it('appends in place for legacy deltas with no partId', () => {
+      const msgs = [makeMsg('assistant', '你好')]
+      const next = applyStreamTextPart(msgs, undefined, 'x')
+      expect(next).toHaveLength(1)
+      expect(next[0].id).toBe(msgs[0].id)
+      expect(next[0].content).toBe('你好x')
+      expect(next[0].partId).toBeUndefined()
+    })
+
+    it('returns the same array when delta is empty', () => {
+      const msgs = [makeMsg('assistant', '你好', { partId: 'a' })]
+      expect(applyStreamTextPart(msgs, 'a', '')).toBe(msgs)
+    })
+
+    it('opens a new assistant after a user message', () => {
+      const msgs = [makeMsg('user', 'q')]
+      const next = applyStreamTextPart(msgs, 'a', 'x')
+      expect(next).toHaveLength(2)
+      expect(next[1].role).toBe('assistant')
+      expect(next[1].content).toBe('x')
+      expect(next[1].partId).toBe('a')
     })
   })
 })

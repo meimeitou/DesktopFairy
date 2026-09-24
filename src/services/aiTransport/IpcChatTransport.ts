@@ -59,6 +59,7 @@ export function abortTopicStream(topicId: string, requestId?: string): void {
 export interface LegacyStreamHandlers {
   onChatChunk?: (data: {
     requestId: string;
+    partId?: string;
     delta?: string;
     reasoning?: string;
   }) => void;
@@ -80,7 +81,7 @@ export function replayLegacyStreamEvents(
     const { channel, data } = event;
     switch (channel) {
       case "chat:stream:chunk":
-        handlers.onChatChunk?.(data as { requestId: string; delta?: string; reasoning?: string });
+        handlers.onChatChunk?.(data as { requestId: string; partId?: string; delta?: string; reasoning?: string });
         break;
       case "chat:stream:done":
         handlers.onChatDone?.(
