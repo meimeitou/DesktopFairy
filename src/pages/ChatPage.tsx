@@ -84,6 +84,7 @@ import {
   replayLegacyStreamEvents,
   type LegacyStreamHandlers,
 } from "../services/aiTransport/IpcChatTransport";
+import { mergeRefTopicStates } from "../shared/topicStateSync";
 
 type SendResendOptions = {
   resendAttachments?: ChatAttachment[];
@@ -207,23 +208,16 @@ export default function ChatPage({
   const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
 
   useEffect(() => {
-    // Keep ref in sync without clobbering live background-stream progress.
-    const active = activeTopicId;
-    const next = { ...topicStatesRef.current };
-    for (const [id, state] of Object.entries(topicStates)) {
-      const existing = next[id];
-      if (id === active) {
-        next[id] = state;
-      } else if (!existing || !existing.streaming) {
-        next[id] = state;
-      }
-      // else: background topic is streaming — ref already has fresher messages
+    // Keep ref in sync without clobbering live stream progress.
+    // Stream patches are ref-first (ref leads, React state catches up), so a
+    // streaming topic's ref entry is always the accumulation truth — never
+    // roll it back to committed state, or chunks landed between render and
+    // this effect would be permanently dropped.
+    const merged = mergeRefTopicStates(topicStatesRef.current, topicStates);
+    if (merged !== topicStatesRef.current) {
+      topicStatesRef.current = merged;
     }
-    for (const id of Object.keys(next)) {
-      if (!(id in topicStates)) delete next[id];
-    }
-    topicStatesRef.current = next;
-  }, [topicStates, activeTopicId]);
+  }, [topicStates]);
 
   useEffect(() => {
     topicsRef.current = topics;
@@ -591,19 +585,16 @@ export default function ChatPage({
         result.status === "streaming" &&
         result.requestId
       ) {
-        setTopicStates((prev) => {
-          const state = prev[activeTopicId];
-          if (!state) return prev;
-          return {
-            ...prev,
-            [activeTopicId]: {
-              ...state,
-              streaming: true,
-              requestId: result.requestId!,
-              requestBackend: AGENT_BACKEND_KEY,
-            },
-          };
-        });
+        patchTopicState(
+          activeTopicId,
+          (state) => ({
+            ...state,
+            streaming: true,
+            requestId: result.requestId!,
+            requestBackend: AGENT_BACKEND_KEY,
+          }),
+          { forceReact: true },
+        );
         syncStreamingFlag(activeTopicId, true);
       }
     })();
@@ -611,7 +602,7 @@ export default function ChatPage({
     return () => {
       detachTopicStream(activeTopicId);
     };
-  }, [activeTopicId, syncStreamingFlag]);
+  }, [activeTopicId, syncStreamingFlag, patchTopicState]);
 
   const setActiveInput = useCallback(
     (value: string) => {
@@ -652,16 +643,21 @@ export default function ChatPage({
           : payload;
       setTopicStates((prev) => {
         const state = prev[topicId] ?? emptyTopicState();
-        return {
-          ...prev,
-          [topicId]: {
-            ...state,
-            input: typeof p.text === "string" ? p.text : state.input,
-            attachments: p.attachments?.length
-              ? p.attachments
-              : state.attachments,
-          },
+        const next = {
+          ...state,
+          input: typeof p.text === "string" ? p.text : state.input,
+          attachments: p.attachments?.length
+            ? p.attachments
+            : state.attachments,
         };
+        // Mirror into the ref: prefill can arrive mid-stream, and stream
+        // patches rebuild React state from the ref — a state-only write
+        // would be dropped on the next patch.
+        topicStatesRef.current = {
+          ...topicStatesRef.current,
+          [topicId]: next,
+        };
+        return { ...prev, [topicId]: next };
       });
       if (p.autoSend && p.text?.trim()) {
         setTimeout(() => handleSendRef.current(p.text), 0);
