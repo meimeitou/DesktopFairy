@@ -1,4 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
+import { ChevronDown, CopyIcon } from "../icons/naivePatch";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import {
@@ -120,7 +121,7 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
           isThinking={isThinking}
           clockLive={tickClock}
         />
-        <Icon name="Play" />
+        <Icon icon={ChevronDown} className="thinking-chevron" />
       </Button>
       {showBody && (
         <div className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}>
@@ -131,7 +132,7 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
               className="thinking-copy"
               onClick={handleCopy}
               title="复制"
-              icon={copied ? <Icon name="Check" size={13} /> : <Icon name="File" size={13} />}
+              icon={copied ? <Icon name="Check" size={13} /> : <Icon icon={CopyIcon} size={13} />}
             />
           )}
           <ThinkingMarkdownBody content={bodyContent} isThinking={isThinking} />

@@ -1,4 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
+import { ChevronDown } from "../icons/naivePatch";
 import { memo, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import AgentToolRenderer from "./agentTools/AgentToolRenderer";
@@ -140,7 +141,7 @@ export const ToolCallGroup = memo(
                 className={`msg-tool-group-chevron${expanded ? " open" : ""}`}
                 aria-hidden
               >
-                <Icon name="Play" size={12} />
+                <Icon icon={ChevronDown} size={12} />
               </span>
             )}
           </Button>

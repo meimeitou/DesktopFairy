@@ -12,6 +12,7 @@ import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 import ModelSelector from "../ModelSelector";
 import { Button, Icon, Notification, Tooltip } from "animal-island-ui";
+import { CompactIcon, EraserIcon, SendIcon, StopIcon, UploadIcon } from "../icons/naivePatch";
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
 import ContextUsageMeter from "./ContextUsageMeter";
@@ -382,7 +383,7 @@ function ChatInputBar({
               type="text"
               size="small"
               className="chat-tool-btn"
-              icon={<Icon name="Bookmark" size={16} />}
+              icon={<Icon icon={UploadIcon} size={16} />}
               onClick={handleSelectFiles}
               disabled={composerDisabled}
             />
@@ -409,7 +410,7 @@ function ChatInputBar({
               type="text"
               size="small"
               className="chat-tool-btn"
-              icon={<Icon name="Edit" size={16} />}
+              icon={<Icon icon={EraserIcon} size={16} />}
               onClick={onClearContext}
               disabled={composerDisabled || !hasMessages}
             />
@@ -419,7 +420,7 @@ function ChatInputBar({
               type="text"
               size="small"
               className="chat-tool-btn"
-              icon={<Icon name="Chat" size={16} />}
+              icon={<Icon icon={CompactIcon} size={16} />}
               onClick={onCompact}
               disabled={composerDisabled || !hasMessages}
             />
@@ -473,7 +474,7 @@ function ChatInputBar({
               <Button
                 type="text"
                 className="chat-send-btn chat-stop-btn"
-                icon={<Icon name="Close" size={16} />}
+                icon={<Icon icon={StopIcon} size={16} />}
                 onClick={onStop}
                 aria-label="停止生成"
               />
@@ -483,7 +484,7 @@ function ChatInputBar({
               <Button
                 type="text"
                 className="chat-send-btn"
-                icon={<Icon name="Play" size={16} />}
+                icon={<Icon icon={SendIcon} size={16} />}
                 onClick={onSend}
                 disabled={!canSend}
                 aria-label="发送消息"

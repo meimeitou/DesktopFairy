@@ -57,7 +57,7 @@
 }
 
 .thinking-block.thinking-expanded .thinking-chevron {
-  transform: rotate(90deg);
+  transform: rotate(180deg);
   color: rgba(121, 79, 39, 0.6);
 }
 

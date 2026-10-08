@@ -1,4 +1,5 @@
 import { Button, Icon, Input } from "animal-island-ui";
+import { ChevronDown } from "./icons/naivePatch";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./ModelSelector.css";
 
@@ -170,7 +171,7 @@ export default function ModelSelector({
               {selectedLabel}
             </span>
             <span className="model-selector-caret" aria-hidden="true">
-              <Icon name="Play" size={10} />
+              <Icon icon={ChevronDown} size={10} />
             </span>
           </Button>
           {open && (

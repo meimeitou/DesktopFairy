@@ -1,4 +1,5 @@
 import { Button, Icon, Input } from "animal-island-ui";
+import { ChevronLeft, ChevronRight } from "../icons/naivePatch";
 import { useState } from "react";
 import type { ChatTopic } from "../../shared/chatSession";
 import "./TopicSidebar.css";
@@ -127,7 +128,7 @@ export default function TopicSidebar({
           className="topic-collapse-btn"
           onClick={onToggleCollapse}
           title={collapsed ? "展开侧边栏" : "收起侧边栏"}
-          icon={<Icon name="Play" />}
+          icon={<Icon icon={collapsed ? ChevronRight : ChevronLeft} />}
         />
       </div>
 

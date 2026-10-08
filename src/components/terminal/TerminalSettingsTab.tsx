@@ -1,4 +1,5 @@
 import { Button, Form, FormItem, Icon, Input, Modal, Notification as AnimalNotification, useForm } from "animal-island-ui";
+import { CopyIcon } from "../icons/naivePatch";
 import Select from "../Select";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -696,7 +697,7 @@ export default function TerminalSettingsTab({
                               type="text"
                               size="small"
                               className="ssh-host-icon-btn"
-                              icon={<Icon name="File" size={13} />}
+                              icon={<Icon icon={CopyIcon} size={13} />}
                               onClick={() => handleDuplicateHost(host)}
                               title="复制"
                             />

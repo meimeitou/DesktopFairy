@@ -1,4 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
+import { CopyIcon } from "../icons/naivePatch";
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
@@ -115,7 +116,7 @@ function MessageBubble({
                 {invalidAttachmentPaths.has(a.path) ? (
                   <Icon name="Flame" size={12} />
                 ) : (
-                  <Icon name="Bookmark" size={12} />
+                  <Icon name="File" size={12} />
                 )}{" "}
                 {a.name}
               </span>
@@ -204,7 +205,7 @@ function MessageBubble({
               type="text"
               size="small"
               className="msg-action-btn"
-              icon={copied ? <Icon name="Check" size={13} /> : <Icon name="File" size={13} />}
+              icon={copied ? <Icon name="Check" size={13} /> : <Icon icon={CopyIcon} size={13} />}
               onClick={handleCopy}
               title="复制"
             />

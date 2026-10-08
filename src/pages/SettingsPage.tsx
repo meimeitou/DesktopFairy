@@ -1,4 +1,5 @@
 import { Button, Icon, Switch } from "animal-island-ui";
+import { InfoIcon, KeyboardIcon } from "../components/icons/naivePatch";
 import { useState, useEffect } from "react";
 import ProviderSettingsSection from "../components/settings/ProviderSettingsSection";
 import AgentSettingsSection from "../components/settings/agent/AgentSettingsSection";
@@ -43,8 +44,8 @@ const MENU_PRIMARY: MenuItem[] = [
 
 const MENU_SECONDARY: MenuItem[] = [
   { id: "character", label: "Live2D 配置", icon: <Icon name="Cat" size={16} /> },
-  { id: "shortcut", label: "快捷键", icon: <Icon name="Bell" size={16} /> },
-  { id: "about", label: "关于", icon: <Icon name="Bulb" size={16} /> },
+  { id: "shortcut", label: "快捷键", icon: <Icon icon={KeyboardIcon} size={16} /> },
+  { id: "about", label: "关于", icon: <Icon icon={InfoIcon} size={16} /> },
 ];
 
 const TAB_META: Record<SettingsTab, { title: string; desc: string }> = {

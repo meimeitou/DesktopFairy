@@ -73,6 +73,12 @@ import {
   Tooltip,
 } from "animal-island-ui";
 import {
+  CompactIcon as CompactGlyph,
+  EraserIcon as EraserGlyph,
+  SendIcon as SendGlyph,
+  StopIcon as StopGlyph,
+} from "../icons/naivePatch";
+import {
   attachTopicStream,
   detachTopicStream,
   abortTopicStream,
@@ -97,11 +103,11 @@ function clampDrawerWidth(width: number): number {
 const api = window.electronAPI;
 
 function EraserIcon() {
-  return <Icon name="Edit" size={16} />;
+  return <Icon icon={EraserGlyph} size={16} />;
 }
 
 function CompactIcon() {
-  return <Icon name="Chat" size={16} />;
+  return <Icon icon={CompactGlyph} size={16} />;
 }
 
 function TrashIcon() {
@@ -109,11 +115,11 @@ function TrashIcon() {
 }
 
 function SendIcon() {
-  return <Icon name="Play" size={16} />;
+  return <Icon icon={SendGlyph} size={16} />;
 }
 
 function StopIcon() {
-  return <Icon name="Close" size={14} />;
+  return <Icon icon={StopGlyph} size={14} />;
 }
 
 interface TerminalAgentDrawerProps {

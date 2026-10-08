@@ -1,4 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
+import { CopyIcon } from "../icons/naivePatch";
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
@@ -84,7 +85,7 @@ export default function TerminalSelectionTooltip({
         onClick={handleCopy}
         title="复制到剪贴板"
       >
-        <Icon name="File" size={13} />
+        <Icon icon={CopyIcon} size={13} />
         <span>Copy</span>
       </Button>
     </div>

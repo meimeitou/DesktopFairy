@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { Icon } from "animal-island-ui";
+import { ChevronDown } from "./icons/naivePatch";
 import "./Select.css";
 
 export interface SelectOption {
@@ -163,7 +164,7 @@ export default function Select({
           {selectedLabel}
         </span>
         <span className="df-select-caret" aria-hidden="true">
-          <Icon name="Play" size={10} />
+          <Icon icon={ChevronDown} size={10} />
         </span>
       </button>
       {open && (

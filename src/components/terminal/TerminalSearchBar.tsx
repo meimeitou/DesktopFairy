@@ -1,4 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
+import { ChevronDown, ChevronUp } from "../icons/naivePatch";
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -129,7 +130,7 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
         type="text"
         size="small"
         className="terminal-search-btn"
-        icon={<Icon name="Play" size={12} className="search-nav-icon up" />}
+        icon={<Icon icon={ChevronUp} size={12} />}
         onClick={findPrevious}
         title="上一个匹配 (Shift+Enter)"
         disabled={!query}
@@ -138,7 +139,7 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
         type="text"
         size="small"
         className="terminal-search-btn"
-        icon={<Icon name="Play" size={12} className="search-nav-icon down" />}
+        icon={<Icon icon={ChevronDown} size={12} />}
         onClick={findNext}
         title="下一个匹配 (Enter)"
         disabled={!query}
