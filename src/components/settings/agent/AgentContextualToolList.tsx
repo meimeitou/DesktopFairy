@@ -12,6 +12,8 @@ interface ContextToggle {
   label: string;
   enabledIds: Set<string>;
   forcedOffIds?: Set<string>;
+  /** Shown as ON even when not in enabledIds (e.g. mode-gated at runtime). */
+  forcedOnIds?: Set<string>;
   onToggle: (id: string, enabled: boolean) => void;
 }
 
@@ -68,31 +70,28 @@ export default function AgentContextualToolList({
             {contexts.map((ctx) => {
               const enabled = ctx.enabledIds.has(item.id);
               const forcedOff = ctx.forcedOffIds?.has(item.id);
+              const forcedOn = !enabled && (ctx.forcedOnIds?.has(item.id) ?? false);
+              const shown = enabled || forcedOn;
+              const title = forcedOff
+                ? "此场景下不可用"
+                : forcedOn
+                  ? "默认开启；全自动模式下运行时自动停用"
+                  : shown
+                    ? "禁用"
+                    : "启用";
               return (
                 <div
                   key={ctx.key}
                   className="agent-contextual-tool-toggle-cell"
-                  title={
-                    forcedOff
-                      ? "此场景下不可用"
-                      : enabled
-                        ? "禁用"
-                        : "启用"
-                  }
+                  title={title}
                 >
                   <Switch
-                    checked={enabled}
-                    disabled={forcedOff}
+                    checked={shown}
+                    disabled={forcedOff || forcedOn}
                     onChange={(checked) =>
                       !forcedOff && ctx.onToggle(item.id, checked)
                     }
-                    aria-label={
-                      forcedOff
-                        ? "此场景下不可用"
-                        : enabled
-                          ? "禁用"
-                          : "启用"
-                    }
+                    aria-label={title}
                   />
                 </div>
               );

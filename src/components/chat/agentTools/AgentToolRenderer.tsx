@@ -34,15 +34,21 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function BashToolBody({ msg }: { msg: ChatMsg }) {
-  const command = getToolCommandLine(msg.toolName || "Bash", msg.toolArgs);
+  const command = getToolCommandLine(msg.toolName || "bash", msg.toolArgs);
   const output = parseToolOutput(msg.toolResultPreview);
-  const stdout = extractStdout(output);
+  const outObj =
+    output && typeof output === "object"
+      ? (output as Record<string, unknown>)
+      : null;
+  // merged output first; stdout/stderr kept as old-message fallback
+  const text =
+    typeof output === "string"
+      ? output
+      : typeof outObj?.output === "string"
+        ? outObj.output
+        : extractStdout(output);
   const stderr =
-    output &&
-    typeof output === "object" &&
-    typeof (output as Record<string, unknown>).stderr === "string"
-      ? String((output as Record<string, unknown>).stderr)
-      : "";
+    outObj && typeof outObj.stderr === "string" ? outObj.stderr : "";
 
   return (
     <div className="agent-tool-body">
@@ -52,10 +58,10 @@ function BashToolBody({ msg }: { msg: ChatMsg }) {
       ) : (
         <p className="agent-tool-permission-empty">（无命令参数）</p>
       )}
-      {(stdout || stderr || msg.toolStatus === "running") && (
+      {(text || stderr || msg.toolStatus === "running") && (
         <>
           <div className="agent-tool-section-label">输出</div>
-          <TerminalOutput content={stdout || stderr || "…"} />
+          <TerminalOutput content={text || stderr || "…"} />
         </>
       )}
     </div>
@@ -275,15 +281,26 @@ function AskUserQuestionBody({ msg }: { msg: ChatMsg }) {
   );
 }
 
+const LEGACY_TOOL_ID_MAP: Record<string, string> = {
+  Read: "read",
+  Write: "write",
+  Edit: "edit",
+  MultiEdit: "edit",
+  Bash: "bash",
+  Glob: "glob",
+  Grep: "grep",
+};
+
 function renderToolBody(msg: ChatMsg) {
-  const name = msg.toolName || "";
-  if (name === "Bash") return <BashToolBody msg={msg} />;
+  const raw = msg.toolName || "";
+  const name = LEGACY_TOOL_ID_MAP[raw] || raw;
+  if (name === "bash") return <BashToolBody msg={msg} />;
   if (name === "Terminal") return <TerminalToolBody msg={msg} />;
   if (name === "Skill") return <SkillToolBody msg={msg} />;
   if (name === "Skills") return <SkillsToolBody msg={msg} />;
   if (name === "AskUserQuestion") return <AskUserQuestionBody msg={msg} />;
-  if (name === "Read" || name === "Write" || name === "Edit") {
-    return name === "Read" ? (
+  if (name === "read" || name === "write" || name === "edit") {
+    return name === "read" ? (
       <ReadToolBody msg={msg} />
     ) : (
       <GenericToolBody msg={msg} />

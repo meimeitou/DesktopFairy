@@ -3,11 +3,30 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 
-const MAX_READ_BYTES = 512 * 1024;
-const MAX_LINE_LENGTH = 2000;
-const DEFAULT_READ_LIMIT = 2000;
-const MAX_FILES_LIMIT = 100;
-const MAX_GREP_MATCHES = 100;
+// ---------------------------------------------------------------------------
+// Constants (pi read/grep/glob contract)
+// ---------------------------------------------------------------------------
+const MAX_LINE_LENGTH = 2000;      // read line truncation
+const DEFAULT_READ_LIMIT = 300;    // read default page
+const MAX_READ_LINES = 3000;       // read hard clamp
+const MAX_READ_BYTES = 256 * 1024 * 1024; // in-memory guard only
+
+const GREP_MAX_COLUMN = 512;
+const GREP_CONTEXT_BEFORE = 1;
+const GREP_CONTEXT_AFTER = 3;
+const GREP_FILE_PAGE = 20;         // files per page
+const GREP_PER_FILE_MULTI = 20;    // matches per file (multi-file scope)
+const GREP_PER_FILE_SINGLE = 200;  // matches for single-file scope
+const GREP_TOTAL_CAP = 2000;
+
+const GLOB_TIMEOUT_MS = 5000;
+const GREP_TIMEOUT_MS = 30000;
+const GLOB_DEFAULT_LIMIT = 200;
+const GLOB_MAX_LIMIT = 200;
+
+// ---------------------------------------------------------------------------
+// Path helpers
+// ---------------------------------------------------------------------------
 
 function expandPath(filePath) {
   const raw = String(filePath || '').trim();
@@ -22,540 +41,370 @@ function resolveAgentPath(filePath, baseDir) {
   const root = expandPath(baseDir || os.homedir());
   return path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(root, expanded);
 }
+// ---------------------------------------------------------------------------
 
-// ============================================================================
-// Edit Tool Utilities - Fuzzy matching replacers from opencode
-// ============================================================================
-
-
-// Similarity thresholds for block anchor fallback matching
-const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.0
-const MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD = 0.3
-
-/**
- * Levenshtein distance algorithm implementation
- */
-function levenshtein(a, b) {
-  if (a === '' || b === '') {
-    return Math.max(a.length, b.length)
-  }
-  const matrix = Array.from({ length: a.length + 1 }, (_, i) =>
-    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-  )
-
-  for (let i = 1; i <= a.length; i++) {
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost)
+function parseLineRangeChunk(chunk) {
+  // returns { start, end } inclusive 1-indexed, or throws
+  const s = String(chunk || '').trim();
+  let m;
+  if ((m = s.match(/^(\d+)(?:\.\.|-|–)(\d+)$/))) {
+    const start = Number(m[1]);
+    const end = Number(m[2]);
+    if (start === 0 || end === 0) {
+      throw new Error(`Line selector 0 is invalid; lines are 1-indexed. Use :1.`);
     }
-  }
-  return matrix[a.length][b.length]
-}
-
-const SimpleReplacer = function* (_content, find) {
-  yield find
-}
-
-const LineTrimmedReplacer = function* (content, find) {
-  const originalLines = content.split('\n')
-  const searchLines = find.split('\n')
-
-  if (searchLines[searchLines.length - 1] === '') {
-    searchLines.pop()
-  }
-
-  for (let i = 0; i <= originalLines.length - searchLines.length; i++) {
-    let matches = true
-
-    for (let j = 0; j < searchLines.length; j++) {
-      const originalTrimmed = originalLines[i + j].trim()
-      const searchTrimmed = searchLines[j].trim()
-
-      if (originalTrimmed !== searchTrimmed) {
-        matches = false
-        break
-      }
+    if (end < start) {
+      throw new Error(`Range end ${end} before start ${start} is invalid`);
     }
-
-    if (matches) {
-      let matchStartIndex = 0
-      for (let k = 0; k < i; k++) {
-        matchStartIndex += originalLines[k].length + 1
-      }
-
-      let matchEndIndex = matchStartIndex
-      for (let k = 0; k < searchLines.length; k++) {
-        matchEndIndex += originalLines[i + k].length
-        if (k < searchLines.length - 1) {
-          matchEndIndex += 1
-        }
-      }
-
-      yield content.substring(matchStartIndex, matchEndIndex)
+    return { start, end };
+  }
+  if ((m = s.match(/^(\d+)(?:\.\.|-|–)$/))) {
+    const start = Number(m[1]);
+    if (start === 0) {
+      throw new Error(`Line selector 0 is invalid; lines are 1-indexed. Use :1.`);
     }
+    return { start, end: Infinity }; // open-ended
   }
-}
-
-const BlockAnchorReplacer = function* (content, find) {
-  const originalLines = content.split('\n')
-  const searchLines = find.split('\n')
-
-  if (searchLines.length < 3) {
-    return
-  }
-
-  if (searchLines[searchLines.length - 1] === '') {
-    searchLines.pop()
-  }
-
-  const firstLineSearch = searchLines[0].trim()
-  const lastLineSearch = searchLines[searchLines.length - 1].trim()
-  const searchBlockSize = searchLines.length
-
-  const candidates = []
-  for (let i = 0; i < originalLines.length; i++) {
-    if (originalLines[i].trim() !== firstLineSearch) {
-      continue
+  if ((m = s.match(/^(\d+)\+(\d+)$/))) {
+    const start = Number(m[1]);
+    const count = Number(m[2]);
+    if (start === 0) {
+      throw new Error(`Line selector 0 is invalid; lines are 1-indexed. Use :1.`);
     }
-
-    for (let j = i + 2; j < originalLines.length; j++) {
-      if (originalLines[j].trim() === lastLineSearch) {
-        candidates.push({ startLine: i, endLine: j })
-        break
-      }
+    if (count < 1) {
+      throw new Error(`+count must be >= 1`);
     }
+    return { start, end: start + count - 1 };
   }
-
-  if (candidates.length === 0) {
-    return
-  }
-
-  if (candidates.length === 1) {
-    const { startLine, endLine } = candidates[0]
-    const actualBlockSize = endLine - startLine + 1
-
-    let similarity = 0
-    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2)
-
-    if (linesToCheck > 0) {
-      for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
-        const originalLine = originalLines[startLine + j].trim()
-        const searchLine = searchLines[j].trim()
-        const maxLen = Math.max(originalLine.length, searchLine.length)
-        if (maxLen === 0) {
-          continue
-        }
-        const distance = levenshtein(originalLine, searchLine)
-        similarity += (1 - distance / maxLen) / linesToCheck
-
-        if (similarity >= SINGLE_CANDIDATE_SIMILARITY_THRESHOLD) {
-          break
-        }
-      }
-    } else {
-      similarity = 1.0
+  if ((m = s.match(/^(\d+)$/))) {
+    const start = Number(m[1]);
+    if (start === 0) {
+      throw new Error(`Line selector 0 is invalid; lines are 1-indexed. Use :1.`);
     }
-
-    if (similarity >= SINGLE_CANDIDATE_SIMILARITY_THRESHOLD) {
-      let matchStartIndex = 0
-      for (let k = 0; k < startLine; k++) {
-        matchStartIndex += originalLines[k].length + 1
-      }
-      let matchEndIndex = matchStartIndex
-      for (let k = startLine; k <= endLine; k++) {
-        matchEndIndex += originalLines[k].length
-        if (k < endLine) {
-          matchEndIndex += 1
-        }
-      }
-      yield content.substring(matchStartIndex, matchEndIndex)
-    }
-    return
+    return { start, end: Infinity }; // open-ended from line N (pi :N)
   }
-
-  let bestMatch = null
-  let maxSimilarity = -1
-
-  for (const candidate of candidates) {
-    const { startLine, endLine } = candidate
-    const actualBlockSize = endLine - startLine + 1
-
-    let similarity = 0
-    const linesToCheck = Math.min(searchBlockSize - 2, actualBlockSize - 2)
-
-    if (linesToCheck > 0) {
-      for (let j = 1; j < searchBlockSize - 1 && j < actualBlockSize - 1; j++) {
-        const originalLine = originalLines[startLine + j].trim()
-        const searchLine = searchLines[j].trim()
-        const maxLen = Math.max(originalLine.length, searchLine.length)
-        if (maxLen === 0) {
-          continue
-        }
-        const distance = levenshtein(originalLine, searchLine)
-        similarity += 1 - distance / maxLen
-      }
-      similarity /= linesToCheck
-    } else {
-      similarity = 1.0
-    }
-
-    if (similarity > maxSimilarity) {
-      maxSimilarity = similarity
-      bestMatch = candidate
-    }
-  }
-
-  if (maxSimilarity >= MULTIPLE_CANDIDATES_SIMILARITY_THRESHOLD && bestMatch) {
-    const { startLine, endLine } = bestMatch
-    let matchStartIndex = 0
-    for (let k = 0; k < startLine; k++) {
-      matchStartIndex += originalLines[k].length + 1
-    }
-    let matchEndIndex = matchStartIndex
-    for (let k = startLine; k <= endLine; k++) {
-      matchEndIndex += originalLines[k].length
-      if (k < endLine) {
-        matchEndIndex += 1
-      }
-    }
-    yield content.substring(matchStartIndex, matchEndIndex)
-  }
-}
-
-const WhitespaceNormalizedReplacer = function* (content, find) {
-  const normalizeWhitespace = (text) => text.replace(/\s+/g, ' ').trim()
-  const normalizedFind = normalizeWhitespace(find)
-
-  const lines = content.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (normalizeWhitespace(line) === normalizedFind) {
-      yield line
-    } else {
-      const normalizedLine = normalizeWhitespace(line)
-      if (normalizedLine.includes(normalizedFind)) {
-        const words = find.trim().split(/\s+/)
-        if (words.length > 0) {
-          const pattern = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')
-          try {
-            const regex = new RegExp(pattern)
-            const match = line.match(regex)
-            if (match) {
-              yield match[0]
-            }
-          } catch {
-            // Invalid regex pattern, skip
-          }
-        }
-      }
-    }
-  }
-
-  const findLines = find.split('\n')
-  if (findLines.length > 1) {
-    for (let i = 0; i <= lines.length - findLines.length; i++) {
-      const block = lines.slice(i, i + findLines.length)
-      if (normalizeWhitespace(block.join('\n')) === normalizedFind) {
-        yield block.join('\n')
-      }
-    }
-  }
-}
-
-const IndentationFlexibleReplacer = function* (content, find) {
-  const removeIndentation = (text) => {
-    const lines = text.split('\n')
-    const nonEmptyLines = lines.filter((line) => line.trim().length > 0)
-    if (nonEmptyLines.length === 0) return text
-
-    const minIndent = Math.min(
-      ...nonEmptyLines.map((line) => {
-        const match = line.match(/^(\s*)/)
-        return match ? match[1].length : 0
-      })
-    )
-
-    return lines.map((line) => (line.trim().length === 0 ? line : line.slice(minIndent))).join('\n')
-  }
-
-  const normalizedFind = removeIndentation(find)
-  const contentLines = content.split('\n')
-  const findLines = find.split('\n')
-
-  for (let i = 0; i <= contentLines.length - findLines.length; i++) {
-    const block = contentLines.slice(i, i + findLines.length).join('\n')
-    if (removeIndentation(block) === normalizedFind) {
-      yield block
-    }
-  }
-}
-
-const EscapeNormalizedReplacer = function* (content, find) {
-  const unescapeString = (str) => {
-    return str.replace(/\\(n|t|r|'|"|`|\\|\n|\$)/g, (match, capturedChar) => {
-      switch (capturedChar) {
-        case 'n':
-          return '\n'
-        case 't':
-          return '\t'
-        case 'r':
-          return '\r'
-        case "'":
-          return "'"
-        case '"':
-          return '"'
-        case '`':
-          return '`'
-        case '\\':
-          return '\\'
-        case '\n':
-          return '\n'
-        case '$':
-          return '$'
-        default:
-          return match
-      }
-    })
-  }
-
-  const unescapedFind = unescapeString(find)
-
-  if (content.includes(unescapedFind)) {
-    yield unescapedFind
-  }
-
-  const lines = content.split('\n')
-  const findLines = unescapedFind.split('\n')
-
-  for (let i = 0; i <= lines.length - findLines.length; i++) {
-    const block = lines.slice(i, i + findLines.length).join('\n')
-    const unescapedBlock = unescapeString(block)
-
-    if (unescapedBlock === unescapedFind) {
-      yield block
-    }
-  }
-}
-
-const TrimmedBoundaryReplacer = function* (content, find) {
-  const trimmedFind = find.trim()
-
-  if (trimmedFind === find) {
-    return
-  }
-
-  if (content.includes(trimmedFind)) {
-    yield trimmedFind
-  }
-
-  const lines = content.split('\n')
-  const findLines = find.split('\n')
-
-  for (let i = 0; i <= lines.length - findLines.length; i++) {
-    const block = lines.slice(i, i + findLines.length).join('\n')
-
-    if (block.trim() === trimmedFind) {
-      yield block
-    }
-  }
-}
-
-const ContextAwareReplacer = function* (content, find) {
-  const findLines = find.split('\n')
-  if (findLines.length < 3) {
-    return
-  }
-
-  if (findLines[findLines.length - 1] === '') {
-    findLines.pop()
-  }
-
-  const contentLines = content.split('\n')
-
-  const firstLine = findLines[0].trim()
-  const lastLine = findLines[findLines.length - 1].trim()
-
-  for (let i = 0; i < contentLines.length; i++) {
-    if (contentLines[i].trim() !== firstLine) continue
-
-    for (let j = i + 2; j < contentLines.length; j++) {
-      if (contentLines[j].trim() === lastLine) {
-        const blockLines = contentLines.slice(i, j + 1)
-        const block = blockLines.join('\n')
-
-        if (blockLines.length === findLines.length) {
-          let matchingLines = 0
-          let totalNonEmptyLines = 0
-
-          for (let k = 1; k < blockLines.length - 1; k++) {
-            const blockLine = blockLines[k].trim()
-            const findLine = findLines[k].trim()
-
-            if (blockLine.length > 0 || findLine.length > 0) {
-              totalNonEmptyLines++
-              if (blockLine === findLine) {
-                matchingLines++
-              }
-            }
-          }
-
-          if (totalNonEmptyLines === 0 || matchingLines / totalNonEmptyLines >= 0.5) {
-            yield block
-            break
-          }
-        }
-        break
-      }
-    }
-  }
-}
-
-const MultiOccurrenceReplacer = function* (content, find) {
-  let startIndex = 0
-
-  while (true) {
-    const index = content.indexOf(find, startIndex)
-    if (index === -1) break
-
-    yield find
-    startIndex = index + find.length
-  }
+  return null; // not a line-range chunk
 }
 
 /**
- * All replacers in order of specificity
+ * Split `pathStr` into { filePath, ranges, raw }.
+ * Recognizes trailing selectors: :raw, :N, :N-/ :N.., :A-B/:A..B, :A+C,
+ * :R1,R2,..., and :range:raw / :raw:range.
+ * Literal-path precedence: the whole string (with colon suffix) wins when it
+ * exists as a file. Unrecognized trailing ':...' stays part of the path.
  */
-const ALL_REPLACERS = [
-  SimpleReplacer,
-  LineTrimmedReplacer,
-  BlockAnchorReplacer,
-  WhitespaceNormalizedReplacer,
-  IndentationFlexibleReplacer,
-  EscapeNormalizedReplacer,
-  TrimmedBoundaryReplacer,
-  ContextAwareReplacer,
-  MultiOccurrenceReplacer
-]
+async function splitPathAndSel(pathStr) {
+  const raw = String(pathStr || '').trim();
+  if (!raw) return { filePath: '', ranges: [], raw: '' };
 
-/**
- * Replace oldString with newString in content using fuzzy matching
- */
-function replaceWithFuzzyMatch(
-  content,
-  oldString,
-  newString,
-  replaceAll = false
-) {
-  if (oldString === newString) {
-    throw new Error('old_string and new_string must be different')
-  }
+  // literal-path precedence: full string exists as file
+  const literal = expandPath(raw);
+  try {
+    const st = await fs.stat(literal);
+    if (st.isFile()) return { filePath: literal, ranges: [], raw };
+  } catch { /* not literal */ }
 
-  let notFound = true
+  // split into leading path and trailing selector segments after last '/'
+  // selector segments: the text after the final ':' sequence at the end.
+  const lastColon = raw.lastIndexOf(':');
+  if (lastColon === -1) return { filePath: expandPath(raw), ranges: [], raw };
+  if (lastColon === 0) return { filePath: expandPath(raw), ranges: [], raw };
 
-  for (const replacer of ALL_REPLACERS) {
-    for (const search of replacer(content, oldString)) {
-      const index = content.indexOf(search)
-      if (index === -1) continue
-      notFound = false
-      if (replaceAll) {
-        return content.replaceAll(search, newString)
+  const before = raw.slice(0, lastColon);
+  const after = raw.slice(lastColon + 1);
+
+  // try to parse 'after' (and possibly another preceding ':raw') as selectors
+  let ranges = [];
+  let raw2 = false;
+  const tryParse = (sel) => {
+    const parts = sel.split(',').map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) return false;
+    const parsed = [];
+    for (const p of parts) {
+      if (p === 'raw') { raw2 = true; continue; }
+      const r = parseLineRangeChunk(p);
+      if (!r) return false;
+      parsed.push(r);
+    }
+    if (parsed.length === 0 && !raw2) return false;
+    ranges = parsed;
+    return true;
+  };
+
+  // combined form: 'range:raw' or 'raw:range' — two colon-separated chunks
+  const beforeLastColon = before.lastIndexOf(':');
+  if (beforeLastColon > 0) {
+    const maybePath = before.slice(0, beforeLastColon);
+    const mid = before.slice(beforeLastColon + 1);
+    const combinedRanges = [];
+    let combinedRaw = false;
+    const tryCombined = (sel) => {
+      const parts = sel.split(',').map((p) => p.trim()).filter(Boolean);
+      if (parts.length === 0) return false;
+      for (const p of parts) {
+        if (p === 'raw') { combinedRaw = true; continue; }
+        const r = parseLineRangeChunk(p);
+        if (!r) return false;
+        combinedRanges.push(r);
       }
-      const lastIndex = content.lastIndexOf(search)
-      if (index !== lastIndex) continue
-      return content.substring(0, index) + newString + content.substring(index + search.length)
+      return true;
+    };
+    if (tryCombined(after) && tryCombined(mid)) {
+      return {
+        filePath: expandPath(maybePath),
+        ranges: combinedRanges.length ? mergeRanges(combinedRanges) : [],
+        isRaw: combinedRaw,
+        raw,
+      };
     }
   }
 
-  if (notFound) {
-    throw new Error('old_string not found in content')
+  if (tryParse(after)) {
+    return { filePath: expandPath(before), ranges: mergeRanges(ranges), raw, isRaw: raw2 };
   }
-  throw new Error(
-    'Found multiple matches for old_string. Provide more surrounding lines in old_string to identify the correct match.'
-  )
+
+  // unrecognized ':...' — fall through as part of the path (pi semantics)
+  return { filePath: expandPath(raw), ranges: [], raw };
 }
 
-// ============================================================================
-// Binary File Detection
-// ============================================================================
+function mergeRanges(ranges) {
+  const sorted = ranges
+    .map((r) => ({ start: r.start, end: r.end }))
+    .sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const r of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end + 1) {
+      if (r.end > last.end) last.end = r.end;
+    } else {
+      merged.push({ start: r.start, end: r.end });
+    }
+  }
+  return merged;
+}
 
-// Check if a file is likely binary
+// ---------------------------------------------------------------------------
+// find-pattern parsing (pi path-utils parseFindPattern)
+// ---------------------------------------------------------------------------
+
+const GLOB_CHARS = /[*?[{]/;
+
+/**
+ * Split a find/grep path into { basePath, glob, hasGlob }:
+ * - glob in the first segment => base '.' plus a recursive prefix unless present
+ */
+function parseFindPattern(entry) {
+  const input = String(entry || '').trim();
+  if (!input) return { basePath: '', glob: '', hasGlob: false };
+  const normalized = input.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  const firstGlobIdx = segments.findIndex((s) => GLOB_CHARS.test(s));
+  if (firstGlobIdx === -1) {
+    return { basePath: input, glob: '', hasGlob: false };
+  }
+  if (firstGlobIdx === 0) {
+    let glob = normalized;
+    if (!glob.startsWith('**/')) glob = '**/' + glob;
+    return { basePath: '.', glob, hasGlob: true };
+  }
+  const base = segments.slice(0, firstGlobIdx).join('/');
+  const glob = segments.slice(firstGlobIdx).join('/');
+  return { basePath: base, glob, hasGlob: true };
+}
+
+// ---------------------------------------------------------------------------
+// Output formatting
+// ---------------------------------------------------------------------------
+
+function truncateLine(line, max) {
+  if (line.length <= max) return line;
+  return line.slice(0, max);
+}
+
+/**
+ * Format hashline read output: `[relPath#TAG]` header + `LINE:TEXT` rows.
+ * ranges: merged 1-indexed inclusive ranges actually shown (after context
+ * expansion for bounded single-range non-raw reads).
+ */
+function formatHashlineRead(relPath, tag, lines, ranges, opts = {}) {
+  const out = [];
+  if (tag) out.push(`[${relPath}#${tag}]`);
+  const shown = new Set();
+  for (const r of ranges) {
+    for (let i = r.start; i <= Math.min(r.end, lines.length); i++) shown.add(i);
+  }
+  const sortedNums = [...shown].sort((a, b) => a - b);
+  for (const n of sortedNums) {
+    const text = lines[n - 1] ?? '';
+    const t = opts.isRaw
+      ? text
+      : text.length > MAX_LINE_LENGTH ? text.slice(0, MAX_LINE_LENGTH) : text;
+    out.push(opts.isRaw ? t : `${n}:${t}`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * Format anchored grep output: per-file `[relPath#TAG]` header with
+ * `*LINE:content` matches and ` LINE:content` context rows.
+ * files: [{ relPath, tag, entries: [{ line, text, isMatch }] }]
+ */
+function formatAnchoredGrep(files, { truncated, nextPageSkip } = {}) {
+  if (!files || files.length === 0) {
+    return typeof nextPageSkip === 'number'
+      ? `No more results (use skip=${nextPageSkip - 1 < 0 ? 0 : nextPageSkip - 1} to go back a page)`
+      : 'No matches found';
+  }
+  const out = [];
+  for (const f of files) {
+    if (f.tag) out.push(`[${f.relPath}#${f.tag}]`);
+    else out.push(f.relPath);
+    for (const e of f.entries) {
+      const lineText = e.text.length > GREP_MAX_COLUMN
+        ? e.text.slice(0, GREP_MAX_COLUMN) + '…'
+        : e.text;
+      out.push(`${e.isMatch ? '*' : ' '}${e.line}:${lineText}`);
+    }
+  }
+  if (typeof nextPageSkip === 'number') {
+    out.push('');
+    out.push(`Use skip=${nextPageSkip} for the next page`);
+  }
+  if (truncated) {
+    out.push('');
+    out.push('(Results truncated — narrow the pattern or path)');
+  }
+  return out.join('\n');
+}
+
+/**
+ * Format grouped path tree (pi formatGroupedPaths):
+ * - one '#' per nesting level; single-child chains fold: '# a/b/c/'
+ * - files listed bare under the deepest owning header
+ * - root-level matches listed without header; directories end with '/'
+ */
+function formatGroupedPaths(displayPaths) {
+  if (!displayPaths || displayPaths.length === 0) return '';
+  const roots = [];
+  // Build a trie
+  const trie = { children: new Map(), isFile: false };
+  for (const p of displayPaths) {
+    const parts = p.replace(/\\/g, '/').split('/').filter(Boolean);
+    let node = trie;
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i];
+      if (!node.children.has(seg)) {
+        node.children.set(seg, { children: new Map(), isFile: false });
+      }
+      node = node.children.get(seg);
+      if (i === parts.length - 1) node.isFile = true;
+    }
+  }
+
+  const lines = [];
+
+  const emitDir = (node, prefix, pathSoFar, isRoot) => {
+    const children = [...node.children.entries()]
+      .map(([name, child]) => ({ name, child }))
+      .sort((a, b) => (a.child.isFile === b.child.isFile ? a.name.localeCompare(b.name) : a.child.isFile ? -1 : 1));
+    for (const { name, child } of children) {
+      if (child.isFile && child.children.size === 0) {
+        lines.push(name);
+      } else if (child.isFile && child.children.size > 0) {
+        // path is both a file and has children (unlikely) — print as file
+        lines.push(name);
+      } else {
+        // directory: fold single chains
+        let chain = [name];
+        let cur = child;
+        while (cur.children.size === 1) {
+          const [nextName, next] = [...cur.children.entries()][0];
+          if (next.isFile && next.children.size === 0) break; // next is a file, stop folding
+          chain.push(nextName);
+          cur = next;
+        }
+        const level = isRoot ? '' : '# '.repeat(depthOf(pathSoFar) + 1).trim() + ' ';
+        // '# ' repeated by nesting depth
+        const depth = pathSoFar.length;
+        lines.push(`${'#'.repeat(depth + 1)} ${chain.join('/')}/`);
+        emitDir(cur, prefix, [...pathSoFar, ...chain], false);
+      }
+    }
+  };
+
+  const depthOf = (arr) => arr.length;
+
+  emitDir(trie, '', [], true);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Binary file detection (unchanged)
+// ---------------------------------------------------------------------------
+
 async function isBinaryFile(filePath) {
   try {
-    const buffer = Buffer.alloc(4096)
-    const fd = await fs.open(filePath, 'r')
-    const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0)
-    await fd.close()
+    const buffer = Buffer.alloc(4096);
+    const fd = await fs.open(filePath, 'r');
+    const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0);
+    await fd.close();
 
-    if (bytesRead === 0) return false
+    if (bytesRead === 0) return false;
 
-    const view = buffer.subarray(0, bytesRead)
+    const view = buffer.subarray(0, bytesRead);
 
-    let zeroBytes = 0
-    let evenZeros = 0
-    let oddZeros = 0
-    let nonPrintable = 0
+    let zeroBytes = 0;
+    let evenZeros = 0;
+    let oddZeros = 0;
+    let nonPrintable = 0;
 
     for (let i = 0; i < view.length; i++) {
-      const b = view[i]
+      const b = view[i];
 
       if (b === 0) {
-        zeroBytes++
-        if (i % 2 === 0) evenZeros++
-        else oddZeros++
-        continue
+        zeroBytes++;
+        if (i % 2 === 0) evenZeros++;
+        else oddZeros++;
+        continue;
       }
-
-      // treat common whitespace as printable
-      if (b === 9 || b === 10 || b === 13) continue
-
-      // basic ASCII printable range
-      if (b >= 32 && b <= 126) continue
-
-      // bytes >= 128 are likely part of UTF-8 sequences; count as printable
-      if (b >= 128) continue
-
-      nonPrintable++
+      if (b === 9 || b === 10 || b === 13) continue;
+      if (b >= 32 && b <= 126) continue;
+      if (b >= 128) continue;
+      nonPrintable++;
     }
 
-    // If there are lots of null bytes, it's probably binary unless it looks like UTF-16 text.
     if (zeroBytes > 0) {
-      const evenSlots = Math.ceil(view.length / 2)
-      const oddSlots = Math.floor(view.length / 2)
-      const evenZeroRatio = evenSlots > 0 ? evenZeros / evenSlots : 0
-      const oddZeroRatio = oddSlots > 0 ? oddZeros / oddSlots : 0
-
-      // UTF-16LE/BE tends to have zeros on every other byte.
-      if (evenZeroRatio > 0.7 || oddZeroRatio > 0.7) return false
-
-      if (zeroBytes / view.length > 0.05) return true
+      const evenSlots = Math.ceil(view.length / 2);
+      const oddSlots = Math.floor(view.length / 2);
+      const evenZeroRatio = evenSlots > 0 ? evenZeros / evenSlots : 0;
+      const oddZeroRatio = oddSlots > 0 ? oddZeros / oddSlots : 0;
+      if (evenZeroRatio > 0.7 || oddZeroRatio > 0.7) return false;
+      if (zeroBytes / view.length > 0.05) return true;
     }
 
-    // Heuristic: too many non-printable bytes => binary.
-    return nonPrintable / view.length > 0.3
+    return nonPrintable / view.length > 0.3;
   } catch {
-    return false
+    return false;
   }
 }
 
-// ============================================================================
-// Ripgrep Utilities
-// ============================================================================
+// ---------------------------------------------------------------------------
+// Ripgrep runner (with per-call timeout)
+// ---------------------------------------------------------------------------
 
-
-
-const RG_TIMEOUT_MS = 60_000;
-
-async function runRipgrep(args, { signal } = {}) {
+async function runRipgrep(args, { signal, timeoutMs } = {}) {
   const ripgrepBinaryPath = 'rg';
+  const effectiveTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 60000;
 
   return new Promise((resolve) => {
     const child = spawn(ripgrepBinaryPath, args, {
       cwd: process.cwd(),
-      env: { ...process.env, ...{} },
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
+      env: { ...process.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-    let stdout = ''
+    let stdout = '';
+    let stderr = '';
     let settled = false;
 
     const finish = (result) => {
@@ -572,14 +421,13 @@ async function runRipgrep(args, { signal } = {}) {
 
     const onAbort = () => {
       killChild();
-      finish({ ok: false, stdout: '', exitCode: null, aborted: true });
+      finish({ ok: false, stdout: '', stderr: '', exitCode: null, aborted: true });
     };
 
-    // hard timeout so a runaway scan never hangs the agent
     const timer = setTimeout(() => {
       killChild();
-      finish({ ok: false, stdout: '', exitCode: null, timedOut: true });
-    }, RG_TIMEOUT_MS);
+      finish({ ok: false, stdout: '', stderr: '', exitCode: null, timedOut: true });
+    }, effectiveTimeout);
 
     if (signal) {
       if (signal.aborted) { onAbort(); return; }
@@ -587,75 +435,58 @@ async function runRipgrep(args, { signal } = {}) {
     }
 
     child.stdout?.on('data', (chunk) => {
-      stdout += chunk.toString('utf-8')
-    })
+      stdout += chunk.toString('utf-8');
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString('utf-8');
+    });
 
     child.on('error', () => {
-      finish({ ok: false, stdout: '', exitCode: null })
-    })
+      finish({ ok: false, stdout: '', stderr: '', exitCode: null });
+    });
 
     child.on('close', (code) => {
-      finish({ ok: true, stdout, exitCode: code })
-    })
-  })
-}
-function formatReadOutput(validPath, baseDir, lines, offset, limit) {
-  const selectedLines = lines.slice(offset, offset + limit);
-  const output = [];
-  const relativePath = path.relative(baseDir || os.homedir(), validPath);
-  output.push(`File: ${relativePath}`);
-  if (offset > 0 || offset + limit < lines.length) {
-    output.push(`Lines ${offset + 1} to ${Math.min(offset + limit, lines.length)} of ${lines.length}`);
-  }
-  output.push('');
-  selectedLines.forEach((line, index) => {
-    const lineNumber = offset + index + 1;
-    const truncatedLine = line.length > MAX_LINE_LENGTH ? line.substring(0, MAX_LINE_LENGTH) + '...' : line;
-    output.push(`${lineNumber.toString().padStart(6)}\t${truncatedLine}`);
+      finish({ ok: true, stdout, stderr, exitCode: code });
+    });
   });
-  if (offset + limit < lines.length) {
-    output.push('');
-    output.push(`(${lines.length - (offset + limit)} more lines not shown)`);
-  }
-  return output.join('\n');
 }
 
-function formatGrepMatches(matches, truncated) {
-  const output = [];
-  if (matches.length === 0) {
-    output.push('No matches found');
-  } else {
-    const fileGroups = new Map();
-    matches.forEach((match) => {
-      if (!fileGroups.has(match.file)) fileGroups.set(match.file, []);
-      fileGroups.get(match.file).push(match);
-    });
-    fileGroups.forEach((fileMatches, filePath) => {
-      output.push(`\n${filePath}:`);
-      fileMatches.forEach((match) => {
-        output.push(`  ${match.line}: ${match.content}`);
-      });
-    });
-    if (truncated) {
-      output.push('');
-      output.push(`(Results truncated to ${MAX_GREP_MATCHES} matches. Consider using a more specific pattern or path.)`);
-    }
-  }
-  return output.join('\n');
-}
-
+// Directory exclusions kept: base is often homedir (non-repo), where
+// .gitignore does not cover node_modules etc.
+const RG_EXCLUDE_GLOBS = [
+  '--glob', '!.git/**',
+  '--glob', '!node_modules/**',
+  '--glob', '!dist/**',
+  '--glob', '!build/**',
+  '--glob', '!__pycache__/**',
+];
 
 module.exports = {
   MAX_LINE_LENGTH,
   DEFAULT_READ_LIMIT,
-  MAX_FILES_LIMIT,
-  MAX_GREP_MATCHES,
+  MAX_READ_LINES,
   MAX_READ_BYTES,
+  GREP_MAX_COLUMN,
+  GREP_CONTEXT_BEFORE,
+  GREP_CONTEXT_AFTER,
+  GREP_FILE_PAGE,
+  GREP_PER_FILE_MULTI,
+  GREP_PER_FILE_SINGLE,
+  GREP_TOTAL_CAP,
+  GLOB_TIMEOUT_MS,
+  GREP_TIMEOUT_MS,
+  GLOB_DEFAULT_LIMIT,
+  GLOB_MAX_LIMIT,
+  RG_EXCLUDE_GLOBS,
   expandPath,
   resolveAgentPath,
+  splitPathAndSel,
+  parseLineRangeChunk,
+  mergeRanges,
+  parseFindPattern,
+  formatHashlineRead,
+  formatAnchoredGrep,
+  formatGroupedPaths,
   isBinaryFile,
-  replaceWithFuzzyMatch,
   runRipgrep,
-  formatReadOutput,
-  formatGrepMatches,
 };

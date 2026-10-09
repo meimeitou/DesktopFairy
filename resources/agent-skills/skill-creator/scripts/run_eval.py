@@ -136,7 +136,7 @@ def run_single_query(
                             cb = se.get("content_block", {})
                             if cb.get("type") == "tool_use":
                                 tool_name = cb.get("name", "")
-                                if tool_name in ("Skill", "Read"):
+                                if tool_name in ("Skill", "read"):
                                     pending_tool_name = tool_name
                                     accumulated_json = ""
                                 else:
@@ -165,7 +165,7 @@ def run_single_query(
                             tool_input = content_item.get("input", {})
                             if tool_name == "Skill" and clean_name in tool_input.get("skill", ""):
                                 triggered = True
-                            elif tool_name == "Read" and clean_name in tool_input.get("file_path", ""):
+                            elif tool_name == "read" and clean_name in tool_input.get("path", tool_input.get("file_path", "")):
                                 triggered = True
                             return triggered
 

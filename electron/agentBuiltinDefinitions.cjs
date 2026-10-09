@@ -27,67 +27,41 @@ Use this when:
 
 Don't use this when you only have a topic or question; call WebSearch first.`;
 
-/** Tools shared with Cherry Studio Claude Code builtins */
+/** Core FS tools follow the pi (oh-my-pi) agent contract: lowercase ids,
+ *  pi parameter schemas, pi semantics. */
 const CHERRY_ALIGNED_BUILTIN_TOOLS = [
   {
-    id: 'Bash',
-    name: 'Bash',
-    description: 'Executes shell commands in your environment',
+    id: 'bash',
+    name: 'bash',
+    description: 'Execute a shell command. `timeout` in seconds (default 300, 0 disables, max 3600). `cwd` must exist; a leading `cd <path> &&` is rewritten into cwd. stdout/stderr are merged; non-zero exit returns an error ending \'Command exited with code <n>\'. Output is tail-capped at 50 KiB.',
     category: 'shell',
     defaultPrompt: true,
   },
   {
-    id: 'Edit',
-    name: 'Edit',
-    description: `Performs exact string replacements in files.
-
-- You must use the Read tool at least once before editing
-- Preserve exact indentation from read output (after the line number prefix)
-- Never include line number prefixes in old_string or new_string
-- ALWAYS prefer editing existing files over creating new ones
-- The edit will FAIL if old_string is not found in the file
-- The edit will FAIL if old_string appears multiple times (provide more context or use replace_all)
-- Use replace_all to rename variables or replace all occurrences
-- For several replacements on the same file, pass \`edits\` (applied in order) instead of calling Edit repeatedly`,
+    id: 'edit',
+    name: 'edit',
+    description: 'Applies line-anchored patches to existing files. Input: one or more `[PATH#TAG]` sections; copy the tag from the latest read/grep/edit result. Ops (line numbers refer to the original tagged snapshot): `PUT N.=M:` replace lines N..M with `+TEXT` rows; `PUT N*:` replace the syntactic block starting on line N; `PUT <N:` / `PUT >N:` insert before/after line N; `PUT >$:` append at tail; `CUT N.=M` / `CUT N*` delete (optionally into register `@name`); `PUT ... @name` paste a named register (anonymous register = last CUT); `REM` delete the file; `MV DEST` rename after edits. Body rows are final content: `+TEXT`, `+` alone = blank, literal leading `-`/`+` as `+-`/`++`. Ranges inclusive, ordered, non-overlapping, and must be within lines you have read. Use write to create files.',
     category: 'file',
     defaultPrompt: true,
   },
   {
-    id: 'Glob',
-    name: 'Glob',
-    description: `Fast file pattern matching tool that works with any codebase size.
-
-- Supports glob patterns like "**/*.js" or "src/**/*.ts"
-- Returns matching absolute file paths sorted by modification time (newest first)
-- Patterns without "/" (e.g., "*.txt") match files at ANY depth
-- Results are limited to 100 files`,
+    id: 'glob',
+    name: 'glob',
+    description: 'Find paths by glob. `path` may be a glob, file, directory, or \';\'-separated list (default \'.\'). `limit` default/max 200; results mtime-newest-first in a grouped tree. `hidden`/`gitignore` default true.',
     category: 'search',
     defaultPrompt: false,
   },
   {
-    id: 'Grep',
-    name: 'Grep',
-    description: `Fast content search tool that works with any codebase size.
-
-- Searches file contents using regular expressions
-- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
-- Filter files by pattern with glob (e.g., "*.js", "*.{ts,tsx}")
-- Returns absolute file paths and line numbers with matching content
-- Results are limited to 100 matches
-- Binary files and common directories (node_modules, .git, dist) are excluded`,
+    id: 'grep',
+    name: 'grep',
+    description: 'Regex content search. `path` may be a file, directory, glob-like path, or \';\'-separated list (default \'.\'). `case` default true (case-sensitive); `gitignore` default true; `skip` = file-page offset. Output: `[PATH#TAG]` headers with `*LINE:match` and ` LINE:context` (1 before, 3 after). 20 files per page; 20 matches per file (200 for single-file).',
     category: 'search',
     defaultPrompt: false,
   },
   {
-    id: 'Read',
-    name: 'Read',
-    description: `Reads a file from the local filesystem.
-
-- By default, reads up to 2000 lines starting from the beginning
-- You can optionally specify a line offset and limit for long files
-- Any lines longer than 2000 characters will be truncated
-- Results are returned with line numbers starting at 1
-- Binary files are detected and rejected with an error`,
+    id: 'read',
+    name: 'read',
+    description: 'Read files and directories through one `path` string with optional trailing selectors: `:50` (from line 50), `:50-100` (inclusive range), `:50+20` (20 lines from 50), `:5-16,40-80` (multi-range), `:raw` (no line prefixes), `:50-100:raw`. Directories render a depth-2 tree. Default 300 lines; bounded ranges add 1 leading/3 trailing context lines. Out-of-range returns a hint, not an error. Output carries a `[path#TAG]` header — copy it into edit.',
     category: 'file',
     defaultPrompt: false,
   },
@@ -113,15 +87,9 @@ const CHERRY_ALIGNED_BUILTIN_TOOLS = [
     defaultPrompt: true,
   },
   {
-    id: 'Write',
-    name: 'Write',
-    description: `Writes a file to the local filesystem.
-
-- This tool will overwrite the existing file if one exists at the path
-- You MUST use the Read tool first to understand what you're overwriting
-- ALWAYS prefer using the Edit tool for existing files
-- NEVER proactively create documentation files unless explicitly requested
-- Parent directories will be created automatically if they don't exist`,
+    id: 'write',
+    name: 'write',
+    description: 'Create or overwrite a file with full replacement content. Pasted `[path#TAG]` headers and `LINE:` prefixes are stripped automatically. Returns a fresh `[path#TAG]` header for follow-up edit.',
     category: 'file',
     defaultPrompt: true,
   },
@@ -188,150 +156,90 @@ const TOOL_LABELS = Object.fromEntries(CLAUDE_CODE_BUILTIN_TOOLS.map((t) => [t.i
 
 function getOpenAiToolParameters(toolId) {
   switch (toolId) {
-    case 'Read':
+    case 'read':
       return {
         type: 'object',
         properties: {
-          file_path: { type: 'string', description: 'The path to the file to read' },
-          offset: {
-            type: 'number',
-            description: 'The line number to start reading from (1-based)',
-          },
-          limit: {
-            type: 'number',
-            description: 'The number of lines to read (defaults to 2000)',
-          },
-        },
-        required: ['file_path'],
-      };
-    case 'Write':
-      return {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'The path to the file to write' },
-          content: { type: 'string', description: 'The content to write to the file' },
-        },
-        required: ['file_path', 'content'],
-      };
-    case 'Edit':
-      return {
-        type: 'object',
-        properties: {
-          file_path: { type: 'string', description: 'The path to the file to modify' },
-          old_string: { type: 'string', description: 'The text to replace (single edit)' },
-          new_string: {
+          path: {
             type: 'string',
-            description: 'The text to replace it with (single edit)',
-          },
-          replace_all: {
-            type: 'boolean',
-            description: 'Replace all occurrences of old_string (default false)',
-          },
-          edits: {
-            type: 'array',
-            description: 'Multiple replacements on this file, applied in order',
-            items: {
-              type: 'object',
-              properties: {
-                old_string: { type: 'string' },
-                new_string: { type: 'string' },
-                replace_all: { type: 'boolean' },
-              },
-              required: ['old_string', 'new_string'],
-            },
+            description:
+              'File or directory path, optionally with trailing line selectors: :50, :50-100, :50+20, :5-16,40-80, :raw, :50-100:raw',
           },
         },
-        required: ['file_path'],
+        required: ['path'],
       };
-    case 'Bash':
+    case 'write':
+      return {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          content: { type: 'string' },
+        },
+        required: ['path', 'content'],
+      };
+    case 'edit':
+      return {
+        type: 'object',
+        properties: {
+          input: {
+            type: 'string',
+            description: 'One or more [PATH#TAG] hashline patch sections',
+          },
+        },
+        required: ['input'],
+      };
+    case 'bash':
       return {
         type: 'object',
         properties: {
           command: { type: 'string' },
           timeout: {
             type: 'number',
-            description:
-              'Optional max runtime. Values < 1000 are treated as seconds; larger values as milliseconds. Default 120000 (2 min), max 600000 (10 min).',
+            description: 'Seconds. Default 300; 0 disables; clamped 1..3600',
           },
-          description: { type: 'string' },
+          cwd: {
+            type: 'string',
+            description:
+              'Working directory (must exist). Leading \'cd <path> &&\' is rewritten into cwd',
+          },
+          env: {
+            type: 'object',
+            additionalProperties: { type: 'string' },
+          },
         },
         required: ['command'],
       };
-    case 'Glob':
+    case 'grep':
       return {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'The glob pattern to match files against' },
+          pattern: { type: 'string' },
           path: {
             type: 'string',
             description:
-              'The directory to search in (absolute path). Defaults to the home directory',
+              'File, directory, glob-like path, or \';\'-separated list. Default \'.\'',
+          },
+          case: { type: 'boolean', description: 'Case-sensitive (default true)' },
+          gitignore: { type: 'boolean', description: 'Respect .gitignore (default true)' },
+          skip: {
+            type: 'number',
+            description: 'File-page offset for multi-file results',
           },
         },
         required: ['pattern'],
       };
-    case 'Grep':
+    case 'glob':
       return {
         type: 'object',
         properties: {
-          pattern: { type: 'string', description: 'The regex pattern to search for' },
-          path: { type: 'string', description: 'Directory or file to search in' },
-          glob: {
+          path: {
             type: 'string',
-            description: 'File pattern to include (e.g. "*.js", "*.{ts,tsx}")',
+            description: 'Glob, file, directory, or \';\'-separated list. Default \'.\'',
           },
-          output_mode: { type: 'string', enum: ['content', 'files_with_matches', 'count'] },
-          '-i': { type: 'boolean', description: 'Case insensitive search' },
-          head_limit: { type: 'number' },
+          hidden: { type: 'boolean' },
+          gitignore: { type: 'boolean' },
+          limit: { type: 'number', description: 'Max paths (default/max 200)' },
         },
-        required: ['pattern'],
-      };
-    case 'WebSearch':
-      return {
-        type: 'object',
-        properties: {
-          query: {
-            type: 'string',
-            description:
-              'Self-contained web search query. MUST NOT use pronouns or context-dependent references.',
-          },
-          allowed_domains: { type: 'array', items: { type: 'string' } },
-          blocked_domains: { type: 'array', items: { type: 'string' } },
-        },
-        required: ['query'],
-      };
-    case 'WebFetch':
-      return {
-        type: 'object',
-        properties: {
-          url: { type: 'string', description: 'A single URL to fetch (legacy)' },
-          urls: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'One or more absolute URLs to fetch (preferred)',
-          },
-          prompt: { type: 'string', description: 'Optional focus hint for the fetched content' },
-        },
-        required: [],
-      };
-    case 'TodoWrite':
-      return {
-        type: 'object',
-        properties: {
-          todos: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                content: { type: 'string' },
-                status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
-                activeForm: { type: 'string' },
-              },
-              required: ['content', 'status', 'activeForm'],
-            },
-          },
-        },
-        required: ['todos'],
       };
     case 'Skills':
       return {

@@ -224,7 +224,7 @@ interface LlmProvider {
 |------|---------|------|
 | `normal` | confirm | 默认，写操作需确认 |
 | `plan` | confirm | 只读工具，输出执行方案 |
-| `auto-edit` | auto | 文件编辑免确认，Bash/网络仍需确认 |
+| `auto-edit` | auto | 文件编辑免确认，bash/网络仍需确认 |
 | `full-auto` | bypass | 全部工具免确认 |
 
 模式切换通过聊天输入栏的模式选择器按钮（`ChatModeSelector`），不支持快捷指令切换。
@@ -261,13 +261,15 @@ interface LlmProvider {
 
 | 工具 | 类别 | 审批 | 说明 |
 |------|------|------|------|
-| Read / Glob / Grep | 搜索/文件 | 自动 | 只读 |
-| Write / Edit | 文件 | 确认 | 写操作；多次替换用 Edit 的 `edits` |
-| Bash | Shell | 确认 | 命令执行 |
+| read / glob / grep | 搜索/文件 | 自动 | 只读；契约对齐 pi（oh-my-pi）：read 支持尾部行选择器（`:50`、`:50-100`、`:raw` 等）与 `[path#TAG]` 快照头；grep 带 `*LINE:match` 锚定输出、`skip` 文件页翻页；glob 支持 `;` 多路径与 `limit` |
+| write / edit | 文件 | 确认 | write 返回新 `[path#TAG]` 头并自动剥离粘贴的行号前缀；edit 为 hashline 行锚补丁语言（`PUT/CUT/REM/MV` + 寄存器），一次调用可多 section |
+| bash | Shell | 确认 | 命令执行；timeout 秒语义（默认 300、0 禁用、上限 3600），`cwd` 参数与 `cd X &&` 重写，stdout/stderr 合并、50 KiB 尾窗截断 |
 | WebFetch / WebSearch | 网络 | 确认 | URL 抓取 / 搜索；绑定 MCP Fetch 时隐藏 WebFetch |
 | TodoWrite | 编排 | 自动 | 任务列表 |
 | Skills | 上下文 | load 自动；install/remove 确认 | 技能加载与管理 |
 | UpdateProfile | 上下文 | 自动 | 更新 SOUL.md / USER.md |
+
+核心 FS 六件套（read/write/edit/bash/glob/grep）完整移植 pi 契约：小写工具名 + pi 参数 schema + `[path#TAG]` 快照锚点（`electron/agentSnapshotStore.cjs`）+ hashline 补丁引擎（`electron/hashlinePatch.cjs`）。旧的大写工具 id（Read/Write/Edit/MultiEdit/Bash/Glob/Grep）通过 `LEGACY_TOOL_ID_MAP` 映射兼容已保存的工具开关与旧会话回放。
 
 **技能系统**（`electron/agentSkillService.cjs`）：
 
@@ -434,9 +436,11 @@ electron/
   agentService.cjs          # buildAgentSystemPrompt、legacy agent:run
   agentTools.cjs            # 工具执行路由 + 审批
   agentBuiltinCatalog.cjs   # 内置工具定义、参数 schema、审批模式
-  agentBuiltinExecutors.cjs # 内置工具执行器（Read/Write/Bash/WebSearch/UpdateProfile…）
-  agentBuiltinFsUtils.cjs   # Read/Edit/Glob/Grep 文件工具实现
-  bashTimeout.cjs           # Bash timeout 解析（秒/ms 启发式）
+  agentBuiltinExecutors.cjs # 内置工具执行器（read/write/edit/bash/glob/grep/WebSearch/UpdateProfile…）
+  agentBuiltinFsUtils.cjs   # read/grep/glob 路径选择器解析与格式化
+  agentSnapshotStore.cjs    # [path#TAG] 文件快照存储（hashline 编辑锚点）
+  hashlinePatch.cjs         # edit 工具的 hashline 行锚补丁解析与应用
+  bashTimeout.cjs           # bash timeout 解析（秒语义：默认 300、0 禁用、clamp 1..3600）
   mcpToolArgs.cjs           # MCP fetch max_length 注入
   mcpResultFormat.cjs       # MCP 结果截断
   agentSkillService.cjs     # 技能扫描、Skills 工具、skills.sh 市场

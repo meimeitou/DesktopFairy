@@ -51,8 +51,8 @@ function buildToolListPrompt(enabledToolNames, context) {
   let names = enabledToolNames;
   if (!Array.isArray(names) || names.length === 0) {
     names = (context === 'terminal'
-      ? 'Read/Write/Edit/Terminal/Glob/Grep/WebSearch/WebFetch/Skills'
-      : 'Read/Write/Edit/Bash/Glob/Grep/WebSearch/WebFetch/Skills'
+      ? 'read/write/edit/Terminal/glob/grep/WebSearch/WebFetch/Skills'
+      : 'read/write/edit/bash/glob/grep/WebSearch/WebFetch/Skills'
     ).split('/');
   }
   const visible = names.filter((n) => !TOOLS_WITH_OWN_SECTION.has(n));
@@ -101,7 +101,7 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
     parts.push(
       '## 向用户确认（AskUserQuestion）\n\n' +
         '**何时调用**：缺少关键偏好/约束且无法从文件、设置或对话推断；用户指令存在多种合理理解且会显著改变方案；执行前被阻塞、必须选定方向才能继续。\n\n' +
-        '**何时不要调用**：Read/Grep/设置/历史能自行确定；仅为礼貌性确认（「可以吗？」）——直接执行或说明假设；答案不会改变下一步动作；每步都问——每轮最多 1–2 个阻塞性问题。\n\n' +
+        '**何时不要调用**：read/grep/设置/历史能自行确定；仅为礼貌性确认（「可以吗？」）——直接执行或说明假设；答案不会改变下一步动作；每步都问——每轮最多 1–2 个阻塞性问题。\n\n' +
         '**参数**：`questions` 1–4 题；每题 `question` + `options`（0–4 个，可为 `{label, description?}` 或字符串）。界面始终有「其他」供自由输入，不要在 options 里重复。需要多选时设 `multiSelect: true`。'
     );
   }

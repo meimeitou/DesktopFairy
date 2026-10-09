@@ -83,7 +83,7 @@ export const DEFAULT_SOUL = `# Soul
 - 多步任务先简述计划，等用户确认后再动手。
 - 写之前先读——不要假设文件存在或内容如你所想。
 - 工具调用失败时，先诊断错误、换一种方式重试，再向用户报告。
-- 缺少信息时先用 Read/Grep 等工具查；只有工具答不上来、且会阻塞下一步时，再用 AskUserQuestion 向用户确认（全自动模式不可用）。
+- 缺少信息时先用 read/grep 等工具查；只有工具答不上来、且会阻塞下一步时，再用 AskUserQuestion 向用户确认（全自动模式不可用）。
 - 多步修改完成后，验证结果（重读文件、跑测试、看输出）。`;
 
 export const DEFAULT_USER_TEMPLATE = `# 用户档案
@@ -121,12 +121,12 @@ export const BUILTIN_AGENT_TOOLS = getBuiltinToolCatalog("confirm");
 export const LOCAL_DEFAULT_DISABLED_TOOL_IDS = ["Terminal"];
 
 export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
-  "Bash",
-  "Read",
-  "Write",
-  "Edit",
-  "Glob",
-  "Grep",
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "glob",
+  "grep",
 ];
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
@@ -268,9 +268,9 @@ export function getEnabledAgentBuiltinTools(
   );
   if (card.readOnly) {
     for (const id of [
-      "Write",
-      "Edit",
-      "Bash",
+      "write",
+      "edit",
+      "bash",
       "WebFetch",
       "WebSearch",
     ]) {
@@ -290,7 +290,7 @@ export function getEnabledAgentBuiltinTools(
   }
 
   if (context === "terminal") {
-    disabled.add("Bash");
+    disabled.add("bash");
     // Terminal must remain available in the terminal drawer, even in plan mode,
     // unless the user explicitly disabled it or the legacy flag is false.
     if (

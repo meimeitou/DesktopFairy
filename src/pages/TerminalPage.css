@@ -1464,10 +1464,23 @@ button.terminal-context-menu-item {
    右侧会空出一截。拉满弹窗宽度。 */
 .ssh-form-modal [class*="animal-body"] {
   align-items: stretch;
+  padding-right: 35px;
 }
 
 .ssh-form-modal form {
   width: 100%;
+}
+
+/* 滚动条贴弹窗最右缘：库 Modal 的滚动容器是 animal-body（在 modalClipped
+   的 35px 右 padding 内），窗口矮时滚动条会紧贴输入框。把 clipped 的右侧
+   padding 挪给 header/body 自身，滚动条就落在弹窗卡片右边缘，
+   内容与滚动条之间保持原有间距。 */
+.ssh-form-modal [class*="animal-modalClipped"] {
+  padding-right: 0;
+}
+
+.ssh-form-modal [class*="animal-header"] {
+  padding-right: 35px;
 }
 
 .ssh-form-group {

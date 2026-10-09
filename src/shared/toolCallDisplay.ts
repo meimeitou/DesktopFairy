@@ -1,11 +1,10 @@
 const TOOL_LABELS: Record<string, string> = {
-  Bash: "执行命令",
-  Read: "读取文件",
-  Write: "写入文件",
-  Edit: "编辑文件",
-  MultiEdit: "批量编辑",
-  Glob: "查找文件",
-  Grep: "搜索内容",
+  bash: "执行命令",
+  read: "读取文件",
+  write: "写入文件",
+  edit: "编辑文件",
+  glob: "查找文件",
+  grep: "搜索内容",
   WebFetch: "获取网页",
   WebSearch: "网页搜索",
   Task: "子任务",
@@ -17,13 +16,12 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const TOOL_ICONS: Record<string, string> = {
-  Bash: "⌘",
-  Read: "📄",
-  Write: "✎",
-  Edit: "✎",
-  MultiEdit: "✎",
-  Glob: "🔍",
-  Grep: "🔎",
+  bash: "⌘",
+  read: "📄",
+  write: "✎",
+  edit: "✎",
+  glob: "🔍",
+  grep: "🔎",
   WebFetch: "🌐",
   WebSearch: "🌐",
   Task: "🤖",
@@ -36,13 +34,26 @@ const TOOL_ICONS: Record<string, string> = {
 
 type ToolCategory = "shell" | "file" | "search" | "web" | "other";
 
+const LEGACY_TOOL_ID_MAP: Record<string, string> = {
+  Read: "read",
+  Write: "write",
+  Edit: "edit",
+  MultiEdit: "edit",
+  Bash: "bash",
+  Glob: "glob",
+  Grep: "grep",
+};
+
+function normalizeToolName(name: string): string {
+  return LEGACY_TOOL_ID_MAP[name] || name;
+}
+
 function getToolCategory(name: string): ToolCategory {
-  if (name === "Bash") return "shell";
-  if (["Read", "Write", "Edit", "MultiEdit"].includes(name)) {
-    return "file";
-  }
-  if (["Glob", "Grep"].includes(name)) return "search";
-  if (["WebFetch", "WebSearch"].includes(name)) return "web";
+  const n = normalizeToolName(name);
+  if (n === "bash") return "shell";
+  if (["read", "write", "edit"].includes(n)) return "file";
+  if (["glob", "grep"].includes(n)) return "search";
+  if (["WebFetch", "WebSearch"].includes(n)) return "web";
   return "other";
 }
 
@@ -110,6 +121,8 @@ export function parseToolArguments(raw?: string): {
     "query",
     "description",
     "prompt",
+    "input",
+    "cwd",
     "skill",
     "action",
     "identifier",
@@ -124,6 +137,8 @@ export function parseToolArguments(raw?: string): {
 export function getToolDisplayName(toolName: string): string {
   const raw = toolName?.trim() || "工具";
   if (TOOL_LABELS[raw]) return TOOL_LABELS[raw];
+  const normalized = normalizeToolName(raw);
+  if (TOOL_LABELS[normalized]) return TOOL_LABELS[normalized];
 
   if (raw.startsWith("mcp__")) {
     const body = raw.slice(5);
@@ -166,8 +181,8 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
   const query = pickString(args, ["query"]);
   const description = pickString(args, ["description", "prompt"]);
 
-  switch (toolName) {
-    case "Bash":
+  switch (normalizeToolName(toolName)) {
+    case "bash":
       return command
         ? truncate(command, 160)
         : description
@@ -175,14 +190,20 @@ export function formatToolSummary(toolName: string, argsJson?: string): string {
           : raw && raw !== "{}"
             ? truncate(raw, 160)
             : "";
-    case "Read":
-    case "Write":
-    case "Edit":
-    case "MultiEdit":
+    case "edit": {
+      const input = pickString(args, ["input"]);
+      if (input) {
+        const firstSection = input.split("\n").find((l) => l.trim().startsWith("["));
+        return truncate(firstSection || input, 160);
+      }
       return path ? truncate(path, 160) : "";
-    case "Glob":
-      return pattern ? truncate(pattern, 120) : path ? truncate(path, 120) : "";
-    case "Grep": {
+    }
+    case "read":
+    case "write":
+      return path ? truncate(path, 160) : "";
+    case "glob":
+      return path ? truncate(path, 120) : "";
+    case "grep": {
       const grepPath = path;
       if (pattern && grepPath) return truncate(`${pattern} · ${basename(grepPath)}`, 160);
       return pattern ? truncate(pattern, 120) : grepPath ? truncate(grepPath, 160) : "";

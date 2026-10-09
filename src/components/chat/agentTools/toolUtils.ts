@@ -57,6 +57,8 @@ export function extractStdout(output: unknown): string {
     return typeof output === "string" ? output : "";
   }
   const obj = output as Record<string, unknown>;
+  // merged `output` first (pi-contract bash); stdout/content for older messages
+  if (typeof obj.output === "string") return obj.output;
   if (typeof obj.stdout === "string") return obj.stdout;
   if (typeof obj.content === "string") return obj.content;
   if (typeof obj.error === "string") return obj.error;

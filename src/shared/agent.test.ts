@@ -71,7 +71,7 @@ describe('agent', () => {
       expect(ids).not.toContain('Task')
       expect(ids).not.toContain('MultiEdit')
       expect(ids).not.toContain('Skill')
-      expect(ids).toContain('Edit')
+      expect(ids).toContain('edit')
       expect(ids).toContain('Skills')
     })
 
@@ -88,9 +88,9 @@ describe('agent', () => {
       const agent = makeAgent({ chatMode: 'plan' })
       const tools = getEnabledAgentBuiltinTools(agent)
       const ids = tools.map((t) => t.id)
-      expect(ids).not.toContain('Write')
-      expect(ids).not.toContain('Edit')
-      expect(ids).not.toContain('Bash')
+      expect(ids).not.toContain('write')
+      expect(ids).not.toContain('edit')
+      expect(ids).not.toContain('bash')
       expect(ids).not.toContain('WebFetch')
       expect(ids).not.toContain('WebSearch')
     })
@@ -99,7 +99,7 @@ describe('agent', () => {
       const agent = makeAgent({ chatMode: 'full-auto' })
       const tools = getEnabledAgentBuiltinTools(agent)
       const ids = tools.map((t) => t.id)
-      expect(ids).toContain('Bash')
+      expect(ids).toContain('bash')
     })
 
     it('should exclude AskUserQuestion in full-auto mode', () => {
@@ -120,11 +120,11 @@ describe('agent', () => {
     it('should filter out explicitly disabled tools', () => {
       const agent = makeAgent({
         chatMode: 'full-auto',
-        disabledToolIds: ['Bash'],
+        disabledToolIds: ['bash'],
       })
       const tools = getEnabledAgentBuiltinTools(agent)
       const ids = tools.map((t) => t.id)
-      expect(ids).not.toContain('Bash')
+      expect(ids).not.toContain('bash')
     })
 
     it('should disable Terminal in local context', () => {
@@ -139,12 +139,12 @@ describe('agent', () => {
       const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
       const ids = tools.map((t) => t.id)
       expect(ids).toContain('Terminal')
-      expect(ids).not.toContain('Bash')
-      expect(ids).not.toContain('Read')
-      expect(ids).not.toContain('Write')
-      expect(ids).not.toContain('Edit')
-      expect(ids).not.toContain('Glob')
-      expect(ids).not.toContain('Grep')
+      expect(ids).not.toContain('bash')
+      expect(ids).not.toContain('read')
+      expect(ids).not.toContain('write')
+      expect(ids).not.toContain('edit')
+      expect(ids).not.toContain('glob')
+      expect(ids).not.toContain('grep')
     })
 
     it('should keep Terminal available in terminal context even in plan mode', () => {
@@ -208,11 +208,12 @@ describe('agent', () => {
       expect(result.chatMode).toBe('normal')
     })
 
-    it('should strip unknown legacy tool ids such as Task and MultiEdit', () => {
+    it('should strip unknown legacy tool ids and map old capitalized ids', () => {
       const result = normalizeAgentConfig({
         disabledToolIds: ['Task', 'MultiEdit', 'Terminal'],
       })
-      expect(result.disabledToolIds).toEqual(['Terminal'])
+      // MultiEdit is legacy-mapped to edit (kept); Task is unknown (stripped)
+      expect(result.disabledToolIds).toEqual(['edit', 'Terminal'])
     })
 
     it('should keep AskUserQuestion enabled even if present in disabledToolIds', () => {

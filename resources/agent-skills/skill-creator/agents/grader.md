@@ -134,9 +134,9 @@ Write a JSON file with this structure:
   },
   "execution_metrics": {
     "tool_calls": {
-      "Read": 5,
-      "Write": 2,
-      "Bash": 8
+      "read": 5,
+      "write": 2,
+      "bash": 8
     },
     "total_tool_calls": 15,
     "total_steps": 6,

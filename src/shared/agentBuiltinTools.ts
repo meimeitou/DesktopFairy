@@ -26,48 +26,59 @@ function builtinTool(
   };
 }
 
-/** Cherry-aligned Claude Code builtins (excludes DF-only tools) */
+/** Core FS builtins follow the pi (oh-my-pi) contract: lowercase ids. */
 const CHERRY_ALIGNED_TOOL_IDS = new Set([
-  "Bash",
-  "Edit",
-  "Glob",
-  "Grep",
-  "Read",
+  "bash",
+  "edit",
+  "glob",
+  "grep",
+  "read",
   "TodoWrite",
   "WebFetch",
   "WebSearch",
-  "Write",
+  "write",
 ]);
+
+/** Legacy (capitalized) tool ids → pi-contract ids. Mirrors electron/agentBuiltinCatalog.cjs. */
+export const LEGACY_TOOL_ID_MAP: Record<string, string> = {
+  Read: "read",
+  Write: "write",
+  Edit: "edit",
+  MultiEdit: "edit",
+  Bash: "bash",
+  Glob: "glob",
+  Grep: "grep",
+};
 
 /** @see cherry-studio/src/shared/ai/claudecode/builtinTools.ts + electron/agentBuiltinDefinitions.cjs */
 export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
   builtinTool(
-    "Bash",
-    "Executes shell commands in your environment",
+    "bash",
+    "Execute a shell command. `timeout` in seconds (default 300, 0 disables, max 3600). `cwd` must exist; a leading `cd <path> &&` is rewritten into cwd. stdout/stderr are merged; non-zero exit returns an error ending 'Command exited with code <n>'. Output is tail-capped at 50 KiB.",
     "shell",
     true,
   ),
   builtinTool(
-    "Edit",
-    "Performs exact string replacements in files (use Read first; pass `edits` for multiple replacements on one file)",
+    "edit",
+    "Applies line-anchored patches to existing files. Input: one or more `[PATH#TAG]` sections; copy the tag from the latest read/grep/edit result. Ops (line numbers refer to the original tagged snapshot): `PUT N.=M:` replace lines N..M with `+TEXT` rows; `PUT N*:` replace the syntactic block starting on line N; `PUT <N:` / `PUT >N:` insert before/after line N; `PUT >$:` append at tail; `CUT N.=M` / `CUT N*` delete (optionally into register `@name`); `PUT ... @name` paste a named register (anonymous register = last CUT); `REM` delete the file; `MV DEST` rename after edits. Body rows are final content: `+TEXT`, `+` alone = blank, literal leading `-`/`+` as `+-`/`++`. Ranges inclusive, ordered, non-overlapping, and must be within lines you have read. Use write to create files.",
     "file",
     true,
   ),
   builtinTool(
-    "Glob",
-    "Finds files by glob pattern; returns absolute paths sorted by modification time (max 100)",
+    "glob",
+    "Find paths by glob. `path` may be a glob, file, directory, or ';'-separated list (default '.'). `limit` default/max 200; results mtime-newest-first in a grouped tree. `hidden`/`gitignore` default true.",
     "search",
     false,
   ),
   builtinTool(
-    "Grep",
-    "Searches file contents with regex; returns paths, line numbers, and matches (max 100)",
+    "grep",
+    "Regex content search. `path` may be a file, directory, glob-like path, or ';'-separated list (default '.'). `case` default true (case-sensitive); `gitignore` default true; `skip` = file-page offset. Output: `[PATH#TAG]` headers with `*LINE:match` and ` LINE:context` (1 before, 3 after). 20 files per page; 20 matches per file (200 for single-file).",
     "search",
     false,
   ),
   builtinTool(
-    "Read",
-    "Reads file contents with line numbers (default 2000 lines; binary files rejected)",
+    "read",
+    "Read files and directories through one `path` string with optional trailing selectors: `:50` (from line 50), `:50-100` (inclusive range), `:50+20` (20 lines from 50), `:5-16,40-80` (multi-range), `:raw` (no line prefixes), `:50-100:raw`. Directories render a depth-2 tree. Default 300 lines; bounded ranges add 1 leading/3 trailing context lines. Out-of-range returns a hint, not an error. Output carries a `[path#TAG]` header — copy it into edit.",
     "file",
     false,
   ),
@@ -90,8 +101,8 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     true,
   ),
   builtinTool(
-    "Write",
-    "Creates or overwrites files (prefer Edit for existing files; use Read first)",
+    "write",
+    "Create or overwrite a file with full replacement content. Pasted `[path#TAG]` headers and `LINE:` prefixes are stripped automatically. Returns a fresh `[path#TAG]` header for follow-up edit.",
     "file",
     true,
   ),
@@ -128,9 +139,9 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
 ];
 
 const DEFAULT_SAFE_TOOLS = new Set([
-  "Read",
-  "Glob",
-  "Grep",
+  "read",
+  "glob",
+  "grep",
   "TodoWrite",
   "UpdateProfile",
   "AskUserQuestion",
@@ -174,11 +185,20 @@ export function normalizeDisabledToolIds(
   value: unknown,
   fallback: string[] = [],
 ): string[] {
-  if (!Array.isArray(value)) return stripAlwaysEnabledToolIds([...fallback]);
   const valid = new Set(CLAUDE_CODE_BUILTIN_TOOLS.map((t) => t.id));
-  return stripAlwaysEnabledToolIds(
-    value.filter((id): id is string => typeof id === "string" && valid.has(id)),
-  );
+  const normalize = (id: string): string => LEGACY_TOOL_ID_MAP[id] || id;
+  if (!Array.isArray(value)) return stripAlwaysEnabledToolIds([...fallback]);
+  const seen = new Set<string>();
+  const mapped: string[] = [];
+  for (const id of value) {
+    if (typeof id !== "string") continue;
+    const n = normalize(id);
+    if (valid.has(n) && !seen.has(n)) {
+      seen.add(n);
+      mapped.push(n);
+    }
+  }
+  return stripAlwaysEnabledToolIds(mapped);
 }
 
 export function isCherryAlignedBuiltinTool(toolId: string): boolean {
@@ -198,87 +218,90 @@ export function buildOpenAiToolDefinitions(tools: AgentBuiltinTool[]) {
 
 function getOpenAiToolParameters(toolId: string) {
   switch (toolId) {
-    case "Read":
+    case "read":
       return {
         type: "object",
         properties: {
-          file_path: { type: "string", description: "The path to the file to read" },
-          offset: { type: "number", description: "Line number to start from (1-based)" },
-          limit: { type: "number", description: "Number of lines to read (default 2000)" },
-        },
-        required: ["file_path"],
-      };
-    case "Write":
-      return {
-        type: "object",
-        properties: {
-          file_path: { type: "string" },
-          content: { type: "string" },
-        },
-        required: ["file_path", "content"],
-      };
-    case "Edit":
-      return {
-        type: "object",
-        properties: {
-          file_path: { type: "string" },
-          old_string: { type: "string", description: "Text to replace (single edit)" },
-          new_string: { type: "string", description: "Replacement text (single edit)" },
-          replace_all: { type: "boolean" },
-          edits: {
-            type: "array",
-            description: "Multiple replacements on this file, applied in order",
-            items: {
-              type: "object",
-              properties: {
-                old_string: { type: "string" },
-                new_string: { type: "string" },
-                replace_all: { type: "boolean" },
-              },
-              required: ["old_string", "new_string"],
-            },
+          path: {
+            type: "string",
+            description:
+              "File or directory path, optionally with trailing line selectors: :50, :50-100, :50+20, :5-16,40-80, :raw, :50-100:raw",
           },
         },
-        required: ["file_path"],
+        required: ["path"],
       };
-    case "Bash":
+    case "write":
+      return {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["path", "content"],
+      };
+    case "edit":
+      return {
+        type: "object",
+        properties: {
+          input: {
+            type: "string",
+            description: "One or more [PATH#TAG] hashline patch sections",
+          },
+        },
+        required: ["input"],
+      };
+    case "bash":
       return {
         type: "object",
         properties: {
           command: { type: "string" },
           timeout: {
             type: "number",
-            description:
-              "Max runtime: values < 1000 = seconds, else milliseconds. Default 120000 (2 min), max 600000 (10 min).",
+            description: "Seconds. Default 300; 0 disables; clamped 1..3600",
           },
-          description: { type: "string" },
+          cwd: {
+            type: "string",
+            description:
+              "Working directory (must exist). Leading 'cd <path> &&' is rewritten into cwd",
+          },
+          env: {
+            type: "object",
+            additionalProperties: { type: "string" },
+          },
         },
         required: ["command"],
       };
-    case "Glob":
+    case "grep":
       return {
         type: "object",
         properties: {
-          pattern: { type: "string", description: "Glob pattern (e.g. **/*.ts)" },
-          path: { type: "string", description: "Directory to search (defaults to home)" },
+          pattern: { type: "string" },
+          path: {
+            type: "string",
+            description:
+              "File, directory, glob-like path, or ';'-separated list. Default '.'",
+          },
+          case: { type: "boolean", description: "Case-sensitive (default true)" },
+          gitignore: { type: "boolean", description: "Respect .gitignore (default true)" },
+          skip: {
+            type: "number",
+            description: "File-page offset for multi-file results",
+          },
         },
         required: ["pattern"],
       };
-    case "Grep":
+    case "glob":
       return {
         type: "object",
         properties: {
-          pattern: { type: "string", description: "Regex pattern to search for" },
-          path: { type: "string", description: "Directory or file to search" },
-          glob: { type: "string", description: 'File filter (e.g. "*.js")' },
-          output_mode: {
+          path: {
             type: "string",
-            enum: ["content", "files_with_matches", "count"],
+            description: "Glob, file, directory, or ';'-separated list. Default '.'",
           },
-          "-i": { type: "boolean" },
-          head_limit: { type: "number" },
+          hidden: { type: "boolean" },
+          gitignore: { type: "boolean" },
+          limit: { type: "number", description: "Max paths (default/max 200)" },
         },
-        required: ["pattern"],
       };
     case "WebSearch":
       return {

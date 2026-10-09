@@ -85,8 +85,19 @@ function summarizeRead(msg: ChatMsg, output: unknown): string {
 }
 
 /** Short summary for API history — avoids echoing full evidence in assistant replies. */
+const LEGACY_TOOL_ID_MAP: Record<string, string> = {
+  Read: "read",
+  Write: "write",
+  Edit: "edit",
+  MultiEdit: "edit",
+  Bash: "bash",
+  Glob: "glob",
+  Grep: "grep",
+};
+
 export function formatToolEvidenceForApi(msg: ChatMsg): string {
   const name = msg.toolName || "tool";
+  const normalized = LEGACY_TOOL_ID_MAP[name] || name;
   const status = msg.toolStatus || "done";
 
   if (status === "denied" || status === "error") {
@@ -96,30 +107,30 @@ export function formatToolEvidenceForApi(msg: ChatMsg): string {
   const output = parseOutput(msg.toolResultPreview);
   let detail = "";
 
-  switch (name) {
+  switch (normalized) {
     case "WebSearch":
       detail = summarizeWebSearch(output);
       break;
     case "WebFetch":
       detail = summarizeWebFetch(output);
       break;
-    case "Grep":
+    case "grep":
       detail = summarizeGrep(output);
       break;
-    case "Glob":
+    case "glob":
       detail = summarizeGlob(output);
       break;
-    case "Read":
+    case "read":
       detail = summarizeRead(msg, output);
       break;
-    case "Bash":
+    case "bash":
     case "Terminal": {
       if (isRecord(output)) {
         const stdout =
-          typeof output.stdout === "string"
-            ? output.stdout
-            : typeof output.output === "string"
-              ? output.output
+          typeof output.output === "string"
+            ? output.output
+            : typeof output.stdout === "string"
+              ? output.stdout
               : "";
         detail = stdout ? truncate(stdout, API_SNIPPET_MAX) : "";
       }

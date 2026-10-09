@@ -91,6 +91,20 @@ function mapToolResultOutput(raw) {
   return { type: 'json', value: raw === undefined ? null : raw };
 }
 
+const LEGACY_TOOL_ID_MAP = {
+  Read: 'read',
+  Write: 'write',
+  Edit: 'edit',
+  MultiEdit: 'edit',
+  Bash: 'bash',
+  Glob: 'glob',
+  Grep: 'grep',
+};
+
+function normalizeToolName(name) {
+  return LEGACY_TOOL_ID_MAP[name] || name;
+}
+
 function toCoreMessages(openAiMessages) {
   const out = [];
   for (const msg of openAiMessages || []) {
@@ -121,7 +135,7 @@ function toCoreMessages(openAiMessages) {
         content.push({
           type: 'tool-call',
           toolCallId: tc.id || tc.toolCallId || 'unknown',
-          toolName: tc.function?.name || tc.toolName || 'unknown',
+          toolName: normalizeToolName(tc.function?.name || tc.toolName || 'unknown'),
           input: safeParseJson(tc.function?.arguments ?? tc.args ?? tc.input),
         });
       }
@@ -131,7 +145,7 @@ function toCoreMessages(openAiMessages) {
 
     if (msg.role === 'tool') {
       const toolCallId = msg.tool_call_id || msg.toolCallId || 'unknown';
-      const toolName = msg.name || msg.toolName || 'unknown';
+      const toolName = normalizeToolName(msg.name || msg.toolName || 'unknown');
       let parsed = msg.content;
       if (typeof parsed === 'string') {
         try {

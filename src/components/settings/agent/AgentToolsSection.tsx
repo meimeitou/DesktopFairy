@@ -162,7 +162,7 @@ export default function AgentToolsSection({
   };
 
   const toggleTerminalTool = (id: string, enabled: boolean) => {
-    if (id === "Bash") return; // Bash is never available in the terminal context.
+    if (id === "bash") return; // bash is never available in the terminal context.
     if (id === "AskUserQuestion") return;
     if (id === "WebFetch" && hideWebFetch) return;
     if (enabled) {
@@ -342,8 +342,11 @@ export default function AgentToolsSection({
                 forcedOffIds: new Set([
                   "Terminal",
                   ...(hideWebFetch ? ["WebFetch"] : []),
-                  ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
                 ]),
+                // Always on at the config level; full-auto gates it at runtime.
+                forcedOnIds: new Set(
+                  agent.chatMode === "full-auto" ? ["AskUserQuestion"] : [],
+                ),
                 onToggle: toggleLocalTool,
               },
               {
@@ -351,10 +354,12 @@ export default function AgentToolsSection({
                 label: "终端",
                 enabledIds: terminalEnabledIds,
                 forcedOffIds: new Set([
-                  "Bash",
+                  "bash",
                   ...(hideWebFetch ? ["WebFetch"] : []),
-                  ...(agent.chatMode === "full-auto" ? ["AskUserQuestion"] : []),
                 ]),
+                forcedOnIds: new Set(
+                  agent.chatMode === "full-auto" ? ["AskUserQuestion"] : [],
+                ),
                 onToggle: toggleTerminalTool,
               },
             ]}

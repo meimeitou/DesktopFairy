@@ -90,14 +90,14 @@ describe("toCoreMessages", () => {
           {
             id: "call_1",
             type: "function",
-            function: { name: "Bash", arguments: '{"cmd":"ls"}' },
+            function: { name: "bash", arguments: '{"cmd":"ls"}' },
           },
         ],
       },
       {
         role: "tool",
         tool_call_id: "call_1",
-        name: "Bash",
+        name: "bash",
         content: '{"ok":true,"stdout":"a"}',
       },
     ]);
@@ -108,7 +108,7 @@ describe("toCoreMessages", () => {
         {
           type: "tool-call",
           toolCallId: "call_1",
-          toolName: "Bash",
+          toolName: "bash",
           input: { cmd: "ls" },
         },
       ],
@@ -119,7 +119,7 @@ describe("toCoreMessages", () => {
         {
           type: "tool-result",
           toolCallId: "call_1",
-          toolName: "Bash",
+          toolName: "bash",
           output: { type: "json", value: { ok: true, stdout: "a" } },
         },
       ],
@@ -131,7 +131,7 @@ describe("toCoreMessages", () => {
       {
         role: "tool",
         tool_call_id: "c1",
-        name: "Read",
+        name: "read",
         content: "not-json",
       },
     ]);
@@ -141,7 +141,7 @@ describe("toCoreMessages", () => {
         {
           type: "tool-result",
           toolCallId: "c1",
-          toolName: "Read",
+          toolName: "read",
           output: { type: "text", value: "not-json" },
         },
       ],
@@ -157,7 +157,7 @@ describe("buildAgentHistoryMessages", () => {
       msg("assistant", "", {
         type: "tool",
         toolCallId: "tc1",
-        toolName: "Bash",
+        toolName: "bash",
         toolArgs: '{"command":"ls"}',
         toolStatus: "done",
         toolResultPreview: '{"stdout":"a.txt"}',
@@ -174,15 +174,15 @@ describe("buildAgentHistoryMessages", () => {
           {
             id: "tc1",
             type: "function",
-            function: { name: "Bash", arguments: '{"command":"ls"}' },
+            function: { name: "bash", arguments: '{"command":"ls"}' },
           },
         ],
       },
       {
         role: "tool",
         tool_call_id: "tc1",
-        name: "Bash",
-        content: "[Bash] (done) a.txt",
+        name: "bash",
+        content: "[bash] (done) a.txt",
       },
       { role: "assistant", content: "done" },
     ]);
@@ -222,7 +222,7 @@ describe("buildAgentHistoryMessages", () => {
       msg("assistant", "", {
         type: "tool",
         toolCallId: "tc1",
-        toolName: "Bash",
+        toolName: "bash",
         toolStatus: "running",
       }),
     ];

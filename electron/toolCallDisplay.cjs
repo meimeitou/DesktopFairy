@@ -1,11 +1,10 @@
 const TOOL_LABELS = {
-  Bash: '执行命令',
-  Read: '读取文件',
-  Write: '写入文件',
-  Edit: '编辑文件',
-  MultiEdit: '批量编辑',
-  Glob: '查找文件',
-  Grep: '搜索内容',
+  bash: '执行命令',
+  read: '读取文件',
+  write: '写入文件',
+  edit: '编辑文件',
+  glob: '查找文件',
+  grep: '搜索内容',
   WebFetch: '获取网页',
   WebSearch: '网页搜索',
   Task: '子任务',
@@ -60,6 +59,8 @@ function parseToolArguments(raw) {
     'query',
     'description',
     'prompt',
+    'input',
+    'cwd',
   ]) {
     const value = extractJsonStringField(str, field);
     if (value) args[field] = value;
@@ -99,23 +100,28 @@ function formatToolApprovalDetail(toolName, rawArgs, parsedArgs) {
       ? { args: parsedArgs, raw: String(rawArgs || '') }
       : parseToolArguments(rawArgs);
 
-  switch (toolName) {
-    case 'Bash': {
+  const name = LEGACY_TOOL_ID_MAP[toolName] || toolName;
+  switch (name) {
+    case 'bash': {
       const command = pickString(args, ['command', 'cmd', 'script']);
       const desc = pickString(args, ['description']);
-      if (command && desc && desc !== command) {
-        return `说明：${desc}\n\n命令：\n${command}`;
-      }
-      if (command) return `命令：\n${command}`;
-      if (desc) return `命令：\n${desc}`;
+      const cwd = pickString(args, ['cwd']);
+      const parts = [];
+      if (command) parts.push(`命令：\n${command}`);
+      if (cwd) parts.push(`工作目录：${cwd}`);
+      if (desc && desc !== command) parts.push(`说明：${desc}`);
+      if (parts.length > 0) return parts.join('\n\n');
       break;
     }
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-    case 'MultiEdit':
-    case 'Glob':
-    case 'Grep': {
+    case 'edit': {
+      const input = pickString(args, ['input']);
+      if (input) return `补丁：\n${truncate(input, 800)}`;
+      break;
+    }
+    case 'read':
+    case 'write':
+    case 'glob':
+    case 'grep': {
       const path = pickString(args, ['path', 'file_path', 'filePath']);
       const pattern = pickString(args, ['pattern']);
       if (pattern && path) return `模式：${pattern}\n路径：${path}`;
@@ -154,8 +160,19 @@ function formatToolApprovalDetail(toolName, rawArgs, parsedArgs) {
   return '（未收到工具参数，请拒绝或检查模型响应）';
 }
 
+const LEGACY_TOOL_ID_MAP = {
+  Read: 'read',
+  Write: 'write',
+  Edit: 'edit',
+  MultiEdit: 'edit',
+  Bash: 'bash',
+  Glob: 'glob',
+  Grep: 'grep',
+};
+
 function getToolLabel(toolName) {
-  return TOOL_LABELS[toolName] || toolName || '工具';
+  const name = LEGACY_TOOL_ID_MAP[toolName] || toolName;
+  return TOOL_LABELS[name] || TOOL_LABELS[toolName] || toolName || '工具';
 }
 
 module.exports = {

@@ -4,26 +4,54 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { app } = require('electron');
-const { runCommandInRenderer } = require('./terminalAgentService.cjs');
+// electron + terminalAgentService are main-process-only; require lazily so
+// node/vitest can load this module for FS tool tests.
+let _app = null;
+function getApp() {
+  if (_app === null) _app = require('electron').app;
+  return _app;
+}
+let _runCommandInRenderer = null;
+function getRunCommandInRenderer() {
+  if (_runCommandInRenderer === null) {
+    _runCommandInRenderer = require('./terminalAgentService.cjs').runCommandInRenderer;
+  }
+  return _runCommandInRenderer;
+}
 const {
-  resolveBashTimeoutMs,
+  resolveBashTimeoutSec,
   formatTimeoutLabel,
 } = require('./bashTimeout.cjs');
 const {
   DEFAULT_READ_LIMIT,
-  MAX_FILES_LIMIT,
-  MAX_GREP_MATCHES,
-  MAX_LINE_LENGTH,
+  MAX_READ_LINES,
   MAX_READ_BYTES,
+  MAX_LINE_LENGTH,
+  GREP_MAX_COLUMN,
+  GREP_CONTEXT_BEFORE,
+  GREP_CONTEXT_AFTER,
+  GREP_FILE_PAGE,
+  GREP_PER_FILE_MULTI,
+  GREP_PER_FILE_SINGLE,
+  GREP_TOTAL_CAP,
+  GLOB_TIMEOUT_MS,
+  GREP_TIMEOUT_MS,
+  GLOB_DEFAULT_LIMIT,
+  GLOB_MAX_LIMIT,
+  RG_EXCLUDE_GLOBS,
   expandPath,
   resolveAgentPath,
+  splitPathAndSel,
+  mergeRanges,
+  parseFindPattern,
+  formatHashlineRead,
+  formatAnchoredGrep,
+  formatGroupedPaths,
   isBinaryFile,
-  replaceWithFuzzyMatch,
   runRipgrep,
-  formatReadOutput,
-  formatGrepMatches,
 } = require('./agentBuiltinFsUtils.cjs');
+const snapshots = require('./agentSnapshotStore.cjs');
+const { applyHashlinePatch } = require('./hashlinePatch.cjs');
 
 const execFileAsync = promisify(execFile);
 const MAX_FETCH_BYTES = 512 * 1024;
@@ -49,7 +77,7 @@ function broadcastSettingsUpdated(settings, getWindows) {
     }
   }
 }
-const AGENT_FS_BASE = () => os.homedir();
+const AGENT_FS_BASE = () => process.env.DF_AGENT_FS_BASE || os.homedir();
 
 function ok(data) {
   return JSON.stringify({ ok: true, ...data });
@@ -59,33 +87,230 @@ function fail(message) {
   return JSON.stringify({ ok: false, error: message });
 }
 
+// ---------------------------------------------------------------------------
+// FS six-pack (pi contract): read / write / edit / bash / glob / grep
+// ---------------------------------------------------------------------------
+
+const READ_DIR_DEPTH = 2;
+const READ_DIR_PER_DIR = 12;
+
+function formatRelativeTime(mtimeMs) {
+  const diff = Date.now() - mtimeMs;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  if (diff < 30 * 86_400_000) return `${Math.round(diff / 86_400_000)}d ago`;
+  return `${Math.round(diff / (30 * 86_400_000))}mo ago`;
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+async function readDirectoryTree(dirPath, relPath, depth) {
+  const out = [];
+  let entries;
+  try {
+    entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  const decorated = [];
+  for (const e of entries) {
+    let mtime = 0;
+    let size = 0;
+    try {
+      const st = await fs.promises.stat(path.join(dirPath, e.name));
+      mtime = st.mtimeMs;
+      size = st.size;
+    } catch { /* vanished */ }
+    decorated.push({ name: e.name, isDir: e.isDirectory(), mtime, size });
+  }
+  decorated.sort((a, b) => (a.isDir === b.isDir ? b.mtime - a.mtime : a.isDir ? 1 : -1));
+  const shown = decorated.slice(0, READ_DIR_PER_DIR);
+  const label = relPath === '' ? '.' : relPath;
+  if (depth === 0) {
+    out.push(`${label}/ (${entries.length} entries)`);
+  } else {
+    out.push(label.endsWith('/') ? label : label + '/');
+  }
+  for (const e of shown) {
+    if (e.isDir) {
+      if (depth + 1 < READ_DIR_DEPTH) {
+        out.push('');
+        out.push(...(await readDirectoryTree(path.join(dirPath, e.name), path.join(relPath, e.name) + '/', depth + 1)));
+      } else {
+        out.push(`${e.name}/`);
+      }
+    } else {
+      const size = e.size > 0 ? ` (${formatBytes(e.size)}, ${formatRelativeTime(e.mtime)})` : '';
+      out.push(`${e.name}${size}`);
+    }
+  }
+  if (decorated.length > shown.length) {
+    out.push(`… ${decorated.length - shown.length} more entries not shown`);
+  }
+  return out;
+}
+
+
 async function toolRead(args) {
-  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
-  if (!filePath) return fail('file_path required');
+  const rawPath = String(args?.path ?? '').trim();
+  if (!rawPath) return fail('path required');
+
+  let split;
+  try {
+    split = await splitPathAndSel(rawPath);
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+  const filePath = resolveAgentPath(split.filePath, AGENT_FS_BASE());
+  if (!filePath || split.filePath === '') return fail('path required');
+
+  const relPath = (() => {
+    const rel = path.relative(AGENT_FS_BASE(), filePath);
+    return rel.startsWith('..') ? filePath : rel;
+  })();
+
   try {
     const stat = await fs.promises.stat(filePath);
-    if (!stat.isFile()) return fail(`Path is not a file: ${args?.file_path}`);
-    if (stat.size > MAX_READ_BYTES) return fail(`File too large (max ${MAX_READ_BYTES} bytes)`);
-    if (await isBinaryFile(filePath)) return fail(`Cannot read binary file: ${args?.file_path}`);
-    const content = await fs.promises.readFile(filePath, 'utf8');
-    const lines = content.split('\n');
-    const offset = Math.max(0, (Number(args?.offset) || 1) - 1);
-    const limit = Number(args?.limit) || DEFAULT_READ_LIMIT;
-    if (offset >= lines.length) {
-      return fail(`Invalid offset: ${offset + 1}. File has ${lines.length} lines.`);
+
+    if (stat.isDirectory()) {
+      if (split.ranges.length > 0) {
+        return fail('Line selectors are not supported for directory reads');
+      }
+      const tree = await readDirectoryTree(filePath, relPath, 0);
+      return ok({ file_path: filePath, content: tree.join('\n'), isDirectory: true });
     }
-    const text = formatReadOutput(filePath, AGENT_FS_BASE(), lines, offset, limit);
+
+    if (!stat.isFile()) return fail(`Path is not a file: ${rawPath}`);
+    if (stat.size > MAX_READ_BYTES) {
+      return fail(`File too large (max ${MAX_READ_BYTES} bytes)`);
+    }
+
+    const isRaw = split.isRaw === true;
+    if (!isRaw && (await isBinaryFile(filePath))) {
+      return ok({
+        file_path: filePath,
+        content: `[Cannot read binary file: ${rawPath}]`,
+      });
+    }
+
+    const content = await fs.promises.readFile(filePath, 'utf8');
+    const normalized = content.replace(/\r\n/g, '\n');
+    let lines;
+    let trailingNewline = false;
+    if (normalized === '') {
+      lines = [];
+    } else if (normalized.endsWith('\n')) {
+      lines = normalized.slice(0, -1).split('\n');
+      trailingNewline = true;
+    } else {
+      lines = normalized.split('\n');
+    }
+
+    const total = lines.length;
+
+    // Determine the displayed ranges
+    let ranges;
+    if (split.ranges.length === 0) {
+      // default first page
+      if (total === 0) {
+        return ok({ file_path: filePath, content: '(empty file)' });
+      }
+      const limit = Math.min(DEFAULT_READ_LIMIT, MAX_READ_LINES);
+      if (1 > total) {
+        return ok({ file_path: filePath, content: `Use :1 ... to read lines; file has ${total} lines` });
+      }
+      ranges = [{ start: 1, end: Math.min(limit, total) }];
+    } else {
+      const resolved = [];
+      let openEnded = false;
+      for (const r of split.ranges) {
+        if (r.end === Infinity) { openEnded = true; }
+        const end = r.end === Infinity ? Math.min(r.start + DEFAULT_READ_LIMIT - 1, Math.max(total, r.start)) : r.end;
+        resolved.push({ start: r.start, end });
+      }
+      ranges = mergeRanges(resolved);
+      if (ranges.length === 0) {
+        return ok({ file_path: filePath, content: `Use :1 ... to read lines; file has ${total} lines` });
+      }
+      // out-of-range entirely: hint, not error
+      if (ranges[0].start > total) {
+        return ok({
+          file_path: filePath,
+          content: `Line ${ranges[0].start} is past the end of the file (${total} lines). Use :1-${total} ... or :${Math.max(1, total)} ...`,
+        });
+      }
+      if (openEnded) {
+        // clamp open-ended range to DEFAULT_READ_LIMIT lines from its start
+        const first = ranges[0];
+        const limit = Math.min(first.start + DEFAULT_READ_LIMIT - 1, Math.max(first.end, total));
+        ranges = [{ start: first.start, end: Math.max(first.start, Math.min(limit, Math.max(first.end, total))) }];
+        if (ranges[0].start > total) {
+          return ok({
+            file_path: filePath,
+            content: `Line ${ranges[0].start} is past the end of the file (${total} lines). Use :${Math.max(1, total)} ...`,
+          });
+        }
+      }
+      // context expansion for bounded single range
+      if (ranges.length === 1 && ranges[0].end !== Infinity && !isRaw) {
+        const r = ranges[0];
+        const start = Math.max(1, r.start - 1);
+        const end = Math.min(total, r.end + 3);
+        ranges = [{ start, end: Math.max(start, end) }];
+      }
+    }
+
+    // truncate displayed line count
+    let displayRanges = ranges
+      .map((r) => ({ start: Math.max(1, r.start), end: Math.min(r.end, total) }))
+      .filter((r) => r.start <= r.end);
+    if (displayRanges.length === 0) {
+      return ok({ file_path: filePath, content: `Use :1 ... to read lines; file has ${total} lines` });
+    }
+
+    // record snapshot for non-raw reads
+    let tag = null;
+    if (!isRaw) {
+      const seenRanges = displayRanges.map((r) => [r.start, Math.min(r.end, total)]);
+      tag = snapshots.recordSnapshot(filePath, trailingNewline ? lines.join('\n') + '\n' : lines.join('\n'), seenRanges);
+    }
+
+    const text = formatHashlineRead(relPath, tag, lines, displayRanges, { isRaw });
     return ok({ file_path: filePath, content: text });
   } catch (e) {
-    if (e?.code === 'ENOENT') return fail(`File not found: ${args?.file_path}`);
+    if (e?.code === 'ENOENT') return fail(`Path not found: ${rawPath}`);
     return fail(String(e?.message || e));
   }
 }
 
+function stripWriteContent(content) {
+  let text = String(content ?? '');
+  // strip pasted [path#TAG] header lines
+  text = text
+    .split('\n')
+    .filter((l) => !/^\[[^\[\]\n]*#[0-9A-Fa-f]{4}\]\s*$/.test(l.trim()))
+    .join('\n');
+  // strip pasted LINE: prefixes (1-6 digit line numbers)
+  text = text
+    .split('\n')
+    .map((l) => l.replace(/^\d{1,6}:/, ''))
+    .join('\n');
+  return text;
+}
+
 async function toolWrite(args) {
-  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
-  if (!filePath) return fail('file_path required');
-  const content = String(args?.content ?? '');
+  const rawPath = String(args?.path ?? '').trim();
+  if (!rawPath) return fail('path required');
+  if (args?.content === undefined || args?.content === null) {
+    return fail('content required');
+  }
+  const filePath = resolveAgentPath(rawPath, AGENT_FS_BASE());
+  const content = stripWriteContent(args.content);
   try {
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
     let isOverwrite = false;
@@ -96,101 +321,112 @@ async function toolWrite(args) {
       /* new file */
     }
     await fs.promises.writeFile(filePath, content, 'utf8');
-    const relativePath = path.relative(AGENT_FS_BASE(), filePath);
+    const relPath = (() => {
+      const rel = path.relative(AGENT_FS_BASE(), filePath);
+      return rel.startsWith('..') ? filePath : rel;
+    })();
     const action = isOverwrite ? 'Updated' : 'Created';
-    const lineCount = content.split('\n').length;
+    const normalized = content.replace(/\r\n/g, '\n');
+    const lines = normalized === '' ? [] : normalized.replace(/\n$/, '').split('\n');
+    const total = lines.length;
+    const tag = snapshots.recordSnapshot(
+      filePath,
+      content,
+      total > 0 ? [[1, total]] : []
+    );
+    const header = tag ? `[${relPath}#${tag}]\n` : '';
     return ok({
       file_path: filePath,
-      message: `${action} file: ${relativePath}\nSize: ${content.length} bytes\nLines: ${lineCount}`,
+      message: `${action} file.\n\n${header}Successfully wrote ${content.length} bytes to ${relPath}`,
     });
   } catch (e) {
     return fail(String(e?.message || e));
   }
 }
 
-async function applyEdit(filePath, oldString, newString, replaceAll) {
-  if (oldString === newString) {
-    throw new Error('old_string and new_string must be different');
-  }
-  if (oldString === '') {
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.promises.writeFile(filePath, newString, 'utf8');
-    return { created: true, content: newString };
-  }
-  const content = await fs.promises.readFile(filePath, 'utf8');
-  const next = replaceWithFuzzyMatch(content, oldString, newString, replaceAll);
-  await fs.promises.writeFile(filePath, next, 'utf8');
-  return { created: false, content: next, previous: content };
-}
-
 async function toolEdit(args) {
-  const batched = Array.isArray(args?.edits) ? args.edits : [];
-  if (batched.length > 0) {
-    return toolMultiEdit({ file_path: args?.file_path, edits: batched });
-  }
-  if (args?.old_string === undefined && args?.new_string === undefined) {
-    return fail('Provide old_string and new_string, or edits[]');
-  }
-  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
-  if (!filePath) return fail('file_path required');
-  const oldString = String(args?.old_string ?? '');
-  const newString = String(args?.new_string ?? '');
+  const input = String(args?.input ?? '');
+  if (!input.trim()) return fail('input required');
   try {
-    if (oldString !== '' && !fs.existsSync(filePath)) {
-      return fail(`File not found: ${args?.file_path}`);
+    const reports = applyHashlinePatch(input, {
+      resolvePath: (p) => resolveAgentPath(p, AGENT_FS_BASE()),
+    });
+    const parts = [];
+    for (const r of reports) {
+      const relPath = (() => {
+        const rel = path.relative(AGENT_FS_BASE(), r.finalPath);
+        return rel.startsWith('..') ? r.finalPath : rel;
+      })();
+      if (r.rem) {
+        parts.push(`Removed ${relPath}`);
+        continue;
+      }
+      const header = r.tag ? `[${relPath}#${r.tag}]` : `[${relPath}]`;
+      const lines = [header, `Applied ${r.opCount} op(s): ${(r.opSummary || []).join(', ')}`];
+      if (r.mv) lines.push(`Moved to ${relPath}`);
+      if (r.warnings && r.warnings.length > 0) {
+        lines.push('Warnings:');
+        for (const w of r.warnings) lines.push(`- ${w}`);
+      }
+      parts.push(lines.join('\n'));
     }
-    const result = await applyEdit(filePath, oldString, newString, !!args?.replace_all);
-    const relativePath = path.relative(AGENT_FS_BASE(), filePath);
-    if (result.created) {
-      return ok({
-        file_path: filePath,
-        message: `Created new file: ${relativePath}\nLines: ${newString.split('\n').length}`,
-      });
-    }
-    const oldLines = result.previous.split('\n').length;
-    const newLines = result.content.split('\n').length;
-    const lineDiff = newLines - oldLines;
-    let message = `Edited: ${relativePath}`;
-    if (lineDiff > 0) message += `\n+${lineDiff} lines`;
-    else if (lineDiff < 0) message += `\n${lineDiff} lines`;
-    return ok({ file_path: filePath, message });
+    return ok({ message: parts.join('\n\n'), results: reports });
   } catch (e) {
     return fail(String(e?.message || e));
   }
 }
 
-async function toolMultiEdit(args) {
-  const filePath = resolveAgentPath(args?.file_path, AGENT_FS_BASE());
-  if (!filePath || !fs.existsSync(filePath)) return fail('File not found');
-  const edits = Array.isArray(args?.edits) ? args.edits : [];
-  try {
-    for (const edit of edits) {
-      await applyEdit(
-        filePath,
-        String(edit?.old_string ?? ''),
-        String(edit?.new_string ?? ''),
-        !!edit?.replace_all
-      );
-    }
-    const relativePath = path.relative(AGENT_FS_BASE(), filePath);
-    return ok({ file_path: filePath, message: `Edited: ${relativePath} (${edits.length} edits)` });
-  } catch (e) {
-    return fail(String(e?.message || e));
-  }
-}
+const CD_PREFIX_RE = /^cd\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s*&&\s*([\s\S]+)$/;
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 async function toolBash(args, envVars = {}, deps = {}) {
-  const command = String(args?.command || '').trim();
+  let command = String(args?.command || '').trim();
   if (!command) return fail('Empty command');
-  const timeoutMs = resolveBashTimeoutMs(args?.timeout);
-  const shell = process.env.SHELL || '/bin/zsh';
   const signal = deps?.signal;
 
+  // env validation + merge
+  const extraEnv = {};
+  if (args?.env != null && typeof args.env === 'object' && !Array.isArray(args.env)) {
+    for (const [k, v] of Object.entries(args.env)) {
+      if (!ENV_NAME_RE.test(k)) return fail(`Invalid bash env name: ${k}`);
+      extraEnv[k] = String(v);
+    }
+  }
+  const mergedEnv = { ...process.env, ...envVars, ...extraEnv };
+
+  // cwd: explicit arg wins; otherwise rewrite leading 'cd X &&'
+  let cwd;
+  if (args?.cwd != null && String(args.cwd).trim() !== '') {
+    cwd = resolveAgentPath(String(args.cwd), AGENT_FS_BASE());
+  } else {
+    const m = command.match(CD_PREFIX_RE);
+    if (m) {
+      cwd = resolveAgentPath(m[1] || m[2] || m[3], AGENT_FS_BASE());
+      command = m[4];
+    }
+  }
+  if (cwd) {
+    try {
+      const st = await fs.promises.stat(cwd);
+      if (!st.isDirectory()) {
+        return fail(`Working directory is not a directory: ${cwd}`);
+      }
+    } catch (e) {
+      return fail(`Working directory does not exist: ${cwd}`);
+    }
+  } else {
+    cwd = os.homedir();
+  }
+
+  const timeoutSec = resolveBashTimeoutSec(args?.timeout);
+  const shell = process.env.SHELL || '/bin/zsh';
+  const outputCap = 50 * 1024;
+
   return new Promise((resolve) => {
-    let stdout = '';
-    let stderr = '';
     let settled = false;
     let killTimer = null;
+    let buffer = '';
+    let truncated = false;
 
     const finish = (payload) => {
       if (settled) return;
@@ -202,8 +438,8 @@ async function toolBash(args, envVars = {}, deps = {}) {
     };
 
     const child = spawn(shell, ['-lc', command], {
-      env: { ...process.env, ...envVars },
-      cwd: os.homedir(),
+      env: mergedEnv,
+      cwd,
       detached: process.platform !== 'win32',
     });
 
@@ -219,23 +455,40 @@ async function toolBash(args, envVars = {}, deps = {}) {
       }
     };
 
-    const timer = setTimeout(() => {
-      killProcessTree('SIGTERM');
-      killTimer = setTimeout(() => killProcessTree('SIGKILL'), 5000);
-      const label = formatTimeoutLabel(timeoutMs);
-      finish(ok({
-        stdout,
-        stderr: stderr || `Command timed out after ${label}`,
-        exitCode: 124,
-        timedOut: true,
-        timeoutMs,
-      }));
-    }, timeoutMs);
+    const appendOutput = (chunk) => {
+      const text = String(chunk);
+      buffer += text;
+      if (buffer.length > outputCap) {
+        buffer = buffer.slice(buffer.length - outputCap);
+        truncated = true;
+      }
+    };
+
+    const timer = timeoutSec > 0
+      ? setTimeout(() => {
+          killProcessTree('SIGTERM');
+          killTimer = setTimeout(() => killProcessTree('SIGKILL'), 5000);
+          const label = formatTimeoutLabel(timeoutSec);
+          const output = (truncated ? '[...output truncated...]\n' : '') + (buffer || '');
+          finish(JSON.stringify({
+            ok: false,
+            output,
+            exitCode: 124,
+            timedOut: true,
+            truncated,
+            error: `Command timed out after ${label}`,
+          }));
+        }, timeoutSec * 1000)
+      : null;
 
     const onAbort = () => {
       killProcessTree('SIGTERM');
       killTimer = setTimeout(() => killProcessTree('SIGKILL'), 2000);
-      finish(ok({ stdout, stderr: stderr || 'Aborted', exitCode: 130, aborted: true }));
+      finish(ok({
+        output: (truncated ? '[...output truncated...]\n' : '') + (buffer || ''),
+        exitCode: 130,
+        aborted: true,
+      }));
     };
 
     if (signal) {
@@ -243,147 +496,351 @@ async function toolBash(args, envVars = {}, deps = {}) {
       else signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
-    child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+    child.stdout?.on('data', appendOutput);
+    child.stderr?.on('data', appendOutput);
     child.on('error', (e) => {
-      finish(ok({ stdout, stderr: String(e?.message || e), exitCode: 1 }));
+      finish(fail(String(e?.message || e)));
     });
     child.on('close', (code) => {
-      finish(ok({ stdout: String(stdout || ''), stderr: String(stderr || ''), exitCode: code ?? 0 }));
+      const exitCode = code ?? 0;
+      const output = (truncated ? '[...output truncated...]\n' : '') + (buffer || '');
+      if (exitCode !== 0) {
+        finish(JSON.stringify({
+          ok: false,
+          error: `Command exited with code ${exitCode}`,
+          output,
+          exitCode,
+          truncated,
+        }));
+        return;
+      }
+      finish(ok({
+        output: output || '(no output)',
+        exitCode,
+        truncated,
+      }));
     });
   });
 }
 
+function splitMultiPath(pathStr) {
+  return String(pathStr || '')
+    .split(';')
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
 async function toolGlob(args, signal) {
-  const pattern = String(args?.pattern || '').trim();
-  if (!pattern) return fail('pattern required');
-  const searchPath = resolveAgentPath(args?.path || AGENT_FS_BASE(), AGENT_FS_BASE());
-  try {
-    const stat = await fs.promises.stat(searchPath);
-    if (!stat.isDirectory()) return fail(`Path is not a directory: ${args?.path || searchPath}`);
-  } catch (e) {
-    if (e?.code === 'ENOENT') return fail(`Directory not found: ${searchPath}`);
-    return fail(String(e?.message || e));
+  const rawPath = String(args?.path ?? '').trim() || '.';
+  const hidden = args?.hidden !== false;
+  const useGitignore = args?.gitignore !== false;
+
+  let limit = GLOB_DEFAULT_LIMIT;
+  if (args?.limit != null) {
+    const n = Number(args.limit);
+    if (Number.isFinite(n) && n > 0) {
+      limit = Math.min(Math.max(Math.floor(n), 1), GLOB_MAX_LIMIT);
+    }
   }
 
-  const rgArgs = [
-    '--files',
-    '--follow',
-    '--hidden',
-    `--glob=${pattern}`,
-    '--glob=!.git/*',
-    '--glob=!node_modules/*',
-    '--glob=!dist/*',
-    '--glob=!build/*',
-    '--glob=!__pycache__/*',
-    searchPath,
-  ];
+  const entries = splitMultiPath(rawPath);
+  if (entries.length === 0) return fail('`path` must contain non-empty globs or paths');
+
+  const missing = [];
+  const targets = [];
+  for (const entry of entries) {
+    const { basePath, glob, hasGlob } = parseFindPattern(entry);
+    const absBase = resolveAgentPath(basePath, AGENT_FS_BASE());
+    if (!hasGlob) {
+      try {
+        const st = await fs.promises.stat(absBase);
+        if (st.isFile()) {
+          targets.push({ searchPath: absBase, glob: null, exact: true });
+          continue;
+        }
+        if (!st.isDirectory()) {
+          missing.push(entry);
+          continue;
+        }
+        targets.push({ searchPath: absBase, glob: '**/*', exact: false });
+        continue;
+      } catch {
+        if (entries.length === 1) return fail(`Path not found: ${entry}`);
+        missing.push(entry);
+        continue;
+      }
+    }
+    targets.push({ searchPath: absBase, glob, exact: false });
+  }
+
+  if (targets.length === 0) {
+    return fail(`Path not found: ${entries.join(', ')}`);
+  }
 
   const files = [];
-  let truncated = false;
-  const rgResult = await runRipgrep(rgArgs, { signal });
-  if (rgResult.aborted) return fail('Glob cancelled');
-  if (rgResult.timedOut) return fail('Glob timed out (60 s). Use a more specific pattern or path.');
-  if (rgResult.ok && rgResult.stdout.length > 0) {
-    for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
-      if (files.length >= MAX_FILES_LIMIT) {
-        truncated = true;
-        break;
-      }
-      const filePath = line.trim();
-      if (!filePath) continue;
-      const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(searchPath, filePath);
-      try {
-        const stats = await fs.promises.stat(absolutePath);
-        files.push({ path: absolutePath, modified: stats.mtime });
-      } catch {
-        /* skip */
+  let timedOut = false;
+  for (const t of targets) {
+    if (t.exact) {
+      files.push({ path: t.searchPath, mtime: (await statMtime(t.searchPath)) });
+      continue;
+    }
+    const rgArgs = [
+      '--files',
+      '--follow',
+      `--glob=${t.glob}`,
+      ...RG_EXCLUDE_GLOBS,
+    ];
+    // In ripgrep, an explicit --glob overrides the hidden-file filter, so
+    // hidden:false must ALSO exclude dotfiles via globs.
+    if (hidden) {
+      rgArgs.push('--hidden');
+    } else {
+      rgArgs.push('--no-hidden');
+      rgArgs.push('--glob=!.*', '--glob=!**/.*', '--glob=!**/.*/**');
+    }
+    if (!useGitignore) rgArgs.push('--no-ignore');
+    rgArgs.push(t.searchPath);
+
+    const rgResult = await runRipgrep(rgArgs, { signal, timeoutMs: GLOB_TIMEOUT_MS });
+    if (rgResult.aborted) return fail('Glob cancelled');
+    if (rgResult.timedOut) {
+      timedOut = true;
+      continue;
+    }
+    if (rgResult.ok && rgResult.exitCode !== null && rgResult.exitCode !== 2) {
+      for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
+        const p = line.trim();
+        if (!p) continue;
+        const abs = path.isAbsolute(p) ? p : path.resolve(t.searchPath, p);
+        const mtime = await statMtime(abs);
+        if (mtime === null) continue;
+        files.push({ path: abs, mtime });
+        if (files.length >= limit) break;
       }
     }
+    if (files.length >= limit) break;
   }
 
-  files.sort((a, b) => (b.modified?.getTime() || 0) - (a.modified?.getTime() || 0));
-  const output = [];
-  if (files.length === 0) {
-    output.push(`No files found matching pattern "${pattern}" in ${searchPath}`);
-  } else {
-    output.push(...files.map((f) => f.path));
-    if (truncated) {
-      output.push('');
-      output.push(`(Results truncated to ${MAX_FILES_LIMIT} files. Consider using a more specific pattern.)`);
-    }
+  // dedupe by path, mtime desc
+  const seen = new Set();
+  const unique = [];
+  for (const f of files) {
+    if (seen.has(f.path)) continue;
+    seen.add(f.path);
+    unique.push(f);
   }
-  return ok({ matches: files.map((f) => f.path), output: output.join('\n'), cwd: searchPath });
+  unique.sort((a, b) => b.mtime - a.mtime);
+  const limited = unique.slice(0, limit);
+
+  const base = AGENT_FS_BASE();
+  const displayPaths = limited.map((f) => {
+    const rel = path.relative(base, f.path);
+    return rel.startsWith('..') ? f.path : rel;
+  });
+
+  const out = [];
+  if (limited.length === 0) {
+    out.push('No files found matching pattern');
+  } else {
+    out.push(formatGroupedPaths(displayPaths));
+  }
+  if (timedOut) {
+    out.push('');
+    out.push(`glob timed out after 5s; returning ${limited.length} partial matches — narrow the pattern`);
+  }
+  if (missing.length > 0) {
+    out.push('');
+    out.push(`Skipped missing paths: ${missing.join(', ')}`);
+  }
+
+  return ok({
+    output: out.join('\n'),
+    matches: displayPaths,
+    fileCount: limited.length,
+    truncated: timedOut,
+    missingPaths: missing,
+  });
+}
+
+async function statMtime(absPath) {
+  try {
+    const st = await fs.promises.stat(absPath);
+    return st.mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function parseRipgrepContentLine(line) {
+  // 'path:line:content' match or 'path-line-content' context
+  const isContext = /^(\S+)-(\d+)-(.*)$/.test(line);
+  const sep = isContext ? '-' : ':';
+  const firstSep = line.indexOf(sep);
+  if (firstSep === -1) return null;
+  const filePart = line.slice(0, firstSep);
+  const rest = line.slice(firstSep + 1);
+  const secondSep = rest.indexOf(sep);
+  if (secondSep === -1) return null;
+  const linePart = rest.slice(0, secondSep);
+  const contentPart = rest.slice(secondSep + 1);
+  const lineNum = Number.parseInt(linePart, 10);
+  if (!Number.isFinite(lineNum) || lineNum <= 0) return null;
+  return { file: filePart, line: lineNum, text: contentPart, isMatch: !isContext };
 }
 
 async function toolGrep(args, signal) {
-  const pattern = String(args?.pattern || '').trim();
-  if (!pattern) return fail('pattern required');
-  const searchPath = resolveAgentPath(args?.path || AGENT_FS_BASE(), AGENT_FS_BASE());
-  const outputMode = args?.output_mode || 'content';
+  const pattern = String(args?.pattern ?? '');
+  if (!pattern.trim()) return fail('Pattern must not be empty');
+  if (String(args?.skip ?? 0) !== '' && args?.skip != null) {
+    const skipNum = Number(args.skip);
+    if (!Number.isFinite(skipNum) || skipNum < 0) {
+      return fail('Skip must be a non-negative number');
+    }
+  }
+  const skip = Math.max(0, Math.floor(Number(args?.skip ?? 0) || 0));
+  const caseSensitive = args?.case !== false;
+  const useGitignore = args?.gitignore !== false;
+
+  const rawPath = String(args?.path ?? '').trim() || '.';
+  const entries = splitMultiPath(rawPath);
+  if (entries.length === 0) return fail('Search scope entries must be non-empty paths or globs');
+
+  // resolve entries
+  const scopes = [];
+  const missing = [];
+  for (const entry of entries) {
+    const { basePath, glob, hasGlob } = parseFindPattern(entry);
+    const absBase = resolveAgentPath(basePath, AGENT_FS_BASE());
+    let isFile = false;
+    let isDir = false;
+    try {
+      const st = await fs.promises.stat(absBase);
+      isFile = st.isFile();
+      isDir = st.isDirectory();
+    } catch {
+      if (entries.length === 1) return fail(`Path not found: ${entry}`);
+      missing.push(entry);
+      continue;
+    }
+    if (!isFile && !isDir) {
+      if (entries.length === 1) return fail(`Path not found: ${entry}`);
+      missing.push(entry);
+      continue;
+    }
+    scopes.push({ absBase, glob: hasGlob ? glob : null, isFile, isDir });
+  }
+  if (scopes.length === 0) return fail(`Path not found: ${entries.join(', ')}`);
+
+  // single scope = single-file semantics; multiple scopes = multi-file
+  const singleFile = scopes.length === 1 && scopes[0].isFile && !scopes[0].glob;
 
   const rgArgs = [
     '--no-heading',
     '--line-number',
-    '--color',
-    'never',
-    '--glob',
-    '!.git/**',
-    '--glob',
-    '!node_modules/**',
-    '--glob',
-    '!dist/**',
-    '--glob',
-    '!build/**',
-    '--glob',
-    '!__pycache__/**',
+    '--color', 'never',
+    `-B${GREP_CONTEXT_BEFORE}`,
+    `-A${GREP_CONTEXT_AFTER}`,
+    `--max-columns=${GREP_MAX_COLUMN}`,
+    '--max-filesize', '4M',
+    `--max-count=${singleFile ? GREP_PER_FILE_SINGLE + 1 : GREP_PER_FILE_MULTI + 1}`,
+    ...RG_EXCLUDE_GLOBS,
   ];
-  if (args?.['-i']) rgArgs.push('--ignore-case');
-  if (args?.glob) rgArgs.push('--glob', String(args.glob));
-  if (outputMode === 'files_with_matches') rgArgs.push('-l');
-  if (outputMode === 'count') rgArgs.push('-c');
-  if (args?.head_limit) rgArgs.push('--max-count', String(args.head_limit));
-  rgArgs.push('--', pattern, searchPath);
+  if (singleFile) rgArgs.push('--with-filename');
+  if (!caseSensitive) rgArgs.push('-i');
+  for (const s of scopes) {
+    if (s.glob) rgArgs.push(`--glob=${s.glob}`);
+  }
+  rgArgs.push(pattern);
+  for (const s of scopes) rgArgs.push(s.absBase);
 
-  const matches = [];
-  let truncated = false;
-
-  const rgResult = await runRipgrep(rgArgs, { signal });
+  const rgResult = await runRipgrep(rgArgs, { signal, timeoutMs: GREP_TIMEOUT_MS });
   if (rgResult.aborted) return fail('Grep cancelled');
-  if (rgResult.timedOut) return fail('Grep timed out (60 s). Use a more specific pattern or path.');
-  if (rgResult.ok && rgResult.exitCode !== null && rgResult.exitCode !== 2) {
-    for (const line of rgResult.stdout.split('\n').filter(Boolean)) {
-      if (matches.length >= MAX_GREP_MATCHES) {
-        truncated = true;
-        break;
-      }
-      const firstColon = line.indexOf(':');
-      const secondColon = line.indexOf(':', firstColon + 1);
-      if (firstColon === -1 || secondColon === -1) continue;
-      const filePart = line.slice(0, firstColon);
-      const linePart = line.slice(firstColon + 1, secondColon);
-      const contentPart = line.slice(secondColon + 1);
-      const lineNum = Number.parseInt(linePart, 10);
-      if (!Number.isFinite(lineNum)) continue;
-      const absoluteFilePath = path.isAbsolute(filePart) ? filePart : path.resolve(searchPath, filePart);
-      const truncatedLine =
-        contentPart.length > MAX_LINE_LENGTH ? contentPart.substring(0, MAX_LINE_LENGTH) + '...' : contentPart;
-      matches.push({ file: absoluteFilePath, line: lineNum, content: truncatedLine.trim() });
+  if (rgResult.timedOut) {
+    return fail('Grep timed out after 30s; narrow paths or pattern, or scope with `glob` first');
+  }
+  if (rgResult.exitCode === 2) {
+    return fail(`Invalid regex: ${pattern}`);
+  }
+
+  // parse rg output into per-file entries
+  const perFile = new Map(); // absPath -> [{line, text, isMatch}]
+  const fileOrder = [];
+  const separator = rgResult.ok ? rgResult.stdout.split('\n') : [];
+  for (const line of separator) {
+    if (!line.trim()) continue;
+    if (line.trim() === '--') continue;
+    const parsed = parseRipgrepContentLine(line);
+    if (!parsed) continue;
+    const abs = path.isAbsolute(parsed.file) ? parsed.file : path.resolve(AGENT_FS_BASE(), parsed.file);
+    if (!perFile.has(abs)) {
+      perFile.set(abs, []);
+      fileOrder.push(abs);
     }
+    perFile.get(abs).push({ line: parsed.line, text: parsed.text, isMatch: parsed.isMatch });
   }
 
-  if (outputMode === 'files_with_matches') {
-    const unique = [...new Set(matches.map((m) => m.file))];
-    return ok({ output: unique.join('\n') || '' });
-  }
-  if (outputMode === 'count') {
-    return ok({ output: String(matches.length) });
+  // JS caps
+  const perFileCap = singleFile ? GREP_PER_FILE_SINGLE : GREP_PER_FILE_MULTI;
+  const filePageStart = singleFile ? 0 : skip * GREP_FILE_PAGE;
+  const pageFiles = singleFile ? fileOrder : fileOrder.slice(filePageStart, filePageStart + GREP_FILE_PAGE);
+  let totalMatchCount = 0;
+
+  const base = AGENT_FS_BASE();
+  const rendered = [];
+  for (const abs of pageFiles) {
+    let entries2 = perFile.get(abs);
+    // per-file match cap: count matches; trim context lines beyond cap
+    const matches = entries2.filter((e) => e.isMatch);
+    if (matches.length > perFileCap) {
+      // keep first perFileCap matches plus all context lines
+      const kept = [];
+      let seen = 0;
+      for (const e of entries2) {
+        if (e.isMatch) {
+          seen++;
+          if (seen <= perFileCap) kept.push(e);
+        } else {
+          kept.push(e);
+        }
+      }
+      entries2 = kept;
+      totalMatchCount += perFileCap;
+    } else {
+      totalMatchCount += matches.length;
+    }
+
+    const rel = path.relative(base, abs);
+    const relPath = rel.startsWith('..') ? abs : rel;
+
+    let tag = null;
+    try {
+      const content = await fs.promises.readFile(abs, 'utf8');
+      const normalized = content.replace(/\r\n/g, '\n');
+      if (Buffer.byteLength(normalized, 'utf8') <= snapshots.SNAPSHOT_MAX_BYTES) {
+        const lines = normalized === '' ? [] : normalized.replace(/\n$/, '').split('\n');
+        const seenRanges = entries2.map((e) => [e.line, Math.min(e.line, lines.length)]);
+        tag = snapshots.recordSnapshot(abs, normalized, seenRanges);
+      }
+    } catch { /* unreadable — no tag */ }
+
+    rendered.push({ relPath, tag, entries: entries2 });
   }
 
-  const output = formatGrepMatches(matches, truncated);
-  return ok({ output, matchCount: matches.length });
+  const moreFiles = !singleFile && filePageStart + GREP_FILE_PAGE < fileOrder.length;
+  const nextPageSkip = moreFiles ? skip + 1 : undefined;
+  const totalCapHit = totalMatchCount >= GREP_TOTAL_CAP;
+  // skip past the last page: distinguish from a genuine no-match (pi parity)
+  const pastEnd = !singleFile && skip > 0 && pageFiles.length === 0 && fileOrder.length > 0;
+
+  const output = pastEnd
+    ? `No more results (skip=${skip} is past the last file page; use skip=${skip - 1} to go back)`
+    : formatAnchoredGrep(rendered, {
+        truncated: totalCapHit,
+        nextPageSkip,
+      });
+  const note = missing.length > 0 ? output + `\n\nSkipped missing paths: ${missing.join(', ')}` : output;
+  return ok({ output: note, matchCount: totalMatchCount, fileCount: pageFiles.length });
 }
-
 async function toolWebFetch(args) {
   const urlList = [];
   if (Array.isArray(args?.urls)) {
@@ -643,7 +1100,7 @@ function toolUpdateProfile(args, deps) {
   if (action !== 'replace' && action !== 'append') return fail('action must be "replace" or "append"');
   if (!content) return fail('content must not be empty');
 
-  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+  const settingsPath = path.join(getApp().getPath('userData'), 'da_settings.json');
   let settings;
   try {
     settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -675,7 +1132,7 @@ function toolUpdateProfile(args, deps) {
 
 
 function unbindMcpServerFromAgent(serverId, deps) {
-  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+  const settingsPath = path.join(getApp().getPath('userData'), 'da_settings.json');
   let settings;
   try {
     settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -695,7 +1152,7 @@ function unbindMcpServerFromAgent(serverId, deps) {
 }
 
 function bindMcpServerToAgent(serverId, deps) {
-  const settingsPath = path.join(app.getPath('userData'), 'da_settings.json');
+  const settingsPath = path.join(getApp().getPath('userData'), 'da_settings.json');
   let settings;
   try {
     settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -952,7 +1409,10 @@ function truncateTerminalOutput(text) {
 async function toolTerminal(args, deps = {}) {
   const command = String(args?.command || '').trim();
   if (!command) return fail('command required');
-  const timeoutMs = resolveBashTimeoutMs(args?.timeout);
+  // Terminal tool keeps its own ms-based timeout contract (out of pi-port scope):
+  // resolve seconds then convert; 0-second timeout disables (use a large default).
+  const timeoutSec = resolveBashTimeoutSec(args?.timeout);
+  const timeoutMs = timeoutSec === 0 ? 600_000 : timeoutSec * 1000;
   // SSH 会话的命令必须在远程执行 —— 即便会话已死也不降级到本机 shell，
   // 因为那是完全不同的机器，本地执行毫无意义且会产生误导性结果。
   const isSshSession = !!deps.terminalSessionId && deps.terminalSessionId.startsWith('ssh_');
@@ -960,7 +1420,7 @@ async function toolTerminal(args, deps = {}) {
   // 尝试在绑定的终端会话中执行（输出可见于终端 UI）
   if (deps.terminalSessionId) {
     try {
-      const result = await runCommandInRenderer(deps.sender, {
+      const result = await getRunCommandInRenderer()(deps.sender, {
         sessionId: deps.terminalSessionId,
         command,
         timeout: timeoutMs,
@@ -1039,19 +1499,17 @@ async function runInStandaloneShell(command, args, deps, timeoutMs) {
 
 async function executeBuiltinTool(toolName, args, deps = {}) {
   switch (toolName) {
-    case 'Read':
+    case 'read':
       return toolRead(args);
-    case 'Write':
+    case 'write':
       return toolWrite(args);
-    case 'Edit':
+    case 'edit':
       return toolEdit(args);
-    case 'MultiEdit':
-      return toolMultiEdit(args);
-    case 'Bash':
+    case 'bash':
       return toolBash(args, deps.envVars, deps);
-    case 'Glob':
+    case 'glob':
       return toolGlob(args, deps.signal);
-    case 'Grep':
+    case 'grep':
       return toolGrep(args, deps.signal);
     case 'WebFetch':
       return toolWebFetch(args);
