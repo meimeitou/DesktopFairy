@@ -33,93 +33,63 @@
 
 .chat-input-dock.is-busy,
 .terminal-agent-dock.is-busy {
-  border-color: rgba(25, 200, 185, 0.34);
+  border-color: rgba(232, 184, 74, 0.4);
   box-shadow:
     0 10px 28px rgba(121, 79, 39, 0.17),
-    0 0 0 1px rgba(25, 200, 185, 0.18),
-    0 0 18px rgba(25, 200, 185, 0.18),
-    0 0 40px rgba(25, 200, 185, 0.1),
+    0 0 0 1px rgba(232, 184, 74, 0.18),
+    0 0 18px rgba(232, 184, 74, 0.2),
+    0 0 40px rgba(232, 184, 74, 0.1),
     inset 0 1px 0 rgba(121, 79, 39, 0.05);
   animation: chat-input-busy-breathe 3.2s ease-in-out infinite;
 }
 
 .chat-input-dock.is-busy:focus-within,
 .terminal-agent-dock.is-busy:focus-within {
-  border-color: rgba(25, 200, 185, 0.4);
+  border-color: rgba(232, 184, 74, 0.48);
   box-shadow:
     0 10px 28px rgba(121, 79, 39, 0.17),
-    0 0 0 1px rgba(25, 200, 185, 0.2),
-    0 0 20px rgba(25, 200, 185, 0.2),
-    0 0 40px rgba(25, 200, 185, 0.1),
+    0 0 0 1px rgba(232, 184, 74, 0.2),
+    0 0 20px rgba(232, 184, 74, 0.2),
+    0 0 40px rgba(232, 184, 74, 0.1),
     inset 0 1px 0 rgba(121, 79, 39, 0.05);
+}
+
+/* daisyUI aura-dual 式双光束描边：旋转的 repeating-conic-gradient 经 mask 只留边框环 */
+@property --df-aura-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
 }
 
 .chat-input-busy-halo {
   position: absolute;
-  inset: 0;
-  border-radius: 20px;
+  inset: -3px;
+  border-radius: 23px; /* dock 20px + 3px 外扩 */
+  padding: 3px; /* 光环宽度 */
+  background: repeating-conic-gradient(
+    from var(--df-aura-angle),
+    transparent 0%,
+    transparent 40%,
+    rgba(232, 184, 74, 0.95) 50%
+  );
+  /* border-box 减 content-box = 只剩 padding 环 */
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
   pointer-events: none;
   z-index: 2;
-  overflow: visible;
   opacity: 0;
   visibility: hidden;
   transition: opacity var(--motion-slow) var(--ease-island);
+  animation: df-aura-spin 6s linear infinite;
+  animation-play-state: paused;
 }
 
 .chat-input-dock.is-busy .chat-input-busy-halo,
 .terminal-agent-dock.is-busy .chat-input-busy-halo {
   opacity: 1;
   visibility: visible;
-}
-
-.chat-input-busy-svg {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  display: block;
-}
-
-.chat-input-busy-stroke {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.chat-input-busy-stroke-ring {
-  stroke: rgba(25, 200, 185, 0.32);
-  stroke-width: 1.25;
-  filter: drop-shadow(0 0 6px rgba(25, 200, 185, 0.32));
-}
-
-.chat-input-busy-stroke-soft,
-.chat-input-busy-stroke-core {
-  animation: chat-input-busy-orbit 6.8s linear infinite;
-  animation-play-state: paused;
-}
-
-.chat-input-dock.is-busy .chat-input-busy-stroke-soft,
-.chat-input-dock.is-busy .chat-input-busy-stroke-core,
-.terminal-agent-dock.is-busy .chat-input-busy-stroke-soft,
-.terminal-agent-dock.is-busy .chat-input-busy-stroke-core {
   animation-play-state: running;
-}
-
-.chat-input-busy-stroke-soft {
-  stroke: rgba(61, 212, 198, 0.55);
-  stroke-width: 4;
-  stroke-dasharray: 6 94;
-  filter: drop-shadow(0 0 4px rgba(25, 200, 185, 0.45));
-}
-
-.chat-input-busy-stroke-core {
-  stroke: rgba(220, 255, 238, 0.88);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 96;
 }
 
 .chat-input-dock.is-drop-target {
@@ -242,9 +212,10 @@
 }
 
 
-@keyframes chat-input-busy-orbit {
+
+@keyframes df-aura-spin {
   to {
-    stroke-dashoffset: -100;
+    --df-aura-angle: 360deg;
   }
 }
 
@@ -253,32 +224,29 @@
   100% {
     box-shadow:
       0 10px 28px rgba(121, 79, 39, 0.17),
-      0 0 0 1px rgba(25, 200, 185, 0.14),
-      0 0 14px rgba(25, 200, 185, 0.12),
-      0 0 32px rgba(25, 200, 185, 0.06),
+      0 0 0 1px rgba(232, 184, 74, 0.14),
+      0 0 14px rgba(232, 184, 74, 0.12),
+      0 0 32px rgba(232, 184, 74, 0.06),
       inset 0 1px 0 rgba(121, 79, 39, 0.05);
   }
   50% {
     box-shadow:
       0 10px 28px rgba(121, 79, 39, 0.17),
-      0 0 0 1px rgba(25, 200, 185, 0.22),
-      0 0 22px rgba(25, 200, 185, 0.2),
-      0 0 48px rgba(25, 200, 185, 0.1),
+      0 0 0 1px rgba(232, 184, 74, 0.22),
+      0 0 22px rgba(232, 184, 74, 0.2),
+      0 0 48px rgba(232, 184, 74, 0.1),
       inset 0 1px 0 rgba(121, 79, 39, 0.06);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chat-input-dock,
-  .chat-input-busy-halo,
-  .chat-input-busy-stroke {
+  .chat-input-busy-halo {
     transition: none;
   }
 
-  .chat-input-dock.is-busy .chat-input-busy-stroke-soft,
-  .chat-input-dock.is-busy .chat-input-busy-stroke-core,
-  .terminal-agent-dock.is-busy .chat-input-busy-stroke-soft,
-  .terminal-agent-dock.is-busy .chat-input-busy-stroke-core {
+  .chat-input-dock.is-busy .chat-input-busy-halo,
+  .terminal-agent-dock.is-busy .chat-input-busy-halo {
     animation: none;
     opacity: 0;
     visibility: hidden;
@@ -289,11 +257,11 @@
   .terminal-agent-dock.is-busy,
   .terminal-agent-dock.is-busy:focus-within {
     animation: none;
-    border-color: rgba(25, 200, 185, 0.3);
+    border-color: rgba(232, 184, 74, 0.35);
     box-shadow:
       0 10px 28px rgba(121, 79, 39, 0.17),
-      0 0 0 1px rgba(25, 200, 185, 0.16),
-      0 0 18px rgba(25, 200, 185, 0.12),
+      0 0 0 1px rgba(232, 184, 74, 0.16),
+      0 0 18px rgba(232, 184, 74, 0.12),
       inset 0 1px 0 rgba(121, 79, 39, 0.05);
   }
 }
