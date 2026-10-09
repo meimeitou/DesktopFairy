@@ -44,6 +44,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
   const [showAddModel, setShowAddModel] = useState(false);
   const [checkStatus, setCheckStatus] = useState<CheckStatus>("idle");
   const [checkMessage, setCheckMessage] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const selected = useMemo(
@@ -135,7 +136,10 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
   useEffect(() => {
     setCheckStatus("idle");
     setCheckMessage("");
+    // 切换 provider 时重新掩码，避免密钥在无关条目上保持明文
+    setShowApiKey(false);
   }, [selected?.id, selected?.apiHost, selected?.apiKey, selected?.type]);
+
 
   const handleCheckConnection = async () => {
     if (!selected) return;
@@ -309,12 +313,24 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
               <div className="provider-api-key-row">
                 <Input
                   id="provider-api-key"
-                  type="password"
+                  type={showApiKey ? "text" : "password"}
                   shadow
+                  value={selected.apiKey}
                   onChange={(e) =>
                     patchProvider(selected.id, { apiKey: e.target.value })
                   }
                   placeholder="sk-..."
+                  suffix={
+                    <button
+                      type="button"
+                      className="provider-api-key-toggle"
+                      onClick={() => setShowApiKey((v) => !v)}
+                      aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                      title={showApiKey ? "隐藏" : "显示"}
+                    >
+                      <Icon name="Eye" size={14} />
+                    </button>
+                  }
                 />
                 <Button
                   type="default"

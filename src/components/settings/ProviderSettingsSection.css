@@ -309,6 +309,31 @@
   min-width: 0;
 }
 
+/* 眼睛按钮在 animal-suffix 容器内，贴输入框右缘；默认灰、悬停/聚焦暖棕 */
+.provider-api-key-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--bone-600);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: color var(--motion-fast) ease;
+}
+
+.provider-api-key-toggle:hover,
+.provider-api-key-toggle:focus-visible {
+  color: var(--bone-500);
+  outline: none;
+}
+
+.provider-api-key-toggle:focus-visible {
+  outline: 2px solid var(--bone-500);
+  outline-offset: 1px;
+}
+
 .provider-check-row {
   display: flex;
   align-items: center;
