@@ -29,6 +29,7 @@ async function loadMcpToolDefinitions(serversOrIds) {
       const client = await getOrCreateClient(server);
       const { tools } = await client.listTools();
       for (const tool of tools || []) {
+        if (server.disabledToolNames?.includes(tool.name)) continue;
         const openAiName = `mcp__${server.id}__${tool.name}`;
         const inputSchema = tool.inputSchema || { type: 'object', properties: {} };
         definitions.push({

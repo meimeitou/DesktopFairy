@@ -1586,3 +1586,117 @@
 .agent-contextual-tool-toggle.forced-off input {
   pointer-events: none;
 }
+
+/* ===== Tools settings (MCP servers / skills) ===== */
+
+.tools-mcp-list-main {
+  cursor: pointer;
+}
+
+.tools-mcp-list-main:hover strong {
+  color: var(--persimmon-bright);
+}
+
+.tools-mcp-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tools-mcp-detail-head .agent-toggle-title-row {
+  margin-bottom: 0;
+  flex: 1;
+  gap: 8px;
+}
+
+.tools-mcp-tab-body {
+  margin-top: 12px;
+}
+
+.tools-mcp-schema {
+  margin-top: 6px;
+}
+
+.tools-mcp-schema summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--bone-600);
+  user-select: none;
+}
+
+.tools-mcp-schema pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(121, 79, 39, 0.08);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tools-mcp-json-import {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tools-mcp-logs {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(121, 79, 39, 0.04);
+  padding: 8px 10px;
+  max-height: 360px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.tools-mcp-log-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tools-mcp-log-time {
+  flex-shrink: 0;
+  color: var(--bone-600);
+}
+
+.tools-mcp-log-level {
+  flex-shrink: 0;
+  min-width: 36px;
+  font-weight: 500;
+}
+
+.tools-mcp-log-level.error {
+  color: var(--rust, #e05a5a);
+}
+
+.tools-mcp-log-level.warn {
+  color: #d97706;
+}
+
+.tools-mcp-log-level.info {
+  color: var(--animal-success-color-active, #6fba2c);
+}
+
+.tools-mcp-log-source {
+  flex-shrink: 0;
+  color: var(--bone-600);
+}
+
+.tools-mcp-log-msg {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+  color: var(--bone-500);
+}

@@ -8,6 +8,7 @@ import Live2DSettingsSection from "../components/settings/Live2DSettingsSection"
 import WebSearchSettingsSection from "../components/settings/WebSearchSettingsSection";
 import ShortcutSettingsSection from "../components/settings/ShortcutSettingsSection";
 import FileProcessingSettingsSection from "../components/settings/FileProcessingSettingsSection";
+import ToolsSettingsSection from "../components/settings/tools/ToolsSettingsSection";
 import type { AppSettings } from "../shared/settings";
 import {
   setSettings,
@@ -21,6 +22,7 @@ const api = window.electronAPI;
 type SettingsTab =
   | "model"
   | "agent"
+  | "tools"
   | "websearch"
   | "fileProcessing"
   | "selection"
@@ -37,6 +39,7 @@ interface MenuItem {
 const MENU_PRIMARY: MenuItem[] = [
   { id: "model", label: "AI 模型", icon: <Icon name="Cloud" size={16} /> },
   { id: "agent", label: "智能体", icon: <Icon name="Star" size={16} /> },
+  { id: "tools", label: "工具", icon: <Icon name="Settings" size={16} /> },
   { id: "websearch", label: "网络搜索", icon: <Icon name="Globe" size={16} /> },
   { id: "fileProcessing", label: "文档处理", icon: <Icon name="File" size={16} /> },
   { id: "selection", label: "划词助手", icon: <Icon name="Pencil" size={16} /> },
@@ -51,6 +54,7 @@ const MENU_SECONDARY: MenuItem[] = [
 const TAB_META: Record<SettingsTab, { title: string; desc: string }> = {
   model: { title: "AI 模型", desc: "配置模型服务商、API 密钥与可用模型" },
   agent: { title: "智能体", desc: "定义人格、技能、工具与执行策略" },
+  tools: { title: "工具", desc: "管理 MCP 服务器与技能库" },
   websearch: { title: "网络搜索", desc: "让智能体在回答时检索网络资料" },
   fileProcessing: { title: "文档处理", desc: "选择处理器并配置凭证" },
   selection: { title: "划词助手", desc: "选中文本后弹出的快捷操作工具栏" },
@@ -143,6 +147,8 @@ export default function SettingsPage({
         );
       case "agent":
         return <AgentSettingsSection settings={settings} onChange={updateSettings} />;
+      case "tools":
+        return <ToolsSettingsSection settings={settings} onChange={updateSettings} />;
       case "websearch":
         return (
           <WebSearchSettingsSection settings={settings} onChange={update} />

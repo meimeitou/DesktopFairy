@@ -1,69 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { app, dialog } = require('electron');
 
 const MCP_STORE = () => path.join(app.getPath('userData'), 'da_mcp_servers.json');
-/** Bump when builtin preset defaults change and existing installs should pick them up. */
-const TOOL_DEFAULTS_REV = 2;
-const PRESETS_DEFAULTED_OFF = new Set(['builtin-mcp-fetch', 'builtin-mcp-sequential']);
-
-const BUILTIN_MCP_PRESETS = [
-  {
-    id: 'builtin-mcp-filesystem',
-    name: 'Filesystem',
-    type: 'stdio',
-    description:
-      '读写本地文件（@modelcontextprotocol/server-filesystem）。与内置 Read / Write / Edit / Glob 重复，一般无需启用。',
-    reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
-    command: 'npx',
-    args: [
-      '-y',
-      '@modelcontextprotocol/server-filesystem',
-      path.join(os.homedir(), 'Desktop'),
-    ],
-    isActive: false,
-    installSource: 'builtin',
-    shouldConfig: true,
-  },
-  {
-    id: 'builtin-mcp-fetch',
-    name: 'Fetch',
-    type: 'stdio',
-    description:
-      '抓取网页为 Markdown（mcp-server-fetch / uvx）。默认单次最多 5000 字符；支持 max_length 与 start_index 分页。Agent 未指定 max_length 时 DesktopFairy 自动使用 50000。',
-    reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
-    command: 'uvx',
-    args: ['mcp-server-fetch'],
-    env: { PYTHONIOENCODING: 'utf-8' },
-    isActive: false,
-    installSource: 'builtin',
-  },
-  {
-    id: 'builtin-mcp-memory',
-    name: 'Memory',
-    type: 'stdio',
-    description: '持久化知识图谱记忆（@modelcontextprotocol/server-memory）',
-    reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-memory'],
-    env: { MEMORY_FILE_PATH: path.join(app.getPath('userData'), 'mcp-memory.json') },
-    isActive: false,
-    installSource: 'builtin',
-    shouldConfig: true,
-  },
-  {
-    id: 'builtin-mcp-sequential',
-    name: 'Sequential Thinking',
-    type: 'stdio',
-    description: '结构化推理（@modelcontextprotocol/server-sequential-thinking）',
-    reference: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
-    isActive: false,
-    installSource: 'builtin',
-  },
-];
+/** Bump 3: builtin MCP presets removed — existing builtin installs are purged. */
+const TOOL_DEFAULTS_REV = 3;
 
 function loadStore() {
   try {
@@ -83,15 +24,13 @@ function migrateStore(data) {
   if (rev >= TOOL_DEFAULTS_REV) {
     return { servers, toolDefaultsRev: rev };
   }
-  if (rev < 2) {
-    for (const server of servers) {
-      if (PRESETS_DEFAULTED_OFF.has(server.id)) {
-        server.isActive = false;
-      }
-    }
-    rev = 2;
+  if (rev < 3) {
+    // Builtin presets no longer exist; drop their installed records.
+    const kept = servers.filter((s) => s?.installSource !== 'builtin');
+    saveStore({ servers: kept, toolDefaultsRev: 3 });
+    return { servers: kept, toolDefaultsRev: 3 };
   }
-  const next = { servers, toolDefaultsRev: rev };
+  const next = { servers, toolDefaultsRev: TOOL_DEFAULTS_REV };
   saveStore(next);
   return next;
 }
@@ -105,62 +44,22 @@ function persistServers(servers) {
   saveStore({ servers, toolDefaultsRev: TOOL_DEFAULTS_REV });
 }
 
-function mergePresetDefaults(server, preset) {
-  if (!preset) return server;
-  const merged = {
-    ...preset,
-    ...server,
-    id: preset.id,
-    installSource: 'builtin',
-    reference: server.reference || preset.reference,
-    description: preset.description || server.description,
-    shouldConfig: preset.shouldConfig,
-  };
-  // Builtin preset command is canonical (not user-editable); always take it
-  // from the preset so package renames/migrations propagate to existing installs.
-  merged.command = preset.command;
-  // For non-configurable builtins, args are also canonical. For shouldConfig
-  // builtins (e.g. filesystem path), preserve the user's customized args.
-  if (!preset.shouldConfig) {
-    merged.args = preset.args ? [...preset.args] : [];
-  }
-  // Env: preset provides defaults (e.g. MEMORY_FILE_PATH); user customizations win.
-  merged.env = { ...(preset.env || {}), ...(server.env || {}) };
-  return merged;
-}
-
 function listServers() {
   const data = loadStore();
-  const servers = Array.isArray(data.servers) ? data.servers : [];
-  const byId = new Map(servers.map((s) => [s.id, s]));
-  for (const preset of BUILTIN_MCP_PRESETS) {
-    if (!byId.has(preset.id)) {
-      byId.set(preset.id, { ...preset });
-    } else {
-      byId.set(preset.id, mergePresetDefaults(byId.get(preset.id), preset));
-    }
-  }
-  return [...byId.values()];
+  return Array.isArray(data.servers) ? data.servers : [];
 }
 
 function upsertServer(server) {
   if (!server?.id || !server?.name) throw new Error('Invalid MCP server');
-  const preset = BUILTIN_MCP_PRESETS.find((p) => p.id === server.id);
-  const next = preset ? mergePresetDefaults(server, preset) : server;
   const servers = listServers();
-  const idx = servers.findIndex((s) => s.id === next.id);
-  if (idx >= 0) servers[idx] = { ...servers[idx], ...next };
-  else servers.push(next);
+  const idx = servers.findIndex((s) => s.id === server.id);
+  if (idx >= 0) servers[idx] = { ...servers[idx], ...server };
+  else servers.push(server);
   persistServers(servers);
-  return next;
+  return server;
 }
 
 function deleteServer(id) {
-  const preset = BUILTIN_MCP_PRESETS.find((p) => p.id === id);
-  if (preset) {
-    upsertServer({ ...listServers().find((s) => s.id === id) || preset, ...preset, isActive: false });
-    return;
-  }
   const servers = listServers().filter((s) => s.id !== id);
   persistServers(servers);
 }
@@ -205,6 +104,106 @@ async function testMcpServer(server) {
   }
 }
 
+/** Fetch tools/prompts/resources from a live server client; throws on missing/disconnected. */
+async function requireLiveClient(id) {
+  const server = getServerById(String(id || ''));
+  if (!server) throw new Error(`MCP server ${id} not found`);
+  if (server.isActive === false) {
+    throw new Error(`MCP 服务器 ${server.name} 未启用`);
+  }
+  const { getOrCreateClient } = require('./mcpRuntimeService.cjs');
+  return getOrCreateClient(server);
+}
+
+/**
+ * Parse Claude Desktop / Cursor style MCP config JSON:
+ * { "mcpServers": { key: { command, args, env } | { url, headers } } }
+ * A bare server map (no mcpServers wrapper) is also accepted.
+ */
+function parseMcpServersJson(json) {
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch (err) {
+    throw new Error(`JSON 解析失败：${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('JSON 顶层必须是对象');
+  }
+  const map = parsed.mcpServers && typeof parsed.mcpServers === 'object' && !Array.isArray(parsed.mcpServers)
+    ? parsed.mcpServers
+    : parsed;
+  const entries = Object.entries(map).filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v));
+  if (entries.length === 0) {
+    throw new Error('未找到 MCP 服务器定义（需要 mcpServers 字段或顶层服务器 map）');
+  }
+  return entries;
+}
+
+function buildImportedServer(key, cfg, index) {
+  const env = cfg.env && typeof cfg.env === 'object' && !Array.isArray(cfg.env)
+    ? Object.fromEntries(Object.entries(cfg.env).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+    : undefined;
+  const headers = cfg.headers && typeof cfg.headers === 'object' && !Array.isArray(cfg.headers)
+    ? Object.fromEntries(Object.entries(cfg.headers).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)]))
+    : undefined;
+  const id = `mcp_${Date.now().toString(36)}_${index}`;
+  if (typeof cfg.url === 'string' && cfg.url.trim()) {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(cfg.url.trim());
+    } catch {
+      throw new Error(`服务器 "${key}" 的 url 不是合法地址: ${cfg.url.trim()}`);
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new Error(`服务器 "${key}" 的 url 仅支持 http/https`);
+    }
+    return {
+      id,
+      name: key,
+      type: 'streamableHttp',
+      baseUrl: cfg.url.trim(),
+      headers,
+      isActive: true,
+      installSource: 'manual',
+    };
+  }
+  const command = typeof cfg.command === 'string' ? cfg.command.trim() : '';
+  if (!command) {
+    throw new Error(`服务器 "${key}" 缺少 command 或 url`);
+  }
+  return {
+    id,
+    name: key,
+    type: 'stdio',
+    command,
+    args: Array.isArray(cfg.args) ? cfg.args.map((a) => String(a)) : [],
+    env,
+    isActive: true,
+    installSource: 'manual',
+  };
+}
+
+const MCP_IMPORT_MAX_SERVERS = 50;
+
+function importServersFromJson(json) {
+  const entries = parseMcpServersJson(json);
+  if (entries.length > MCP_IMPORT_MAX_SERVERS) {
+    throw new Error(`单次导入不能超过 ${MCP_IMPORT_MAX_SERVERS} 个服务器（当前 ${entries.length} 个）`);
+  }
+  const servers = entries.map(([key, cfg], i) => buildImportedServer(key, cfg, i));
+  // Validate all entries first, then persist in one write (N upserts = N full disk writes).
+  const existing = listServers();
+  const byId = new Map(existing.map((s) => [s.id, s]));
+  for (const server of servers) {
+    byId.set(server.id, server); // id collisions overwrite, same as upsert semantics
+  }
+  persistServers([...byId.values()]);
+  return { imported: servers.length };
+}
+
+
+
 function registerMcpServerHandlers(ipcMain) {
   ipcMain.handle('mcp:servers:list', async () => listServers());
 
@@ -215,23 +214,52 @@ function registerMcpServerHandlers(ipcMain) {
     deleteServer(String(id));
   });
 
-  ipcMain.handle('mcp:servers:install_builtin', async (_event, { id }) => {
-    const preset = BUILTIN_MCP_PRESETS.find((p) => p.id === id);
-    if (!preset) throw new Error('Unknown builtin MCP');
-    return upsertServer({ ...preset, isActive: true });
+  ipcMain.handle('mcp:servers:test', async (_event, server) => testMcpServer(server));
+
+  ipcMain.handle('mcp:servers:tools', async (_event, { id }) => {
+    const client = await requireLiveClient(id);
+    const { tools } = await client.listTools();
+    return (tools || []).map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+    }));
   });
 
-  ipcMain.handle('mcp:servers:builtin_presets', async () =>
-    BUILTIN_MCP_PRESETS.map(({ id, name, description, shouldConfig, reference }) => ({
-      id,
-      name,
-      description,
-      shouldConfig: !!shouldConfig,
-      reference,
-    }))
-  );
+  ipcMain.handle('mcp:servers:prompts', async (_event, { id }) => {
+    const client = await requireLiveClient(id);
+    try {
+      const { prompts } = await client.listPrompts();
+      return (prompts || []).map((p) => ({
+        name: p.name,
+        description: p.description,
+        arguments: p.arguments,
+      }));
+    } catch {
+      return []; // server does not support prompts
+    }
+  });
 
-  ipcMain.handle('mcp:servers:test', async (_event, server) => testMcpServer(server));
+  ipcMain.handle('mcp:servers:resources', async (_event, { id }) => {
+    const client = await requireLiveClient(id);
+    try {
+      const { resources } = await client.listResources();
+      return (resources || []).map((r) => ({
+        uri: r.uri,
+        name: r.name,
+        mimeType: r.mimeType,
+      }));
+    } catch {
+      return []; // server does not support resources
+    }
+  });
+
+  ipcMain.handle('mcp:servers:import_json', async (_event, { json }) => {
+    if (typeof json !== 'string' || !json.trim()) {
+      throw new Error('json required');
+    }
+    return importServersFromJson(json);
+  });
 
   ipcMain.handle('mcp:servers:pick_directory', async () => {
     const result = await dialog.showOpenDialog({
@@ -250,5 +278,6 @@ module.exports = {
   testMcpServer,
   upsertServer,
   deleteServer,
-  BUILTIN_MCP_PRESETS,
+  importServersFromJson,
 };
+

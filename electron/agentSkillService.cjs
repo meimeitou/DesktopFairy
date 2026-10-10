@@ -422,6 +422,28 @@ async function registerSkillFolder(name, deps = {}) {
   };
 }
 
+/** Remove a skill folder by id. Throws on protected builtins / invalid ids / missing folders. */
+function removeSkillFolder(id) {
+  const name = String(id || '').trim();
+  if (PROTECTED_BUILTIN_SKILLS.has(name)) {
+    throw new Error('内置技能不可删除');
+  }
+  // Folder id must be a plain directory name: no traversal, no absolute paths, no separators.
+  if (!name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || /(^|\/)\.\.?(\/|$)/.test(name)) {
+    throw new Error('非法技能目录名');
+  }
+  const skillsDir = getSkillsDir();
+  const target = path.resolve(skillsDir, name);
+  if (target !== path.join(skillsDir, name) || !target.startsWith(skillsDir + path.sep)) {
+    throw new Error('非法技能目录名');
+  }
+  if (!fs.existsSync(target)) {
+    throw new Error('技能目录不存在: ' + name);
+  }
+  fs.rmSync(target, { recursive: true, force: true });
+  return name;
+}
+
 async function executeSkillsTool(args, deps = {}) {
   const action = args?.action;
   const enabled = getEnabledSkillSet(deps.enabledSkillIds, deps.sessionEnabledSkillIds);
@@ -459,12 +481,11 @@ async function executeSkillsTool(args, deps = {}) {
     case 'remove': {
       const id = String(args?.name || args?.identifier || '').trim();
       if (!id) return fail("'name' (skill folder id) is required for remove");
-      if (PROTECTED_BUILTIN_SKILLS.has(id)) {
-        return fail(`Built-in skill "${id}" cannot be removed`);
+      try {
+        removeSkillFolder(id);
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
       }
-      const target = path.join(getSkillsDir(), id);
-      if (!fs.existsSync(target)) return fail(`Skill folder not found: ${id}`);
-      fs.rmSync(target, { recursive: true, force: true });
       if (deps.sessionEnabledSkillIds instanceof Set) {
         deps.sessionEnabledSkillIds.delete(id);
       }
@@ -502,6 +523,11 @@ function registerAgentSkillHandlers(ipcMain) {
       folderName,
       isBuiltin: !!isBuiltin,
     }));
+  });
+  ipcMain.handle('agent:skills:remove', async (_event, { id }) => {
+    if (!id) throw new Error('id required');
+    const removed = removeSkillFolder(String(id));
+    return { ok: true, removed };
   });
 
   ipcMain.handle('agent:skills:open_dir', async () => {

@@ -1,6 +1,6 @@
 export type McpServerType = "stdio" | "sse" | "streamableHttp";
 
-export type McpInstallSource = "builtin" | "manual" | "custom";
+export type McpInstallSource = "manual" | "custom";
 
 export interface McpServer {
   id: string;
@@ -16,7 +16,8 @@ export interface McpServer {
   headers?: Record<string, string>;
   isActive: boolean;
   installSource?: McpInstallSource;
-  shouldConfig?: boolean;
+  /** Tool names opted out at runtime (filtered before exposing to the model) */
+  disabledToolNames?: string[];
   /** Per-tool timeout in seconds (Cherry Studio compatible) */
   timeout?: number;
   /** Long-running mode: reset timeout on MCP progress notifications */

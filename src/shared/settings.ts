@@ -11,7 +11,7 @@ import {
   normalizeAgentConfig,
   type AgentConfig,
 } from "./agent";
-import { type McpServer } from "./mcpServer";
+
 import {
   cloneProviders,
   mergeSystemProviders,
@@ -95,8 +95,6 @@ export interface AppSettings {
   agent: AgentConfig;
   /** Active conversation mode. Mirrors agent.chatMode but stored at app level for quick UI access. */
   chatMode: ChatMode;
-  /** Global MCP server registry (Cherry Studio style) */
-  mcpServers: McpServer[];
   /** WebSearch tool provider configuration */
   webSearch: WebSearchConfig;
   /** Terminal appearance and behavior settings */
@@ -141,7 +139,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   deletedSystemProviderIds: [],
   agent: { ...DEFAULT_AGENT_CONFIG },
   chatMode: DEFAULT_CHAT_MODE,
-  mcpServers: [],
   webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
   terminal: { ...DEFAULT_TERMINAL_SETTINGS },
   sshHosts: [],
@@ -228,103 +225,14 @@ function normalizeCustomModels(value: unknown): CustomLive2DModel[] {
     }));
 }
 
-function normalizeMcpServers(value: unknown): McpServer[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter(
-      (s): s is McpServer =>
-        !!s &&
-        typeof s === "object" &&
-        typeof (s as McpServer).id === "string" &&
-        typeof (s as McpServer).name === "string",
-    )
-    .map((s) => ({
-      id: s.id,
-      name: s.name.trim(),
-      type: s.type === "sse" || s.type === "streamableHttp" ? s.type : "stdio",
-      description:
-        typeof s.description === "string" ? s.description : undefined,
-      baseUrl: typeof s.baseUrl === "string" ? s.baseUrl : undefined,
-      command: typeof s.command === "string" ? s.command : undefined,
-      args: Array.isArray(s.args)
-        ? s.args.filter((a): a is string => typeof a === "string")
-        : undefined,
-      env:
-        s.env && typeof s.env === "object" && !Array.isArray(s.env)
-          ? Object.fromEntries(
-              Object.entries(s.env).filter(
-                ([k, v]) => typeof k === "string" && typeof v === "string",
-              ),
-            )
-          : undefined,
-      headers:
-        s.headers && typeof s.headers === "object" && !Array.isArray(s.headers)
-          ? Object.fromEntries(
-              Object.entries(s.headers).filter(
-                ([k, v]) => typeof k === "string" && typeof v === "string",
-              ),
-            )
-          : undefined,
-      isActive: s.isActive !== false,
-      installSource:
-        s.installSource === "builtin" || s.installSource === "manual"
-          ? s.installSource
-          : "manual",
-      shouldConfig: !!s.shouldConfig,
-    }));
-}
-
-function migrateLegacyAgentMcp(
-  settings: AppSettings,
-): Pick<AppSettings, "mcpServers" | "agent"> {
-  const agent = settings.agent;
-  const legacy = (
-    agent as AgentConfig & {
-      mcpServers?: {
-        id: string;
-        name: string;
-        command: string;
-        enabled?: boolean;
-      }[];
-    }
-  ).mcpServers;
-  if (!Array.isArray(legacy) || legacy.length === 0) {
-    return { mcpServers: settings.mcpServers, agent };
-  }
-  const existing = new Map(settings.mcpServers.map((s) => [s.id, s]));
-  const ids: string[] = [...agent.mcpServerIds];
-  for (const item of legacy) {
-    if (!item?.id || !item.name) continue;
-    if (!existing.has(item.id)) {
-      existing.set(item.id, {
-        id: item.id,
-        name: item.name,
-        type: "stdio",
-        command: item.command?.split(/\s+/)[0] || "npx",
-        args: item.command?.split(/\s+/).slice(1) || [],
-        isActive: item.enabled !== false,
-        installSource: "manual",
-      });
-    }
-    if (item.enabled !== false && !ids.includes(item.id)) ids.push(item.id);
-  }
-  return {
-    mcpServers: [...existing.values()],
-    agent: { ...agent, mcpServerIds: ids },
-  };
-}
 
 function finalizeSettings(settings: AppSettings): AppSettings {
-  const migratedMcp = migrateLegacyAgentMcp({
-    ...settings,
-    mcpServers: normalizeMcpServers(settings.mcpServers),
-  });
   const next: AppSettings = {
     ...settings,
     providers: Array.isArray(settings.providers)
       ? settings.providers.map((p) => normalizeProvider(p))
       : cloneProviders(SYSTEM_PROVIDERS),
-    ...migratedMcp,
+
     selectionMaxLength: normalizeSelectionMaxLength(
       settings.selectionMaxLength,
     ),
@@ -353,7 +261,7 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       settings.live2dSpeechBubbleMaxChars,
     ),
     customModels: normalizeCustomModels(settings.customModels),
-    agent: normalizeAgentConfig(migratedMcp.agent, {
+    agent: normalizeAgentConfig(settings.agent, {
       soul:
         typeof settings.systemPrompt === "string" &&
         settings.systemPrompt.trim()
@@ -365,7 +273,6 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       ),
     }),
     chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
-    mcpServers: migratedMcp.mcpServers,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
     terminal: normalizeTerminalSettings(settings.terminal),
     knowledge: normalizeKnowledgeSettings(settings.knowledge),
@@ -394,10 +301,12 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     temperature?: number;
     ttsEnabled?: boolean;
     modelName?: string;
+    mcpServers?: unknown[];
   };
   delete legacy.temperature;
   delete legacy.ttsEnabled;
   delete legacy.modelName;
+  delete legacy.mcpServers;
   return next;
 }
 
@@ -756,7 +665,6 @@ export type {
   SelectionActionItem,
   LlmProvider,
   AgentConfig,
-  McpServer,
   TerminalSettings,
   SshHost,
   SshCredential,

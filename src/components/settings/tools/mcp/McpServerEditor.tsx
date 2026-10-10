@@ -1,15 +1,15 @@
 import { Button, Input, Switch } from "animal-island-ui";
-import Select from "../../Select";
+import Select from "../../../Select";
 import { useMemo, useState } from "react";
-import HintTip, { FieldHead } from "../../HintTip";
-import type { McpServer, McpServerType } from "../../../shared/mcpServer";
+import HintTip, { FieldHead } from "../../../HintTip";
+import type { McpServer, McpServerType } from "../../../../shared/mcpServer";
 import {
   formatArgsMultiline,
   formatEnvMultiline,
   getMcpCommandPreview,
   parseArgsMultiline,
   parseEnvMultiline,
-} from "../../../shared/mcpServer";
+} from "../../../../shared/mcpServer";
 
 const api = window.electronAPI;
 
@@ -22,14 +22,12 @@ export interface McpTestResult {
 
 interface Props {
   server: McpServer;
-  title?: string;
   onSave: (server: McpServer) => void | Promise<void>;
   onCancel: () => void;
 }
 
-export default function AgentMcpEditor({
+export default function McpServerEditor({
   server,
-  title,
   onSave,
   onCancel,
 }: Props) {
@@ -134,24 +132,10 @@ export default function AgentMcpEditor({
 
   return (
     <div className="agent-mcp-editor">
-      <div className="agent-mcp-editor-head">
-        <strong>{title || `编辑 ${server.name}`}</strong>
-        {server.reference && (
-          <a
-            className="agent-mcp-reference"
-            href={server.reference}
-            target="_blank"
-            rel="noreferrer"
-          >
-            文档
-          </a>
-        )}
-      </div>
-
       <div className="field">
         <label>名称</label>
         <Input shadow type="text" value={name} onChange={(e) => setName(e.target.value)}
-        disabled={server.installSource === "builtin"} />
+        placeholder="如：everything" />
       </div>
 
       <div className="field">
@@ -198,18 +182,16 @@ export default function AgentMcpEditor({
               value={argsText}
               onChange={(e) => setArgsText(e.target.value)}
               rows={4}
-              placeholder={"-y\n@modelcontextprotocol/server-fetch"}
+              placeholder={"-y\n@modelcontextprotocol/server-everything"}
             />
-            {server.shouldConfig && (
-              <Button
-                type="default"
-                size="small"
-                className="agent-mcp-pick-dir"
-                onClick={() => void pickDirectoryForArgs()}
-              >
-                选择目录（写入最后一行参数）
-              </Button>
-            )}
+            <Button
+              type="default"
+              size="small"
+              className="agent-mcp-pick-dir"
+              onClick={() => void pickDirectoryForArgs()}
+            >
+              选择目录（写入最后一行参数）
+            </Button>
           </div>
           <div className="field">
             <FieldHead htmlFor="mcp-env" hint="每行一个 KEY=value。">

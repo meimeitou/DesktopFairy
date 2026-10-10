@@ -1,4 +1,4 @@
-import { Button, Input } from "animal-island-ui";
+import { Input } from "animal-island-ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import HintTip from "../../HintTip";
 import type { AgentConfig, AgentSkillDescriptor } from "../../../shared/agent";
@@ -14,8 +14,7 @@ interface Props {
 export default function AgentSkillsSection({ agent, onChange }: Props) {
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const [loadingSkills, setLoadingSkills] = useState(true);
-  const [skillImportError, setSkillImportError] = useState<string | null>(null);
-  const [importingSkill, setImportingSkill] = useState(false);
+  const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [search, setSearch] = useState("");
 
   const enabledSkillIds = useMemo(
@@ -23,17 +22,31 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
     [agent.enabledSkillIds]
   );
 
+
   const loadSkills = useCallback(async () => {
     setLoadingSkills(true);
     try {
       const list = (await api.invoke("agent:skills:scan")) as AgentSkillDescriptor[];
-      setSkills(Array.isArray(list) ? list : []);
+      const next = Array.isArray(list) ? list : [];
+      setSkills(next);
+      setSkillsLoaded(true);
     } catch {
       setSkills([]);
+      setSkillsLoaded(false);
     } finally {
       setLoadingSkills(false);
     }
   }, []);
+
+  // Dangling-reference cleanup: drop enabledSkillIds whose folders vanished.
+  const enabledIds = agent.enabledSkillIds;
+  useEffect(() => {
+    if (!skillsLoaded) return;
+    const ids = new Set(skills.map((s) => s.id));
+    if (enabledIds.some((id) => !ids.has(id))) {
+      onChange({ enabledSkillIds: enabledIds.filter((id) => ids.has(id)) });
+    }
+  }, [skills, skillsLoaded, enabledIds, onChange]);
 
   useEffect(() => {
     void loadSkills();
@@ -50,34 +63,6 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
     }
   };
 
-  const openSkillsDir = async () => {
-    await api.invoke("agent:skills:open_dir");
-    void loadSkills();
-  };
-
-  const importLocalSkill = async () => {
-    setSkillImportError(null);
-    setImportingSkill(true);
-    try {
-      const result = (await api.invoke("agent:skills:import_directory")) as
-        | { canceled: true }
-        | { skill: AgentSkillDescriptor }
-        | { error: string };
-      if ("canceled" in result && result.canceled) return;
-      if ("error" in result && result.error) {
-        setSkillImportError(result.error);
-        return;
-      }
-      if ("skill" in result && result.skill?.id) {
-        await loadSkills();
-      }
-    } catch (e) {
-      setSkillImportError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setImportingSkill(false);
-    }
-  };
-
   const skillItems = skills.map((s) => ({
     id: s.id,
     name: s.name,
@@ -87,41 +72,13 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
 
   return (
     <section className="settings-section agent-subsection">
-      <div className="agent-skills-toolbar">
-        <div className="agent-skills-toolbar-actions">
-          <Button
-            type="primary"
-            size="small"
-            disabled={importingSkill}
-            onClick={() => void importLocalSkill()}
-          >
-            {importingSkill ? "导入中…" : "导入本地技能"}
-          </Button>
-          <Button
-            type="default"
-            size="small"
-            onClick={() => void openSkillsDir()}
-          >
-            打开目录
-          </Button>
-          <Button
-            type="default"
-            size="small"
-            onClick={() => void loadSkills()}
-          >
-            刷新
-          </Button>
+      <div className="agent-tool-search-row">
+        <div className="field agent-tool-search">
+          <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="搜索技能…"
+          aria-label="搜索技能" />
         </div>
-        <HintTip tip="打开后，技能名称与简介会注入模型上下文，可通过 Skills 工具加载。关闭的技能不进上下文，只能用 /技能id 调用。导入或安装不会自动打开。" />
-      </div>
-      {skillImportError && (
-        <p className="field-hint field-hint--after warn">{skillImportError}</p>
-      )}
-
-      <div className="field agent-tool-search">
-        <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-        placeholder="搜索技能…"
-        aria-label="搜索技能" />
+        <HintTip tip="打开后，技能名称与简介会注入模型上下文，可通过 Skills 工具加载。关闭的技能不进上下文，只能用 /技能id 调用。技能的导入与卸载请在「设置 → 工具」中操作。" />
       </div>
 
       {loadingSkills ? (
@@ -132,7 +89,7 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
           enabledIds={enabledSkillIds}
           onToggle={toggleSkill}
           search={search}
-          emptyLabel="暂无技能。导入含 SKILL.md 的文件夹，或放到 ~/.agents/skills/。"
+          emptyLabel="暂无技能。请在「设置 → 工具」中导入，或放到 ~/.agents/skills/。"
         />
       )}
     </section>
