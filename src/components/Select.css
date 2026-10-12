@@ -20,7 +20,7 @@
   border: 1px solid var(--hairline-strong);
   border-bottom: none;
   border-radius: 12px;
-  box-shadow: 0 3px #d4c9b4;
+  box-shadow: none;
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -46,7 +46,7 @@
 .df-select.open .df-select-trigger,
 .df-select-trigger:focus-visible {
   border-color: var(--persimmon-focus);
-  box-shadow: 0 3px var(--persimmon);
+  box-shadow: none;
 }
 
 .df-select-value {

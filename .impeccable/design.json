@@ -7,8 +7,8 @@
       "parchment-canvas": { "role": "neutral", "displayName": "羊皮纸画布", "canonical": "#f5f8e0", "tonalRamp": ["#f5f8e0", "#f7f3df", "#f0ece2", "#e8e2d2", "#ddd5c2", "#d0c5ab", "#c4b89e", "#a89878"] },
       "parchment-warm": { "role": "neutral", "displayName": "暖羊皮纸", "canonical": "#f7f3df", "tonalRamp": ["#f5f8e0", "#f7f3df", "#f0ece2", "#e8e2d2", "#ddd5c2", "#d0c5ab", "#c4b89e", "#a89878"] },
       "mint-primary": { "role": "primary", "displayName": "乌屿薄荷绿", "canonical": "#19c8b9", "tonalRamp": ["#0a4d47", "#0e7a72", "#12a59a", "#19c8b9", "#3dd4c6", "#6fe0d5", "#a3ece4", "#d4f7f3"] },
-      "ink-deep": { "role": "neutral", "displayName": "深暖棕墨水", "canonical": "#4a3620", "tonalRamp": ["#2c2013", "#4a3620", "#5a442c", "#6d5436", "#725d42", "#9f927d", "#c4b89e", "#e8dcc8"] },
-      "ink-body": { "role": "neutral", "displayName": "正文暖棕", "canonical": "#5a442c", "tonalRamp": ["#2c2013", "#4a3620", "#5a442c", "#6d5436", "#725d42", "#9f927d", "#c4b89e", "#e8dcc8"] },
+      "ink-deep": { "role": "neutral", "displayName": "深暖棕墨水", "canonical": "#4a3620", "tonalRamp": ["#2c2013", "#4a3620", "#5a442c", "#6d5436", "#725d42", "#7d6448", "#c4b89e", "#e8dcc8"] },
+      "ink-body": { "role": "neutral", "displayName": "正文暖棕", "canonical": "#5a442c", "tonalRamp": ["#2c2013", "#4a3620", "#5a442c", "#6d5436", "#725d42", "#7d6448", "#c4b89e", "#e8dcc8"] },
       "amber-warning": { "role": "secondary", "displayName": "琥珀蜜糖", "canonical": "#f5c31c", "tonalRamp": ["#5c4a05", "#8a6e08", "#ba900f", "#dba90e", "#f5c31c", "#f7d04a", "#f9dd7e", "#fcebB1"] },
       "rust-error": { "role": "tertiary", "displayName": "锈红", "canonical": "#e05a5a", "tonalRamp": ["#5c1f1f", "#8a2e2e", "#b84040", "#c94444", "#e05a5a", "#e87878", "#f0a0a0", "#f7cccc"] },
       "moss-success": { "role": "tertiary", "displayName": "苔绿", "canonical": "#6fba2c", "tonalRamp": ["#2b4a10", "#3f6b17", "#5a9e1e", "#6fba2c", "#85cc45", "#a3dd6e", "#c4ea9c", "#e0f5cb"] },
@@ -77,7 +77,7 @@
       "refersTo": "input",
       "description": "库输入框：暖底胶囊 + 硬偏移软 3D 底边。",
       "html": "<input class=\"ds-input\" placeholder=\"搜索会话…\" />",
-      "css": ".ds-input { width: 240px; height: 40px; padding: 0 18px; background: #faf8f3; border: none; border-radius: 50px; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 14px; color: #6d5436; box-shadow: 0 3px #d4c9b4; outline: none; caret-color: #3dd4c6; transition: box-shadow .2s cubic-bezier(.4,0,.2,1); } .ds-input::placeholder { color: #9f927d; } .ds-input:hover { box-shadow: 0 3px #c4b89e; } .ds-input:focus { box-shadow: 0 3px #e0b800, 0 0 0 3px rgba(25,200,185,.18); }"
+      "css": ".ds-input { width: 240px; height: 40px; padding: 0 18px; background: #faf8f3; border: none; border-radius: 50px; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 14px; color: #6d5436; box-shadow: 0 3px #d4c9b4; outline: none; caret-color: #3dd4c6; transition: box-shadow .2s cubic-bezier(.4,0,.2,1); } .ds-input::placeholder { color: #7d6448; } .ds-input:hover { box-shadow: 0 3px #c4b89e; } .ds-input:focus { box-shadow: 0 3px #e0b800, 0 0 0 3px rgba(25,200,185,.18); }"
     },
     {
       "name": "Mint Selected List Item",

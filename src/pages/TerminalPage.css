@@ -600,7 +600,7 @@
   border: 1px solid var(--hairline-strong);
   background: var(--ink-750);
   color: var(--bone-100);
-  box-shadow: var(--animal-shadow-base);
+  box-shadow: none;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -620,7 +620,7 @@
   background: var(--persimmon-soft);
   color: var(--persimmon-bright);
   border-color: var(--persimmon-focus);
-  box-shadow: 0 8px 22px rgba(25, 200, 185, 0.22);
+  box-shadow: none;
 }
 
 .terminal-agent-toggle:active {

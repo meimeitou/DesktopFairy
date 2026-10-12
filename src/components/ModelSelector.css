@@ -37,7 +37,6 @@
   padding: 4px 12px;
   border-radius: 10px;
   background: #fff;
-  box-shadow: 0 2px #d4c9b4;
 }
 
 /* Library Button wraps children in a bare <span> — make it a flex link in the
@@ -53,7 +52,6 @@
 
 .model-selector-trigger:hover:not(:disabled) {
   background: #fffdf7;
-  box-shadow: 0 2px #c4b89e;
 }
 
 .model-selector-trigger:disabled {
@@ -69,11 +67,10 @@
   font-size: 8px;
 }
 
-/* Settings/context form style: milk box with a soft bottom edge, matches inputs. */
+/* Settings/context form style: milk box, flat — matches inputs' surface but without the 3D edge. */
 .model-selector-trigger.variant-field {
   background: #faf8f3;
   border: 1px solid transparent;
-  box-shadow: 0 3px #d4c9b4;
   border-radius: 12px;
   padding: 6px 14px;
 }

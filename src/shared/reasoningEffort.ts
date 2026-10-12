@@ -13,7 +13,7 @@ export const REASONING_EFFORT_CARDS: ReasoningEffortCard[] = [
     value: "default",
     title: "默认",
     description: "不发送参数，依赖模型默认行为。",
-    accent: "#9f927d",
+    accent: "#7d6448",
   },
   {
     value: "low",

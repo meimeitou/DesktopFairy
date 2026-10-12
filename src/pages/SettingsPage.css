@@ -75,6 +75,7 @@
 }
 
 .settings-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -86,6 +87,7 @@
   font-size: 14px;
   font-weight: 600;
   border-radius: 12px;
+  border: 1px solid transparent;
   /* library Button has 3D shadow; flat pill like the demo nav */
   box-shadow: none;
 }
@@ -94,10 +96,27 @@
   background: rgba(121, 79, 39, 0.06);
 }
 
+/* Active: mint soft bg + left-edge marker — same syntax as .topic-item.active (One Mint Rule). */
 .settings-menu-item.active,
 .settings-menu-item.active:hover:not(:disabled) {
-  color: #fff9e3;
-  background: var(--persimmon);
+  color: var(--bone-100);
+  background: var(--persimmon-softer);
+  border-color: rgba(25, 200, 185, 0.28);
+}
+
+.settings-menu-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--persimmon-bright);
+}
+
+.settings-menu-item.active .settings-menu-icon {
+  color: var(--persimmon-bright);
 }
 
 .settings-menu-icon {

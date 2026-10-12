@@ -20,7 +20,7 @@
   --bone-300: #6d5436;
   --bone-400: #794f27;
   --bone-500: #725d42;
-  --bone-600: #9f927d;
+  --bone-600: #7d6448; /* a11y: >=4.5:1 on all parchment surfaces (placeholder/hint text) */
 
   /* Signature: animal primary — mint green */
   --persimmon: var(--animal-primary-color);
@@ -162,6 +162,23 @@ button:not([class^="animal-"]) {
 input {
   font: inherit;
   color: inherit;
+}
+
+/* 按钮统一扁平无阴影：覆盖库 Button 的 box-shadow-sm 底影与 primary 变体的
+   5px 硬偏移（含 hover/active 态）。与输入框的硬偏移底边无关——那是输入控件语法。 */
+button[class^="animal-btn"] {
+  box-shadow: none !important;
+}
+
+/* 动作按钮统一带 1px 暖棕发丝线描边——仅库 Button 的填充式变体（default/
+   primary/danger）。text/link/ghost 变体是无边框导航语法（Tab、菜单、工具行），
+   不加框，避免波及列表与 Tabs。 */
+button[class*="animal-btn-primary"],
+button[class*="animal-btn-default"],
+button[class*="animal-btn-danger"] {
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: var(--hairline-strong) !important;
 }
 
 /* 库 Form label 默认冷黑 rgba(0,0,0,.85)，全局对齐暖棕文本令牌 */

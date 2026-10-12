@@ -1014,9 +1014,9 @@
   margin: 0 16px calc(var(--chat-composer-height, 96px) + 20px);
   position: relative;
   z-index: 5;
-  border: 1px solid rgba(25, 200, 185, 0.3);
+  border: 1.5px solid rgba(232, 184, 74, 0.8);
   border-radius: 10px;
-  background: var(--persimmon-softer);
+  background: rgba(245, 195, 28, 0.28);
   overflow: hidden;
 }
 
@@ -1031,14 +1031,16 @@
 .max-turns-card-title {
   font-size: 13px;
   font-weight: 600;
+  color: var(--bone-200);
 }
 
 .max-turns-card-badge {
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
-  background: var(--persimmon-soft);
-  color: var(--persimmon-bright);
+  font-weight: 600;
+  background: var(--amber);
+  color: var(--bone-100);
 }
 
 .max-turns-card-actions {
