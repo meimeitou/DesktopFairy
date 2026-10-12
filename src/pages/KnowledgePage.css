@@ -382,9 +382,9 @@
 }
 
 .kb-type-note {
-  color: #8ecae6;
-  background: rgba(142, 202, 230, 0.12);
-  border-color: rgba(142, 202, 230, 0.28);
+  color: var(--persimmon-bright);
+  background: var(--persimmon-softer);
+  border-color: rgba(25, 200, 185, 0.28);
 }
 
 .kb-status-pending,
@@ -395,9 +395,9 @@
 }
 
 .kb-status-completed {
-  color: rgba(160, 230, 180, 0.95);
-  background: rgba(80, 180, 120, 0.15);
-  border-color: rgba(80, 180, 120, 0.28);
+  color: var(--animal-success-color);
+  background: rgba(111, 186, 44, 0.15);
+  border-color: rgba(111, 186, 44, 0.28);
 }
 
 .kb-status-failed {

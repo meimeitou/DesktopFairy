@@ -1,10 +1,10 @@
 import type { McpRuntimeState } from "../../../../shared/mcpServer";
 
 const MCP_STATUS_COLOR: Record<McpRuntimeState, string> = {
-  connected: "#4ade80",
-  connecting: "#facc15",
-  error: "#e05a5a",
-  disabled: "#6b7280",
+  connected: "var(--animal-success-color)",
+  connecting: "var(--amber)",
+  error: "var(--rust)",
+  disabled: "var(--bone-600)",
 };
 
 export default function McpStatusDot({
@@ -18,7 +18,7 @@ export default function McpStatusDot({
     <span
       className={`mcp-status-dot mcp-status-${state}`}
       title={title || state}
-      style={{ backgroundColor: MCP_STATUS_COLOR[state] || "#6b7280" }}
+      style={{ backgroundColor: MCP_STATUS_COLOR[state] || "var(--bone-600)" }}
     />
   );
 }

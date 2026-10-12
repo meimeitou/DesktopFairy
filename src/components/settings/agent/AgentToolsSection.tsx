@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import HintTip from "../../HintTip";
 import {
   getBuiltinToolCatalog,
+  getEffectiveToolApprovalMode,
   getEnabledAgentBuiltinTools,
   type AgentConfig,
 } from "../../../shared/agent";
@@ -30,10 +31,10 @@ export default function AgentToolsSection({
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [loadingMcp, setLoadingMcp] = useState(true);
   const [mcpLoaded, setMcpLoaded] = useState(false);
-
+  const approvalMode = getEffectiveToolApprovalMode(agent);
   const catalog = useMemo(
-    () => getBuiltinToolCatalog(agent.toolApprovalMode),
-    [agent.toolApprovalMode]
+    () => getBuiltinToolCatalog(approvalMode),
+    [approvalMode]
   );
 
   const hideWebFetch = useMemo(

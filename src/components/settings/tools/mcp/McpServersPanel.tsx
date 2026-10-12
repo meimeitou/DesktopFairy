@@ -1,4 +1,4 @@
-import { Button, Switch } from "animal-island-ui";
+import { Button, Modal, Switch } from "animal-island-ui";
 import { useCallback, useEffect, useState } from "react";
 import HintTip from "../../../HintTip";
 import type { AppSettings } from "../../../../shared/settings";
@@ -9,7 +9,7 @@ import type {
 } from "../../../../shared/mcpServer";
 import { buildMcpCommandString } from "../../../../shared/mcpServer";
 import McpStatusDot from "./McpStatusDot";
-import McpServerEditor from "./McpServerEditor";
+import McpServerEditModal from "./McpServerEditModal";
 import McpServerDetail from "./McpServerDetail";
 
 const api = window.electronAPI;
@@ -28,8 +28,9 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
   const [statuses, setStatuses] = useState<Record<string, McpRuntimeStatus>>({});
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [showJsonImport, setShowJsonImport] = useState(false);
+  /** null=关闭；"create"=新建弹窗；McpServer 对象=编辑该服务器 */
+  const [editorTarget, setEditorTarget] = useState<"create" | McpServer | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -124,7 +125,7 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
         json: jsonText,
       })) as { imported: number };
       setJsonText("");
-      setShowJsonImport(false);
+      setImportOpen(false);
       void loadMcp();
       return result;
     } catch (e) {
@@ -132,6 +133,27 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
       return null;
     }
   };
+
+  const saveFromEditor = async (server: McpServer) => {
+    await api.invoke("mcp:servers:save", server);
+    setEditorTarget(null);
+    void loadMcp();
+  };
+
+  const editorServer: McpServer | null =
+    editorTarget === "create"
+      ? {
+          id: newMcpId(),
+          name: "",
+          description: "",
+          type: "stdio",
+          command: "",
+          args: [],
+          env: {},
+          isActive: true,
+          installSource: "custom",
+        }
+      : editorTarget;
 
   if (selectedId) {
     const server = servers.find((s) => s.id === selectedId);
@@ -156,22 +178,12 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
           <Button
             type="primary"
             size="small"
-            onClick={() => {
-              setAdding((v) => !v);
-              setShowJsonImport(false);
-            }}
+            onClick={() => setEditorTarget("create")}
           >
-            {adding ? "收起手动创建" : "+ 手动创建"}
+            + 添加服务器
           </Button>
-          <Button
-            type="default"
-            size="small"
-            onClick={() => {
-              setShowJsonImport((v) => !v);
-              setAdding(false);
-            }}
-          >
-            {showJsonImport ? "收起 JSON 导入" : "JSON 导入"}
+          <Button type="default" size="small" onClick={() => setImportOpen(true)}>
+            JSON 导入
           </Button>
           <Button type="default" size="small" onClick={() => void loadMcp()}>
             刷新
@@ -180,60 +192,11 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
         <HintTip tip="MCP 服务器全局管理。绑定到智能体请在「智能体 → MCP 绑定」中设置。" />
       </div>
 
-      {adding && (
-        <McpServerEditor
-          server={{
-            id: newMcpId(),
-            name: "",
-            description: "",
-            type: "stdio",
-            command: "",
-            args: [],
-            env: {},
-            isActive: true,
-            installSource: "custom",
-          }}
-          onSave={async (server) => {
-            await api.invoke("mcp:servers:save", server);
-            setAdding(false);
-            void loadMcp();
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      )}
-
-      {showJsonImport && (
-        <div className="tools-mcp-json-import">
-          <p className="field-hint">
-            粘贴 Claude Desktop / Cursor 风格配置（{"{"}"mcpServers": {"{"}…{"}"}{"}"}），顶层服务器 map 也可。
-          </p>
-          <textarea
-            className="agent-mcp-textarea"
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            rows={8}
-            placeholder={'{"mcpServers":{"everything":{"command":"npx","args":["-y","@modelcontextprotocol/server-everything"]}}}'}
-            aria-label="MCP JSON 配置"
-          />
-          {jsonError && (
-            <p className="field-hint field-hint--after warn">{jsonError}</p>
-          )}
-          <Button
-            type="primary"
-            size="small"
-            disabled={!jsonText.trim()}
-            onClick={() => void importJson()}
-          >
-            解析并导入
-          </Button>
-        </div>
-      )}
-
       {loading ? (
         <p className="agent-status-line">正在加载 MCP 服务器…</p>
       ) : servers.length === 0 ? (
         <p className="agent-catalog-empty">
-          暂无 MCP 服务器。手动创建或从 JSON 导入。
+          暂无 MCP 服务器。手动添加或从 JSON 导入。
         </p>
       ) : (
         <ul className="agent-toggle-list">
@@ -272,6 +235,13 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
                 <Button
                   type="default"
                   size="small"
+                  onClick={() => setEditorTarget(server)}
+                >
+                  编辑
+                </Button>
+                <Button
+                  type="default"
+                  size="small"
                   danger
                   className="agent-catalog-remove"
                   onClick={() => void removeServer(server.id)}
@@ -283,6 +253,57 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
           ))}
         </ul>
       )}
+
+      {editorServer && (
+        <McpServerEditModal
+          open
+          server={editorServer}
+          title={
+            editorTarget === "create" ? "添加 MCP 服务器" : `编辑 - ${editorServer.name}`
+          }
+          onClose={() => setEditorTarget(null)}
+          onSave={saveFromEditor}
+        />
+      )}
+
+      <Modal
+        open={importOpen}
+        title="JSON 导入 MCP 服务器"
+        onClose={() => setImportOpen(false)}
+        footer={null}
+        typewriter={false}
+        width={560}
+        className="ssh-form-modal mcp-edit-modal"
+      >
+        <p className="field-hint">
+          粘贴 Claude Desktop / Cursor 风格配置（{"{"}"mcpServers": {"{"}…{"}"}{"}"}），顶层服务器 map 也可。
+        </p>
+        <textarea
+          className="agent-mcp-textarea"
+          value={jsonText}
+          onChange={(e) => setJsonText(e.target.value)}
+          rows={10}
+          placeholder={'{"mcpServers":{"everything":{"command":"npx","args":["-y","@modelcontextprotocol/server-everything"]}}}'}
+          aria-label="MCP JSON 配置"
+        />
+        {jsonError && (
+          <p className="field-hint field-hint--after warn">{jsonError}</p>
+        )}
+        <div className="agent-mcp-form-actions">
+          <div className="agent-mcp-form-actions-spacer" />
+          <Button size="small" onClick={() => setImportOpen(false)}>
+            取消
+          </Button>
+          <Button
+            type="primary"
+            size="small"
+            disabled={!jsonText.trim()}
+            onClick={() => void importJson()}
+          >
+            解析并导入
+          </Button>
+        </div>
+      </Modal>
     </section>
   );
 }

@@ -91,13 +91,13 @@
 }
 
 .settings-menu-item:hover:not(:disabled):not(.active) {
-  background: #d6dff0;
+  background: rgba(121, 79, 39, 0.06);
 }
 
 .settings-menu-item.active,
 .settings-menu-item.active:hover:not(:disabled) {
-  color: #fff;
-  background: #b7c6e5;
+  color: #fff9e3;
+  background: var(--persimmon);
 }
 
 .settings-menu-icon {
@@ -1285,7 +1285,7 @@
 .agent-mcp-editor {
   margin-top: 12px;
   padding: 14px;
-  border: 1px solid rgba(140, 120, 255, 0.25);
+  border: 1px solid rgba(25, 200, 185, 0.25);
   border-radius: 10px;
   background: rgba(121, 79, 39, 0.03);
 }
@@ -1699,4 +1699,96 @@
   min-width: 0;
   word-break: break-all;
   color: var(--bone-500);
+}
+
+/* ---- MCP 编辑弹窗（cherry-studio 风格分组表单） ---- */
+
+.mcp-edit-modal [class*="animal-body"] {
+  align-items: stretch;
+}
+
+.mcp-form-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mcp-form-inline-action {
+  display: flex;
+  justify-content: flex-end;
+  margin: -4px 0 8px;
+}
+
+.mcp-form-advanced-toggle {
+  display: block;
+  width: 100%;
+  padding: 6px 0;
+  border: none;
+  border-top: 1px dashed var(--hairline-strong);
+  background: none;
+  color: var(--bone-600);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.mcp-form-advanced-toggle:hover {
+  color: var(--persimmon-bright);
+}
+
+.mcp-form-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+/* FormItem stretches its control child full-width (flex:1 1 auto). A Switch
+   inside a form must opt out to keep its intrinsic pill size. Extra class
+   specificity guards against the library's control-input > * rule. */
+.mcp-form-advanced-body .mcp-form-switch {
+  flex: 0 0 auto;
+  min-width: 52px;
+}
+
+.agent-mcp-form-actions-spacer {
+  flex: 1;
+}
+
+/* ---- MCP 详情页通用 tab 信息卡片 ---- */
+
+.tools-mcp-general-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(121, 79, 39, 0.04);
+}
+
+.tools-mcp-general-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tools-mcp-general-field {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.tools-mcp-general-label {
+  color: var(--bone-600);
+  flex-shrink: 0;
+}
+
+.tools-mcp-general-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
 }

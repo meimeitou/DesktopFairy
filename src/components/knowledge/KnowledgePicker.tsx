@@ -84,7 +84,7 @@ export default function KnowledgePicker({ selectedIds, onChange, disabled }: Pro
                         fontSize: 10,
                         padding: "0 4px",
                         borderRadius: 3,
-                        background: "rgba(120,140,200,0.2)",
+                        background: "var(--persimmon-softer)",
                       }}
                     >
                       半

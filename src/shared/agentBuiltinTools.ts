@@ -165,13 +165,6 @@ export function getBuiltinToolCatalog(
   }));
 }
 
-export function getEnabledBuiltinTools(
-  disabledToolIds: string[],
-  toolApprovalMode: "auto" | "confirm"
-): AgentBuiltinTool[] {
-  const disabled = new Set(disabledToolIds);
-  return getBuiltinToolCatalog(toolApprovalMode).filter((t) => !disabled.has(t.id));
-}
 
 /** Builtin tools that stay enabled unless mode rules block them (e.g. full-auto). */
 export const ALWAYS_ENABLED_TOOL_IDS = ["AskUserQuestion"] as const;

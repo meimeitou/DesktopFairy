@@ -131,7 +131,7 @@ export default function WebSearchSettingsSection({
           {testResult.status === "success" && (
             <div
               className="field-hint"
-              style={{ color: "#10b981", marginTop: 6 }}
+              style={{ color: "var(--animal-success-color)", marginTop: 6 }}
             >
               ✓ 检测通过，搜索到 {testResult.count} 条结果
               {testResult.sample && (

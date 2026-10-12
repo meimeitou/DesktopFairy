@@ -12,7 +12,6 @@ import {
   normalizeReasoningEffort,
 } from "./reasoningEffort";
 
-export type ToolApprovalMode = "auto" | "confirm";
 
 export interface AgentConfig {
   name: string;
@@ -36,7 +35,7 @@ export interface AgentConfig {
   /** Enabled skill folder ids */
   enabledSkillIds: string[];
   maxTurns: number;
-  toolApprovalMode: ToolApprovalMode;
+
   envVars: Record<string, string>;
   /** Active conversation mode — drives system prompt + tool behavior. */
   chatMode: ChatMode;
@@ -50,7 +49,6 @@ export type { AgentBuiltinTool, ToolApproval } from "./agentBuiltinTools";
 export {
   CLAUDE_CODE_BUILTIN_TOOLS,
   getBuiltinToolCatalog,
-  getEnabledBuiltinTools,
   buildOpenAiToolDefinitions,
 } from "./agentBuiltinTools";
 
@@ -142,7 +140,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   mcpServerIds: [],
   enabledSkillIds: [],
   maxTurns: 30,
-  toolApprovalMode: "confirm",
+
   envVars: {},
   chatMode: DEFAULT_CHAT_MODE,
   reasoningEffort: DEFAULT_REASONING_EFFORT,
@@ -236,10 +234,6 @@ export function normalizeAgentConfig(
       typeof raw.maxTurns === "number" && Number.isFinite(raw.maxTurns)
         ? Math.min(100, Math.max(1, Math.round(raw.maxTurns)))
         : base.maxTurns,
-    toolApprovalMode:
-      raw.toolApprovalMode === "auto" || raw.toolApprovalMode === "confirm"
-        ? raw.toolApprovalMode
-        : base.toolApprovalMode,
     envVars,
     chatMode: normalizeChatMode(raw.chatMode),
     reasoningEffort: normalizeReasoningEffort(raw.reasoningEffort),

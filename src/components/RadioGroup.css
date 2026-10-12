@@ -72,7 +72,7 @@
   height: var(--df-radio-well);
   border-radius: 50%;
   background: var(--persimmon);
-  box-shadow: inset 1px 1px 0 rgba(210, 255, 230, 0.45);
+  box-shadow: inset 1px 1px 0 rgba(245, 248, 224, 0.45);
   transform: translate(-50%, -50%) scale(0);
   opacity: 0;
   transition:

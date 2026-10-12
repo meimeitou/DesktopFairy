@@ -10,10 +10,6 @@
 
 /* .chat-mode-trigger: official Button skin, no overrides */
 
-.chat-mode-label {
-  font-size: 12px;
-  white-space: nowrap;
-}
 
 .chat-mode-popover {
   position: absolute;
@@ -87,7 +83,7 @@
 }
 
 .chat-mode-item:hover:not(:disabled):not(.active) {
-  background: #d6dff0;
+  background: rgba(121, 79, 39, 0.06);
 }
 
 /* Library Button wraps children in a bare <span>; re-establish the intended
@@ -103,15 +99,15 @@
 
 .chat-mode-item.active,
 .chat-mode-item.active:hover:not(:disabled) {
-  /* demo-nav mist blue selected pill */
-  background: #b7c6e5;
-  color: #fff;
+  /* mint selected pill — matches the system's selection syntax */
+  background: var(--persimmon);
+  color: #fff9e3;
 }
 
 .chat-mode-item.active .chat-mode-item-icon,
 .chat-mode-item.active .chat-mode-item-title,
 .chat-mode-item.active .chat-mode-item-desc {
-  color: #fff;
+  color: #fff9e3;
 }
 
 .chat-mode-item.active .chat-mode-item-icon svg {
@@ -149,3 +145,5 @@
     animation: none;
   }
 }
+
+/* Narrow chat window: hide the mode label if a text variant ever returns. */

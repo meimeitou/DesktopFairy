@@ -573,7 +573,7 @@ export default function KnowledgePage({
                               fontSize: 10,
                               padding: "0 4px",
                               borderRadius: 3,
-                              background: "rgba(120,140,200,0.2)",
+                              background: "var(--persimmon-softer)",
                             }}
                           >
                             半
@@ -1083,14 +1083,13 @@ export default function KnowledgePage({
                   alignItems: "flex-start",
                   gap: 8,
                   padding: "8px 10px",
-                  border:
-                    "1px solid var(--border-color, rgba(120,140,200,0.3))",
+                  border: "1px solid var(--hairline-strong)",
                   borderRadius: 6,
                   marginBottom: 6,
                   cursor: "pointer",
                   background:
                     newKind === "vector"
-                      ? "rgba(120,140,200,0.08)"
+                      ? "var(--persimmon-softer)"
                       : "transparent",
                 }}
               >
@@ -1117,13 +1116,12 @@ export default function KnowledgePage({
                   alignItems: "flex-start",
                   gap: 8,
                   padding: "8px 10px",
-                  border:
-                    "1px solid var(--border-color, rgba(120,140,200,0.3))",
+                  border: "1px solid var(--hairline-strong)",
                   borderRadius: 6,
                   cursor: "pointer",
                   background:
                     newKind === "semi_structured"
-                      ? "rgba(120,140,200,0.08)"
+                      ? "var(--persimmon-softer)"
                       : "transparent",
                 }}
               >

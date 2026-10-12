@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-12T00:00:00Z",
+  "title": "Design System: DesktopFairy",
+  "extensions": {
+    "colorMeta": {
+      "parchment-canvas": { "role": "neutral", "displayName": "羊皮纸画布", "canonical": "#f5f8e0", "tonalRamp": ["#f5f8e0", "#f7f3df", "#f0ece2", "#e8e2d2", "#ddd5c2", "#d0c5ab", "#c4b89e", "#a89878"] },
+      "parchment-warm": { "role": "neutral", "displayName": "暖羊皮纸", "canonical": "#f7f3df", "tonalRamp": ["#f5f8e0", "#f7f3df", "#f0ece2", "#e8e2d2", "#ddd5c2", "#d0c5ab", "#c4b89e", "#a89878"] },
+      "mint-primary": { "role": "primary", "displayName": "乌屿薄荷绿", "canonical": "#19c8b9", "tonalRamp": ["#0a4d47", "#0e7a72", "#12a59a", "#19c8b9", "#3dd4c6", "#6fe0d5", "#a3ece4", "#d4f7f3"] },
+      "ink-deep": { "role": "neutral", "displayName": "深暖棕墨水", "canonical": "#4a3620", "tonalRamp": ["#2c2013", "#4a3620", "#5a442c", "#6d5436", "#725d42", "#9f927d", "#c4b89e", "#e8dcc8"] },
+      "ink-body": { "role": "neutral", "displayName": "正文暖棕", "canonical": "#5a442c", "tonalRamp": ["#2c2013", "#4a3620", "#5a442c", "#6d5436", "#725d42", "#9f927d", "#c4b89e", "#e8dcc8"] },
+      "amber-warning": { "role": "secondary", "displayName": "琥珀蜜糖", "canonical": "#f5c31c", "tonalRamp": ["#5c4a05", "#8a6e08", "#ba900f", "#dba90e", "#f5c31c", "#f7d04a", "#f9dd7e", "#fcebB1"] },
+      "rust-error": { "role": "tertiary", "displayName": "锈红", "canonical": "#e05a5a", "tonalRamp": ["#5c1f1f", "#8a2e2e", "#b84040", "#c94444", "#e05a5a", "#e87878", "#f0a0a0", "#f7cccc"] },
+      "moss-success": { "role": "tertiary", "displayName": "苔绿", "canonical": "#6fba2c", "tonalRamp": ["#2b4a10", "#3f6b17", "#5a9e1e", "#6fba2c", "#85cc45", "#a3dd6e", "#c4ea9c", "#e0f5cb"] },
+      "hairline": { "role": "neutral", "displayName": "发丝线", "canonical": "#e8dcc8", "tonalRamp": ["#e8dcc8", "#dccbb0", "#d8c9ae", "#cdbd9e", "#c4b89e", "#a89878", "#8a7b66", "#725d42"] }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "正文", "purpose": "全部 UI 正文与聊天气泡（气泡 13.5px/1.62）。" },
+      "label": { "displayName": "标签", "purpose": "分组标签、按钮小字、时间戳；大写 + 0.5px 字距的变奏仅用于聊天页标题。" },
+      "mono": { "displayName": "等宽", "purpose": "终端、代码块、SSH 主机、模型路径、工具元信息。" }
+    },
+    "shadows": [
+      { "name": "island", "value": "0 8px 24px 0 rgba(61, 52, 40, .14)", "purpose": "浮岛面板（聊天/终端/设置卡片、侧栏）浮在羊皮纸底上。" },
+      { "name": "ambient-sm", "value": "0 2px 4px 0 rgba(61, 52, 40, .06)", "purpose": "按钮、卡片、输入框的环境光小阴影。" },
+      { "name": "felted-3d", "value": "0 3px #c4b89e", "purpose": "库输入框/选择器的硬偏移底边，按下位移消失；唯一的拟物元素。" },
+      { "name": "dock-composite", "value": "0 10px 28px rgba(121,79,39,.17), 0 1px 4px rgba(121,79,39,.1), inset 0 1px 0 rgba(121,79,39,.04)", "purpose": "聊天输入悬浮 dock 的多层暖影。" },
+      { "name": "window-glass", "value": "0 8px 40px rgba(61,52,40,.18), 0 0 0 0.5px rgba(196,184,158,.25)", "purpose": "独立浮窗框架，配合 24px backdrop blur 的磨砂羊皮纸玻璃感。" }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "默认缓动（--animal-motion-ease / --ease-island）。" },
+      { "name": "duration-fast", "value": ".15s", "purpose": "悬停、按下等即时反馈。" },
+      { "name": "duration-base", "value": ".25s", "purpose": "状态切换默认时长。" },
+      { "name": "duration-slow", "value": ".35s", "purpose": "面板级过渡。" },
+      { "name": "press-physical", "value": "translateY(1px) scale(0.98)", "purpose": "全局按下物理下陷，reduced-motion 时禁用。" },
+      { "name": "busy-breathe", "value": "box-shadow breathe 3.2s ease-in-out infinite + conic-gradient aura 6s linear", "purpose": "输入 dock 生成中的琥珀呼吸光环——专属于「角色在想事情」。" }
+    ],
+    "breakpoints": [
+      { "name": "pet-window-narrow", "value": "120px", "purpose": "伴侣窗过窄时聊天按钮收起为纯图标。" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "薄荷绿主按钮，胶囊形，按下物理下陷。",
+      "html": "<button class=\"ds-btn-primary\">发送</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; background: #19c8b9; color: #fff9e3; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 14px; font-weight: 600; letter-spacing: .02em; border: none; border-radius: 50px; cursor: pointer; box-shadow: 0 2px 4px rgba(61,52,40,.06); transition: all .25s cubic-bezier(.4,0,.2,1); } .ds-btn-primary:hover { background: #3dd4c6; } .ds-btn-primary:active { background: #50b9ab; transform: translateY(1px) scale(.98); } .ds-btn-primary:focus-visible { outline: 2px solid #19c8b9; outline-offset: 2px; } .ds-btn-primary:disabled { cursor: not-allowed; opacity: .5; box-shadow: none; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "透明底 + 发丝线描边的小操作按钮（如清除上下文）。",
+      "html": "<button class=\"ds-btn-ghost\">清空消息</button>",
+      "css": ".ds-btn-ghost { padding: 4px 10px; background: transparent; border: 1px solid #d8c9ae; border-radius: 8px; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 11px; font-weight: 500; color: #725d42; cursor: pointer; transition: background .15s, border-color .15s, color .15s; } .ds-btn-ghost:hover { background: rgba(121,79,39,.06); border-color: #c4b89e; color: #5a442c; } .ds-btn-ghost:disabled { opacity: .4; cursor: not-allowed; } .ds-btn-ghost:active { transform: translateY(1px) scale(.98); }"
+    },
+    {
+      "name": "Journal Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "暖羊皮纸卡片，浮岛阴影，奶点壁纸为可选内页纹理。",
+      "html": "<div class=\"ds-card\">卡片内容</div>",
+      "css": ".ds-card { padding: 16px 24px; background: #f7f3df; color: #725d42; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 14px; font-weight: 500; border-radius: 16px; box-shadow: 0 8px 24px rgba(61,52,40,.14); transition: all .3s ease; } .ds-card.ds-card-hoverable:hover { transform: translateY(-2px); }"
+    },
+    {
+      "name": "Cream Dots Bubble",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "助手消息气泡：奶点壁纸签名纹理。",
+      "html": "<div class=\"ds-bubble\">这是一条助手回复，铺着奶点壁纸的羊皮纸内页。</div>",
+      "css": ".ds-bubble { max-width: min(92%, 720px); padding: 10px 14px; border-radius: 14px; background: radial-gradient(circle, rgba(196,184,158,.15) 1.5px, transparent 1.5px) 0 0 / 28px 28px, radial-gradient(circle, rgba(196,184,158,.1) 1px, transparent 1px) 7px 7px / 14px 14px, #f7f3df; color: #4a3620; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 13.5px; line-height: 1.62; }"
+    },
+    {
+      "name": "Pill Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "库输入框：暖底胶囊 + 硬偏移软 3D 底边。",
+      "html": "<input class=\"ds-input\" placeholder=\"搜索会话…\" />",
+      "css": ".ds-input { width: 240px; height: 40px; padding: 0 18px; background: #faf8f3; border: none; border-radius: 50px; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 14px; color: #6d5436; box-shadow: 0 3px #d4c9b4; outline: none; caret-color: #3dd4c6; transition: box-shadow .2s cubic-bezier(.4,0,.2,1); } .ds-input::placeholder { color: #9f927d; } .ds-input:hover { box-shadow: 0 3px #c4b89e; } .ds-input:focus { box-shadow: 0 3px #e0b800, 0 0 0 3px rgba(25,200,185,.18); }"
+    },
+    {
+      "name": "Mint Selected List Item",
+      "kind": "nav",
+      "refersTo": "tab-active",
+      "description": "会话/菜单选中态语法：薄荷绿 soft 底 + 同色系描边 + 左缘标记。",
+      "html": "<div class=\"ds-nav\"><div class=\"ds-nav-item\">会话 A</div><div class=\"ds-nav-item ds-nav-item-active\">会话 B（当前）</div></div>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; background: #f8f8f0; border-radius: 16px; box-shadow: 0 8px 24px rgba(61,52,40,.14); } .ds-nav-item { position: relative; padding: 8px 10px; border: 1px solid transparent; border-radius: 10px; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 13px; color: #6d5436; cursor: pointer; transition: background .15s; } .ds-nav-item:hover { background: rgba(121,79,39,.05); } .ds-nav-item-active { background: rgba(25,200,185,.09); border-color: rgba(25,200,185,.28); } .ds-nav-item-active::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: #19c8b9; }"
+    },
+    {
+      "name": "Solid Tag",
+      "kind": "chip",
+      "refersTo": "tag-solid",
+      "description": "库 Tag solid 变体：羊皮纸底胶囊。",
+      "html": "<span class=\"ds-tag\">文本附件</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; background: #f7f3df; color: #8f734f; border: 1.5px solid #d4c4a8; border-radius: 999px; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 12px; font-weight: 600; }"
+    },
+    {
+      "name": "Context Clear Marker",
+      "kind": "chip",
+      "refersTo": "tag-solid",
+      "description": "手账感签名胶囊：琥珀 soft 底 + ✂ 前缀，标记上下文清除点。",
+      "html": "<div class=\"ds-clear-mark\"><span>上下文已清除</span></div>",
+      "css": ".ds-clear-mark { display: flex; align-items: center; gap: 12px; margin: 14px 0; } .ds-clear-mark::before, .ds-clear-mark::after { content: ''; flex: 1; height: 1px; background: linear-gradient(to right, transparent, rgba(232,184,74,.45), transparent); } .ds-clear-mark span { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; background: rgba(245,195,28,.15); border: 1px solid rgba(232,184,74,.4); border-radius: 999px; color: #f0d48a; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 12px; font-weight: 600; white-space: nowrap; } .ds-clear-mark span::before { content: '✂'; font-size: 13px; }"
+    },
+    {
+      "name": "Busy Composer Halo",
+      "kind": "custom",
+      "refersTo": "input",
+      "description": "生成中输入 dock：琥珀呼吸光晕 + 旋转双光束描边——系统最华丽的动效。",
+      "html": "<div class=\"ds-busy-dock\"><div class=\"ds-busy-aura\"></div>正在思考…</div>",
+      "css": "@property --ds-aura-angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; } .ds-busy-dock { position: relative; display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 20px; background: #f0ece2; border: 0.5px solid rgba(232,184,74,.4); box-shadow: 0 10px 28px rgba(121,79,39,.17), 0 0 18px rgba(232,184,74,.2), 0 0 40px rgba(232,184,74,.1); color: #6d5436; font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 13px; animation: ds-breathe 3.2s ease-in-out infinite; } @keyframes ds-breathe { 0%,100% { box-shadow: 0 10px 28px rgba(121,79,39,.17), 0 0 14px rgba(232,184,74,.14), 0 0 32px rgba(232,184,74,.07); } 50% { box-shadow: 0 10px 28px rgba(121,79,39,.17), 0 0 22px rgba(232,184,74,.26), 0 0 48px rgba(232,184,74,.13); } } .ds-busy-aura { position: absolute; inset: -3px; border-radius: 23px; padding: 3px; background: repeating-conic-gradient(from var(--ds-aura-angle), transparent 0%, transparent 40%, rgba(232,184,74,.95) 50%); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); pointer-events: none; animation: ds-aura-spin 6s linear infinite; } @keyframes ds-aura-spin { to { --ds-aura-angle: 360deg; } }"
+    },
+    {
+      "name": "Selection Tip Toolbar",
+      "kind": "custom",
+      "refersTo": "input",
+      "description": "划词工具栏签名组件：磨砂羊皮纸紧凑工具条。",
+      "html": "<div class=\"ds-tip\"><button class=\"ds-tip-btn\"><span class=\"ds-tip-icon\">✦</span><span class=\"ds-tip-label\">询问</span></button><button class=\"ds-tip-btn\"><span class=\"ds-tip-icon\">✎</span><span class=\"ds-tip-label\">翻译</span></button></div>",
+      "css": ".ds-tip { display: inline-flex; align-items: stretch; gap: 1px; padding: 4px; background: rgba(248,244,232,.92); border: 1px solid #d8c9ae; border-radius: 12px; backdrop-filter: blur(14px); box-shadow: 0 8px 24px rgba(61,52,40,.15), 0 0 0 1px rgba(196,184,158,.3); } .ds-tip-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 44px; padding: 4px 6px; background: transparent; border: none; cursor: pointer; border-radius: 8px; transition: background .15s; } .ds-tip-btn:hover { background: rgba(25,200,185,.09); } .ds-tip-btn:active { transform: translateY(1px) scale(.98); } .ds-tip-icon { font-size: 15px; line-height: 1; color: #6d5436; } .ds-tip-label { font-family: Nunito, 'Noto Sans SC', sans-serif; font-size: 10px; font-weight: 500; letter-spacing: .2px; color: #6d5436; white-space: nowrap; } .ds-tip-btn:hover .ds-tip-label { color: #4a3620; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "奶油手账（The Cream Journal）",
+    "overview": "DesktopFairy 的界面是一本摊开在 macOS 桌面上的奶油色手账：温暖的羊皮纸底色、暖棕墨水文字、薄荷绿作为唯一的签名色点缀。整个系统由 animal-island-ui 组件库提供基础 token 与组件皮肤，项目侧通过别名层把旧变量名重映射到这套暖色值。\n\n系统是浅色专用的，无深色模式，无纯黑。角色感来自材质（羊皮纸、圆角、软阴影）而非插画装饰；密度偏紧凑，因为核心用户是重度使用的开发者。",
+    "keyCharacteristics": [
+      "暖羊皮纸表面层次 + 暖棕墨水文字，永不用纯黑或冷灰",
+      "薄荷绿 #19c8b9 唯一签名色，克制使用（选中、主按钮、焦点、悬停反馈）",
+      "圆角无处不在：胶囊按钮（50px）、面板 16px、气泡 14px——没有尖锐直角的主流 UI",
+      "组件库统一皮肤：优先用 animal-island-ui 官方组件，不自行重绘",
+      "动效克制且尊重 prefers-reduced-motion：默认 .25s cubic-bezier(.4,0,.2,1)"
+    ],
+    "rules": [
+      { "name": "The One Mint Rule", "body": "薄荷绿只用于交互反馈（选中、激活、焦点、悬停），不做大面积铺色；例外是 Tab 激活态与主按钮。一个屏幕上薄荷绿面积 ≤10%，稀缺才是签名。", "section": "colors" },
+      { "name": "The Warm Ink Rule", "body": "文字永远是暖棕，永不用纯黑或冷灰；表面永远是暖米色，永不用纯白做大底色。", "section": "colors" },
+      { "name": "The Legacy Alias Rule", "body": "项目 CSS 用 --persimmon/--ink-*/--bone-* 等旧名，实际值已在 src/index.css 别名层重映射到暖色。新代码直接用 --animal-* token 或语义别名，禁止硬编码十六进制值重复定义已有 token。", "section": "colors" },
+      { "name": "The No-Display Rule", "body": "没有 display/hero 字号。信息型 UI 的层级靠字重与颜色区分，不靠大字号。", "section": "typography" },
+      { "name": "The Flat-Rest Rule", "body": "静止状态平面化：阴影表达「这是一张浮着的纸片」，不表达高度竞争。悬停最多位移 1-2px。", "section": "elevation" },
+      { "name": "The Felted Edge Rule", "body": "阴影颜色永远是暖棕系，不用冷黑阴影；硬偏移阴影用发丝线棕 #c4b89e。", "section": "elevation" }
+    ],
+    "dos": [
+      "新组件优先用 animal-island-ui 库组件，页面 CSS 只调布局",
+      "颜色一律走 token：--ink-*/--animal-bg-*（表面）、--bone-*（文字）、--persimmon*（签名色）、--hairline*（描边）",
+      "交互反馈用薄荷绿 soft 透明底（9%-14%）+ 1px 同色系描边",
+      "动效遵守 .15s/.25s/.35s + cubic-bezier(.4,0,.2,1)；非必要动效包在 prefers-reduced-motion 里",
+      "按下反馈用全局物理下陷 translateY(1px) scale(.98)",
+      "手账内页场景可用奶点壁纸纹理增强材质感"
+    ],
+    "donts": [
+      "不引入冷色系或纯黑——用户气泡淡蓝与设置菜单冷蓝是遗留偏差，不要扩散",
+      "不硬编码新十六进制颜色值；先查别名层与库 token",
+      "不大面积薄荷绿铺底或渐变背景",
+      "不加深色模式；深色代码块（gruvbox）是唯一例外",
+      "不给库组件写覆盖皮肤",
+      "不用尖锐直角或粗边框；圆角 + 发丝线是唯一形制"
+    ]
+  }
+}

@@ -50,6 +50,15 @@ export default function ChatModeSelector({ mode, onChange, disabled = false }: P
       setOpen(false);
       return;
     }
+    if (next === "full-auto" && mode !== "full-auto") {
+      const ok = window.confirm(
+        "全自动模式将跳过所有工具审批（文件编辑、命令执行、网络请求均不再确认）。\n继续开启？"
+      );
+      if (!ok) {
+        setOpen(false);
+        return;
+      }
+    }
     onChange(next);
     setOpen(false);
   };

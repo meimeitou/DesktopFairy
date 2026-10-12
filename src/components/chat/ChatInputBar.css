@@ -6,7 +6,8 @@
   right: 16px;
   bottom: 8px;
   z-index: 6;
-  display: flex;
+  container-name: composer;
+  container-type: inline-size;
   flex-direction: column;
   border-radius: 20px;
   background: var(--ink-800);
@@ -189,9 +190,8 @@
 
 .chat-input-model {
   min-width: 0;
-  width: 160px;
+  flex: 1;
   max-width: 160px;
-  flex-shrink: 1;
 }
 
 /* Chat toolbar sits on the right — open panel up-left, fixed width (no max-content stretch). */
@@ -263,5 +263,17 @@
       0 0 0 1px rgba(232, 184, 74, 0.16),
       0 0 18px rgba(232, 184, 74, 0.12),
       inset 0 1px 0 rgba(121, 79, 39, 0.05);
+  }
+}
+
+/* Narrow chat window (minWidth 640px): the meter is contextual info and the
+   model selector is the widest flex item — collapse both before any button
+   can clip. Toolbar keeps the send action always visible. */
+@container composer (max-width: 620px) {
+  .chat-input-model {
+    display: none;
+  }
+  .chat-input-toolbar-right .context-usage-meter {
+    display: none;
   }
 }

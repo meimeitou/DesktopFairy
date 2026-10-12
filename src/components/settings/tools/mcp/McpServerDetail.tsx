@@ -5,9 +5,10 @@ import type {
   McpRuntimeStatus,
   McpServerLogEntry,
 } from "../../../../shared/mcpServer";
+import { buildMcpCommandString } from "../../../../shared/mcpServer";
 import McpStatusDot from "./McpStatusDot";
-import McpServerEditor from "./McpServerEditor";
-import type { McpTestResult } from "./McpServerEditor";
+import McpServerEditModal from "./McpServerEditModal";
+import type { McpTestResult } from "./mcpServerForm";
 
 const api = window.electronAPI;
 
@@ -57,6 +58,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
   const [resources, setResources] = useState<McpResourceInfo[] | null>(null);
   const [resourcesError, setResourcesError] = useState<string | null>(null);
   const [logs, setLogs] = useState<McpServerLogEntry[]>([]);
+  const [editing, setEditing] = useState(false);
   const [testResult, setTestResult] = useState<McpTestResult | null>(null);
   const [testing, setTesting] = useState(false);
 
@@ -207,17 +209,87 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
       </nav>
 
       {tab === "general" && (
-        <McpServerEditor
+        <div className="tools-mcp-general-card">
+          <div className="tools-mcp-general-fields">
+            <div className="tools-mcp-general-field">
+              <span className="tools-mcp-general-label">名称</span>
+              <span>{server.name}</span>
+            </div>
+            <div className="tools-mcp-general-field">
+              <span className="tools-mcp-general-label">描述</span>
+              <span>{server.description || "—"}</span>
+            </div>
+            <div className="tools-mcp-general-field">
+              <span className="tools-mcp-general-label">传输类型</span>
+              <span>
+                {server.type === "stdio"
+                  ? "stdio（本地进程）"
+                  : server.type === "sse"
+                    ? "SSE（远程）"
+                    : "Streamable HTTP（远程）"}
+              </span>
+            </div>
+            {server.type === "stdio" ? (
+              <>
+                <div className="tools-mcp-general-field">
+                  <span className="tools-mcp-general-label">命令</span>
+                  <span className="tools-mcp-general-mono">
+                    {buildMcpCommandString(server)}
+                  </span>
+                </div>
+                {Object.keys(server.env || {}).length > 0 && (
+                  <div className="tools-mcp-general-field">
+                    <span className="tools-mcp-general-label">环境变量</span>
+                    <span className="tools-mcp-general-mono">
+                      {Object.entries(server.env || {})
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join("\n")}
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="tools-mcp-general-field">
+                <span className="tools-mcp-general-label">URL</span>
+                <span className="tools-mcp-general-mono">
+                  {server.baseUrl || "—"}
+                </span>
+              </div>
+            )}
+            <div className="tools-mcp-general-field">
+              <span className="tools-mcp-general-label">超时</span>
+              <span>{server.timeout != null ? `${server.timeout} 秒` : "60 秒（默认）"}</span>
+            </div>
+            <div className="tools-mcp-general-field">
+              <span className="tools-mcp-general-label">长时间运行</span>
+              <span>{server.longRunning ? "开启" : "关闭"}</span>
+            </div>
+          </div>
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => setEditing(true)}
+          >
+            编辑服务器信息
+          </Button>
+        </div>
+      )}
+
+      {editing && (
+        <McpServerEditModal
+          open
           server={server}
+          title={`编辑 - ${server.name}`}
+          onClose={() => setEditing(false)}
           onSave={async (next) => {
             await api.invoke("mcp:servers:save", next);
             // Config changed on a live server: reconcile the runtime connection.
             if (next.isActive !== false) {
               await api.invoke("mcp:servers:restart", { id: server.id });
             }
+            setEditing(false);
             onBack();
           }}
-          onCancel={onBack}
         />
       )}
 

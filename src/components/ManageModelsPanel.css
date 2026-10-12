@@ -127,15 +127,15 @@
 }
 
 .manage-models-kind.kind-embedding {
-  color: #8ecae6;
-  background: rgba(142, 202, 230, 0.12);
-  border-color: rgba(142, 202, 230, 0.28);
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: rgba(232, 184, 74, 0.28);
 }
 
 .manage-models-kind.kind-rerank {
-  color: #c9b6ff;
-  background: rgba(201, 182, 255, 0.12);
-  border-color: rgba(201, 182, 255, 0.28);
+  color: var(--persimmon-bright);
+  background: var(--persimmon-softer);
+  border-color: rgba(25, 200, 185, 0.28);
 }
 
 .manage-models-empty {

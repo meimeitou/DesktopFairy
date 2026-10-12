@@ -1,0 +1,63 @@
+{
+  "hook": {
+    "enabled": true,
+    "limits": {
+      "maxFindings": 5,
+      "maxChars": 8000
+    }
+  },
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/components/chat/ChatMarkdown.css",
+          "src/components/chat/TopicSidebar.css",
+          "src/components/settings/ProviderSettingsSection.css",
+          "src/pages/ChatPage.css"
+        ],
+        "createdAt": "2026-10-12T03:26:00.243Z",
+        "reason": "Agent: documented DESIGN.md pattern — mint left-edge marker on active list items and blockquote convention; confirmed in DESIGN.md Navigation section"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "src/shared/terminalSettings.test.ts"
+        ],
+        "createdAt": "2026-10-12T03:26:05.900Z",
+        "reason": "Agent: test fixture pins a custom user font stack (JetBrains Mono), not UI surface styling"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "src/shared/knowledge.ts"
+        ],
+        "createdAt": "2026-10-12T03:26:05.935Z",
+        "reason": "Agent: regex source strings that strip <img> tags from documents, not rendered markup"
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "src/pages/SettingsPage.css"
+        ],
+        "createdAt": "2026-10-12T03:27:23.321Z",
+        "reason": "Agent: documented DESIGN.md pattern — soft-3D input bottom edge (The felted edge, 3px hard-offset shadow), deliberate"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "src/shared/terminalSettings.test.ts"
+        ],
+        "createdAt": "2026-10-12T03:27:29.811Z",
+        "reason": "Agent: test fixture pins user-custom font stack, not UI surface styling"
+      }
+    ]
+  }
+}

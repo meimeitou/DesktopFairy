@@ -1,6 +1,6 @@
 import { FieldHead } from "../../HintTip";
-import { Input, Radio } from "animal-island-ui";
-import type { AgentConfig, ToolApprovalMode } from "../../../shared/agent";
+import { Input } from "animal-island-ui";
+import type { AgentConfig } from "../../../shared/agent";
 
 interface Props {
   agent: AgentConfig;
@@ -27,28 +27,9 @@ function parseEnvVarsText(text: string): Record<string, string> {
   return result;
 }
 
-const APPROVAL_MODES: { value: ToolApprovalMode; label: string }[] = [
-  { value: "confirm", label: "每次确认" },
-  { value: "auto", label: "自动批准" },
-];
-
 export default function AgentAdvancedSection({ agent, onChange }: Props) {
   return (
     <section className="settings-section agent-subsection">
-      <div className="field">
-        <FieldHead hint="每次确认：执行工具前弹出审批。自动批准：跳过确认直接执行，仅建议在可信环境使用。">
-          工具审批
-        </FieldHead>
-        <Radio
-          value={agent.toolApprovalMode}
-          direction="horizontal"
-          options={APPROVAL_MODES.map((m) => ({ value: m.value, label: m.label }))}
-          onChange={(value) =>
-            onChange({ toolApprovalMode: value as typeof agent.toolApprovalMode })
-          }
-        />
-      </div>
-
       <div className="field">
         <FieldHead
           htmlFor="agent-max-turns"

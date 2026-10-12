@@ -56,12 +56,6 @@ describe('agent', () => {
       expect(getEffectiveToolApprovalMode(agent)).toBe('confirm')
     })
 
-    it('should NOT fall back to agent.toolApprovalMode when chatMode has no override', () => {
-      // normal mode has no toolApprovalOverride, so it should return "confirm"
-      // regardless of agent.toolApprovalMode
-      const agent = makeAgent({ chatMode: 'normal', toolApprovalMode: 'auto' })
-      expect(getEffectiveToolApprovalMode(agent)).toBe('confirm')
-    })
   })
 
   describe('getEnabledAgentBuiltinTools', () => {

@@ -97,38 +97,6 @@ html.chat-window-shell body {
   z-index: -1;
 }
 
-.chat-app .chat-header-model {
-  flex: 1;
-  min-width: 0;
-  max-width: 320px;
-}
-
-.chat-app .chat-clear-btn {
-  margin-left: auto;
-  padding: 4px 10px;
-  background: transparent;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 8px;
-  font-size: 11px;
-  color: var(--bone-500);
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
-}
-
-.chat-app .chat-clear-btn:hover:not(:disabled) {
-  background: var(--hairline);
-  border-color: var(--hairline-bold);
-  color: var(--bone-200);
-}
-
-.chat-app .chat-clear-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 .chat-app .settings-embedded {
   flex: 1;
   min-height: 0;

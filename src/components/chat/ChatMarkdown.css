@@ -66,12 +66,12 @@
 
 .chat-markdown [data-streamdown="link"],
 .chat-markdown a {
-  color: rgba(160, 140, 255, 0.95);
+  color: var(--persimmon-bright);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .chat-markdown a:hover {
-  color: rgba(190, 175, 255, 1);
+  color: var(--persimmon-hover, #3dd4c6);
 }
 
 .chat-markdown [data-streamdown="inline-code"] {
