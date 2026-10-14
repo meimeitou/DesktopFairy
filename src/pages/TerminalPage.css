@@ -257,7 +257,7 @@
   background: transparent;
   color: #794f27;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 16px;
   cursor: pointer;
   opacity: 0.85;
@@ -1025,25 +1025,26 @@ button.terminal-context-menu-item {
   color: var(--bone-300);
 }
 
-.terminal-settings-tab .field-row input,
-.terminal-settings-tab .field-row select {
+/* 外观区四个字段全部是库控件（Input 胶囊 / df-select）。
+   库 Input 的皮肤在外层 wrapper（40px 胶囊 #faf8f3），内层 input 保持透明；
+   df-select trigger 在 Select.css 已带完整皮肤，这里只做行内布局。 */
+.terminal-settings-tab .field-row input {
   flex: 1;
-  max-width: 320px;
-  height: 30px;
-  padding: 0 8px;
-  background: rgba(121, 79, 39, 0.06);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 6px;
+  min-width: 0;
+  background: transparent;
+  border: none;
   color: var(--bone-100);
   font-size: 13px;
   outline: none;
-  transition: border-color 0.12s;
 }
 
-.terminal-settings-tab .field-row input:focus,
-.terminal-settings-tab .field-row select:focus {
-  border-color: var(--persimmon-focus);
-  background: var(--persimmon-softer);
+.terminal-settings-tab .field-row input:focus {
+  outline: none;
+}
+
+.terminal-settings-tab .field-row .df-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .terminal-settings-tab .link-btn {
@@ -1287,11 +1288,6 @@ button.terminal-context-menu-item {
   background: var(--persimmon-bright);
 }
 
-/* 弹窗内 field-row 宽度限制对齐 */
-.ssh-modal-body .field-row input,
-.ssh-modal-body .field-row select {
-  max-width: none;
-}
 
 .ssh-section-actions {
   display: flex;
@@ -1515,12 +1511,6 @@ button.terminal-context-menu-item {
   margin-bottom: 0;
 }
 
-/* 弹窗内 field-row 在并排时去掉 max-width 限制 */
-.ssh-modal-body .ssh-form-row-2 .field-row input,
-.ssh-modal-body .ssh-form-row-2 .field-row select {
-  max-width: none;
-  min-width: 0;
-}
 
 /* 端口输入框：去掉 number 旋转按钮，避免在窄列里挤压数字 */
 .ssh-form-port input::-webkit-inner-spin-button,

@@ -8,7 +8,10 @@
   min-width: 0;
 }
 
-.df-select-trigger {
+/* index.css 的 bare-button reset（button:not([class^="animal-"])，特异性 0,1,1）
+   会压过单类 .df-select-trigger（0,1,0），把皮肤打成透明无边。
+   用 button.df-select-trigger（0,1,1 + 同源顺序在后）恢复完整皮肤。 */
+button.df-select-trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -18,7 +21,6 @@
   padding: 8px 14px;
   background: #faf8f3;
   border: 1px solid var(--hairline-strong);
-  border-bottom: none;
   border-radius: 12px;
   box-shadow: none;
   font-family: inherit;

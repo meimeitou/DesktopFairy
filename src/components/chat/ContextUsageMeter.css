@@ -81,10 +81,11 @@
 }
 
 .context-usage-percent {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--persimmon-bright);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bone-200);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .context-usage-total {

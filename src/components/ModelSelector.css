@@ -67,17 +67,21 @@
   font-size: 8px;
 }
 
-/* Settings/context form style: milk box, flat — matches inputs' surface but without the 3D edge. */
+/* Settings/context form style: milk box + hairline edge, matching the
+   .field input / df-select border syntax (transparent borders vanish on
+   flattened transparent sections). */
 .model-selector-trigger.variant-field {
   background: #faf8f3;
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   padding: 6px 14px;
 }
 
 .model-selector-trigger.variant-field:hover:not(:disabled) {
+  border-color: var(--hairline-strong);
   background: #fdfcf9;
 }
+
 
 .model-selector-trigger.variant-field .model-selector-value {
   font-size: 13px;

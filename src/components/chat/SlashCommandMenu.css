@@ -84,7 +84,11 @@
 .slash-menu-item-label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--persimmon-bright);
+  color: var(--bone-200);
+}
+
+.slash-menu-item.active .slash-menu-item-label {
+  color: var(--animal-primary-color);
 }
 
 .slash-menu-item-desc {

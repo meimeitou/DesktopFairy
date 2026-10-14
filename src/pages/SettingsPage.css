@@ -359,13 +359,13 @@
 }
 
 /* 多行输入：库没有 Textarea 组件，按库 Input 的视觉规则重设计 ——
-   奶白底 + 3px 仿立体底边 + 圆角，聚焦底边/背景变 mint。 */
+   奶白底 + hairline 描边 + 3px 仿立体底边 + 圆角，聚焦底边变 mint。 */
 .field textarea {
   display: block;
   width: 100%;
   padding: 10px 14px;
   background: #faf8f3;
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   box-shadow: 0 3px #d4c9b4;
   font-family: inherit;
@@ -375,10 +375,10 @@
   color: #794f3f;
   outline: none;
   resize: vertical;
-  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
 }
 .field textarea:focus {
   outline: none;
+  border-color: var(--persimmon-focus);
   box-shadow: 0 3px #19c8b9;
   background: #faf8f3;
 }
@@ -405,6 +405,21 @@
 }
 .field input:not([class^="animal-input"])::placeholder {
   color: rgba(121, 79, 39, 0.2);
+}
+/* 库 Input wrapper（#faf8f3）与内容底色（--animal-bg-color #f8f8f0）近同色且无边框，
+   在透明底区块（划词/工具/智能体/AI 模型/Live2D）里只剩底影难辨。
+   对齐裸 .field input 的边界语法：1px hairline、focus 变 mint。
+   弹窗走 portal 渲染不在 .settings-content 下，按弹窗类名补齐。 */
+.settings-content [class^="animal-wrapper"],
+.provider-form-modal [class^="animal-wrapper"],
+.mcp-edit-modal [class^="animal-wrapper"] {
+  border: 1px solid var(--hairline);
+}
+
+.settings-content [class^="animal-wrapper"]:focus-within,
+.provider-form-modal [class^="animal-wrapper"]:focus-within,
+.mcp-edit-modal [class^="animal-wrapper"]:focus-within {
+  border-color: var(--persimmon-focus);
 }
 
 .field-row {
@@ -488,7 +503,7 @@
   border-color: var(--amber);
   border-bottom-color: var(--amber);
   color: var(--bone-100);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .size-hint {
@@ -643,7 +658,7 @@
   border-color: rgba(130, 213, 187, 0.55);
   border-bottom-color: rgba(130, 213, 187, 0.7);
   color: var(--bone-100);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .model-picker-btn.missing {
@@ -1110,7 +1125,8 @@
   min-height: 200px;
   padding: 10px 14px;
   background: #faf8f3;
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline);
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s, border-color 0.15s;
   border-radius: 12px;
   box-shadow: 0 3px #d4c9b4;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -1119,11 +1135,11 @@
   color: #794f3f;
   outline: none;
   resize: vertical;
-  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
 }
 
 .agent-manuscript-body:focus {
   outline: none;
+  border-color: var(--persimmon-focus);
   box-shadow: 0 3px #19c8b9;
 }
 
@@ -1295,6 +1311,7 @@
 .agent-mcp-form-actions {
   display: flex;
   gap: 8px;
+  margin-top: 20px;
 }
 
 .agent-mcp-pick-dir {
@@ -1332,7 +1349,8 @@
   min-height: 72px;
   padding: 8px 12px;
   background: #faf8f3;
-  border: 1px solid transparent;
+  border: 1px solid var(--hairline);
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s, border-color 0.15s;
   border-radius: 12px;
   box-shadow: 0 3px #d4c9b4;
   color: #794f3f;
@@ -1341,10 +1359,10 @@
   line-height: 1.45;
   resize: vertical;
   outline: none;
-  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s;
 }
 .agent-mcp-textarea:focus {
   outline: none;
+  border-color: var(--persimmon-focus);
   box-shadow: 0 3px #19c8b9;
 }
 .agent-mcp-textarea::placeholder {

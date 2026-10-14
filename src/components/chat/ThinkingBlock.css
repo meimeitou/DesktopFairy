@@ -1,14 +1,14 @@
 .thinking-block {
   margin-bottom: 8px;
-  border: 1px solid rgba(121, 79, 39, 0.08);
+  border: 1px solid rgba(232, 184, 74, 0.3);
   border-radius: 10px;
-  background: rgba(121, 79, 39, 0.03);
+  background: #fffdf4;
   overflow: hidden;
   transition: border-color var(--motion-fast) var(--ease-island), background 0.15s ease;
 }
 
 .thinking-block.thinking-active {
-  border-color: rgba(232, 184, 74, 0.38);
+  border-color: rgba(232, 184, 74, 0.45);
   background: var(--amber-soft);
 }
 
@@ -17,8 +17,8 @@
   justify-content: flex-start;
   text-align: left;
   color: inherit;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .thinking-bulb {
@@ -39,14 +39,15 @@
 .thinking-label {
   flex: 1 1 auto;
   min-width: 0;
-  color: rgba(121, 79, 39, 0.75);
+  color: var(--bone-200);
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .thinking-block.thinking-active .thinking-label {
-  color: var(--amber);
+  color: var(--bone-100);
 }
 
 .thinking-chevron {
@@ -89,7 +90,7 @@
 .thinking-body .chat-markdown {
   flex: 0 0 auto;
   font-size: 12.5px;
-  color: rgba(121, 79, 39, 0.6);
+  color: var(--bone-500);
 }
 
 .thinking-body-half .chat-markdown {
