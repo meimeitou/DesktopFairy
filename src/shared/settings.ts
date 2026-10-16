@@ -6,9 +6,13 @@ import {
 } from "./selectionActions";
 import {
   AGENT_BACKEND_KEY,
-  DEFAULT_AGENT_CONFIG,
+  createPersonalAssistantDefaults,
+  createTerminalAssistantDefaults,
+  findAgentById,
   isAgentBackend,
   normalizeAgentConfig,
+  PERSONAL_ASSISTANT_ID,
+  TERMINAL_ASSISTANT_ID,
   type AgentConfig,
 } from "./agent";
 
@@ -91,10 +95,12 @@ export interface AppSettings {
   customModels: CustomLive2DModel[];
   /** IDs of system providers the user has deliberately deleted */
   deletedSystemProviderIds: string[];
-  /** Single desktop agent configuration */
-  agent: AgentConfig;
-  /** Active conversation mode. Mirrors agent.chatMode but stored at app level for quick UI access. */
-  chatMode: ChatMode;
+  /** All agents; first two builtin slots are protected by id. */
+  agents: AgentConfig[];
+  /** The agent bound to the terminal page (builtin terminal assistant). */
+  terminalAgentId: string;
+  /** Currently selected agent on the chat page. */
+  activeChatAgentId: string;
   /** WebSearch tool provider configuration */
   webSearch: WebSearchConfig;
   /** Terminal appearance and behavior settings */
@@ -137,8 +143,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   live2dSpeechBubbleMaxChars: 50,
   customModels: [],
   deletedSystemProviderIds: [],
-  agent: { ...DEFAULT_AGENT_CONFIG },
-  chatMode: DEFAULT_CHAT_MODE,
+  agents: [
+    createPersonalAssistantDefaults(),
+    createTerminalAssistantDefaults(),
+  ],
+  terminalAgentId: TERMINAL_ASSISTANT_ID,
+  activeChatAgentId: PERSONAL_ASSISTANT_ID,
   webSearch: { ...DEFAULT_WEB_SEARCH_CONFIG },
   terminal: { ...DEFAULT_TERMINAL_SETTINGS },
   sshHosts: [],
@@ -226,7 +236,155 @@ function normalizeCustomModels(value: unknown): CustomLive2DModel[] {
 }
 
 
-function finalizeSettings(settings: AppSettings): AppSettings {
+function migrateLegacyAgentSettings(
+  settings: Omit<AppSettings, "agents"> & Partial<Pick<AppSettings, "agents">>,
+): {
+  agents: AgentConfig[];
+  terminalAgentId: string;
+  activeChatAgentId: string;
+} {
+  const legacy = settings as AppSettings & {
+    agent?: unknown;
+    chatMode?: unknown;
+  };
+  const oldAgent =
+    legacy.agent && typeof legacy.agent === "object"
+      ? (legacy.agent as Record<string, unknown>)
+      : undefined;
+  const oldChatMode = normalizeChatMode(legacy.chatMode);
+
+  const oldSoul =
+    typeof oldAgent?.soul === "string" && oldAgent.soul.trim()
+      ? oldAgent.soul
+      : typeof settings.systemPrompt === "string" &&
+          settings.systemPrompt.trim()
+        ? settings.systemPrompt
+        : undefined;
+  const oldProviderId =
+    (typeof oldAgent?.providerId === "string" && oldAgent.providerId.trim()) ||
+    settings.activeProviderId ||
+    "openai";
+  const oldModelName =
+    typeof oldAgent?.modelName === "string" ? oldAgent.modelName : undefined;
+  const oldUser = typeof oldAgent?.user === "string" ? oldAgent.user : "";
+  const oldDisabled = Array.isArray(oldAgent?.disabledToolIds)
+    ? oldAgent.disabledToolIds.filter(
+        (id): id is string => typeof id === "string",
+      )
+    : undefined;
+  const oldTerminalDisabled = Array.isArray(oldAgent?.terminalDisabledToolIds)
+    ? oldAgent.terminalDisabledToolIds.filter(
+        (id): id is string => typeof id === "string",
+      )
+    : undefined;
+  const oldMcpServerIds = Array.isArray(oldAgent?.mcpServerIds)
+    ? oldAgent.mcpServerIds.filter(
+        (id): id is string => typeof id === "string",
+      )
+    : [];
+  const oldEnabledSkillIds = Array.isArray(oldAgent?.enabledSkillIds)
+    ? oldAgent.enabledSkillIds.filter(
+        (id): id is string => typeof id === "string",
+      )
+    : [];
+  const oldMaxTurns =
+    typeof oldAgent?.maxTurns === "number" && Number.isFinite(oldAgent.maxTurns)
+      ? oldAgent.maxTurns
+      : undefined;
+  const oldEnvVars =
+    oldAgent?.envVars && typeof oldAgent.envVars === "object" &&
+    !Array.isArray(oldAgent.envVars)
+      ? Object.fromEntries(
+          Object.entries(oldAgent.envVars as Record<string, unknown>).filter(
+            ([k, v]) => typeof k === "string" && typeof v === "string",
+          ) as [string, string][],
+        )
+      : undefined;
+  const oldReasoningEffort =
+    typeof oldAgent?.reasoningEffort === "string"
+      ? oldAgent.reasoningEffort
+      : undefined;
+  const oldAgentChatMode =
+    typeof oldAgent?.chatMode === "string" ? oldAgent.chatMode : undefined;
+
+  const personal = createPersonalAssistantDefaults({
+    soul: oldSoul,
+    user: oldUser,
+    providerId: oldProviderId,
+    modelName: oldModelName,
+    disabledToolIds: oldDisabled,
+    mcpServerIds: oldMcpServerIds,
+    enabledSkillIds: oldEnabledSkillIds,
+    maxTurns: oldMaxTurns,
+    envVars: oldEnvVars,
+    chatMode: normalizeChatMode(oldAgentChatMode ?? oldChatMode),
+    reasoningEffort: oldReasoningEffort as AgentConfig["reasoningEffort"],
+  });
+  const terminal = createTerminalAssistantDefaults({
+    user: oldUser,
+    providerId: oldProviderId,
+    modelName: oldModelName,
+    disabledToolIds: oldTerminalDisabled,
+  });
+
+  return {
+    agents: [personal, terminal],
+    terminalAgentId: TERMINAL_ASSISTANT_ID,
+    activeChatAgentId: PERSONAL_ASSISTANT_ID,
+  };
+}
+
+export function finalizeSettings(
+  settings: Omit<AppSettings, "agents"> & Partial<Pick<AppSettings, "agents">>,
+): AppSettings {
+  const legacyAgent = settings as AppSettings & { agent?: unknown };
+  const needsMigration =
+    !Array.isArray(settings.agents) || settings.agents.length === 0;
+  const migrated = needsMigration ? migrateLegacyAgentSettings(settings) : null;
+
+  const sourceAgents = migrated
+    ? migrated.agents
+    : Array.isArray(settings.agents)
+      ? settings.agents
+      : [];
+
+  // Normalize + dedupe by id, preserving order.
+  const normalized: AgentConfig[] = [];
+  const seenIds = new Set<string>();
+  for (const raw of sourceAgents) {
+    // Pass the raw agent as fallback so pre-normalized fields (e.g. migrated
+    // soul) survive instead of being replaced by builtin defaults.
+    const agent = normalizeAgentConfig(raw, raw);
+    if (seenIds.has(agent.id)) continue;
+    seenIds.add(agent.id);
+    normalized.push(agent);
+  }
+
+  // Invariant: the terminal assistant always exists (terminal page depends on
+  // it). The personal assistant is deletable; if every chat agent was removed,
+  // fall activeChatAgentId back to the first non-terminal agent.
+  if (!findAgentById(normalized, TERMINAL_ASSISTANT_ID)) {
+    normalized.push(createTerminalAssistantDefaults());
+  }
+
+  const terminalAgentId = findAgentById(normalized, settings.terminalAgentId)
+    ? settings.terminalAgentId
+    : (migrated?.terminalAgentId ??
+      (findAgentById(normalized, TERMINAL_ASSISTANT_ID)
+        ? TERMINAL_ASSISTANT_ID
+        : normalized[0].id));
+  const activeChatAgentId = findAgentById(
+    normalized,
+    migrated?.activeChatAgentId ?? settings.activeChatAgentId,
+  )
+    ? (migrated?.activeChatAgentId ?? settings.activeChatAgentId)
+    : undefined;
+  const activeChatAgentIdFinal =
+    activeChatAgentId === terminalAgentId
+      ? (normalized.find((a) => a.id !== terminalAgentId)?.id ?? terminalAgentId)
+      : (activeChatAgentId ??
+        (normalized.find((a) => a.id !== terminalAgentId)?.id ?? terminalAgentId));
+
   const next: AppSettings = {
     ...settings,
     providers: Array.isArray(settings.providers)
@@ -261,18 +419,9 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       settings.live2dSpeechBubbleMaxChars,
     ),
     customModels: normalizeCustomModels(settings.customModels),
-    agent: normalizeAgentConfig(settings.agent, {
-      soul:
-        typeof settings.systemPrompt === "string" &&
-        settings.systemPrompt.trim()
-          ? settings.systemPrompt
-          : DEFAULT_AGENT_CONFIG.soul,
-      providerId: settings.activeProviderId || DEFAULT_AGENT_CONFIG.providerId,
-      chatMode: normalizeChatMode(
-        settings.chatMode ?? settings.agent?.chatMode,
-      ),
-    }),
-    chatMode: normalizeChatMode(settings.chatMode ?? settings.agent?.chatMode),
+    agents: normalized,
+    terminalAgentId,
+    activeChatAgentId: activeChatAgentIdFinal,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
     terminal: normalizeTerminalSettings(settings.terminal),
     knowledge: normalizeKnowledgeSettings(settings.knowledge),
@@ -283,16 +432,16 @@ function finalizeSettings(settings: AppSettings): AppSettings {
       AppSettings,
       "sshHosts" | "sshGroups" | "sshRecent" | "sshCredentials"
     > => {
-      const migrated = migrateInlineCredentials(
+      const migratedSsh = migrateInlineCredentials(
         normalizeSshHosts(settings.sshHosts),
         normalizeSshRecent(settings.sshRecent),
         normalizeSshCredentials(settings.sshCredentials),
       );
       return {
-        sshHosts: migrated.sshHosts,
+        sshHosts: migratedSsh.sshHosts,
         sshGroups: normalizeSshGroups(settings.sshGroups),
-        sshRecent: migrated.sshRecent,
-        sshCredentials: migrated.sshCredentials,
+        sshRecent: migratedSsh.sshRecent,
+        sshCredentials: migratedSsh.sshCredentials,
       };
     })(),
   };
@@ -302,18 +451,27 @@ function finalizeSettings(settings: AppSettings): AppSettings {
     ttsEnabled?: boolean;
     modelName?: string;
     mcpServers?: unknown[];
+    agent?: unknown;
+    chatMode?: unknown;
   };
   delete legacy.temperature;
   delete legacy.ttsEnabled;
   delete legacy.modelName;
   delete legacy.mcpServers;
+  delete legacy.agent;
+  delete legacy.chatMode;
+  void legacyAgent;
   return next;
 }
 
 function migrateFromLegacy(
   parsed: Partial<AppSettings> & LegacySettings,
 ): AppSettings {
-  const base = { ...DEFAULT_SETTINGS, ...parsed };
+  // DEFAULT_SETTINGS.agents is stripped: legacy disk data has no `agents`,
+  // and finalizeSettings only migrates when agents is absent/empty.
+  const { agents: _defaultAgents, ...defaults } = DEFAULT_SETTINGS;
+  void _defaultAgents;
+  const base = { ...defaults, ...parsed };
   if (Array.isArray(parsed.providers) && parsed.providers.length > 0) {
     return finalizeSettings({
       ...base,
@@ -523,14 +681,18 @@ export interface ModelItem {
 
 export function getAgentProvider(
   settings: AppSettings,
+  agent: AgentConfig,
 ): LlmProvider | undefined {
-  const agent = settings.agent;
-  return settings.providers.find((p) => p.id === agent.providerId && p.enabled);
+  return settings.providers.find(
+    (p) => p.id === agent.providerId && p.enabled,
+  );
 }
 
-export function resolveAgentModelName(settings: AppSettings): string {
-  const provider = getAgentProvider(settings);
-  const agent = settings.agent;
+export function resolveAgentModelName(
+  settings: AppSettings,
+  agent: AgentConfig,
+): string {
+  const provider = getAgentProvider(settings, agent);
   if (!provider) return "";
   const named =
     typeof agent.modelName === "string" ? agent.modelName.trim() : "";
@@ -546,29 +708,31 @@ export function resolveAgentModelName(settings: AppSettings): string {
 /**
  * Returns setup guidance when the agent backend model is not ready; null when OK.
  */
-export function getAgentBackendGuidance(settings: AppSettings): string | null {
+export function getAgentBackendGuidance(
+  settings: AppSettings,
+  agent: AgentConfig,
+): string | null {
   const enabledProviders = settings.providers.filter((p) => p.enabled);
   if (enabledProviders.length === 0) {
     return [
       "智能体尚未配置可用模型。",
       "1. 打开「设置 → AI 模型」，启用 Provider 并填写 API Host / Key，添加至少一个模型；",
-      "2. 再到「设置 → 智能体 → 基础设置」选择后端模型。",
+      "2. 再到「智能体弹窗 → 基础设置」选择后端模型。",
     ].join("\n");
   }
 
-  const agent = settings.agent;
-  const provider = getAgentProvider(settings);
+  const provider = getAgentProvider(settings, agent);
   if (!provider) {
     return [
       "智能体未选择有效的后端 Provider（可能尚未配置，或对应 Provider 已禁用）。",
-      "请到「设置 → 智能体 → 基础设置」选择后端模型。",
+      "请到「智能体弹窗 → 基础设置」选择后端模型。",
     ].join("\n");
   }
 
   if (!String(provider.apiHost || "").trim()) {
     return [
       `智能体所用 Provider「${provider.name}」尚未填写 API Host。`,
-      "请到「设置 → AI 模型」完成配置，再回到「智能体 → 基础设置」确认模型。",
+      "请到「设置 → AI 模型」完成配置，再回到「智能体弹窗 → 基础设置」确认模型。",
     ].join("\n");
   }
 
@@ -577,37 +741,40 @@ export function getAgentBackendGuidance(settings: AppSettings): string | null {
   if (!modelName) {
     return [
       "智能体尚未选择模型。",
-      "请到「设置 → 智能体 → 基础设置」选择后端模型。",
+      "请到「智能体弹窗 → 基础设置」选择后端模型。",
     ].join("\n");
   }
 
   if (provider.models.length > 0 && !provider.models.includes(modelName)) {
     return [
       `智能体所选模型「${modelName}」不在 Provider「${provider.name}」的可用列表中。`,
-      "请到「设置 → 智能体 → 基础设置」重新选择后端模型。",
+      "请到「智能体弹窗 → 基础设置」重新选择后端模型。",
     ].join("\n");
   }
 
   if (provider.models.length === 0) {
     return [
       `Provider「${provider.name}」尚未添加模型。`,
-      "请到「设置 → AI 模型」为该 Provider 添加模型，再到「智能体 → 基础设置」选择。",
+      "请到「设置 → AI 模型」为该 Provider 添加模型，再到「智能体弹窗 → 基础设置」选择。",
     ].join("\n");
   }
 
   return null;
 }
 
-export function getAgentApiConfig(settings: AppSettings): {
+export function getAgentApiConfig(
+  settings: AppSettings,
+  agent: AgentConfig,
+): {
   apiHost: string;
   apiKey: string;
   providerType: LlmProvider["type"];
   modelName: string;
   providerId: string;
 } | null {
-  if (getAgentBackendGuidance(settings)) return null;
-  const provider = getAgentProvider(settings);
-  const modelName = resolveAgentModelName(settings);
+  if (getAgentBackendGuidance(settings, agent)) return null;
+  const provider = getAgentProvider(settings, agent);
+  const modelName = resolveAgentModelName(settings, agent);
   if (!provider || !modelName || !String(provider.apiHost || "").trim())
     return null;
   return {
@@ -619,14 +786,54 @@ export function getAgentApiConfig(settings: AppSettings): {
   };
 }
 
-export function getChatApiConfig(settings: AppSettings): {
+export function getChatApiConfig(
+  settings: AppSettings,
+  agent: AgentConfig,
+): {
   apiHost: string;
   apiKey: string;
   providerType: LlmProvider["type"];
   modelName: string;
   providerId: string;
 } | null {
-  return getAgentApiConfig(settings);
+  return getAgentApiConfig(settings, agent);
+}
+
+/** Agents selectable on the chat page (excludes the terminal-bound one). */
+export function getChatAgents(settings: AppSettings): AgentConfig[] {
+  return settings.agents.filter((a) => a.id !== settings.terminalAgentId);
+}
+
+export function updateAgentInSettings(
+  settings: AppSettings,
+  agentId: string,
+  patch: Partial<AgentConfig>,
+): AppSettings {
+  return {
+    ...settings,
+    agents: settings.agents.map((a) =>
+      a.id === agentId ? { ...a, ...patch, id: a.id } : a,
+    ),
+  };
+}
+
+export function appendAgentToSettings(
+  settings: AppSettings,
+  agent: AgentConfig,
+): AppSettings {
+  return { ...settings, agents: [...settings.agents, agent] };
+}
+
+export function removeAgentFromSettings(
+  settings: AppSettings,
+  agentId: string,
+): AppSettings {
+  const agents = settings.agents.filter((a) => a.id !== agentId);
+  const activeChatAgentId =
+    settings.activeChatAgentId === agentId
+      ? (agents.find((a) => a.id !== settings.terminalAgentId)?.id ?? "")
+      : settings.activeChatAgentId;
+  return { ...settings, agents, activeChatAgentId };
 }
 
 /** Returns all models from enabled providers, labeled as "服务商/模型名". */

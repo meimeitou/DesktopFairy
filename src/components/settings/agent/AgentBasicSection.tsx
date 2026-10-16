@@ -76,8 +76,15 @@ export default function AgentBasicSection({
   };
 
   const selectAvatarImage = async () => {
+    // Uploading before the agent exists would store the file under the
+    // shared "current" id, which a later upload would overwrite. Require a
+    // materialized agent first (creating one is the first patch away).
+    if (!agent.id) return;
     try {
-      const packed = (await api.invoke("agent:avatar:select")) as string | null;
+      const packed = (await api.invoke(
+        "agent:avatar:select",
+        agent.id,
+      )) as string | null;
       if (packed) onChange({ avatar: packed });
     } catch {
       /* ignore */
@@ -98,6 +105,8 @@ export default function AgentBasicSection({
           <Button
             type="default"
             size="small"
+            disabled={!agent.id}
+            title={agent.id ? undefined : "先输入名称创建智能体后再上传头像"}
             onClick={() => void selectAvatarImage()}
           >
             更换头像

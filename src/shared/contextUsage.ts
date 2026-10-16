@@ -2,11 +2,7 @@ import type { ChatAttachment } from "./chatAttachments";
 import { isImageExt } from "./chatAttachments";
 import type { ChatMsg } from "./chatMessages";
 import { formatToolEvidenceForApi } from "./toolEvidence";
-import {
-  parseModelCompound,
-  resolveAgentModelName,
-  type AppSettings,
-} from "./settings";
+import type { AgentConfig } from "./agent";
 
 /** Default context window when model is unknown. */
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
@@ -124,18 +120,10 @@ export function estimateAgentSystemPromptTokens(agent: {
 }
 
 /**
- * Model actually in effect for a chat session: the session-locked override
- * (already validated) when present, otherwise the agent default model.
+ * Model actually in effect for a chat session: the agent's configured model.
  */
-export function resolveActiveModelName(
-  settings: AppSettings,
-  sessionModel?: string,
-): string {
-  if (sessionModel) {
-    const { modelName } = parseModelCompound(sessionModel, "");
-    if (modelName) return modelName;
-  }
-  return resolveAgentModelName(settings) || settings.agent.modelName.trim();
+export function resolveActiveModelName(agent: AgentConfig): string {
+  return agent.modelName.trim();
 }
 
 export function buildTrimOptions(params: {

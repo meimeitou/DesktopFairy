@@ -36,8 +36,6 @@ export async function openAgentStream(payload: {
     providerType?: ProviderType;
     modelName: string;
   };
-  /** Session-locked model override (`providerId::modelName`); "" = agent default. */
-  sessionModel?: string;
   terminalSessionId?: string;
   knowledgeBaseIds?: string[];
 }) {

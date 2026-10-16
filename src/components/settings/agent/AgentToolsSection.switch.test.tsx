@@ -12,50 +12,100 @@ vi.hoisted(() => {
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import AgentToolsSection from "./AgentToolsSection";
-import { DEFAULT_AGENT_CONFIG, type AgentConfig } from "../../../shared/agent";
+import {
+  createPersonalAssistantDefaults,
+  type AgentConfig,
+} from "../../../shared/agent";
 
-const baseAgent: AgentConfig = {
-  ...DEFAULT_AGENT_CONFIG,
-  disabledToolIds: ["Terminal"],
-  terminalDisabledToolIds: ["bash", "read", "write", "edit", "glob", "grep"],
-};
+const baseAgent: AgentConfig = createPersonalAssistantDefaults({
+  id: "test-agent",
+  builtinRole: undefined,
+});
 
-function renderAskRow(agent: AgentConfig): string {
+/** Tool rows render as `<li><div class="agent-toggle-main">…<strong>{name}</strong>…`.
+ * Tool name === tool id, but the HintTip text mentions ids too, so anchor on
+ * the <strong> title row instead of a bare indexOf. */
+function renderRow(agent: AgentConfig, context: "local" | "terminal", toolId: string): string {
   const html = renderToStaticMarkup(
-    <AgentToolsSection panel="builtin" agent={agent} onAgentChange={() => {}} />
+    <AgentToolsSection
+      panel="builtin"
+      agent={agent}
+      onAgentChange={() => {}}
+      context={context}
+    />
   );
-  const rowStart = html.indexOf("AskUserQuestion");
+  const anchor = `<strong>${toolId}</strong>`;
+  const rowStart = html.indexOf(anchor);
+  expect(rowStart, `tool row for ${toolId} should render`).toBeGreaterThan(-1);
   return html.slice(rowStart, html.indexOf("</li>", rowStart));
 }
 
 function switchStates(rowHtml: string) {
   const switches = [...rowHtml.matchAll(/aria-checked="([^"]+)"/g)].map((m) => m[1]);
   const disabled = /aria-disabled="true"|disabled[ =]/.test(rowHtml);
-  return { switches, disabled };
+  const forcedBadge = /场景强制/.test(rowHtml);
+  return { switches, disabled, forcedBadge };
 }
 
 describe("AgentToolsSection builtin panel switches", () => {
-  it("shows AskUserQuestion ON (local) and ON (terminal) in normal mode", () => {
-    const { switches, disabled } = switchStates(
-      renderAskRow({ ...baseAgent, chatMode: "normal" })
+  it("local context: Terminal row is forced off, no switch", () => {
+    const { switches, forcedBadge } = switchStates(
+      renderRow(baseAgent, "local", "Terminal")
     );
-    expect(switches).toEqual(["true", "true"]);
-    expect(disabled).toBe(false);
+    expect(forcedBadge).toBe(true);
+    expect(switches).toEqual([]);
   });
 
-  it("shows AskUserQuestion ON (disabled, mode-gated) in full-auto mode", () => {
-    const { switches, disabled } = switchStates(
-      renderAskRow({ ...baseAgent, chatMode: "full-auto" })
+  it("terminal context: bash row is forced off, no switch", () => {
+    const { switches, forcedBadge } = switchStates(
+      renderRow(baseAgent, "terminal", "bash")
     );
-    // Config-level always-on: displayed ON even though full-auto gates it at runtime.
-    expect(switches).toEqual(["true", "true"]);
-    expect(disabled).toBe(true);
+    expect(forcedBadge).toBe(true);
+    expect(switches).toEqual([]);
   });
 
-  it("shows AskUserQuestion ON in plan and auto-edit modes", () => {
-    for (const chatMode of ["plan", "auto-edit"] as const) {
-      const { switches } = switchStates(renderAskRow({ ...baseAgent, chatMode }));
-      expect(switches).toEqual(["true", "true"]);
+  it("AskUserQuestion is ON and interactive in normal mode (both contexts)", () => {
+    for (const context of ["local", "terminal"] as const) {
+      const { switches, disabled } = switchStates(
+        renderRow(baseAgent, context, "AskUserQuestion")
+      );
+      expect(switches).toEqual(["true"]);
+      expect(disabled).toBe(false);
     }
+  });
+
+  it("AskUserQuestion shows OFF in full-auto (runtime-gated off)", () => {
+    const { switches } = switchStates(
+      renderRow({ ...baseAgent, chatMode: "full-auto" }, "local", "AskUserQuestion")
+    );
+    expect(switches).toEqual(["false"]);
+  });
+
+  it("editable tool reflects disabledToolIds in local context", () => {
+    const off = switchStates(
+      renderRow(
+        { ...baseAgent, disabledToolIds: ["Terminal", "WebSearch"] },
+        "local",
+        "WebSearch"
+      )
+    );
+    expect(off.switches).toEqual(["false"]);
+
+    const on = switchStates(renderRow(baseAgent, "local", "WebSearch"));
+    expect(on.switches).toEqual(["true"]);
+  });
+
+  it("Terminal tool reflects disabledToolIds in terminal context", () => {
+    const { switches, forcedBadge } = switchStates(
+      renderRow(baseAgent, "terminal", "Terminal")
+    );
+    // baseAgent is a personal assistant: Terminal stays disabled by default.
+    expect(forcedBadge).toBe(false);
+    expect(switches).toEqual(["false"]);
+
+    const enabled = switchStates(
+      renderRow({ ...baseAgent, disabledToolIds: [] }, "terminal", "Terminal")
+    );
+    expect(enabled.switches).toEqual(["true"]);
   });
 });

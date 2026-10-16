@@ -3,10 +3,9 @@ const path = require('path');
 const { app, dialog } = require('electron');
 
 const AVATAR_DIR = () => path.join(app.getPath('userData'), 'agent-avatar');
-const AVATAR_FILE = () => path.join(AVATAR_DIR(), 'current');
 
 function registerAgentAvatarHandlers(ipcMain) {
-  ipcMain.handle('agent:avatar:select', async () => {
+  ipcMain.handle('agent:avatar:select', async (_event, agentId) => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [
@@ -15,11 +14,14 @@ function registerAgentAvatarHandlers(ipcMain) {
     });
     if (result.canceled || !result.filePaths?.[0]) return null;
 
+    const safeId = String(agentId || 'current').replace(/[^a-zA-Z0-9_-]/g, '_');
     const src = result.filePaths[0];
     const ext = path.extname(src).toLowerCase() || '.png';
     fs.mkdirSync(AVATAR_DIR(), { recursive: true });
+    // Remove previous avatars of the same agent (any extension).
     for (const f of fs.readdirSync(AVATAR_DIR())) {
-      if (f.startsWith('current')) {
+      const stem = f.replace(/\.[^.]+$/, '');
+      if (stem === safeId) {
         try {
           fs.unlinkSync(path.join(AVATAR_DIR(), f));
         } catch {
@@ -27,9 +29,9 @@ function registerAgentAvatarHandlers(ipcMain) {
         }
       }
     }
-    const dest = `${AVATAR_FILE()}${ext}`;
+    const dest = path.join(AVATAR_DIR(), `${safeId}${ext}`);
     await fs.promises.copyFile(src, dest);
-    return `img:current${ext}`;
+    return `img:${safeId}${ext}`;
   });
 
   ipcMain.handle('agent:avatar:resolve', async (_event, avatar) => {
@@ -37,6 +39,9 @@ function registerAgentAvatarHandlers(ipcMain) {
     if (!v.startsWith('img:')) return null;
     const rel = v.slice(4);
     const full = path.join(AVATAR_DIR(), rel);
+    // Containment check: `img:../..` must not escape the avatar directory.
+    const AVATAR_PREFIX = AVATAR_DIR() + path.sep;
+    if (!path.resolve(full).startsWith(AVATAR_PREFIX)) return null;
     if (!fs.existsSync(full)) return null;
     const data = await fs.promises.readFile(full);
     const ext = path.extname(full).replace('.', '') || 'png';

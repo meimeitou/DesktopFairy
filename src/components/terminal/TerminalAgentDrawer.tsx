@@ -24,8 +24,8 @@ import ChatModeSelector from "../chat/ChatModeSelector";
 import ContextUsageMeter from "../chat/ContextUsageMeter";
 import SlashCommandMenu from "../chat/SlashCommandMenu";
 import ComposerBusyHalo from "../chat/ComposerBusyHalo";
-import ModelSelector from "../ModelSelector";
 import KnowledgePicker from "../knowledge/KnowledgePicker";
+import AgentSettingsModal from "../agents/AgentSettingsModal";
 import {
   type ChatMsg,
   buildAgentApiMessages,
@@ -47,10 +47,10 @@ import {
 } from "../../shared/contextUsage";
 import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
-  getSelectableModelItems,
   getChatApiConfig,
   getAgentBackendGuidance,
 } from "../../shared/settings";
+import { findAgentById } from "../../shared/agent";
 import {
   getSettingsSnapshot,
   useSettings,
@@ -136,8 +136,6 @@ interface DrawerTabState {
   input: string;
   streaming: boolean;
   requestId: string | null;
-  /** Session-locked model override ("" = follow agent default). In-memory only. */
-  sessionModel: string;
   lastPromptTokens?: number;
   lastCompletionTokens?: number;
   lastUsageMessageCount?: number;
@@ -149,7 +147,6 @@ function emptyTabState(): DrawerTabState {
     input: "",
     streaming: false,
     requestId: null,
-    sessionModel: "",
   };
 }
 
@@ -171,8 +168,15 @@ export default function TerminalAgentDrawer({
     {},
   );
   const settings = useSettings();
+  const terminalAgent =
+    findAgentById(settings.agents, settings.terminalAgentId) ??
+    settings.agents.find((a) => a.builtinRole === "terminal-assistant") ??
+    null;
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [chatMode, setChatMode] = useState<ChatMode>("normal");
+  const [chatMode, setChatMode] = useState<ChatMode>(
+    () => terminalAgent?.chatMode ?? "normal",
+  );
+  const [showAgentSettings, setShowAgentSettings] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -353,58 +357,28 @@ export default function TerminalAgentDrawer({
     [],
   );
 
-  const selectableModels = useMemo(
-    () => getSelectableModelItems(settings).map((i) => i.value),
-    [settings],
-  );
-  const modelLabels = useMemo(
-    () =>
-      Object.fromEntries(
-        getSelectableModelItems(settings).map((i) => [i.value, i.label]),
-      ),
-    [settings],
-  );
-  /** Dropdown shows the session override, or the agent default when unlocked. */
-  const agentDefaultModel = useMemo(() => {
-    const provider = settings.providers.find(
-      (p) => p.id === settings.agent.providerId && p.enabled,
-    );
-    if (!provider || !settings.agent.modelName) return "";
-    return `${provider.id}::${settings.agent.modelName}`;
-  }, [settings]);
-
-  const handleSessionModelChange = useCallback(
-    (model: string) => {
-      updateTabState(activeTabId, (s) => ({ ...s, sessionModel: model }));
-    },
-    [updateTabState, activeTabId],
-  );
-
   const contextUsage = useMemo(() => {
-    const modelName = resolveActiveModelName(
-      settings,
-      activeState.sessionModel,
+    if (!terminalAgent) return null;
+    const contextWindow = resolveContextWindow(
+      resolveActiveModelName(terminalAgent),
     );
-    const contextWindow = resolveContextWindow(modelName);
     return estimateContextUsage({
       messages: filterForAgentHistory(activeState.messages),
       input: activeState.input,
-      systemTokens: estimateAgentSystemPromptTokens(settings.agent),
+      systemTokens: estimateAgentSystemPromptTokens(terminalAgent),
       contextWindow,
       lastPromptTokens: activeState.lastPromptTokens,
       lastCompletionTokens: activeState.lastCompletionTokens,
       lastUsageMessageCount: activeState.lastUsageMessageCount,
     });
   }, [
-    settings,
-    activeState.sessionModel,
+    terminalAgent,
     activeState.messages,
     activeState.input,
     activeState.lastPromptTokens,
     activeState.lastCompletionTokens,
     activeState.lastUsageMessageCount,
   ]);
-
   const mergeToolMessage = useCallback(
     (tabId: string, event: AgentStreamToolEvent) => {
       updateTabState(tabId, (state) => ({
@@ -718,7 +692,13 @@ export default function TerminalAgentDrawer({
 
         await flushSettingsSave();
         const currentSettings = getSettingsSnapshot();
-        const guidance = getAgentBackendGuidance(currentSettings);
+        const agent =
+          findAgentById(currentSettings.agents, terminalAgent?.id) ??
+          currentSettings.agents.find(
+            (a) => a.builtinRole === "terminal-assistant",
+          );
+        if (!agent) return;
+        const guidance = getAgentBackendGuidance(currentSettings, agent);
         if (guidance) {
           const now = Date.now();
           updateTabState(activeTabId, (s) => ({
@@ -742,10 +722,10 @@ export default function TerminalAgentDrawer({
           return;
         }
 
-        const apiConfig = getChatApiConfig(currentSettings);
+        const apiConfig = getChatApiConfig(currentSettings, agent);
         if (!apiConfig?.apiHost || !apiConfig.modelName) {
           AnimalNotification.warning(
-            "请先在设置中配置 Agent 后端 Provider 与模型。",
+            "请先在智能体弹窗中配置终端助手的后端 Provider 与模型。",
           );
           return;
         }
@@ -755,11 +735,9 @@ export default function TerminalAgentDrawer({
           filterForAgentHistory(state.messages),
           buildTrimOptions({
             contextWindow: resolveContextWindow(
-              resolveActiveModelName(currentSettings, state.sessionModel),
+              resolveActiveModelName(agent),
             ),
-            systemTokens: estimateAgentSystemPromptTokens(
-              currentSettings.agent,
-            ),
+            systemTokens: estimateAgentSystemPromptTokens(agent),
             draftInput: finalText,
           }),
         );
@@ -780,14 +758,11 @@ export default function TerminalAgentDrawer({
         const now = Date.now();
 
         const agentConfig: AgentConfig = {
-          ...currentSettings.agent,
+          ...agent,
           chatMode,
           enabledSkillIds: invokedSkillId
-            ? withEnabledSkillId(
-                currentSettings.agent.enabledSkillIds,
-                invokedSkillId,
-              )
-            : currentSettings.agent.enabledSkillIds,
+            ? withEnabledSkillId(agent.enabledSkillIds, invokedSkillId)
+            : agent.enabledSkillIds,
         };
 
         updateTabState(activeTabId, (s) => ({
@@ -815,7 +790,6 @@ export default function TerminalAgentDrawer({
               modelName: apiConfig.modelName,
             },
             agentConfig,
-            sessionModel: state.sessionModel,
             terminalSessionId: sessionId,
           });
           if (result.mode === "blocked") {
@@ -1114,17 +1088,19 @@ export default function TerminalAgentDrawer({
         )}
         <div className="terminal-agent-header">
           <div className="terminal-agent-title">
-            <ModelSelector
-              models={selectableModels}
-              value={activeState.sessionModel || agentDefaultModel}
-              modelLabels={modelLabels}
-              onChange={handleSessionModelChange}
-              allowCustom={false}
-              disabled={composerDisabled}
-              variant="toolbar"
-            />
+            <span className="terminal-agent-title-name">
+              {terminalAgent ? `${terminalAgent.name}` : "终端助手"}
+            </span>
           </div>
           <div className="terminal-agent-header-actions">
+            <Button
+              type="text"
+              size="small"
+              className="terminal-agent-header-btn"
+              icon={<Icon name="Settings" size={14} />}
+              onClick={() => setShowAgentSettings(true)}
+              title="AI 助手设置"
+            />
             <Button
               type="text"
               size="small"
@@ -1273,6 +1249,11 @@ export default function TerminalAgentDrawer({
         </div>
       </div>
       {confirmDialog}
+      <AgentSettingsModal
+        open={showAgentSettings}
+        agentId={terminalAgent?.id ?? null}
+        onClose={() => setShowAgentSettings(false)}
+      />
     </aside>
   );
 }

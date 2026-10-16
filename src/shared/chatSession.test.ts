@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   buildChatSession,
   normalizeChatSession,
-  normalizeSessionModel,
+  normalizeChatTopicsStore,
+  createChatTopic,
 } from "./chatSession";
 
 describe("chatSession lastServerUsage", () => {
@@ -30,41 +31,50 @@ describe("chatSession lastServerUsage", () => {
   });
 });
 
-describe("chatSession sessionModel", () => {
-  it("round-trips a session-locked model through build and normalize", () => {
-    const session = buildChatSession(
-      [],
-      "",
-      [],
-      undefined,
-      "openai::gpt-4o-mini",
-    );
-    const restored = normalizeChatSession(session);
-    expect(restored.sessionModel).toBe("openai::gpt-4o-mini");
-  });
-
-  it("omits sessionModel when absent (legacy v2 files)", () => {
-    const restored = normalizeChatSession({ version: 2, messages: [] });
-    expect(restored.sessionModel).toBeUndefined();
-  });
-
-  it("drops malformed sessionModel", () => {
-    const restored = normalizeChatSession({
-      version: 2,
-      messages: [],
-      sessionModel: "garbage-no-separator",
+describe("normalizeChatTopicsStore", () => {
+  it("backfills agentId with default and chatMode with normal", () => {
+    const store = normalizeChatTopicsStore({
+      topics: [{ id: "t1", name: "旧会话", createdAt: 1, orderKey: 1 }],
     });
-    expect(restored.sessionModel).toBeUndefined();
+    expect(store.topics[0].agentId).toBe("personal-assistant");
+    expect(store.topics[0].chatMode).toBe("normal");
+  });
+
+  it("keeps existing agentId/chatMode and honors custom defaultAgentId", () => {
+    const store = normalizeChatTopicsStore(
+      {
+        topics: [
+          { id: "t1", name: "a", createdAt: 1, agentId: "custom", chatMode: "plan" },
+          { id: "t2", name: "b", createdAt: 2 },
+        ],
+      },
+      "terminal-assistant",
+    );
+    expect(store.topics[0].agentId).toBe("custom");
+    expect(store.topics[0].chatMode).toBe("plan");
+    expect(store.topics[1].agentId).toBe("terminal-assistant");
+  });
+
+  it("drops invalid chatMode values", () => {
+    const store = normalizeChatTopicsStore({
+      topics: [{ id: "t1", name: "a", createdAt: 1, chatMode: "bogus" }],
+    });
+    expect(store.topics[0].chatMode).toBe("normal");
   });
 });
 
-describe("normalizeSessionModel", () => {
-  it("accepts compound keys and rejects everything else", () => {
-    expect(normalizeSessionModel("p::m")).toBe("p::m");
-    expect(normalizeSessionModel("  p::m  ")).toBe("p::m");
-    expect(normalizeSessionModel("")).toBe("");
-    expect(normalizeSessionModel(undefined)).toBe("");
-    expect(normalizeSessionModel("just-model")).toBe("");
-    expect(normalizeSessionModel(42)).toBe("");
+describe("createChatTopic", () => {
+  it("assigns agentId and chatMode defaults", () => {
+    const topic = createChatTopic();
+    expect(topic.agentId).toBe("personal-assistant");
+    expect(topic.chatMode).toBe("normal");
+    expect(topic.id).toBeTruthy();
+  });
+
+  it("accepts explicit agentId", () => {
+    const topic = createChatTopic("t-1", "工作", "terminal-assistant");
+    expect(topic.id).toBe("t-1");
+    expect(topic.name).toBe("工作");
+    expect(topic.agentId).toBe("terminal-assistant");
   });
 });

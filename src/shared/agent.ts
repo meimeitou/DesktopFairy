@@ -13,7 +13,13 @@ import {
 } from "./reasoningEffort";
 
 
+export type BuiltinAgentRole = "personal-assistant" | "terminal-assistant";
+
 export interface AgentConfig {
+  /** Stable unique id; builtin agents use fixed ids. */
+  id: string;
+  /** Builtin protection marker; custom agents leave this unset. */
+  builtinRole?: BuiltinAgentRole;
   name: string;
   /** Default emoji, or `img:relativePath` for uploaded image */
   avatar: string;
@@ -24,20 +30,18 @@ export interface AgentConfig {
   soul: string;
   /** USER.md — user's profile, preferences and habits. */
   user: string;
-  /** Opt-out: disabled builtin tool ids for the local / main-chat context */
+  /** Opt-out: disabled builtin tool ids (single set, context rules applied on top) */
   disabledToolIds: string[];
-  /** Whether the Terminal tool is enabled for this agent session */
-  enableTerminalTool?: boolean;
-  /** Opt-out: disabled builtin tool ids for the terminal drawer context */
-  terminalDisabledToolIds: string[];
   /** Bound global MCP server ids */
   mcpServerIds: string[];
   /** Enabled skill folder ids */
   enabledSkillIds: string[];
+  /** Knowledge bases attached to new conversations of this agent */
+  knowledgeBaseIds: string[];
   maxTurns: number;
 
   envVars: Record<string, string>;
-  /** Active conversation mode — drives system prompt + tool behavior. */
+  /** Default conversation mode for this agent's new topics. */
   chatMode: ChatMode;
   /** Reasoning effort for OpenAI-compatible o-series / thinking models. "default" = send nothing. */
   reasoningEffort: ReasoningEffort;
@@ -116,7 +120,10 @@ export const DEFAULT_USER_TEMPLATE = `# 用户档案
 
 export const BUILTIN_AGENT_TOOLS = getBuiltinToolCatalog("confirm");
 
-export const LOCAL_DEFAULT_DISABLED_TOOL_IDS = ["Terminal"];
+export const PERSONAL_ASSISTANT_ID = "personal-assistant";
+export const TERMINAL_ASSISTANT_ID = "terminal-assistant";
+
+export const PERSONAL_DEFAULT_DISABLED_TOOL_IDS = ["Terminal"];
 
 export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
   "bash",
@@ -127,24 +134,84 @@ export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
   "grep",
 ];
 
-export const DEFAULT_AGENT_CONFIG: AgentConfig = {
-  name: "桌面精灵",
-  avatar: DEFAULT_AGENT_AVATAR,
-  description: "Live2D 桌面智能体",
-  providerId: "openai",
-  modelName: "gpt-4o-mini",
-  soul: DEFAULT_SOUL,
-  user: "",
-  disabledToolIds: LOCAL_DEFAULT_DISABLED_TOOL_IDS,
-  terminalDisabledToolIds: TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
-  mcpServerIds: [],
-  enabledSkillIds: [],
-  maxTurns: 30,
+export const DEFAULT_TERMINAL_SOUL = `# Soul
 
-  envVars: {},
-  chatMode: DEFAULT_CHAT_MODE,
-  reasoningEffort: DEFAULT_REASONING_EFFORT,
-};
+你是终端助手，住在用户的终端页面里，负责命令解释、错误诊断和会话操作。
+
+## 核心原则
+
+- 回答精确、简短，直接给出可执行的结论。
+- 涉及破坏性操作（删除、覆盖、批量修改）时先说明影响再执行。
+- 不确定命令含义时如实说明，不要猜测后直接执行。
+
+## 执行规则
+
+- 解释命令时给出每个关键参数的含义，一行一个要点。
+- 诊断错误时先读错误信息本身，再定位原因，最后给修复命令。
+- 用户让你执行命令时，优先通过 Terminal 工具在当前终端会话中执行，让输出可见。
+- 远程 SSH 会话中不要执行仅适用于本机的命令。
+- 修复后主动验证（重跑命令、查看输出）。`;
+
+export const NEW_AGENT_SOUL_TEMPLATE = `# Soul
+
+（在这里描述这个智能体是谁：用途、性格、语气。）
+
+## 执行规则
+
+- 单步任务立即执行，多步任务先简述计划。
+- 写之前先读——不要假设文件存在或内容如你所想。
+- 工具调用失败时先诊断错误、换一种方式重试，再向用户报告。
+- 多步修改完成后，验证结果（重读文件、跑测试、看输出）。`;
+
+export function createPersonalAssistantDefaults(
+  overrides?: Partial<AgentConfig>,
+): AgentConfig {
+  return {
+    id: PERSONAL_ASSISTANT_ID,
+    builtinRole: "personal-assistant",
+    name: "小雅",
+    avatar: DEFAULT_AGENT_AVATAR,
+    description: "桌面个人助手，聊天陪伴与日常事务",
+    providerId: "openai",
+    modelName: "gpt-4o-mini",
+    soul: DEFAULT_SOUL,
+    user: "",
+    disabledToolIds: PERSONAL_DEFAULT_DISABLED_TOOL_IDS,
+    mcpServerIds: [],
+    enabledSkillIds: [],
+    knowledgeBaseIds: [],
+    maxTurns: 30,
+    envVars: {},
+    chatMode: DEFAULT_CHAT_MODE,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    ...overrides,
+  };
+}
+
+export function createTerminalAssistantDefaults(
+  overrides?: Partial<AgentConfig>,
+): AgentConfig {
+  return {
+    id: TERMINAL_ASSISTANT_ID,
+    builtinRole: "terminal-assistant",
+    name: "终端助手",
+    avatar: "🤖",
+    description: "终端里的运维助手，解释命令、诊断错误、操作会话",
+    providerId: "openai",
+    modelName: "gpt-4o-mini",
+    soul: DEFAULT_TERMINAL_SOUL,
+    user: "",
+    disabledToolIds: TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
+    mcpServerIds: [],
+    enabledSkillIds: [],
+    knowledgeBaseIds: [],
+    maxTurns: 30,
+    envVars: {},
+    chatMode: DEFAULT_CHAT_MODE,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    ...overrides,
+  };
+}
 
 export function isAgentBackend(backend: string): boolean {
   return backend === AGENT_BACKEND_KEY;
@@ -156,19 +223,70 @@ export function getAgentBackendLabel(agent: AgentConfig): string {
   return `${avatar} ${name}`;
 }
 
+function pickTypedAgentFields(
+  fallback: Partial<AgentConfig> | undefined,
+): Partial<AgentConfig> {
+  if (!fallback || typeof fallback !== "object") return {};
+  const f = fallback as Partial<AgentConfig> & Record<string, unknown>;
+  const out: Partial<AgentConfig> = {};
+  if (typeof f.id === "string" && f.id.trim()) out.id = f.id;
+  if (
+    f.builtinRole === "personal-assistant" ||
+    f.builtinRole === "terminal-assistant"
+  ) {
+    out.builtinRole = f.builtinRole;
+  }
+  if (typeof f.name === "string" && f.name.trim()) out.name = f.name;
+  if (typeof f.avatar === "string" && f.avatar.trim()) out.avatar = f.avatar;
+  if (typeof f.description === "string") out.description = f.description;
+  if (typeof f.providerId === "string" && f.providerId.trim()) {
+    out.providerId = f.providerId;
+  }
+  if (typeof f.modelName === "string" && f.modelName.trim()) {
+    out.modelName = f.modelName;
+  }
+  if (typeof f.soul === "string" && f.soul.trim()) out.soul = f.soul;
+  if (typeof f.user === "string") out.user = f.user;
+  if (Array.isArray(f.disabledToolIds)) out.disabledToolIds = f.disabledToolIds;
+  if (Array.isArray(f.mcpServerIds)) out.mcpServerIds = f.mcpServerIds;
+  if (Array.isArray(f.enabledSkillIds)) out.enabledSkillIds = f.enabledSkillIds;
+  if (Array.isArray(f.knowledgeBaseIds)) {
+    out.knowledgeBaseIds = f.knowledgeBaseIds;
+  }
+  if (typeof f.maxTurns === "number" && Number.isFinite(f.maxTurns)) {
+    out.maxTurns = f.maxTurns;
+  }
+  if (
+    f.envVars &&
+    typeof f.envVars === "object" &&
+    !Array.isArray(f.envVars)
+  ) {
+    out.envVars = f.envVars;
+  }
+  if (typeof f.chatMode === "string") out.chatMode = f.chatMode;
+  if (typeof f.reasoningEffort === "string") {
+    out.reasoningEffort = f.reasoningEffort;
+  }
+  return out;
+}
+
 export function normalizeAgentConfig(
   value: unknown,
-  fallback?: Partial<AgentConfig>
+  fallback?: Partial<AgentConfig>,
 ): AgentConfig {
-  const base = { ...DEFAULT_AGENT_CONFIG, ...fallback };
+  // Fallback participates in base via a type-checked whitelist: a corrupt
+  // fallback (e.g. caller passes the same raw object) must not re-inject
+  // invalid values through base when field validation rejects them.
+  const safeFallback = pickTypedAgentFields(fallback);
+  const base = {
+    ...createPersonalAssistantDefaults(),
+    ...safeFallback,
+  };
   if (!value || typeof value !== "object") return { ...base };
 
   const raw = value as Partial<AgentConfig> & {
     instructions?: string;
     mcpServers?: { id: string; enabled?: boolean }[];
-    maxContextMessages?: number;
-    maxContextChars?: number;
-    maxTokens?: number;
   };
 
   const envVars =
@@ -191,6 +309,18 @@ export function normalizeAgentConfig(
   }
 
   return {
+    id:
+      typeof raw.id === "string" && raw.id.trim()
+        ? raw.id.trim()
+        : base.id ||
+          (typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`),
+    builtinRole:
+      raw.builtinRole === "personal-assistant" ||
+      raw.builtinRole === "terminal-assistant"
+        ? raw.builtinRole
+        : base.builtinRole,
     name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : base.name,
     avatar: (() => {
       const v = typeof raw.avatar === "string" ? raw.avatar.trim() : "";
@@ -220,16 +350,15 @@ export function normalizeAgentConfig(
       raw.disabledToolIds,
       base.disabledToolIds,
     ),
-    terminalDisabledToolIds: normalizeDisabledToolIds(
-      raw.terminalDisabledToolIds,
-      base.terminalDisabledToolIds,
-    ),
-    enableTerminalTool:
-      typeof raw.enableTerminalTool === "boolean" ? raw.enableTerminalTool : undefined,
     mcpServerIds,
     enabledSkillIds: Array.isArray(raw.enabledSkillIds)
       ? raw.enabledSkillIds.filter((id): id is string => typeof id === "string")
       : [...base.enabledSkillIds],
+    knowledgeBaseIds: Array.isArray(raw.knowledgeBaseIds)
+      ? raw.knowledgeBaseIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [...base.knowledgeBaseIds],
     maxTurns:
       typeof raw.maxTurns === "number" && Number.isFinite(raw.maxTurns)
         ? Math.min(100, Math.max(1, Math.round(raw.maxTurns)))
@@ -238,6 +367,14 @@ export function normalizeAgentConfig(
     chatMode: normalizeChatMode(raw.chatMode),
     reasoningEffort: normalizeReasoningEffort(raw.reasoningEffort),
   };
+}
+
+export function findAgentById(
+  agents: AgentConfig[],
+  id: string | undefined | null,
+): AgentConfig | undefined {
+  if (!id) return undefined;
+  return agents.find((a) => a.id === id);
 }
 
 export function getEffectiveToolApprovalMode(
@@ -257,9 +394,7 @@ export function getEnabledAgentBuiltinTools(
 ): AgentToolDescriptor[] {
   const approval = getEffectiveToolApprovalMode(agent);
   const card = getChatModeCard(agent.chatMode);
-  const disabled = new Set(
-    context === "local" ? agent.disabledToolIds : agent.terminalDisabledToolIds
-  );
+  const disabled = new Set(agent.disabledToolIds);
   if (card.readOnly) {
     for (const id of [
       "write",
@@ -285,14 +420,6 @@ export function getEnabledAgentBuiltinTools(
 
   if (context === "terminal") {
     disabled.add("bash");
-    // Terminal must remain available in the terminal drawer, even in plan mode,
-    // unless the user explicitly disabled it or the legacy flag is false.
-    if (
-      !agent.terminalDisabledToolIds?.includes("Terminal") &&
-      agent.enableTerminalTool !== false
-    ) {
-      disabled.delete("Terminal");
-    }
   }
 
   if (options?.hideWebFetch) {

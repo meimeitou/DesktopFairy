@@ -1,4 +1,5 @@
-import { Icon, Notification } from "animal-island-ui";
+import { Button, Icon, Notification } from "animal-island-ui";
+import { SidebarCollapseIcon, SidebarExpandIcon } from "../components/icons/naivePatch";
 import { useConfirm } from "../hooks/useConfirm";
 import {
   useState,
@@ -9,7 +10,8 @@ import {
   type MutableRefObject,
 } from "react";
 import ChatInputBar from "../components/chat/ChatInputBar";
-import TopicSidebar from "../components/chat/TopicSidebar";
+import AgentChatSidebar from "../components/chat/AgentChatSidebar";
+import AgentSettingsModal from "../components/agents/AgentSettingsModal";
 import MessageList, {
   type MessageListHandle,
 } from "../components/chat/MessageList";
@@ -50,12 +52,16 @@ import {
   type ChatTopic,
 } from "../shared/chatSession";
 import {
-  getSelectableModelItems,
   getChatApiConfig,
   getAgentBackendGuidance,
+  updateAgentInSettings,
+  appendAgentToSettings,
+  removeAgentFromSettings,
   AGENT_BACKEND_KEY,
   type AppSettings,
 } from "../shared/settings";
+import { findAgentById, type AgentConfig } from "../shared/agent";
+import AgentAvatar from "../components/AgentAvatar";
 import {
   getSettingsSnapshot,
   setSettings,
@@ -102,8 +108,6 @@ type TopicPageState = {
   requestBackend: string | null;
   sessionReady: boolean;
   invalidAttachmentPaths: Set<string>;
-  /** Session-locked model override ("" = follow agent default). */
-  sessionModel: string;
   lastPromptTokens?: number;
   lastCompletionTokens?: number;
   lastUsageMessageCount?: number;
@@ -119,7 +123,6 @@ function emptyTopicState(): TopicPageState {
     requestBackend: null,
     sessionReady: false,
     invalidAttachmentPaths: new Set(),
-    sessionModel: "",
   };
 }
 
@@ -176,10 +179,11 @@ export default function ChatPage({
   const [topics, setTopics] = useState<ChatTopic[]>([]);
   const topicsRef = useRef<ChatTopic[]>([]);
   const [topicsLoaded, setTopicsLoaded] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const chatSettings = useSettings();
-  // 递增信号：划词预填文本后通知 ChatInputBar 把焦点收回输入框
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [creatingAgent, setCreatingAgent] = useState(false);
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
 
@@ -278,27 +282,22 @@ export default function ChatPage({
     [syncStreamingFlag],
   );
 
-  const selectableModels = useMemo(
-    () => getSelectableModelItems(chatSettings).map((i) => i.value),
-    [chatSettings],
+  /** Active chat agent (falls back to first non-terminal agent). */
+  const activeAgent =
+    findAgentById(chatSettings.agents, chatSettings.activeChatAgentId) ?? null;
+  const fallbackAgent = chatSettings.agents.find(
+    (a) => a.id !== chatSettings.terminalAgentId,
   );
-  const modelLabels = useMemo(
-    () =>
-      Object.fromEntries(
-        getSelectableModelItems(chatSettings).map((i) => [i.value, i.label]),
-      ),
-    [chatSettings],
-  );
-  /** Session-locked model override for the active topic ("" = agent default). */
-  const sessionModel = activeState.sessionModel ?? "";
-  /** Dropdown shows the session override, or the agent default when unlocked. */
-  const agentDefaultModel = useMemo(() => {
-    const provider = chatSettings.providers.find(
-      (p) => p.id === chatSettings.agent.providerId && p.enabled,
-    );
-    if (!provider || !chatSettings.agent.modelName) return "";
-    return `${provider.id}::${chatSettings.agent.modelName}`;
-  }, [chatSettings]);
+  const currentAgent: AgentConfig | null = activeAgent ?? fallbackAgent ?? null;
+  /** Topic owning agent: the active topic's agentId, else active agent. */
+  const activeTopic = topics.find((t) => t.id === activeTopicId) ?? null;
+  const topicAgent =
+    (activeTopic
+      ? findAgentById(chatSettings.agents, activeTopic.agentId)
+      : undefined) ?? currentAgent;
+  /** Session-level chat mode for the active topic. */
+  const activeChatMode: ChatMode =
+    activeTopic?.chatMode ?? currentAgent?.chatMode ?? "normal";
 
   const contextMessages = useMemo(
     () => filterForAgentHistory(messages),
@@ -306,9 +305,11 @@ export default function ChatPage({
   );
 
   const contextUsage = useMemo(() => {
-    const modelName = resolveActiveModelName(chatSettings, sessionModel);
-    const contextWindow = resolveContextWindow(modelName);
-    const systemTokens = estimateAgentSystemPromptTokens(chatSettings.agent);
+    if (!topicAgent) return null;
+    const contextWindow = resolveContextWindow(
+      resolveActiveModelName(topicAgent),
+    );
+    const systemTokens = estimateAgentSystemPromptTokens(topicAgent);
     return estimateContextUsage({
       messages: contextMessages,
       input,
@@ -320,8 +321,7 @@ export default function ChatPage({
       lastUsageMessageCount: activeState.lastUsageMessageCount,
     });
   }, [
-    chatSettings,
-    sessionModel,
+    topicAgent,
     contextMessages,
     input,
     attachments,
@@ -349,7 +349,6 @@ export default function ChatPage({
               messageCount: state.lastUsageMessageCount,
             }
           : undefined,
-        state.sessionModel || undefined,
       ),
     );
     await api.invoke("chat:session:save", { topicId: tid, session });
@@ -420,7 +419,6 @@ export default function ChatPage({
           requestBackend: null,
           sessionReady: true,
           invalidAttachmentPaths: invalid,
-          sessionModel: session.sessionModel ?? "",
           lastPromptTokens: session.lastServerUsage?.promptTokens,
           lastCompletionTokens: session.lastServerUsage?.completionTokens,
           lastUsageMessageCount: session.lastServerUsage?.messageCount,
@@ -479,14 +477,32 @@ export default function ChatPage({
     [flushSessionSave, loadSessionForTopic],
   );
 
-  const handleCreateTopic = useCallback(async () => {
+  const handleCreateTopic = useCallback(async (agentId?: string) => {
     const currentActive = activeTopicIdRef.current;
     if (currentActive) {
       flushSessionSave(currentActive);
     }
+    const settings = getSettingsSnapshot();
+    const agent = agentId
+      ? findAgentById(settings.agents, agentId)
+      : findAgentById(settings.agents, settings.activeChatAgentId) ??
+        settings.agents.find((a) => a.id !== settings.terminalAgentId);
+    if (!agent) return;
+    // 给非当前 agent 建会话：切换选中，让新会话立即可见高亮
+    if (agent.id !== settings.activeChatAgentId) {
+      setSettings((prev: AppSettings) => ({
+        ...prev,
+        activeChatAgentId: agent.id,
+      }));
+    }
     try {
       const topic = (await api.invoke("chat:topics:create", {
         name: "",
+        agentId: agent.id,
+        chatMode: agent.chatMode,
+        ...(agent.knowledgeBaseIds.length > 0
+          ? { knowledgeBaseIds: agent.knowledgeBaseIds }
+          : {}),
       })) as ChatTopic;
       setTopics((prev) => [...prev, topic]);
       setTopicStates((prev) => ({
@@ -539,18 +555,6 @@ export default function ChatPage({
       }
     },
     [loadSessionForTopic],
-  );
-
-  const handleRenameTopic = useCallback(
-    async (topicId: string, name: string) => {
-      await api.invoke("chat:topics:rename", { topicId, name });
-      setTopics((prev) =>
-        prev.map((t) =>
-          t.id === topicId ? { ...t, name, updatedAt: Date.now() } : t,
-        ),
-      );
-    },
-    [],
   );
 
   useEffect(() => {
@@ -1021,37 +1025,76 @@ export default function ChatPage({
     scrollToBottom();
   }, [activeTopicId, scrollToBottom]);
 
-  /** Session-locked model override: pick in the dropdown locks this topic. */
-  const handleSessionModelChange = useCallback(
-    (model: string) => {
-      const topicId = activeTopicIdRef.current;
-      if (!topicId) return;
-      setTopicStates((prev) => {
-        const state = prev[topicId];
-        if (!state) return prev;
-        return { ...prev, [topicId]: { ...state, sessionModel: model } };
-      });
-      scheduleTopicSave(topicId);
-    },
-    [scheduleTopicSave],
-  );
-
+  /** Session-level chat mode: persisted on the topic. */
   const handleChatModeChange = useCallback((mode: ChatMode) => {
-    const current = getSettingsSnapshot();
-    persistSettingsWithAlert({
-      ...current,
+    const topicId = activeTopicIdRef.current;
+    if (!topicId) return;
+    setTopics((prev) =>
+      prev.map((t) => (t.id === topicId ? { ...t, chatMode: mode } : t)),
+    );
+    void api.invoke("chat:topics:updateMeta", {
+      topicId,
       chatMode: mode,
-      agent: { ...current.agent, chatMode: mode },
     });
   }, []);
 
   const handleReasoningEffortChange = useCallback((value: ReasoningEffort) => {
     const current = getSettingsSnapshot();
-    persistSettingsWithAlert({
-      ...current,
-      agent: { ...current.agent, reasoningEffort: value },
-    });
+    const agentId =
+      topicsRef.current.find((t) => t.id === activeTopicIdRef.current)
+        ?.agentId ?? current.activeChatAgentId;
+    persistSettingsWithAlert(
+      updateAgentInSettings(current, agentId, { reasoningEffort: value }),
+    );
   }, []);
+
+  const handleSelectAgent = useCallback((agentId: string) => {
+    setSettings((prev: AppSettings) => ({
+      ...prev,
+      activeChatAgentId: agentId,
+    }));
+    // Jump to that agent's most recent topic; with none, drop the active
+    // topic so the message area doesn't keep showing the previous agent's
+    // conversation under the new agent's highlight.
+    const latest = [...topicsRef.current]
+      .filter((t) => t.agentId === agentId)
+      .sort((a, b) => b.orderKey - a.orderKey)[0];
+    if (latest) {
+      handleSelectTopic(latest.id);
+    } else {
+      const oldTopicId = activeTopicIdRef.current;
+      if (oldTopicId) flushSessionSave(oldTopicId);
+      setActiveTopicId(null);
+      setEditingMsgId(null);
+    }
+  }, [handleSelectTopic, flushSessionSave]);
+
+  const handleDuplicateAgent = useCallback((agent: AgentConfig) => {
+    const current = getSettingsSnapshot();
+    const copy: AgentConfig = {
+      ...agent,
+      id:
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      builtinRole: undefined,
+      name: `${agent.name}副本`,
+    };
+    persistSettingsWithAlert(appendAgentToSettings(current, copy));
+    setEditingAgentId(copy.id);
+  }, []);
+
+  const handleDeleteAgent = useCallback(
+    async (agent: AgentConfig) => {
+      const doomed = topicsRef.current.filter((t) => t.agentId === agent.id);
+      for (const t of doomed) {
+        await handleDeleteTopic(t.id);
+      }
+      const current = getSettingsSnapshot();
+      persistSettingsWithAlert(removeAgentFromSettings(current, agent.id));
+    },
+    [handleDeleteTopic],
+  );
 
   const {
     submittingApprovalId,
@@ -1147,15 +1190,16 @@ export default function ChatPage({
       try {
         await flushSettingsSave();
         const settings = getSettingsSnapshot();
-        const apiConfig = getChatApiConfig(settings);
+        const topic = topicsRef.current.find((t) => t.id === topicId);
+        const agent =
+          (topic ? findAgentById(settings.agents, topic.agentId) : null) ??
+          findAgentById(settings.agents, settings.activeChatAgentId);
+        if (!agent) return;
+        const apiConfig = getChatApiConfig(settings, agent);
         if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
-        const agent = settings.agent;
-        const sessionModel = state.sessionModel || "";
         const trimOpts = buildTrimOptions({
-          contextWindow: resolveContextWindow(
-            resolveActiveModelName(settings, sessionModel),
-          ),
+          contextWindow: resolveContextWindow(resolveActiveModelName(agent)),
           systemTokens: estimateAgentSystemPromptTokens(agent),
         });
 
@@ -1193,7 +1237,6 @@ export default function ChatPage({
         syncStreamingFlag(topicId, true);
         scrollToBottom();
         notifyLive2DScene("thinking");
-
         openAgentStream({
           topicId,
           requestId,
@@ -1204,8 +1247,10 @@ export default function ChatPage({
             providerType: apiConfig.providerType,
             modelName: apiConfig.modelName,
           },
-          agentConfig: agent,
-          sessionModel,
+          agentConfig: {
+            ...agent,
+            chatMode: topic?.chatMode ?? agent.chatMode,
+          },
           knowledgeBaseIds:
             topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
             [],
@@ -1268,8 +1313,12 @@ export default function ChatPage({
         // Always resolve from the latest store snapshot.
         await flushSettingsSave();
         const settings = getSettingsSnapshot();
-        const sessionModel = state.sessionModel || "";
-        const apiConfig = getChatApiConfig(settings);
+        const topic = topicsRef.current.find((t) => t.id === topicId);
+        const agent =
+          (topic ? findAgentById(settings.agents, topic.agentId) : null) ??
+          findAgentById(settings.agents, settings.activeChatAgentId);
+        if (!agent) return;
+        const apiConfig = getChatApiConfig(settings, agent);
         let invokedSkillId: string | undefined;
         if (!isCompactRequest && !overrideText) {
           const applied = applySkillSlashCommand(
@@ -1283,7 +1332,7 @@ export default function ChatPage({
         }
 
         {
-          const guidance = getAgentBackendGuidance(settings);
+          const guidance = getAgentBackendGuidance(settings, agent);
           if (guidance) {
             const now = Date.now();
             const userMsg: ChatMsg = {
@@ -1330,15 +1379,15 @@ export default function ChatPage({
           return;
         }
 
-        const agent = invokedSkillId
+        const sendAgent = invokedSkillId
           ? {
-              ...settings.agent,
+              ...agent,
               enabledSkillIds: withEnabledSkillId(
-                settings.agent.enabledSkillIds,
+                agent.enabledSkillIds,
                 invokedSkillId,
               ),
             }
-          : settings.agent;
+          : agent;
 
         let attachmentPayloads = {
           textFiles: [] as { name: string; text: string }[],
@@ -1355,9 +1404,9 @@ export default function ChatPage({
 
         const trimOpts = buildTrimOptions({
           contextWindow: resolveContextWindow(
-            resolveActiveModelName(settings, sessionModel),
+            resolveActiveModelName(sendAgent),
           ),
-          systemTokens: estimateAgentSystemPromptTokens(agent),
+          systemTokens: estimateAgentSystemPromptTokens(sendAgent),
           draftInput: finalText,
           draftAttachments: sendAttachments,
         });
@@ -1370,7 +1419,7 @@ export default function ChatPage({
           agentHistory,
           finalText,
           attachmentPayloads,
-          agent.soul,
+          sendAgent.soul,
         );
 
         const now = Date.now();
@@ -1437,7 +1486,7 @@ export default function ChatPage({
         }
 
         scheduleTopicSave(topicId);
-        setSidebarCollapsed(true);
+        setSidebarCollapsed(false);
 
         notifyLive2DScene("userSend");
         const invokePromise = openAgentStream({
@@ -1450,8 +1499,10 @@ export default function ChatPage({
             providerType: apiConfig.providerType,
             modelName: apiConfig.modelName,
           },
-          agentConfig: agent,
-          sessionModel,
+          agentConfig: {
+            ...sendAgent,
+            chatMode: topic?.chatMode ?? sendAgent.chatMode,
+          },
           knowledgeBaseIds:
             topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
             [],
@@ -1710,14 +1761,15 @@ export default function ChatPage({
   const emptyContent = useMemo(
     () => (
       <div className="chat-empty">
-        <span className="chat-empty-icon">
-          <Icon name="Butterfly" size={40} />
-        </span>
-        <p>开始聊天</p>
+        <AgentAvatar
+          avatar={currentAgent?.avatar || ""}
+          className="chat-empty-icon"
+        />
+        <p>和 {currentAgent?.name || "智能体"} 开始对话</p>
         <small>输入消息，或用 / 唤起命令、⌘V 粘贴图片、拖入文件</small>
       </div>
     ),
-    [],
+    [currentAgent],
   );
 
   const handleSendClick = useCallback(() => {
@@ -1731,19 +1783,58 @@ export default function ChatPage({
   return (
     <div className={`chat-page${embedded ? " chat-page-embedded" : ""}`}>
       {topicsLoaded && (
-        <TopicSidebar
+        <AgentChatSidebar
+          settings={chatSettings}
           topics={topics}
-          activeId={activeTopicId}
-          onSelect={handleSelectTopic}
-          onCreate={handleCreateTopic}
-          onDelete={handleDeleteTopic}
-          onRename={handleRenameTopic}
+          activeTopicId={activeTopicId}
+          onSelectTopic={handleSelectTopic}
+          onCreateTopic={handleCreateTopic}
+          onDeleteTopic={handleDeleteTopic}
+          onEditAgent={setEditingAgentId}
+          onCreateAgent={() => setCreatingAgent(true)}
+          onDuplicateAgent={handleDuplicateAgent}
+          onDeleteAgent={handleDeleteAgent}
+          onSelectAgent={handleSelectAgent}
+          loadingTopicIds={loadingTopicIds}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
-          loadingTopicIds={loadingTopicIds}
         />
       )}
       <div className="chat-main-area">
+        {topicsLoaded && (
+          <header className="chat-agent-header">
+            <Button
+              type="text"
+              size="small"
+              className="chat-sidebar-toggle"
+              icon={<Icon icon={sidebarCollapsed ? SidebarExpandIcon : SidebarCollapseIcon} size={16} />}
+              title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+              onClick={() => setSidebarCollapsed((v) => !v)}
+            />
+            {topicAgent && (
+              <>
+                <AgentAvatar
+                  avatar={topicAgent.avatar}
+                  className="chat-agent-header-avatar"
+                />
+                <div className="chat-agent-header-main">
+                  <strong>{topicAgent.name}</strong>
+                  {topicAgent.description && (
+                    <small>{topicAgent.description}</small>
+                  )}
+                </div>
+                <Button
+                  type="text"
+                  size="small"
+                  className="chat-agent-header-settings"
+                  icon={<Icon name="Settings" size={14} />}
+                  title="智能体设置"
+                  onClick={() => setEditingAgentId(topicAgent.id)}
+                />
+              </>
+            )}
+          </header>
+        )}
         <ToolCancelContext.Provider value={handleCancelTool}>
           <MessageList
             ref={messageListRef}
@@ -1776,7 +1867,7 @@ export default function ChatPage({
           maxTurnsPendingTopics.has(activeTopicId) &&
           !streaming && (
             <MaxTurnsCard
-              maxTurns={chatSettings.agent.maxTurns}
+              maxTurns={topicAgent?.maxTurns ?? 30}
               onContinue={() => void handleContinue(activeTopicId)}
               onCancel={() =>
                 setMaxTurnsPendingTopics((prev) => {
@@ -1791,20 +1882,16 @@ export default function ChatPage({
         <ChatInputBar
           input={input}
           onInputChange={setActiveInput}
-          modelName={sessionModel || agentDefaultModel}
           attachments={attachments}
           onAttachmentsChange={setActiveAttachments}
           streaming={streaming}
           editingMessage={!!editingMsgId}
           hasMessages={messages.length > 0}
           focusSignal={inputFocusSignal}
-          models={selectableModels}
-          modelLabels={modelLabels}
-          onModelChange={handleSessionModelChange}
-          chatMode={chatSettings.chatMode}
+          chatMode={activeChatMode}
           onChatModeChange={handleChatModeChange}
           showModeSelector={true}
-          reasoningEffort={chatSettings.agent.reasoningEffort}
+          reasoningEffort={topicAgent?.reasoningEffort ?? "default"}
           onReasoningEffortChange={handleReasoningEffortChange}
           onSend={handleSendClick}
           onStop={handleStop}
@@ -1831,6 +1918,15 @@ export default function ChatPage({
           }}
         />
       </div>
+      <AgentSettingsModal
+        open={!!editingAgentId || creatingAgent}
+        agentId={editingAgentId}
+        creating={creatingAgent ? {} : undefined}
+        onClose={() => {
+          setEditingAgentId(null);
+          setCreatingAgent(false);
+        }}
+      />
       {confirmDialog}
     </div>
   );

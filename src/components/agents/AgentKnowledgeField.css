@@ -1,0 +1,261 @@
+/* Cherry-studio 式知识库关联字段（暖色皮肤版） */
+
+.agent-kb-field {
+  position: relative;
+}
+
+/* ── 头部行：标签 + 添加按钮 ─────────────────────── */
+.agent-kb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.agent-kb-head .field-head {
+  margin-bottom: 0;
+}
+
+.agent-kb-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  font-size: 12px;
+  color: var(--bone-400);
+  cursor: pointer;
+  transition: all 0.15s var(--ease-island);
+}
+
+.agent-kb-add-btn:hover:not(:disabled) {
+  border-color: var(--hairline-strong);
+  background: rgba(121, 79, 39, 0.06);
+  color: var(--bone-200);
+}
+
+.agent-kb-add-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 添加 Popover ────────────────────────────── */
+.agent-kb-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 280px;
+  max-width: calc(100vw - 2rem);
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(248, 244, 232, 0.98);
+  box-shadow:
+    0 16px 40px rgba(121, 79, 39, 0.25),
+    inset 0 1px 0 rgba(121, 79, 39, 0.04);
+  backdrop-filter: blur(16px);
+}
+
+.agent-kb-pop .animal-input {
+  margin-bottom: 4px;
+}
+
+.agent-kb-pop-empty {
+  margin: 0;
+  padding: 16px 0;
+  font-size: 12px;
+  text-align: center;
+  color: var(--bone-500);
+}
+
+.agent-kb-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.agent-kb-pop-row:hover:not(:disabled) {
+  background: rgba(121, 79, 39, 0.08);
+}
+
+.agent-kb-pop-row:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.agent-kb-pop-row-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-kb-pop-row-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-200);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-kb-pop-row-desc {
+  display: block;
+  font-size: 11px;
+  color: var(--bone-500);
+}
+
+/* ── 知识库图标（cherry 紫 → 本项目蜜橘）────────── */
+.agent-kb-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--persimmon);
+  background: var(--persimmon-softer);
+}
+
+.agent-kb-icon-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+
+.agent-kb-empty .agent-kb-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+}
+
+/* ── 已关联列表 ──────────────────────────────── */
+.agent-kb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-kb-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: rgba(121, 79, 39, 0.045);
+  transition: all 0.15s var(--ease-island);
+}
+
+.agent-kb-row:hover {
+  border-color: var(--hairline-strong);
+  background: rgba(121, 79, 39, 0.07);
+}
+
+.agent-kb-row-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-kb-row-name {
+  font-size: 13px;
+  color: var(--bone-200);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-kb-row-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--bone-500);
+}
+
+/* 半结构化角标 */
+.agent-kb-kind {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--persimmon);
+  background: var(--persimmon-softer);
+}
+
+/* ── 删除钮：默认隐藏，hover 行时出现（cherry 同款）── */
+.agent-kb-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--bone-500);
+  opacity: 0;
+  cursor: pointer;
+  transition: all 0.15s var(--ease-island);
+}
+
+.agent-kb-row:hover .agent-kb-remove:not(:disabled) {
+  opacity: 1;
+}
+
+.agent-kb-remove:hover:not(:disabled) {
+  background: rgba(201, 86, 74, 0.12);
+  color: #c95a5a;
+}
+
+.agent-kb-remove:disabled {
+  cursor: not-allowed;
+}
+
+/* ── 空态：虚线框居中（cherry 同款）────────────── */
+.agent-kb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 22px 12px;
+  margin-top: 2px;
+  border-radius: 10px;
+  border: 1px dashed var(--hairline-strong);
+  color: var(--bone-500);
+}
+
+.agent-kb-empty p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.agent-kb-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--bone-500);
+  cursor: help;
+}

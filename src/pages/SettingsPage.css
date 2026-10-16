@@ -25,7 +25,6 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  gap: 12px;
 }
 
 .settings-sidebar {
@@ -34,10 +33,10 @@
   display: flex;
   flex-direction: column;
   background: var(--animal-bg-color);
-  border-radius: 16px;
-  box-shadow: var(--animal-shadow-lg);
   overflow: hidden;
   user-select: none;
+  border-right: 1px solid rgba(139, 105, 70, 0.2);
+  border-radius: 12px 0 0 12px;
 }
 
 .settings-sidebar-title {
@@ -150,9 +149,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--animal-bg-color);
-  border-radius: 16px;
-  box-shadow: var(--animal-shadow-lg);
+  background: #f5f5f5;
+  border-radius: 0 12px 12px 0;
 }
 
 .settings-page-header {
@@ -326,32 +324,9 @@
   margin-bottom: 7px;
 }
 
-.field input[type="text"]:not([class^="animal-input"]),
-.field input[type="password"]:not([class^="animal-input"]),
-.field input[type="number"]:not([class^="animal-input"]),
-.field input[type="url"]:not([class^="animal-input"]),
-.field input[type="search"]:not([class^="animal-input"]),
-.field input[type="email"]:not([class^="animal-input"]),
-.field input:not([type]):not([class^="animal-input"]),
-.field select {
-  width: 100%;
-  padding: 8px 12px;
-  background: #faf8f3;
-  border: 1px solid var(--hairline);
-  border-bottom: 3px solid var(--hairline-bold);
-  border-radius: 10px;
-  font-size: 13px;
-  color: var(--bone-100);
-  outline: none;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
-  font-family: inherit;
-}
-.field input[type="number"] {
-  -moz-appearance: textfield;
-  color-scheme: light;
-}
+/* 裸 input 方形规则已删：45 个 .field 内已全部使用库 Input（胶囊），
+   全局皮肤见 index.css body [class^=animal-wrapper]。
+   number 输入去旋转按钮的规则仍适用于库 Input 内层。 */
 .field input[type="number"]::-webkit-outer-spin-button,
 .field input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -385,59 +360,6 @@
 .field textarea::placeholder {
   color: #c4b89e;
   font-weight: 400;
-}
-.field input[type="text"]:not([class^="animal-input"]):focus,
-.field input[type="password"]:not([class^="animal-input"]):focus,
-.field input[type="number"]:not([class^="animal-input"]):focus,
-.field input[type="url"]:not([class^="animal-input"]):focus,
-.field input[type="search"]:not([class^="animal-input"]):focus,
-.field input[type="email"]:not([class^="animal-input"]):focus,
-.field input:not([type]):not([class^="animal-input"]):focus,
-.field select:focus {
-  border-color: var(--persimmon-focus);
-  border-bottom-color: var(--persimmon);
-  background: var(--persimmon-softer);
-}
-
-.field select option {
-  background: var(--ink-800);
-  color: var(--bone-200);
-}
-.field input:not([class^="animal-input"])::placeholder {
-  color: rgba(121, 79, 39, 0.2);
-}
-/* 库 Input wrapper（#faf8f3）与内容底色（--animal-bg-color #f8f8f0）近同色且无边框，
-   在透明底区块（划词/工具/智能体/AI 模型/Live2D）里只剩底影难辨。
-   对齐裸 .field input 的边界语法：1px hairline、focus 变 mint。
-   弹窗走 portal 渲染不在 .settings-content 下，按弹窗类名补齐。 */
-.settings-content [class^="animal-wrapper"],
-.provider-form-modal [class^="animal-wrapper"],
-.mcp-edit-modal [class^="animal-wrapper"] {
-  border: 1px solid var(--hairline);
-}
-
-.settings-content [class^="animal-wrapper"]:focus-within,
-.provider-form-modal [class^="animal-wrapper"]:focus-within,
-.mcp-edit-modal [class^="animal-wrapper"]:focus-within {
-  border-color: var(--persimmon-focus);
-}
-
-.field-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(121, 79, 39, 0.06);
-  border: 1px solid var(--hairline);
-}
-.field-row label {
-  margin-bottom: 0;
-  font-size: 13px;
-  color: var(--bone-200);
-  flex: 1;
-  min-width: 0;
 }
 /* removed: legacy .toggle */
 
@@ -1435,6 +1357,33 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* cherry-studio CatalogToggleGrid grid 模式：两列边框卡片 */
+.agent-toggle-list-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 10px;
+}
+
+.agent-toggle-list-card .agent-toggle-item {
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(121, 79, 39, 0.03);
+  transition: all 0.15s var(--ease-island);
+}
+
+.agent-toggle-list-card .agent-toggle-item:hover {
+  border-color: var(--hairline-strong);
+  background: rgba(121, 79, 39, 0.06);
+}
+
+.agent-toggle-list-card .agent-toggle-main p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agent-toggle-item {

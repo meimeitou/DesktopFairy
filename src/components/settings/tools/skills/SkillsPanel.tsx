@@ -8,10 +8,9 @@ const api = window.electronAPI;
 
 interface Props {
   settings: AppSettings;
-  onAgentChange: (patch: Partial<AgentConfig>) => void;
 }
 
-export default function SkillsPanel({ settings, onAgentChange }: Props) {
+export default function SkillsPanel({ settings }: Props) {
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
@@ -20,13 +19,11 @@ export default function SkillsPanel({ settings, onAgentChange }: Props) {
   const [skillImportError, setSkillImportError] = useState<string | null>(null);
   const [removingSkill, setRemovingSkill] = useState<string | null>(null);
 
-
   const loadSkills = useCallback(async () => {
     setLoading(true);
     try {
       const list = (await api.invoke("agent:skills:scan")) as AgentSkillDescriptor[];
-      const next = Array.isArray(list) ? list : [];
-      setSkills(next);
+      setSkills(Array.isArray(list) ? list : []);
       setLoaded(true);
     } catch {
       setSkills([]);
@@ -35,16 +32,6 @@ export default function SkillsPanel({ settings, onAgentChange }: Props) {
       setLoading(false);
     }
   }, []);
-
-  // Dangling-reference cleanup: drop enabledSkillIds whose folders vanished.
-  const enabledIds = settings.agent.enabledSkillIds;
-  useEffect(() => {
-    if (!loaded) return;
-    const ids = new Set(skills.map((s) => s.id));
-    if (enabledIds.some((id) => !ids.has(id))) {
-      onAgentChange({ enabledSkillIds: enabledIds.filter((id) => ids.has(id)) });
-    }
-  }, [skills, loaded, enabledIds, onAgentChange]);
 
   useEffect(() => {
     void loadSkills();
@@ -83,9 +70,6 @@ export default function SkillsPanel({ settings, onAgentChange }: Props) {
     setRemovingSkill(id);
     try {
       await api.invoke("agent:skills:remove", { id });
-      onAgentChange({
-        enabledSkillIds: settings.agent.enabledSkillIds.filter((x) => x !== id),
-      });
       void loadSkills();
     } catch (e) {
       setSkillImportError(e instanceof Error ? e.message : String(e));
@@ -127,7 +111,7 @@ export default function SkillsPanel({ settings, onAgentChange }: Props) {
             刷新
           </Button>
         </div>
-        <HintTip tip="技能库全局管理。是否注入智能体上下文请在「智能体 → 技能启用」中设置。内置技能受保护不可卸载。" />
+        <HintTip tip="技能库全局管理。是否注入智能体上下文请在各智能体的「技能启用」分节中设置。内置技能受保护不可卸载。" />
       </div>
       {skillImportError && (
         <p className="field-hint field-hint--after warn">{skillImportError}</p>
@@ -155,6 +139,16 @@ export default function SkillsPanel({ settings, onAgentChange }: Props) {
                   {s.isBuiltin && (
                     <span className="agent-tool-auto-badge">内置</span>
                   )}
+                  {(() => {
+                    const n = settings.agents.filter((a) =>
+                      a.enabledSkillIds.includes(s.id),
+                    ).length;
+                    return n > 0 ? (
+                      <span className="agent-tool-auto-badge">
+                        {n} 个智能体启用
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
                 <p>{s.description || s.folderName}</p>
               </div>

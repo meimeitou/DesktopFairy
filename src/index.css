@@ -159,6 +159,25 @@ button:not([class^="animal-"]) {
   color: inherit;
 }
 
+/* 弹窗遮罩统一改淡：库 Modal 遮罩默认黑色 18%（#0000002e）偏深偏冷，
+   覆盖为系统暖棕的更淡档（与手写 kb-modal / ssh-modal-overlay 同值） */
+body [class^="animal-mask-"] {
+  background: rgba(73, 54, 32, 0.14);
+}
+
+/* 库 Input 全局统一皮肤：胶囊底 #faf8f3 与米白卡底近同色（弹窗/表单上
+   「白色一片不显眼」），统一白底 + 1px hairline，聚焦变 mint。
+   各文件对 wrapper 的局部边框覆盖（settings-content/provider-form-modal/
+   mcp-edit-modal/ssh-form-modal）由本规则取代。特异性 body 前缀 (0,1,1)
+   压过库皮肤 (0,1,0)，不受加载顺序影响。 */
+body [class^="animal-wrapper"] {
+  background: #fff;
+  border: 1px solid var(--hairline);
+}
+
+body [class^="animal-wrapper"]:focus-within {
+  border-color: var(--persimmon-focus);
+}
 input {
   font: inherit;
   color: inherit;
@@ -188,4 +207,36 @@ button[class*="animal-btn-danger"] {
 
 [class*="animal-island-form"] [class*="form-item-explain"]:not([class*="explain-error"]) {
   color: var(--animal-text-color-secondary) !important;
+}
+
+/* ── 弹窗密度（全局）──────────────────────────────────────────────
+   库 Modal 硬编码标题 28px/700、modalClipped 内边距 40px 35px 25px、
+   body 20px/600——对 14px 紧凑系统过大过松。全部 Modal 统一收窄。
+   注意：main.tsx 里库 style 后于本文件加载，平级特异性会输——所以这里
+   叠加 [class*="animal-mask"] 祖先选择器提到 (0,2,0)，稳定压过库皮肤。
+   滚动条贴边的局部方案见 TerminalPage.css ssh-form-modal 注释。 */
+[class*="animal-mask"] [class*="animal-modalClipped"] {
+  padding: 16px 18px 14px;
+  background: var(--animal-bg-color); /* 卡底改淡：库默认 #f7f3df 偏黄偏深，统一近白米色 */
+}
+
+[class*="animal-mask"] [class*="animal-title"] {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+[class*="animal-mask"] [class*="animal-header"] {
+  padding-bottom: 10px;
+}
+
+[class*="animal-mask"] [class*="animal-body"] {
+  padding-bottom: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.62;
+}
+
+[class*="animal-mask"] [class*="animal-footer"] {
+  padding-top: 12px;
 }

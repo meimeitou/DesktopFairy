@@ -1108,14 +1108,19 @@ function toolUpdateProfile(args, deps) {
     return fail('Could not read settings');
   }
 
-  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
+  const agentId = deps?.agentConfig?.id;
+  const agents = Array.isArray(settings.agents) ? settings.agents : null;
+  const agent =
+    agents && agentId
+      ? agents.find((a) => a && typeof a === 'object' && a.id === agentId)
+      : null;
+  if (!agent) return fail('智能体配置不存在或已删除');
   if (action === 'replace') {
     agent[field] = content;
   } else {
     const existing = typeof agent[field] === 'string' ? agent[field] : '';
     agent[field] = existing ? existing.trimEnd() + '\n\n' + content : content;
   }
-  settings.agent = agent;
 
   try {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
@@ -1139,10 +1144,15 @@ function unbindMcpServerFromAgent(serverId, deps) {
   } catch {
     return;
   }
-  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
+  const agentId = deps?.agentConfig?.id;
+  const agents = Array.isArray(settings.agents) ? settings.agents : null;
+  const agent =
+    agents && agentId
+      ? agents.find((a) => a && typeof a === 'object' && a.id === agentId)
+      : null;
+  if (!agent) return;
   const ids = Array.isArray(agent.mcpServerIds) ? agent.mcpServerIds : [];
   agent.mcpServerIds = ids.filter((id) => id !== serverId);
-  settings.agent = agent;
   try {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   } catch {
@@ -1159,11 +1169,16 @@ function bindMcpServerToAgent(serverId, deps) {
   } catch {
     return;
   }
-  const agent = settings.agent && typeof settings.agent === 'object' ? settings.agent : {};
+  const agentId = deps?.agentConfig?.id;
+  const agents = Array.isArray(settings.agents) ? settings.agents : null;
+  const agent =
+    agents && agentId
+      ? agents.find((a) => a && typeof a === 'object' && a.id === agentId)
+      : null;
+  if (!agent) return;
   const ids = Array.isArray(agent.mcpServerIds) ? agent.mcpServerIds : [];
   if (ids.includes(serverId)) return;
   agent.mcpServerIds = [...ids, serverId];
-  settings.agent = agent;
   try {
     fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
   } catch {

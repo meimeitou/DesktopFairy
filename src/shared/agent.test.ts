@@ -3,8 +3,12 @@ import {
   getEffectiveToolApprovalMode,
   getEnabledAgentBuiltinTools,
   normalizeAgentConfig,
-  DEFAULT_AGENT_CONFIG,
-  LOCAL_DEFAULT_DISABLED_TOOL_IDS,
+  createPersonalAssistantDefaults,
+  createTerminalAssistantDefaults,
+  findAgentById,
+  PERSONAL_ASSISTANT_ID,
+  TERMINAL_ASSISTANT_ID,
+  PERSONAL_DEFAULT_DISABLED_TOOL_IDS,
   TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   isAgentBackend,
   getAgentBackendLabel,
@@ -13,25 +17,26 @@ import {
 import { DEFAULT_CHAT_MODE } from './chatMode'
 
 function makeAgent(overrides: Partial<AgentConfig> = {}): AgentConfig {
-  return { ...DEFAULT_AGENT_CONFIG, ...overrides }
+  return createPersonalAssistantDefaults({ id: 'test-agent', builtinRole: undefined, ...overrides })
 }
 
 describe('agent', () => {
-  describe('DEFAULT_AGENT_CONFIG', () => {
-    it('should have chatMode "normal"', () => {
-      expect(DEFAULT_AGENT_CONFIG.chatMode).toBe(DEFAULT_CHAT_MODE)
+  describe('builtin defaults', () => {
+    it('personal assistant has chatMode "normal" and Terminal disabled', () => {
+      const agent = createPersonalAssistantDefaults()
+      expect(agent.id).toBe(PERSONAL_ASSISTANT_ID)
+      expect(agent.builtinRole).toBe('personal-assistant')
+      expect(agent.chatMode).toBe(DEFAULT_CHAT_MODE)
+      expect(agent.disabledToolIds).toEqual(PERSONAL_DEFAULT_DISABLED_TOOL_IDS)
+      expect(agent.maxTurns).toBe(30)
     })
 
-    it('should disable Terminal in local context by default', () => {
-      expect(DEFAULT_AGENT_CONFIG.disabledToolIds).toEqual(LOCAL_DEFAULT_DISABLED_TOOL_IDS)
-    })
-
-    it('should have terminalDisabledToolIds matching default file/bash tools', () => {
-      expect(DEFAULT_AGENT_CONFIG.terminalDisabledToolIds).toEqual(TERMINAL_DEFAULT_DISABLED_TOOL_IDS)
-    })
-
-    it('should have maxTurns 30', () => {
-      expect(DEFAULT_AGENT_CONFIG.maxTurns).toBe(30)
+    it('terminal assistant disables file/bash tools and keeps Terminal', () => {
+      const agent = createTerminalAssistantDefaults()
+      expect(agent.id).toBe(TERMINAL_ASSISTANT_ID)
+      expect(agent.builtinRole).toBe('terminal-assistant')
+      expect(agent.disabledToolIds).toEqual(TERMINAL_DEFAULT_DISABLED_TOOL_IDS)
+      expect(agent.disabledToolIds).not.toContain('Terminal')
     })
   })
 
@@ -55,7 +60,6 @@ describe('agent', () => {
       const agent = makeAgent({ chatMode: 'normal' })
       expect(getEffectiveToolApprovalMode(agent)).toBe('confirm')
     })
-
   })
 
   describe('getEnabledAgentBuiltinTools', () => {
@@ -128,8 +132,8 @@ describe('agent', () => {
       expect(ids).not.toContain('Terminal')
     })
 
-    it('should enable Terminal and disable Bash/file tools in terminal context', () => {
-      const agent = makeAgent({ chatMode: 'normal' })
+    it('terminal assistant in terminal context: Terminal on, file/bash off', () => {
+      const agent = createTerminalAssistantDefaults()
       const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
       const ids = tools.map((t) => t.id)
       expect(ids).toContain('Terminal')
@@ -141,17 +145,16 @@ describe('agent', () => {
       expect(ids).not.toContain('grep')
     })
 
-    it('should keep Terminal available in terminal context even in plan mode', () => {
-      const agent = makeAgent({ chatMode: 'plan' })
-      const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
-      const ids = tools.map((t) => t.id)
-      expect(ids).toContain('Terminal')
+    it('terminal context force-disables bash even when enabled in disabledToolIds', () => {
+      const agent = createTerminalAssistantDefaults({ disabledToolIds: [] })
+      const ids = getEnabledAgentBuiltinTools(agent, 'terminal').map((t) => t.id)
+      expect(ids).not.toContain('bash')
     })
 
     it('should allow disabling Terminal explicitly in terminal context', () => {
       const agent = makeAgent({
         chatMode: 'normal',
-        terminalDisabledToolIds: ['Terminal'],
+        disabledToolIds: ['Terminal'],
       })
       const tools = getEnabledAgentBuiltinTools(agent, 'terminal')
       const ids = tools.map((t) => t.id)
@@ -168,6 +171,27 @@ describe('agent', () => {
     it('should return default config for undefined input', () => {
       const result = normalizeAgentConfig(undefined)
       expect(result.chatMode).toBe(DEFAULT_CHAT_MODE)
+    })
+
+    it('generates an id when missing and keeps it when present', () => {
+      expect(normalizeAgentConfig({ name: 'x' }).id).toBeTruthy()
+      expect(normalizeAgentConfig({ id: 'fixed' }).id).toBe('fixed')
+    })
+
+    it('validates builtinRole: unknown values fall back, known kept', () => {
+      expect(normalizeAgentConfig({ builtinRole: 'nope' }).builtinRole).toBe(
+        'personal-assistant',
+      )
+      expect(normalizeAgentConfig({ builtinRole: 'terminal-assistant' }).builtinRole).toBe(
+        'terminal-assistant',
+      )
+    })
+
+    it('normalizes knowledgeBaseIds and drops non-strings', () => {
+      const result = normalizeAgentConfig({
+        knowledgeBaseIds: ['kb1', 42, 'kb2'],
+      })
+      expect(result.knowledgeBaseIds).toEqual(['kb1', 'kb2'])
     })
 
     it('should migrate legacy "instructions" to "soul"', () => {
@@ -236,11 +260,22 @@ describe('agent', () => {
     })
 
     it('does not inject readable skills until the settings toggle is on', () => {
-      expect(DEFAULT_AGENT_CONFIG.enabledSkillIds).toEqual([])
+      expect(makeAgent().enabledSkillIds).toEqual([])
       expect(normalizeAgentConfig({}).enabledSkillIds).toEqual([])
       expect(
         normalizeAgentConfig({ enabledSkillIds: ['find-skills'] }).enabledSkillIds,
       ).toEqual(['find-skills'])
+    })
+  })
+
+  describe('findAgentById', () => {
+    it('finds by id and returns undefined for missing/empty', () => {
+      const agents = [createPersonalAssistantDefaults(), createTerminalAssistantDefaults()]
+      expect(findAgentById(agents, TERMINAL_ASSISTANT_ID)?.builtinRole).toBe(
+        'terminal-assistant',
+      )
+      expect(findAgentById(agents, 'nope')).toBeUndefined()
+      expect(findAgentById(agents, undefined)).toBeUndefined()
     })
   })
 

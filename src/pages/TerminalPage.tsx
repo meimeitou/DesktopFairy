@@ -10,6 +10,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
+import AgentSettingsModal from "../components/agents/AgentSettingsModal";
 import TerminalEmptyState from "../components/terminal/TerminalEmptyState";
 import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
 import TerminalContextMenu from "../components/terminal/TerminalContextMenu";
@@ -520,6 +521,7 @@ export default function TerminalPage({
   const settings = useSettings();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [sshPickerOpen, setSshPickerOpen] = useState(false);
+  const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
   const [sshPickerStyle, setSshPickerStyle] = useState<React.CSSProperties>({});
   const [settingsInitialSection, setSettingsInitialSection] = useState<"appearance" | "ssh">("appearance");
   const sshBtnRef = useRef<HTMLButtonElement>(null);
@@ -1004,6 +1006,14 @@ export default function TerminalPage({
             type="text"
             size="small"
             className="terminal-tab-settings"
+            icon={<Icon name="Smile" size={14} />}
+            onClick={() => setAgentSettingsOpen(true)}
+            title="AI 助手设置"
+          />
+          <Button
+            type="text"
+            size="small"
+            className="terminal-tab-settings"
             icon={<Icon name="Settings" size={14} />}
             onClick={handleOpenSettings}
             title="终端设置"
@@ -1044,6 +1054,11 @@ export default function TerminalPage({
         </Button>
       )}
       {confirmDialog}
+      <AgentSettingsModal
+        open={agentSettingsOpen}
+        agentId={settings.terminalAgentId}
+        onClose={() => setAgentSettingsOpen(false)}
+      />
     </div>
   );
 }

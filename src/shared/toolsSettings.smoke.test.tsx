@@ -16,14 +16,13 @@ import ToolsSettingsSection from "../components/settings/tools/ToolsSettingsSect
 import AgentToolsSection from "../components/settings/agent/AgentToolsSection";
 import AgentSkillsSection from "../components/settings/agent/AgentSkillsSection";
 import { DEFAULT_SETTINGS } from "./settings";
-import { DEFAULT_AGENT_CONFIG } from "./agent";
+import { createPersonalAssistantDefaults } from "./agent";
 
 describe("tools settings smoke", () => {
-  it("ToolsSettingsSection renders MCP/skills subnav", () => {
+  it("ToolsSettingsSection renders MCP/skills subnav with new props", () => {
     const html = renderToStaticMarkup(
       React.createElement(ToolsSettingsSection, {
         settings: { ...DEFAULT_SETTINGS, providers: [] as never },
-        onChange: () => {},
       })
     );
     expect(html).toContain("MCP 服务器");
@@ -35,7 +34,7 @@ describe("tools settings smoke", () => {
     const html = renderToStaticMarkup(
       React.createElement(AgentToolsSection, {
         panel: "mcp",
-        agent: { ...DEFAULT_AGENT_CONFIG },
+        agent: createPersonalAssistantDefaults({ id: "test-agent", builtinRole: undefined }),
         onAgentChange: () => {},
       })
     );
@@ -44,10 +43,23 @@ describe("tools settings smoke", () => {
     expect(html).not.toContain("+ 自定义");
   });
 
+  it("AgentToolsSection builtin panel shows context-forced badges", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(AgentToolsSection, {
+        panel: "builtin",
+        agent: createPersonalAssistantDefaults({ id: "test-agent", builtinRole: undefined }),
+        onAgentChange: () => {},
+        context: "local",
+      })
+    );
+    // local context forces Terminal off with a badge instead of a switch.
+    expect(html).toContain("场景强制");
+  });
+
   it("AgentSkillsSection slimmed to enable toggles", () => {
     const html = renderToStaticMarkup(
       React.createElement(AgentSkillsSection, {
-        agent: { ...DEFAULT_AGENT_CONFIG },
+        agent: createPersonalAssistantDefaults({ id: "test-agent", builtinRole: undefined }),
         onChange: () => {},
       })
     );

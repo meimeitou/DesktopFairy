@@ -160,11 +160,19 @@ SDK 源码：`src/live2d/framework/`（别名 `@framework`），业务代码在 
 
 设置页「浏览本地目录…」会打开文件夹选择器，在目录内查找 `*.model3.json`（优先 `{目录名}.model3.json`），写入 `customModels` 并设为当前模型。资源**不复制**，直接从所选路径读取。
 
-### 5.3 AI 对话与智能体
+### 5.3 AI 对话与智能体（多智能体）
+
+**多智能体模型**（参考 cherry-studio）：`settings.agents: AgentConfig[]` 数据层，智能体取代全局单一 `agent` 配置：
+
+- **内置智能体**（`src/shared/agent.ts`）：个人助手「小雅」（`personal-assistant`，聊天页默认）与终端助手（`terminal-assistant`，`settings.terminalAgentId` 指向者，仅终端页可达）；`builtinRole` 标记内置，无删除入口
+- **模型纯 agent 级**：每个智能体独立 `providerId`/`modelName`/`soul`/`user`/`disabledToolIds`/`mcpServerIds`/`enabledSkillIds`/`knowledgeBaseIds`/`maxTurns`/`envVars`/`reasoningEffort`；`sessionModel`（会话锁模型）链路已删除
+- **chatMode 会话级**：`ChatTopic.chatMode` 持久化在会话上（agent 默认值作初值），`chat:topics:updateMeta` 修改；发送时 `{...agent, chatMode: topic.chatMode}` 合成生效配置
+- **迁移**（`settings.ts migrateLegacyAgentSettings`）：旧 `settings.agent` → 两内置 agent；soul/provider/model/disabledToolIds/mcp/skills/maxTurns/envVars/reasoningEffort/chatMode 继承到个人助手，user/provider/model/terminalDisabledToolIds 到终端助手；`finalizeSettings` 恒定式保证内置补齐、id 去重、legacy 字段清除
+- **AgentSettingsModal**（`src/components/agents/`）：弹窗式编辑（无保存按钮，patch 即写 settings），creating 模式首次 patch 时 materialize 新 uuid；基础/工具/技能/MCP/知识库/高级六分节
 
 **后端选择**（`settings.chatBackend`）：
 
-- `"agent"` — 智能体模式，通过 `ai:stream_open` IPC（AI SDK `ToolLoopAgent` 多轮工具循环）；主进程构建系统提示词、注入工具定义、管理 topic 级流
+- `"agent"` — 智能体模式，通过 `ai:stream_open` IPC（AI SDK `ToolLoopAgent` 多轮工具循环）；主进程构建系统提示词、注入工具定义、管理 topic 级流；主进程按 `payload.agentConfig.id` 匹配磁盘 agent（渲染端不可覆盖 id/builtinRole/providerId/modelName）
 - `"providerId::modelName"` — 普通对话模式，通过 `chat:send` IPC，消息原样转发，无系统提示词
 
 **智能体运行时**（Cherry Studio 风格，基于 `ai` 包）：
@@ -218,7 +226,7 @@ interface LlmProvider {
 - **`UpdateProfile` 工具**：智能体在对话中可自动调用，将学到的用户偏好追加到 USER.md，或替换 SOUL.md
 - **`mergeSystemMessage`**：主进程剥离渲染端传入的 system 消息，替换为主进程构建的完整提示词
 
-**对话模式**（`settings.agent.chatMode`）：
+**对话模式**（会话级，`ChatTopic.chatMode`，agent 默认值作初值）：
 
 | 模式 | 工具审批 | 说明 |
 |------|---------|------|
@@ -227,7 +235,7 @@ interface LlmProvider {
 | `auto-edit` | auto | 文件编辑免确认，bash/网络仍需确认 |
 | `full-auto` | bypass | 全部工具免确认 |
 
-模式切换通过聊天输入栏的模式选择器按钮（`ChatModeSelector`），不支持快捷指令切换。
+模式切换通过聊天输入栏的模式选择器按钮（`ChatModeSelector`）写回 topic（`chat:topics:updateMeta`），不支持快捷指令切换。
 
 **快捷指令**（`src/shared/slashCommands.ts` + `SlashCommandMenu`）：
 
@@ -245,15 +253,17 @@ interface LlmProvider {
 - 中断：`abortTopicStream` + `agent:abort`；删除 topic 时同样 abort
 - **上下文清除**：插入 `type: 'clear'` 标记，`filterAfterContextClear` 过滤历史
 - **AI 压缩上下文**：`/compact` 发送 `COMPACT_PROMPT`，流结束后在 `onChatStreamDone` 中插入 clear + 摘要
-- **多会话**：侧边栏 `TopicSidebar` 管理会话列表，`chat:topics:*` IPC 增删改查
+- **多会话**：侧边栏 `AgentChatSidebar` 上区为 agent 列表（`getChatAgents` 排除终端助手）、下区 `TopicSidebar` 按 `topic.agentId` 过滤；删除 agent 级联删除其 topics
 - **API 上下文裁剪**：`trimMessagesForApi` 默认最近 40 条 / 24k 字符
 - **附件**：文本嵌入消息 / 图片 multimodal
 
 **ChatInputBar**（`src/components/chat/ChatInputBar.tsx`）：
 
-- 工具栏：上传文件、截图、清除上下文、压缩上下文、清空消息、模式选择器、模型选择
+- 工具栏：上传文件、截图、清除上下文、压缩上下文、清空消息、模式选择器
 - 快捷指令面板（`/` 触发，键盘导航）
 - 拖拽/粘贴本地文件、Enter 发送
+
+模型选择器已移除——模型纯 agent 级，在各智能体设置的 AgentSettingsModal 中配置。
 
 ### 5.4 智能体工具与技能
 
@@ -267,9 +277,10 @@ interface LlmProvider {
 | WebFetch / WebSearch | 网络 | 确认 | URL 抓取 / 搜索；绑定 MCP Fetch 时隐藏 WebFetch |
 | TodoWrite | 编排 | 自动 | 任务列表 |
 | Skills | 上下文 | load 自动；install/remove 确认 | 技能加载与管理 |
-| UpdateProfile | 上下文 | 自动 | 更新 SOUL.md / USER.md |
-
 核心 FS 六件套（read/write/edit/bash/glob/grep）完整移植 pi 契约：小写工具名 + pi 参数 schema + `[path#TAG]` 快照锚点（`electron/agentSnapshotStore.cjs`）+ hashline 补丁引擎（`electron/hashlinePatch.cjs`）。旧的大写工具 id（Read/Write/Edit/MultiEdit/Bash/Glob/Grep）通过 `LEGACY_TOOL_ID_MAP` 映射兼容已保存的工具开关与旧会话回放。
+
+**工具开关**：每个 agent 单套 `disabledToolIds`（旧的 `terminalDisabledToolIds`/`enableTerminalTool` 已删）；场景强制规则在 `getEnabledAgentBuiltinTools(agent, context)` 上层叠加——local 强制禁 Terminal，terminal 强制禁 bash，设置面板以「场景强制」徽章展示。
+
 
 **技能系统**（`electron/agentSkillService.cjs`）：
 
@@ -361,7 +372,8 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | `chat:send` | `{ requestId, messages, chatUrl, apiKey, model }` |
 | `chat:abort` | `{ requestId }` |
 | `chat:session:load` / `chat:session:save` | 单会话 JSON 读写 |
-| `chat:topics:list` / `create` / `delete` / `rename` | 多会话管理 |
+| `chat:topics:list` / `create` / `delete` / `rename` | 多会话管理；create 接收 `{ name, agentId, chatMode, knowledgeBaseIds }` |
+| `chat:topics:updateMeta` | `{ topicId, chatMode?, knowledgeBaseIds? }` — 会话级元数据更新 |
 | `chat:list_models` | `{ apiHost, apiKey, providerType }` |
 | `chat:check` | 连通性检测 |
 | **智能体** | |
@@ -375,7 +387,7 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | `agent:tool:approve` | `{ approvalId, approved }` |
 | `agent:tool:bypass_approval` | `{ requestId?, topicId? }` |
 | `agent:skills:scan` / `agent:skills:open_dir` / `agent:skills:import_directory` | 技能扫描 / 打开根目录 / 选目录导入（须含 SKILL.md） |
-| `agent:avatar:select` / `agent:avatar:resolve` | 智能体头像 |
+| `agent:avatar:select` / `agent:avatar:resolve` | 智能体头像；select 接收 `agentId`，存 `agent-avatar/<safeId><ext>` |
 | **设置** | |
 | `settings:sync` | 全量 settings 对象写盘并广播 |
 | `get_shortcut` / `set_shortcut` | 划词快捷键 |
@@ -464,29 +476,32 @@ src/
   pages/
     MainView.tsx            # Live2D 主窗
     ChatApp.tsx             # 聊天+设置壳（Tab keep-alive）
-    ChatPage.tsx            # 对话页（多会话、快捷指令、压缩上下文）
+    ChatPage.tsx            # 智能体对话页（agent 列表+会话分组、AgentSettingsModal 挂载）
     SettingsPage.tsx        # 设置侧栏
-    TerminalPage.tsx        # 终端页
+    TerminalPage.tsx        # 终端页（含 AI 助手设置入口）
     TipView.tsx             # 划词工具栏
   components/
     Live2DCanvas.tsx
     ModelSelector.tsx
     Tooltip.tsx
+    agents/
+      AgentSettingsModal.tsx  # 智能体设置弹窗（六分节、patch 即写）
     chat/
-      ChatInputBar.tsx      # 输入栏（工具栏、快捷指令、模型选择）
+      AgentChatSidebar.tsx   # agent 列表 + 会话分组侧栏
+      AgentContextMenu.tsx   # agent 右键菜单（编辑/复制/删除）
+      ChatInputBar.tsx      # 输入栏（工具栏、快捷指令；无模型选择）
       ChatMarkdown.tsx
       ChatModeSelector.tsx  # 对话模式弹出选择器
       SlashCommandMenu.tsx  # 快捷指令弹出面板
-      TopicSidebar.tsx      # 会话列表侧边栏
+      TopicSidebar.tsx      # 会话列表（按 agentId 过滤后传入）
       AttachmentPreview.tsx
       ToolCallBubble.tsx
       agentTools/           # 智能体工具渲染组件
     settings/
-      agent/                # 智能体设置子组件
-        AgentSettingsSection.tsx
+      agent/                # 智能体设置子组件（AgentSettingsModal 内复用）
         AgentBasicSection.tsx
         AgentPromptSection.tsx   # SOUL.md / USER.md 编辑
-        AgentToolsSection.tsx
+        AgentToolsSection.tsx    # 工具/MCP 面板（context 强制规则）
         AgentAdvancedSection.tsx
   live2d/
     Live2DController.ts
@@ -533,9 +548,10 @@ interface AppSettings {
   providers: LlmProvider[];
   chatBackend: string;          // "agent" | "providerId::modelName"
 
-  // 智能体
-  agent: AgentConfig;           // 见下文
-  chatMode: ChatMode;           // 镜像 agent.chatMode，便于 UI 快速访问
+  // 多智能体
+  agents: AgentConfig[];         // 内置两个（小雅 personal-assistant、终端助手 terminal-assistant）+ 自定义
+  terminalAgentId: string;       // 终端页绑定的 agent（默认 terminal-assistant）
+  activeChatAgentId: string;     // 聊天页当前选中 agent（不可指向终端 agent）
 
   // 划词
   selectionEnabled: boolean;
@@ -558,7 +574,7 @@ interface AppSettings {
   live2dSpeechBubble: boolean;
   live2dSpeechBubbleMaxChars: number;
 
-  // MCP
+  // MCP（服务器全局管理，agent 通过 mcpServerIds 绑定）
   mcpServers: McpServer[];
 
   // 网络搜索
@@ -569,21 +585,23 @@ interface AppSettings {
 }
 
 interface AgentConfig {
+  id: string;                    // normalize 缺省生成 uuid
+  builtinRole?: 'personal-assistant' | 'terminal-assistant';
   name: string;
-  avatar: string;               // emoji 或 img:relativePath
+  avatar: string;                // emoji 或 img:relativePath（agent-avatar/<safeId><ext>）
   description: string;
-  enabled: boolean;
   providerId: string;
   modelName: string;
   soul: string;                 // SOUL.md — 人格与执行规则
   user: string;                 // USER.md — 用户偏好（留空则不注入）
-  disabledToolIds: string[];
+  disabledToolIds: string[];    // 单套；场景强制（local 禁 Terminal / terminal 禁 bash）运行时叠加
   mcpServerIds: string[];
   enabledSkillIds: string[];
+  knowledgeBaseIds: string[];
   maxTurns: number;
-  toolApprovalMode: 'auto' | 'confirm';
   envVars: Record<string, string>;
-  chatMode: ChatMode;
+  chatMode: ChatMode;           // agent 默认对话模式（会话可覆盖）
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
 }
 ```
 

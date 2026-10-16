@@ -1183,7 +1183,7 @@ button.terminal-context-menu-item {
 .ssh-modal-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(73, 54, 32, 0.28);
+  background: rgba(73, 54, 32, 0.14); /* 与全局弹窗遮罩同值 */
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
@@ -1460,15 +1460,15 @@ button.terminal-context-menu-item {
    右侧会空出一截。拉满弹窗宽度。 */
 .ssh-form-modal [class*="animal-body"] {
   align-items: stretch;
-  padding-right: 35px;
+  padding-right: 18px;
 }
 
 .ssh-form-modal form {
   width: 100%;
 }
 
-/* 滚动条贴弹窗最右缘：库 Modal 的滚动容器是 animal-body（在 modalClipped
-   的 35px 右 padding 内），窗口矮时滚动条会紧贴输入框。把 clipped 的右侧
+/* 滚动条贴弹窗最缘：库 Modal 的滚动容器是 animal-body（在 modalClipped
+   的 18px 右 padding 内），窗口矮时滚动条会紧贴输入框。把 clipped 的右侧
    padding 挪给 header/body 自身，滚动条就落在弹窗卡片右边缘，
    内容与滚动条之间保持原有间距。 */
 .ssh-form-modal [class*="animal-modalClipped"] {
@@ -1476,8 +1476,11 @@ button.terminal-context-menu-item {
 }
 
 .ssh-form-modal [class*="animal-header"] {
-  padding-right: 35px;
+  padding-right: 18px;
 }
+
+/* 库 Input wrapper 白底+hairline 已上移 index.css 全局（body 前缀），
+   此处不再需要弹窗局部覆盖。 */
 
 .ssh-form-group {
   padding: 0 0 16px;

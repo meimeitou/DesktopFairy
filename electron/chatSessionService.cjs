@@ -174,6 +174,26 @@ function registerChatSessionHandlers({
   toolResultsDir,
   chatLogsDir,
 }) {
+  const PERSONAL_ASSISTANT_ID = 'personal-assistant';
+  const CHAT_MODES = new Set(['normal', 'plan', 'auto-edit', 'full-auto']);
+
+  /** Backfill agentId/chatMode on disk; returns store (mutated in place when changed). */
+  function normalizeTopicsStore(store) {
+    let changed = false;
+    for (const topic of store.topics || []) {
+      if (!topic || typeof topic !== 'object') continue;
+      if (typeof topic.agentId !== 'string' || !topic.agentId.trim()) {
+        topic.agentId = PERSONAL_ASSISTANT_ID;
+        changed = true;
+      }
+      if (!CHAT_MODES.has(topic.chatMode)) {
+        topic.chatMode = 'normal';
+        changed = true;
+      }
+    }
+    if (changed) writeJson(topicsIndexPath(), store);
+    return store;
+  }
   function ensureDirLocal(dirPath) {
     ensureDir(dirPath);
   }
@@ -266,7 +286,8 @@ function registerChatSessionHandlers({
 
   ipcMain.handle('chat:topics:list', async () => {
     migrateLegacySessionIfNeeded();
-    const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    let store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    store = normalizeTopicsStore(store);
 
     // Ensure there is always at least one topic.
     // Without it, renderer's `activeTopicId` stays `null` and the controlled input
@@ -279,6 +300,8 @@ function registerChatSessionHandlers({
         createdAt: now,
         updatedAt: now,
         orderKey: now,
+        agentId: PERSONAL_ASSISTANT_ID,
+        chatMode: 'normal',
       };
       store.topics = [newTopic];
       store.activeId = newTopic.id;
@@ -291,7 +314,7 @@ function registerChatSessionHandlers({
     return store;
   });
 
-  ipcMain.handle('chat:topics:create', async (_event, { name }) => {
+  ipcMain.handle('chat:topics:create', async (_event, { name, agentId, chatMode, knowledgeBaseIds }) => {
     migrateLegacySessionIfNeeded();
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
     const now = Date.now();
@@ -301,12 +324,19 @@ function registerChatSessionHandlers({
       createdAt: now,
       updatedAt: now,
       orderKey: now,
+      agentId:
+        typeof agentId === 'string' && agentId.trim() ? agentId : PERSONAL_ASSISTANT_ID,
+      chatMode: CHAT_MODES.has(chatMode) ? chatMode : 'normal',
+      ...(Array.isArray(knowledgeBaseIds)
+        ? { knowledgeBaseIds: knowledgeBaseIds.filter((id) => typeof id === 'string' && id) }
+        : {}),
     };
     store.topics.push(newTopic);
     store.activeId = newTopic.id;
     writeJson(topicsIndexPath(), store);
     return newTopic;
   });
+
 
   ipcMain.handle('chat:topics:delete', async (_event, topicId) => {
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
@@ -333,6 +363,8 @@ function registerChatSessionHandlers({
         createdAt: now,
         updatedAt: now,
         orderKey: now,
+        agentId: PERSONAL_ASSISTANT_ID,
+        chatMode: 'normal',
       };
       store.topics.push(newTopic);
       store.activeId = newTopic.id;
@@ -354,16 +386,23 @@ function registerChatSessionHandlers({
     topic.name = name;
     topic.updatedAt = Date.now();
     writeJson(topicsIndexPath(), store);
-    return { ok: true };
   });
 
-  ipcMain.handle('chat:topics:updateMeta', async (_event, { topicId, knowledgeBaseIds }) => {
+  ipcMain.handle('chat:topics:updateMeta', async (_event, { topicId, chatMode, knowledgeBaseIds }) => {
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
     const topic = store.topics.find((t) => t.id === topicId);
     if (!topic) return { ok: false, error: 'Topic not found' };
-    topic.knowledgeBaseIds = Array.isArray(knowledgeBaseIds)
-      ? knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
-      : [];
+    if (chatMode !== undefined) {
+      if (!CHAT_MODES.has(chatMode)) {
+        return { ok: false, error: 'Invalid chatMode' };
+      }
+      topic.chatMode = chatMode;
+    }
+    if (knowledgeBaseIds !== undefined) {
+      topic.knowledgeBaseIds = Array.isArray(knowledgeBaseIds)
+        ? knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
+        : [];
+    }
     topic.updatedAt = Date.now();
     writeJson(topicsIndexPath(), store);
     return { ok: true, topic };

@@ -129,3 +129,22 @@ export function ChevronRight(props: SVGProps<SVGSVGElement>) {
     </Frame>
   );
 }
+
+/* 侧栏折叠/展开（cherry-studio 式面板图标） */
+export function SidebarCollapseIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Frame strokeWidth={3} {...props}>
+      <rect x="7" y="10" width="34" height="28" rx="7" />
+      <path d="M16 10 V38" />
+    </Frame>
+  );
+}
+
+export function SidebarExpandIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Frame strokeWidth={3} {...props}>
+      <rect x="7" y="10" width="34" height="28" rx="7" />
+      <path d="M19 10 V38" />
+    </Frame>
+  );
+}

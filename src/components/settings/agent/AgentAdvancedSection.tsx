@@ -5,6 +5,7 @@ import type { AgentConfig } from "../../../shared/agent";
 interface Props {
   agent: AgentConfig;
   onChange: (patch: Partial<AgentConfig>) => void;
+  children?: React.ReactNode;
 }
 
 function envVarsToText(envVars: Record<string, string>): string {
@@ -27,7 +28,7 @@ function parseEnvVarsText(text: string): Record<string, string> {
   return result;
 }
 
-export default function AgentAdvancedSection({ agent, onChange }: Props) {
+export default function AgentAdvancedSection({ agent, onChange, children }: Props) {
   return (
     <section className="settings-section agent-subsection">
       <div className="field">
@@ -68,6 +69,7 @@ export default function AgentAdvancedSection({ agent, onChange }: Props) {
           spellCheck={false}
         />
       </div>
+      {children}
     </section>
   );
 }

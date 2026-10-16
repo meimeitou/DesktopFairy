@@ -1,7 +1,6 @@
 import { Button } from "animal-island-ui";
 import { useState } from "react";
 import type { AppSettings } from "../../../shared/settings";
-import type { AgentConfig } from "../../../shared/agent";
 import McpServersPanel from "./mcp/McpServersPanel";
 import SkillsPanel from "./skills/SkillsPanel";
 
@@ -14,18 +13,10 @@ const SECTIONS: { id: ToolsSection; label: string }[] = [
 
 interface Props {
   settings: AppSettings;
-  onChange: (fn: (prev: AppSettings) => AppSettings) => void;
 }
 
-export default function ToolsSettingsSection({ settings, onChange }: Props) {
+export default function ToolsSettingsSection({ settings }: Props) {
   const [section, setSection] = useState<ToolsSection>("mcp");
-
-  const updateAgent = (patch: Partial<AgentConfig>) => {
-    onChange((prev) => ({
-      ...prev,
-      agent: { ...prev.agent, ...patch },
-    }));
-  };
 
   return (
     <div className="agent-settings">
@@ -45,9 +36,9 @@ export default function ToolsSettingsSection({ settings, onChange }: Props) {
 
       <div className="agent-section-body" key={section}>
         {section === "mcp" ? (
-          <McpServersPanel settings={settings} onAgentChange={updateAgent} />
+          <McpServersPanel settings={settings} />
         ) : (
-          <SkillsPanel settings={settings} onAgentChange={updateAgent} />
+          <SkillsPanel settings={settings} />
         )}
       </div>
     </div>

@@ -77,12 +77,10 @@ function resolveBuiltinToolApproval(toolId, toolApprovalMode) {
 }
 
 function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
-  const rawDisabled =
-    context === 'local'
-      ? agentConfig?.disabledToolIds || []
-      : agentConfig?.terminalDisabledToolIds || [];
   // map legacy capitalized ids onto the new lowercase contract
-  const disabled = new Set(rawDisabled.map(mapLegacyToolId));
+  const disabled = new Set(
+    (agentConfig?.disabledToolIds || []).map(mapLegacyToolId),
+  );
   const chatMode = agentConfig?.chatMode;
   if (isReadOnlyMode(chatMode)) {
     for (const id of PLAN_MODE_BLOCKED_TOOLS) disabled.add(id);
@@ -99,12 +97,6 @@ function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
 
   if (context === 'terminal') {
     disabled.add('bash');
-    if (
-      !rawDisabled.includes('Terminal') &&
-      agentConfig?.enableTerminalTool !== false
-    ) {
-      disabled.delete('Terminal');
-    }
   }
 
   const approvalMode = resolveToolApprovalMode(agentConfig);

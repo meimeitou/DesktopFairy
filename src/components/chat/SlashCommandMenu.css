@@ -6,6 +6,7 @@
   max-width: 90vw;
   max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px 0;
   background: rgba(248, 244, 232, 0.98);
   backdrop-filter: blur(16px);
@@ -67,37 +68,43 @@
   text-transform: uppercase;
   color: var(--bone-600);
 }
-
-.slash-menu-item {
+.slash-menu .slash-menu-item {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 2px;
   width: 100%;
   color: inherit;
   text-align: left;
 }
 
-.slash-menu-item.active {
+.slash-menu .slash-menu-item.active {
   color: var(--animal-primary-color);
 }
 
 .slash-menu-item-label {
+  display: block;
   font-size: 13px;
   font-weight: 500;
   color: var(--bone-200);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.slash-menu-item.active .slash-menu-item-label {
+.slash-menu .slash-menu-item.active .slash-menu-item-label {
   color: var(--animal-primary-color);
 }
-
 .slash-menu-item-desc {
+  display: block;
   font-size: 11.5px;
   line-height: 1.4;
   color: var(--bone-500);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

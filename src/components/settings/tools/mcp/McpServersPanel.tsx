@@ -16,14 +16,13 @@ const api = window.electronAPI;
 
 interface Props {
   settings: AppSettings;
-  onAgentChange: (patch: Partial<AgentConfig>) => void;
 }
 
 function newMcpId() {
   return `mcp_${Date.now().toString(36)}`;
 }
 
-export default function McpServersPanel({ settings, onAgentChange }: Props) {
+export default function McpServersPanel({ settings }: Props) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [statuses, setStatuses] = useState<Record<string, McpRuntimeStatus>>({});
   const [loading, setLoading] = useState(true);
@@ -60,21 +59,11 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [onAgentChange]);
+  }, []);
 
   useEffect(() => {
     void loadMcp();
   }, [loadMcp]);
-
-  // Dangling-reference cleanup: drop agent.mcpServerIds pointing at removed servers.
-  const boundIds = settings.agent.mcpServerIds;
-  useEffect(() => {
-    if (!loaded) return;
-    const ids = new Set(servers.map((s) => s.id));
-    if (boundIds.some((id) => !ids.has(id))) {
-      onAgentChange({ mcpServerIds: boundIds.filter((id) => ids.has(id)) });
-    }
-  }, [servers, loaded, boundIds, onAgentChange]);
 
   useEffect(() => {
     const off = api.onMcpStatusChanged?.((payload) => {
@@ -112,9 +101,6 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
   const removeServer = async (id: string) => {
     if (!window.confirm("确定删除该 MCP 服务器？")) return;
     await api.invoke("mcp:servers:delete", { id });
-    onAgentChange({
-      mcpServerIds: settings.agent.mcpServerIds.filter((x) => x !== id),
-    });
     void loadMcp();
   };
 
@@ -189,7 +175,7 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
             刷新
           </Button>
         </div>
-        <HintTip tip="MCP 服务器全局管理。绑定到智能体请在「智能体 → MCP 绑定」中设置。" />
+        <HintTip tip="MCP 服务器全局管理。绑定到智能体请在各智能体的「MCP 绑定」分节中设置。" />
       </div>
 
       {loading ? (
@@ -217,6 +203,16 @@ export default function McpServersPanel({ settings, onAgentChange }: Props) {
                     title={statuses[server.id]?.lastError}
                   />
                   <strong>{server.name}</strong>
+                  {(() => {
+                    const n = settings.agents.filter((a) =>
+                      a.mcpServerIds.includes(server.id),
+                    ).length;
+                    return n > 0 ? (
+                      <span className="agent-tool-auto-badge">
+                        绑定 {n} 个智能体
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
                 {server.description && <p>{server.description}</p>}
                 <p className="agent-mcp-command">

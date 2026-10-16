@@ -104,7 +104,7 @@ export default function ChatApp() {
             onClick={() => setView("chat")}
           >
             <ChatIcon />
-            <span>对话</span>
+            <span>智能体</span>
           </Button>
           <Button
             type="text"

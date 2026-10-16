@@ -10,7 +10,6 @@ import {
 } from "react";
 import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
-import ModelSelector from "../ModelSelector";
 import { Button, Icon, Notification, Tooltip } from "animal-island-ui";
 import { CompactIcon, EraserIcon, SendIcon, StopIcon, UploadIcon } from "../icons/naivePatch";
 import AttachmentPreview from "./AttachmentPreview";
@@ -45,10 +44,6 @@ interface Props {
   onAttachmentsChange: (files: ChatAttachment[]) => void;
   streaming: boolean;
   hasMessages: boolean;
-  models: string[];
-  modelName: string;
-  onModelChange: (model: string) => void;
-  modelLabels?: Record<string, string>;
   chatMode: ChatMode;
   onChatModeChange: (mode: ChatMode) => void;
   showModeSelector?: boolean;
@@ -78,10 +73,6 @@ function ChatInputBar({
   onAttachmentsChange,
   streaming,
   hasMessages,
-  models,
-  modelName,
-  onModelChange,
-  modelLabels,
   chatMode,
   onChatModeChange,
   showModeSelector = true,
@@ -458,17 +449,6 @@ function ChatInputBar({
               disabled={composerDisabled}
             />
           )}
-          <div className="chat-input-model">
-            <ModelSelector
-              models={models}
-              value={modelName}
-              onChange={onModelChange}
-              allowCustom={false}
-              modelLabels={modelLabels}
-              disabled={composerDisabled}
-              variant="toolbar"
-            />
-          </div>
           {streaming ? (
             <Tooltip title="停止生成" placement="top">
               <Button

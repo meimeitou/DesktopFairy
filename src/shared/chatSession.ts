@@ -1,3 +1,4 @@
+import { type ChatMode, normalizeChatMode } from "./chatMode";
 import type { ChatAttachment } from "./chatAttachments";
 import type { ChatMsg } from "./chatMessages";
 
@@ -23,12 +24,6 @@ export interface ChatSession {
   draftAttachments?: ChatAttachment[];
   /** Last API usage snapshot for context meter calibration (not sent to model). */
   lastServerUsage?: ChatSessionServerUsage;
-  /**
-   * Session-locked agent backend model (`providerId::modelName`).
-   * Missing/empty = follow the agent default. One-way lock: changing the
-   * agent default in settings does not affect locked sessions.
-   */
-  sessionModel?: string;
 }
 
 export const CHAT_TOPICS_VERSION = 1 as const;
@@ -39,6 +34,10 @@ export interface ChatTopic {
   createdAt: number;
   updatedAt: number;
   orderKey: number;
+  /** Owning agent for grouping. */
+  agentId: string;
+  /** Session-level conversation mode. */
+  chatMode: ChatMode;
   knowledgeBaseIds?: string[];
 }
 
@@ -47,7 +46,6 @@ export interface ChatTopicsStore {
   activeId: string | null;
   topics: ChatTopic[];
 }
-
 export function emptyChatTopicsStore(): ChatTopicsStore {
   return {
     version: CHAT_TOPICS_VERSION,
@@ -55,8 +53,10 @@ export function emptyChatTopicsStore(): ChatTopicsStore {
     topics: [],
   };
 }
-
-export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
+export function normalizeChatTopicsStore(
+  raw: unknown,
+  defaultAgentId: string = "personal-assistant",
+): ChatTopicsStore {
   if (!raw || typeof raw !== "object") return emptyChatTopicsStore();
   const data = raw as Partial<ChatTopicsStore>;
   const topics = Array.isArray(data.topics)
@@ -69,6 +69,12 @@ export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
         )
         .map((t) => ({
           ...t,
+          agentId:
+            typeof (t as ChatTopic).agentId === "string" &&
+            (t as ChatTopic).agentId.trim()
+              ? (t as ChatTopic).agentId
+              : defaultAgentId,
+          chatMode: normalizeChatMode((t as ChatTopic).chatMode),
           knowledgeBaseIds: Array.isArray(t.knowledgeBaseIds)
             ? t.knowledgeBaseIds.filter(
                 (id): id is string => typeof id === "string",
@@ -86,7 +92,11 @@ export function normalizeChatTopicsStore(raw: unknown): ChatTopicsStore {
   };
 }
 
-export function createChatTopic(id?: string, name?: string): ChatTopic {
+export function createChatTopic(
+  id?: string,
+  name?: string,
+  agentId: string = "personal-assistant",
+): ChatTopic {
   const now = Date.now();
   return {
     id:
@@ -98,6 +108,8 @@ export function createChatTopic(id?: string, name?: string): ChatTopic {
     createdAt: now,
     updatedAt: now,
     orderKey: now,
+    agentId,
+    chatMode: "normal",
   };
 }
 
@@ -241,10 +253,6 @@ export function normalizeChatSession(raw: unknown): ChatSession {
     }
   }
 
-  const rawSessionModel =
-    "sessionModel" in data ? data.sessionModel : undefined;
-  const sessionModel = normalizeSessionModel(rawSessionModel);
-
   return {
     version,
     updatedAt:
@@ -255,16 +263,7 @@ export function normalizeChatSession(raw: unknown): ChatSession {
     draftInput: typeof data.draftInput === "string" ? data.draftInput : "",
     draftAttachments: normalizeAttachments(data.draftAttachments),
     lastServerUsage,
-    ...(sessionModel ? { sessionModel } : {}),
   };
-}
-
-const SESSION_MODEL_PATTERN = /^[^:]+::.+$/;
-
-export function normalizeSessionModel(raw: unknown): string {
-  return typeof raw === "string" && SESSION_MODEL_PATTERN.test(raw.trim())
-    ? raw.trim()
-    : "";
 }
 
 export function buildChatSession(
@@ -272,7 +271,6 @@ export function buildChatSession(
   draftInput: string,
   draftAttachments: ChatAttachment[],
   lastServerUsage?: ChatSessionServerUsage,
-  sessionModel?: string,
 ): ChatSession {
   return {
     version: CHAT_SESSION_VERSION,
@@ -281,7 +279,6 @@ export function buildChatSession(
     draftInput,
     draftAttachments,
     ...(lastServerUsage ? { lastServerUsage } : {}),
-    ...(sessionModel ? { sessionModel } : {}),
   };
 }
 

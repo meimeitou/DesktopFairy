@@ -10,7 +10,6 @@ import {
 import type { McpServer } from "../../../shared/mcpServer";
 import { buildMcpCommandString, agentHasBoundMcpFetch } from "../../../shared/mcpServer";
 import AgentCatalogToggleList from "./AgentCatalogToggleList";
-import AgentContextualToolList from "./AgentContextualToolList";
 
 const api = window.electronAPI;
 
@@ -20,12 +19,15 @@ interface Props {
   panel: ToolPanel;
   agent: AgentConfig;
   onAgentChange: (patch: Partial<AgentConfig>) => void;
+  /** Which context this panel edits; required for the builtin panel. */
+  context?: "local" | "terminal";
 }
 
 export default function AgentToolsSection({
   panel,
   agent,
   onAgentChange,
+  context = "local",
 }: Props) {
   const [search, setSearch] = useState("");
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
@@ -42,24 +44,14 @@ export default function AgentToolsSection({
     [agent.mcpServerIds, mcpServers]
   );
 
-  const localEnabledIds = useMemo(
+  const contextEnabledIds = useMemo(
     () =>
       new Set(
-        getEnabledAgentBuiltinTools(agent, "local", { hideWebFetch }).map(
+        getEnabledAgentBuiltinTools(agent, context, { hideWebFetch }).map(
           (t) => t.id
         )
       ),
-    [agent, hideWebFetch]
-  );
-
-  const terminalEnabledIds = useMemo(
-    () =>
-      new Set(
-        getEnabledAgentBuiltinTools(agent, "terminal", { hideWebFetch }).map(
-          (t) => t.id
-        )
-      ),
-    [agent, hideWebFetch]
+    [agent, context, hideWebFetch]
   );
 
   const boundMcpIds = useMemo(
@@ -98,10 +90,11 @@ export default function AgentToolsSection({
       });
     }
   }, [mcpServers, mcpLoaded, boundIds, onAgentChange]);
-
-  const toggleLocalTool = (id: string, enabled: boolean) => {
-    if (id === "Terminal") return; // Terminal is never available in the local context.
-    if (id === "AskUserQuestion") return; // Always on except full-auto (mode-gated at runtime).
+  const toggleTool = (id: string, enabled: boolean) => {
+    // Context-forced tools are not user-configurable per context anymore.
+    if (id === "Terminal" && context === "local") return;
+    if (id === "bash" && context === "terminal") return;
+    if (id === "AskUserQuestion") return;
     if (id === "WebFetch" && hideWebFetch) return;
     if (enabled) {
       onAgentChange({
@@ -109,23 +102,6 @@ export default function AgentToolsSection({
       });
     } else if (!agent.disabledToolIds.includes(id)) {
       onAgentChange({ disabledToolIds: [...agent.disabledToolIds, id] });
-    }
-  };
-
-  const toggleTerminalTool = (id: string, enabled: boolean) => {
-    if (id === "bash") return; // bash is never available in the terminal context.
-    if (id === "AskUserQuestion") return;
-    if (id === "WebFetch" && hideWebFetch) return;
-    if (enabled) {
-      onAgentChange({
-        terminalDisabledToolIds: agent.terminalDisabledToolIds.filter(
-          (x) => x !== id
-        ),
-      });
-    } else if (!agent.terminalDisabledToolIds.includes(id)) {
-      onAgentChange({
-        terminalDisabledToolIds: [...agent.terminalDisabledToolIds, id],
-      });
     }
   };
 
@@ -168,43 +144,22 @@ export default function AgentToolsSection({
             <HintTip
               tip={
                 hideWebFetch
-                  ? "按本地对话与终端分别开关。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。"
-                  : "按本地对话与终端分别开关。Terminal 仅终端可用，Bash 仅本地可用。"
+                  ? `当前场景（${context === "terminal" ? "终端" : "本地"}）下强制与默认规则已体现。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。`
+                  : context === "terminal"
+                    ? "终端场景强制禁用 bash；Terminal 工具默认可用。"
+                    : "本地场景强制禁用 Terminal；bash 需手动启用。"
               }
             />
           </div>
-          <AgentContextualToolList
+          <AgentCatalogToggleList
+            layout="card"
             items={builtinCatalogItems}
-            contexts={[
-              {
-                key: "local",
-                label: "本地",
-                enabledIds: localEnabledIds,
-                forcedOffIds: new Set([
-                  "Terminal",
-                  ...(hideWebFetch ? ["WebFetch"] : []),
-                ]),
-                // Always on at the config level; full-auto gates it at runtime.
-                forcedOnIds: new Set(
-                  agent.chatMode === "full-auto" ? ["AskUserQuestion"] : [],
-                ),
-                onToggle: toggleLocalTool,
-              },
-              {
-                key: "terminal",
-                label: "终端",
-                enabledIds: terminalEnabledIds,
-                forcedOffIds: new Set([
-                  "bash",
-                  ...(hideWebFetch ? ["WebFetch"] : []),
-                ]),
-                forcedOnIds: new Set(
-                  agent.chatMode === "full-auto" ? ["AskUserQuestion"] : [],
-                ),
-                onToggle: toggleTerminalTool,
-              },
-            ]}
-            search={search}
+            enabledIds={contextEnabledIds}
+            forcedDisabledIds={new Set([
+              ...(context === "local" ? ["Terminal"] : ["bash"]),
+              ...(hideWebFetch ? ["WebFetch"] : []),
+            ])}
+            onToggle={toggleTool}
             emptyLabel="无匹配的内置工具"
           />
         </>

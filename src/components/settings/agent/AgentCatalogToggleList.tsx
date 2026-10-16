@@ -13,6 +13,10 @@ interface Props {
   onToggle: (id: string, enabled: boolean) => void;
   search?: string;
   emptyLabel?: string;
+  /** Ids force-disabled by context rules; switch hidden, no interaction. */
+  forcedDisabledIds?: Set<string>;
+  /** `list` = divided rows; `card` = cherry-style 2-col bordered grid. */
+  layout?: "list" | "card";
 }
 
 export default function AgentCatalogToggleList({
@@ -21,6 +25,8 @@ export default function AgentCatalogToggleList({
   onToggle,
   search = "",
   emptyLabel = "暂无项目",
+  forcedDisabledIds,
+  layout = "list",
 }: Props) {
   const q = search.trim().toLowerCase();
   const filtered = q
@@ -36,7 +42,7 @@ export default function AgentCatalogToggleList({
   }
 
   return (
-    <ul className="agent-toggle-list">
+    <ul className={`agent-toggle-list agent-toggle-list-${layout}`}>
       {filtered.map((item) => {
         const enabled = enabledIds.has(item.id);
         return (
@@ -50,11 +56,15 @@ export default function AgentCatalogToggleList({
               </div>
               {item.description && <p>{item.description}</p>}
             </div>
-            <Switch
-              checked={enabled}
-              onChange={(checked) => onToggle(item.id, checked)}
-              aria-label={enabled ? "禁用" : "启用"}
-            />
+            {forcedDisabledIds?.has(item.id) ? (
+              <span className="agent-tool-auto-badge">场景强制</span>
+            ) : (
+              <Switch
+                checked={enabled}
+                onChange={(checked) => onToggle(item.id, checked)}
+                aria-label={enabled ? "禁用" : "启用"}
+              />
+            )}
           </li>
         );
       })}

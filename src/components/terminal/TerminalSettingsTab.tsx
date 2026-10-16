@@ -841,11 +841,8 @@ export default function TerminalSettingsTab({
                 <Input type="text" placeholder="root" />
               </FormItem>
               <FormItem label="分组" name="group">
-                <Input type="text" list="ssh-group-list" placeholder="未分组" />
+                <Input type="text" placeholder="未分组（可输入新分组名）" />
               </FormItem>
-              <datalist id="ssh-group-list">
-                {groups.map(([g]) => g !== UNGROUPED && <option key={g} value={g} />)}
-              </datalist>
             </div>
 
             <div className="ssh-form-group">
