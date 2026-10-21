@@ -69,6 +69,7 @@ import {
   flushSettingsSave,
 } from "../shared/settingsStore";
 import type { KnowledgeCitation } from "../shared/knowledge";
+import { stashKnowledgeReveal } from "../shared/panelHandoff";
 import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
 import type { ReasoningEffort } from "../shared/reasoningEffort";
@@ -1853,11 +1854,11 @@ export default function ChatPage({
             editingMsgId={editingMsgId}
             onDelete={handleDeleteMessage}
             onOpenCitation={(citation) => {
-              window.dispatchEvent(
-                new CustomEvent("knowledge:reveal", {
-                  detail: { baseId: citation.baseId, itemId: citation.itemId },
-                }),
-              );
+              stashKnowledgeReveal({
+                baseId: citation.baseId,
+                itemId: citation.itemId,
+              });
+              window.dispatchEvent(new CustomEvent("knowledge:reveal"));
             }}
             emptyContent={emptyContent}
           />

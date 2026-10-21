@@ -1,7 +1,4 @@
-import MainView from "./pages/MainView";
-import ChatApp from "./pages/ChatApp";
-import TipView from "./pages/TipView";
-import BrowserPage from "./pages/BrowserPage";
+import { lazy, Suspense } from "react";
 import { installSettingsSyncListener } from "./shared/settingsStore";
 import "./App.css";
 
@@ -10,34 +7,55 @@ installSettingsSyncListener();
 
 const params = new URLSearchParams(window.location.search);
 const windowType = params.get("window");
+const isMac =
+  typeof navigator !== "undefined" &&
+  navigator.platform.toUpperCase().includes("MAC");
+
+// Paint the shell before the window chunk arrives. Each page also adds these
+// classes; doing it here covers the gap while that chunk is still parsing.
+if (typeof document !== "undefined") {
+  const root = document.documentElement;
+  if (windowType === "chat" || windowType === "settings") {
+    root.classList.add("chat-window-shell");
+    if (isMac) root.classList.add("chat-window-mac");
+  } else if (windowType === "browser") {
+    root.classList.add("browser-window-shell");
+    if (isMac) root.classList.add("browser-page-mac");
+  } else if (windowType === "tip") {
+    root.classList.add("tip-window");
+  }
+}
+
+const ChatApp = lazy(() => import("./pages/ChatApp"));
+const TipView = lazy(() => import("./pages/TipView"));
+const BrowserPage = lazy(() => import("./pages/BrowserPage"));
+const MainView = lazy(() => import("./pages/MainView"));
 
 function App() {
+  let child;
   if (windowType === "chat" || windowType === "settings") {
-    return (
+    child = (
       <div className="app">
         <ChatApp />
       </div>
     );
-  }
-
-  if (windowType === "tip") {
-    const text = params.get("text") || "";
-    return <TipView text={text} />;
-  }
-
-  if (windowType === "browser") {
-    return (
+  } else if (windowType === "tip") {
+    child = <TipView text={params.get("text") || ""} />;
+  } else if (windowType === "browser") {
+    child = (
       <div className="app">
         <BrowserPage />
       </div>
     );
+  } else {
+    child = (
+      <div className="app">
+        <MainView />
+      </div>
+    );
   }
 
-  return (
-    <div className="app">
-      <MainView />
-    </div>
-  );
+  return <Suspense fallback={null}>{child}</Suspense>;
 }
 
 export default App;

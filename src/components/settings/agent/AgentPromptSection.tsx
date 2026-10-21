@@ -2,6 +2,7 @@ import { Button } from "animal-island-ui";
 import { FieldHead } from "../../HintTip";
 import {
   DEFAULT_SOUL,
+  DEFAULT_TERMINAL_SOUL,
   DEFAULT_USER_TEMPLATE,
   type AgentConfig,
 } from "../../../shared/agent";
@@ -12,7 +13,11 @@ interface Props {
 }
 
 export default function AgentPromptSection({ agent, onChange }: Props) {
-  const isDefaultSoul = agent.soul.trim() === DEFAULT_SOUL.trim();
+  const defaultSoul =
+    agent.builtinRole === "terminal-assistant"
+      ? DEFAULT_TERMINAL_SOUL
+      : DEFAULT_SOUL;
+  const isDefaultSoul = agent.soul.trim() === defaultSoul.trim();
 
   return (
     <section className="settings-section agent-subsection">
@@ -30,7 +35,7 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
                 type="default"
                 size="small"
                 disabled={isDefaultSoul}
-                onClick={() => onChange({ soul: DEFAULT_SOUL })}
+                onClick={() => onChange({ soul: defaultSoul })}
               >
                 恢复默认
               </Button>

@@ -93,6 +93,8 @@ export default function AgentToolsSection({
   const toggleTool = (id: string, enabled: boolean) => {
     // Context-forced tools are not user-configurable per context anymore.
     if (id === "Terminal" && context === "local") return;
+    if (id === "ssh_exec" && context === "local") return;
+    if (id === "ssh_hosts" && context === "local") return;
     if (id === "bash" && context === "terminal") return;
     if (id === "AskUserQuestion") return;
     if (id === "WebFetch" && hideWebFetch) return;
@@ -146,8 +148,8 @@ export default function AgentToolsSection({
                 hideWebFetch
                   ? `当前场景（${context === "terminal" ? "终端" : "本地"}）下强制与默认规则已体现。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。`
                   : context === "terminal"
-                    ? "终端场景强制禁用 bash；Terminal 工具默认可用。"
-                    : "本地场景强制禁用 Terminal；bash 需手动启用。"
+                  ? "终端场景强制禁用 bash；Terminal、ssh_exec 与 ssh_hosts 默认可用。"
+                    : "本地场景强制禁用 Terminal、ssh_exec 与 ssh_hosts；bash 需手动启用。"
               }
             />
           </div>
@@ -156,7 +158,7 @@ export default function AgentToolsSection({
             items={builtinCatalogItems}
             enabledIds={contextEnabledIds}
             forcedDisabledIds={new Set([
-              ...(context === "local" ? ["Terminal"] : ["bash"]),
+              ...(context === "local" ? ["Terminal", "ssh_exec", "ssh_hosts"] : ["bash"]),
               ...(hideWebFetch ? ["WebFetch"] : []),
             ])}
             onToggle={toggleTool}

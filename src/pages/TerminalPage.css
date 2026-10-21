@@ -127,12 +127,23 @@
   text-align: left;
   cursor: pointer;
   transition: background 0.12s;
+  overflow: hidden;
 }
 
 .terminal-empty-recent-item:hover,
 .terminal-empty-recent-item:focus-visible {
   outline: none;
   background: var(--ink-750);
+}
+/* Library Button wraps children in a bare <span> — flex column + min-width:0
+   chain so the name/detail spans' ellipsis can take effect. */
+.terminal-empty-recent-item > span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  min-width: 0;
 }
 
 .terminal-empty-recent-name {
@@ -142,6 +153,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
   max-width: 100%;
 }
 
@@ -152,6 +164,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
   max-width: 100%;
 }
 

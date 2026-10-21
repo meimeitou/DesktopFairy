@@ -1512,6 +1512,293 @@ async function runInStandaloneShell(command, args, deps, timeoutMs) {
   }
 }
 
+// ssh_exec：在已保存的 SSH 主机上一次性执行命令（连接 → exec → 断开，非交互）。
+// ---------------------------------------------------------------------------
+// ssh_hosts: 管理已保存 SSH 主机（add/update/delete/list）。
+// 凭据严格只读：仅可引用已有 credentialId，禁止任何内联密码/私钥字段，
+// 返回值只含凭据 name，绝不含 password/privateKeyPath。
+// ---------------------------------------------------------------------------
+
+const SSH_HOST_ALLOWED_FIELDS = [
+  'name',
+  'host',
+  'port',
+  'user',
+  'authMethod',
+  'credentialId',
+  'group',
+  'proxyJump',
+  'proxyJumpAuthMethod',
+  'proxyJumpCredentialId',
+];
+const SSH_HOST_FORBIDDEN_FIELDS = [
+  'password',
+  'privateKeyPath',
+  'proxyJumpPassword',
+  'proxyJumpPrivateKeyPath',
+];
+
+function sshHostProjection(h, credentialNameById) {
+  return {
+    id: h.id,
+    name: h.name,
+    host: h.host,
+    port: h.port,
+    user: h.user,
+    authMethod: h.authMethod,
+    credential: credentialNameById(h.credentialId),
+    group: h.group ?? null,
+    proxyJump: h.proxyJump ?? null,
+  };
+}
+
+async function toolSshHosts(args, deps = {}) {
+  const action = String(args?.action || '').trim();
+  if (!['list', 'add', 'update', 'delete'].includes(action)) {
+    return fail('action 必须是 list / add / update / delete 之一');
+  }
+  // 计划模式防御纵深：目录层不禁用本工具，由这里拦写操作。
+  if (deps?.agentConfig?.chatMode === 'plan' && action !== 'list') {
+    return fail('计划模式下仅支持 list 操作');
+  }
+
+  const settingsPath = path.join(getApp().getPath('userData'), 'da_settings.json');
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  } catch {
+    return fail('Could not read settings');
+  }
+  if (!Array.isArray(settings.sshHosts)) settings.sshHosts = [];
+  const hosts = settings.sshHosts;
+  const creds = Array.isArray(settings.sshCredentials) ? settings.sshCredentials : [];
+  const credentialNameById = (id) =>
+    id ? (creds.find((c) => c && c.id === id)?.name ?? null) : null;
+
+  // —— 字段校验（add/update 共用）——
+  const validateFields = (fields) => {
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+      return { error: 'fields 必须是对象' };
+    }
+    const keys = Object.keys(fields);
+    const forbidden = keys.filter((k) => SSH_HOST_FORBIDDEN_FIELDS.includes(k));
+    if (forbidden.length > 0) {
+      return {
+        error: `不允许通过 agent 设置内联凭据（${forbidden.join(', ')}），请引用已存在凭据的 credentialId`,
+      };
+    }
+    const unknown = keys.filter((k) => !SSH_HOST_ALLOWED_FIELDS.includes(k));
+    if (unknown.length > 0) {
+      return {
+        error: `未知字段：${unknown.join(', ')}。可用字段：${SSH_HOST_ALLOWED_FIELDS.join(', ')}`,
+      };
+    }
+    if ('name' in fields) {
+      const name = String(fields.name || '').trim();
+      if (!name) return { error: 'name 不能为空' };
+      fields.name = name;
+    }
+    if ('host' in fields && !String(fields.host || '').trim()) {
+      return { error: 'host 不能为空' };
+    } else if ('host' in fields) {
+      fields.host = String(fields.host).trim();
+    }
+    if ('user' in fields && !String(fields.user || '').trim()) {
+      return { error: 'user 不能为空' };
+    } else if ('user' in fields) {
+      fields.user = String(fields.user).trim();
+    }
+    if ('port' in fields) {
+      const port = Number(fields.port);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        return { error: 'port 必须是 1–65535 的整数' };
+      }
+      fields.port = port;
+    }
+    if ('authMethod' in fields && !['auto', 'password', 'privateKey', 'agent'].includes(fields.authMethod)) {
+      return { error: 'authMethod 必须是 auto / password / privateKey / agent 之一' };
+    }
+    for (const idField of ['credentialId', 'proxyJumpCredentialId']) {
+      if (idField in fields && fields[idField] != null && !creds.some((c) => c && c.id === fields[idField])) {
+        return {
+          error: `credentialId "${fields[idField]}" 不存在。可用凭据：${creds.map((c) => c?.name).join('; ') || '（无）'}`,
+        };
+      }
+    }
+    if ('proxyJump' in fields && fields.proxyJump != null && typeof fields.proxyJump !== 'string') {
+      return { error: 'proxyJump 必须是字符串（user@host 形式）' };
+    }
+    return { fields };
+  };
+
+  const persist = () => {
+    try {
+      fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    } catch {
+      return false;
+    }
+    broadcastSettingsUpdated(settings, deps.getWindows);
+    return true;
+  };
+
+  if (action === 'list') {
+    return ok({
+      action,
+      hosts: hosts.map((h) => sshHostProjection(h, credentialNameById)),
+      message: hosts.length === 0 ? '暂无已保存主机' : `共 ${hosts.length} 台主机`,
+    });
+  }
+
+  const hostArg = String(args?.host || '').trim();
+  const describe = (h) => `${h.name} (${h.user || '?'}@${h.host || '?'}:${h.port || 22})`;
+
+  if (action === 'add') {
+    const v = validateFields(args?.fields ? { ...args.fields } : null);
+    if (v.error) return fail(v.error);
+    const fields = v.fields;
+    if (!('name' in fields) || !('host' in fields)) {
+      return fail('add 需要在 fields 中提供 name 和 host');
+    }
+    if (hosts.some((h) => h && h.name === fields.name)) {
+      return fail(`已存在名为 "${fields.name}" 的主机`);
+    }
+    const entry = {
+      id: `ssh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      port: 22,
+      authMethod: 'auto',
+      ...fields,
+    };
+    hosts.push(entry);
+    if (!persist()) return fail('Could not write settings');
+    return ok({
+      action,
+      host: entry.name,
+      hostEntry: sshHostProjection(entry, credentialNameById),
+      message: `已新增主机 ${entry.name}`,
+    });
+  }
+
+  // update / delete：按 name 精确匹配
+  if (!hostArg) return fail('update/delete 需要 host 参数（已保存主机的 name，精确匹配）');
+  const matches = hosts.filter((h) => h && h.name === hostArg);
+  if (matches.length === 0) {
+    return fail(
+      hosts.length === 0
+        ? '暂无已保存主机'
+        : `未找到名为 "${hostArg}" 的已保存主机。可用主机：${hosts.map((h) => h.name).join('; ')}`,
+    );
+  }
+  if (matches.length > 1) {
+    return fail(`主机名 "${hostArg}" 不唯一，请让用户确认目标：${matches.map(describe).join('; ')}`);
+  }
+  const target = matches[0];
+
+  if (action === 'delete') {
+    settings.sshHosts = hosts.filter((h) => h !== target);
+    if (!persist()) return fail('Could not write settings');
+    return ok({ action, host: target.name, message: `已删除主机 ${target.name}` });
+  }
+
+  // update
+  const v = validateFields(args?.fields ? { ...args.fields } : null);
+  if (v.error) return fail(v.error);
+  const fields = v.fields;
+  if (Object.keys(fields).length === 0) return fail('update 需要在 fields 中提供至少一个字段');
+  if ('name' in fields && fields.name !== target.name && hosts.some((h) => h && h !== target && h.name === fields.name)) {
+    return fail(`已存在名为 "${fields.name}" 的主机`);
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    if (value == null) delete target[key];
+    else target[key] = value;
+  }
+  if (!persist()) return fail('Could not write settings');
+  return ok({
+    action,
+    host: target.name,
+    hostEntry: sshHostProjection(target, credentialNameById),
+    message: `已更新主机 ${target.name}`,
+  });
+}
+// 主机按名称从 settings.sshHosts 精确匹配；凭据从 sshCredentials 解析。
+async function toolSshExec(args, deps = {}) {
+  const hostName = String(args?.host || '').trim();
+  const command = String(args?.command || '').trim();
+  if (!hostName) return fail('host required');
+  if (!command) return fail('command required');
+
+  // 超时契约：默认 30s、5..600s；0（bash 语义"禁用"）对一次性远程执行无意义，按默认处理。
+  const timeoutSec =
+    args?.timeout === undefined
+      ? 30
+      : Math.min(Math.max(Math.round(Number(args.timeout) || 30), 5), 600);
+  const timeoutMs = timeoutSec * 1000;
+
+  let settings = null;
+  try {
+    settings = require('./settingsSnapshot.cjs').getSnapshot() || {};
+  } catch {
+    settings = {};
+  }
+  const hosts = Array.isArray(settings.sshHosts) ? settings.sshHosts : [];
+  if (hosts.length === 0) {
+    return fail('暂无已保存的 SSH 主机，请先在终端设置中添加');
+  }
+  const matches = hosts.filter((h) => h && h.name === hostName);
+  const describe = (h) => `${h.name} (${h.user || '?'}@${h.host || '?'}:${h.port || 22})`;
+  if (matches.length === 0) {
+    return fail(`未找到名为 "${hostName}" 的已保存主机。可用主机：${hosts.map(describe).join('; ')}`);
+  }
+  if (matches.length > 1) {
+    return fail(`主机名 "${hostName}" 不唯一，请让用户确认目标：${matches.map(describe).join('; ')}`);
+  }
+  const target = matches[0];
+
+  // 凭据解析（renderer resolveCred 的 main 镜像）：credentialId → sshCredentials，
+  // legacy 内联字段兜底。
+  const creds = Array.isArray(settings.sshCredentials) ? settings.sshCredentials : [];
+  const cred = creds.find((c) => c && c.id === target.credentialId);
+  const password = cred?.password ?? target.password;
+  const privateKeyPath = cred?.privateKeyPath ?? target.privateKeyPath;
+  if (target.authMethod !== 'auto' && target.authMethod !== 'agent' && !password && !privateKeyPath) {
+    return fail(`主机 "${target.name}" 缺少可用凭据，请先在终端设置中配置`);
+  }
+  const jumpCred = creds.find((c) => c && c.id === target.proxyJumpCredentialId);
+  const jumpAuth = {
+    authMethod: target.proxyJumpAuthMethod || 'auto',
+    password: jumpCred?.password ?? target.proxyJumpPassword,
+    privateKeyPath: jumpCred?.privateKeyPath ?? target.proxyJumpPrivateKeyPath,
+  };
+
+  try {
+    const sshService = require('./sshService.cjs');
+    const { stdout, stderr, exitCode, truncated } = await sshService.execOnSavedHost(
+      {
+        host: target.host,
+        port: target.port,
+        user: target.user,
+        authMethod: target.authMethod,
+        password,
+        privateKeyPath,
+        proxyJump: target.proxyJump,
+        proxyJumpAuthMethod: jumpAuth.authMethod,
+        proxyJumpPassword: jumpAuth.password,
+        proxyJumpPrivateKeyPath: jumpAuth.privateKeyPath,
+      },
+      command,
+      timeoutMs,
+      deps.signal,
+    );
+    return ok({
+      host: target.name,
+      command,
+      output: truncateTerminalOutput(String(stdout || '') + (stderr ? '\n' + stderr : '') + (truncated ? '\n…[远程输出超限被截断]' : '')),
+      exitCode,
+    });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
 async function executeBuiltinTool(toolName, args, deps = {}) {
   switch (toolName) {
     case 'read':
@@ -1530,6 +1817,10 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
       return toolWebFetch(args);
     case 'WebSearch':
       return toolWebSearch(args, deps.webSearchConfig);
+    case 'ssh_exec':
+      return toolSshExec(args, deps);
+    case 'ssh_hosts':
+      return toolSshHosts(args, deps);
     case 'TodoWrite':
       return toolTodoWrite(args, deps.requestId);
     case 'Task':

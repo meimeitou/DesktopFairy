@@ -42,6 +42,7 @@ const PLAN_MODE_BLOCKED_TOOLS = new Set([
   'WebFetch',
   'WebSearch',
   'Terminal',
+  'ssh_exec',
 ]);
 
 const CHAT_MODE_SUFFIXES = {
@@ -93,6 +94,8 @@ function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
 
   if (context === 'local') {
     disabled.add('Terminal');
+    disabled.add('ssh_exec');
+    disabled.add('ssh_hosts');
   }
 
   if (context === 'terminal') {
@@ -133,6 +136,9 @@ function shouldPromptForTool(toolName, toolApprovalMode, invocationArgs) {
   }
   if (['edit', 'write'].includes(name)) return true;
   if (name === 'bash') return true;
+  if (name === 'ssh_hosts') {
+    return invocationArgs?.action !== 'list';
+  }
   if (['WebFetch', 'WebSearch'].includes(name)) return true;
   return true;
 }

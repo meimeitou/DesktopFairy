@@ -510,10 +510,133 @@ function runCommandInSshSession(sessionId, command, timeout = 60_000, signal) {
   });
 }
 
+// 一次性 SSH 命令执行（ssh_exec 工具）：不复用会话 Map，连接 → exec → 断开。
+// connectParams 形如 ssh:create 入参；返回 { stdout, stderr, exitCode } 或 reject。
+async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signal) {
+  const built = buildConnectConfig({
+    host: connectParams?.host,
+    port: connectParams?.port,
+    user: connectParams?.user,
+    authMethod: connectParams?.authMethod,
+    password: connectParams?.password,
+    privateKeyPath: connectParams?.privateKeyPath,
+  });
+  if (built.error) throw new Error(built.error);
+
+  const jumpAuth = {
+    authMethod: connectParams?.proxyJumpAuthMethod || 'auto',
+    password: connectParams?.proxyJumpPassword,
+    privateKeyPath: connectParams?.proxyJumpPrivateKeyPath,
+  };
+  // 整体超时/取消：覆盖连接阶段（connectWithJump 无自身 timeout 时挂死的场景）。
+  // 连接成功后 clearOverall() 摘除，exec 阶段由 Promise executor 内的独立 timer 接管。
+  const jumpRef = { conn: null, jumpConn: null };
+  let overallTimer = null;
+  let overallSettled = false;
+  let overallReject = null;
+  const overallTimeout = new Promise((_resolve, rej) => { overallReject = rej; });
+  overallTimer = setTimeout(() => {
+    if (overallSettled) return;
+    overallSettled = true;
+    try { jumpRef.conn?.end(); } catch { /* already closed */ }
+    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
+    overallReject(new Error(`SSH 命令执行超时（${Math.round(timeoutMs / 1000)}s，含连接阶段）`));
+  }, timeoutMs);
+  const onOverallAbort = () => {
+    clearTimeout(overallTimer);
+    if (overallSettled) return;
+    overallSettled = true;
+    try { jumpRef.conn?.end(); } catch { /* already closed */ }
+    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
+    overallReject(new Error('SSH 命令已取消'));
+  };
+  if (signal?.aborted) {
+    clearTimeout(overallTimer);
+    throw new Error('SSH 命令已取消');
+  }
+  signal?.addEventListener('abort', onOverallAbort, { once: true });
+  const clearOverall = () => {
+    clearTimeout(overallTimer);
+    signal?.removeEventListener('abort', onOverallAbort);
+  };
+
+  const connectPromise = connectWithJump(built.config, connectParams?.proxyJump, jumpAuth);
+  const { conn, jumpConn, error } = await Promise.race([connectPromise, overallTimeout]);
+  if (error) { clearOverall(); throw new Error(error); }
+  jumpRef.conn = conn;
+  jumpRef.jumpConn = jumpConn;
+  clearOverall();
+  // race 落败方 connectPromise 若之后 resolve，其连接无人关闭 —— end 之（幂等）。
+  connectPromise.then((r) => {
+    if (r && r.conn && r.conn !== conn) { try { r.conn.end(); } catch { /* already closed */ } }
+    if (r && r.jumpConn && r.jumpConn !== jumpConn) { try { r.jumpConn.end(); } catch { /* already closed */ } }
+  }).catch(() => {});
+
+  return new Promise((resolve, reject) => {
+    // 输出缓冲上限（对齐 toolBash 的 50 KiB outputCap）：超过后保留头部并停止累积，
+    // 防止失控远程命令（yes / cat /dev/zero）耗尽主进程内存。截断标记随结果返回。
+    const MAX_EXEC_BUFFER = 50 * 1024;
+    let stdout = '';
+    let stderr = '';
+    let truncated = false;
+    let settled = false;
+    let timer = null;
+    const append = (buf, chunk) => {
+      if (buf.length >= MAX_EXEC_BUFFER) {
+        truncated = true;
+        return buf;
+      }
+      if (buf.length + chunk.length > MAX_EXEC_BUFFER) {
+        truncated = true;
+        return buf + chunk.slice(0, MAX_EXEC_BUFFER - buf.length);
+      }
+      return buf + chunk;
+    };
+    const partial = () =>
+      stdout + (stderr ? '\n' + stderr : '') + (truncated ? '\n…[输出超限被截断]' : '');
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+      try { conn.end(); } catch { /* already closed */ }
+      if (jumpConn) { try { jumpConn.end(); } catch { /* already closed */ } }
+      fn(value);
+    };
+    const onAbort = () => finish(reject, new Error('SSH 命令已取消'));
+
+    if (signal?.aborted) return finish(reject, new Error('SSH 命令已取消'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    timer = setTimeout(() => {
+      const partialOut = partial();
+      finish(reject, new Error(
+        `SSH 命令执行超时（${Math.round(timeoutMs / 1000)}s）` +
+        (partialOut ? `\n\n已捕获的部分输出：\n${partialOut}` : '')
+      ));
+    }, timeoutMs);
+
+    conn.on('error', (e) => finish(reject, new Error(String(e?.message || e))));
+    conn.exec(command, (err, stream) => {
+      if (err) return finish(reject, new Error(String(err?.message || err)));
+      stream.on('data', (d) => { stdout = append(stdout, d.toString()); });
+      stream.on('stderr', (d) => { stderr = append(stderr, d.toString()); });
+      // 远端未传 exit status（被信号杀死/通道异常）时 code 为 null —— 用 -1 标记未知，
+      // 与 runCommandInSshSession / toolBash 的异常退出约定一致，不伪装成成功（0）。
+      stream.on('close', (code) => finish(resolve, {
+        stdout,
+        stderr,
+        exitCode: code == null ? -1 : code,
+        truncated,
+      }));
+    });
+  });
+}
 module.exports = {
   registerSshHandlers,
   killAllSshSessions,
   runCommandInSshSession,
   stopSshActiveCapture,
   isSshSessionBusy,
+  execOnSavedHost,
 };

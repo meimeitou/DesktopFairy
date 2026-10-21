@@ -119,6 +119,58 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
   );
 }
 
+function SshExecToolBody({ msg }: { msg: ChatMsg }) {
+  const input = getToolInput(msg.toolName || "ssh_exec", msg.toolArgs);
+  const host = typeof input.host === "string" ? input.host : "";
+  const command = typeof input.command === "string" ? input.command : "";
+  const output = parseToolOutput(msg.toolResultPreview);
+  const outObj =
+    output && typeof output === "object"
+      ? (output as Record<string, unknown>)
+      : null;
+  const outText =
+    typeof output === "string"
+      ? output
+      : typeof outObj?.output === "string"
+        ? outObj.output
+        : typeof outObj?.error === "string"
+          ? outObj.error
+          : "";
+  const exitCode =
+    typeof outObj?.exitCode === "number" ? outObj.exitCode : undefined;
+  const isDone = msg.toolStatus === "done";
+
+  return (
+    <div className="agent-tool-body">
+      {host && (
+        <div className="agent-tool-section-label">主机：{host}</div>
+      )}
+      {command && (
+        <TerminalOutput content={command} commandMode />
+      )}
+      {(outText ||
+        msg.toolStatus === "running" ||
+        msg.toolStatus === "streaming") && (
+        <>
+          <div className="agent-tool-section-label">输出</div>
+          <TerminalOutput content={outText || "…"} />
+        </>
+      )}
+      {isDone && exitCode !== undefined && (
+        <div className="agent-tool-exit-line">
+          <span
+            className={`agent-tool-exit-badge${
+              exitCode === 0 ? " agent-tool-exit-ok" : " agent-tool-exit-err"
+            }`}
+          >
+            exit: {exitCode}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReadToolBody({ msg }: { msg: ChatMsg }) {
   const input = getToolInput(msg.toolName || "", msg.toolArgs);
   const path = extractFilePath(input);
@@ -291,11 +343,65 @@ const LEGACY_TOOL_ID_MAP: Record<string, string> = {
   Grep: "grep",
 };
 
+function SshHostsToolBody({ msg }: { msg: ChatMsg }) {
+  const input = getToolInput(msg.toolName || "ssh_hosts", msg.toolArgs);
+  const action = typeof input.action === "string" ? input.action : "";
+  const fields = (input.fields ?? {}) as Record<string, unknown>;
+  const host =
+    (typeof input.host === "string" && input.host) ||
+    (typeof fields.name === "string" ? String(fields.name) : "");
+  const fieldsJson =
+    input.fields && typeof input.fields === "object"
+      ? JSON.stringify(input.fields)
+      : "";
+  const output = parseToolOutput(msg.toolResultPreview);
+  const outObj =
+    output && typeof output === "object"
+      ? (output as Record<string, unknown>)
+      : null;
+  const message =
+    typeof outObj?.message === "string"
+      ? outObj.message
+      : typeof outObj?.error === "string"
+        ? outObj.error
+        : "";
+  const hosts = Array.isArray(outObj?.hosts)
+    ? (outObj.hosts as Record<string, unknown>[])
+    : null;
+  return (
+    <div className="agent-tool-body">
+      <div className="agent-tool-section-label">操作：{action}</div>
+      {host && <div className="agent-tool-section-label">主机：{host}</div>}
+      {fieldsJson && <TerminalOutput content={fieldsJson} commandMode />}
+      {hosts && hosts.length > 0 && (
+        <TerminalOutput
+          content={hosts
+            .map(
+              (h) =>
+                `${String(h.name)} (${String(h.user || "?")}@${String(h.host || "?")}:${String(h.port || 22)})${h.credential ? ` [${String(h.credential)}]` : ""}`,
+            )
+            .join("\n")}
+        />
+      )}
+      {(message ||
+        msg.toolStatus === "running" ||
+        msg.toolStatus === "streaming") && (
+        <>
+          <div className="agent-tool-section-label">结果</div>
+          <TerminalOutput content={message || "…"} />
+        </>
+      )}
+    </div>
+  );
+}
+
+
 function renderToolBody(msg: ChatMsg) {
   const raw = msg.toolName || "";
   const name = LEGACY_TOOL_ID_MAP[raw] || raw;
   if (name === "bash") return <BashToolBody msg={msg} />;
-  if (name === "Terminal") return <TerminalToolBody msg={msg} />;
+  if (name === "ssh_exec") return <SshExecToolBody msg={msg} />;
+  if (name === "ssh_hosts") return <SshHostsToolBody msg={msg} />;
   if (name === "Skill") return <SkillToolBody msg={msg} />;
   if (name === "Skills") return <SkillsToolBody msg={msg} />;
   if (name === "AskUserQuestion") return <AskUserQuestionBody msg={msg} />;

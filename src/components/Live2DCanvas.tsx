@@ -27,6 +27,31 @@ type Status = "loading" | "ready" | "error";
 const api = window.electronAPI;
 const EYE_TRACK_INTERVAL_MS = 200;
 
+let cubismCorePromise: Promise<void> | null = null;
+
+/** Cubism core is only needed by the resident pet window. */
+function ensureCubismCore(): Promise<void> {
+  if (typeof Live2DCubismCore !== "undefined") return Promise.resolve();
+  if (!cubismCorePromise) {
+    cubismCorePromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.dataset.cubismCore = "true";
+      script.async = true;
+      script.src = new URL(
+        `${import.meta.env.BASE_URL}live2dcubismcore.min.js`,
+        window.location.href,
+      ).href;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        cubismCorePromise = null;
+        reject(new Error("Live2D Cubism Core 加载失败"));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return cubismCorePromise;
+}
+
 export default function Live2DCanvas({
   modelPath,
   modelScale = 1.0,
@@ -196,6 +221,8 @@ export default function Live2DCanvas({
 
     (async () => {
       try {
+        await ensureCubismCore();
+        if (cancelled) return;
         controller = new Live2DController(canvas);
         controllerRef.current = controller;
         await controller.initialize(modelPath);

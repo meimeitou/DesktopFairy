@@ -59,7 +59,7 @@ function buildToolListPrompt(enabledToolNames, context) {
   return visible.length > 0 ? visible.join('/') : '';
 }
 
-function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = []) {
+function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = [], sshHosts = []) {
   const parts = [formatSystemDateLine()];
   if (agentConfig?.soul?.trim()) {
     parts.push(agentConfig.soul.trim());
@@ -109,6 +109,30 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
     parts.push(
       '## 终端操作\n\n你可以使用 Terminal 工具将 shell 命令发送到用户当前可见的终端执行，命令输出会实时显示在用户终端中，同时返回给你用于判断下一步操作。在当前终端会话中，所有 shell 命令都必须通过 Terminal 工具执行；发送命令前确保意图明确，命令执行结果（包括 exit code）会返回给你。过长的输出会被截断，如需完整输出请缩小命令范围。'
     );
+    const hasSshExec = enabledToolNames.includes('ssh_exec');
+    const hasSshHosts = enabledToolNames.includes('ssh_hosts');
+    if ((hasSshExec || hasSshHosts) && Array.isArray(sshHosts) && sshHosts.length > 0) {
+      const hostLines = sshHosts
+        .filter((h) => h && h.name)
+        .map((h) => {
+          const name = String(h.name).replace(/\s+/g, ' ').trim();
+          const user = String(h.user || '?').replace(/\s+/g, ' ').trim();
+          const host = String(h.host || '?').replace(/\s+/g, ' ').trim();
+          return `- ${name} (${user}@${host}:${h.port || 22})`;
+        })
+        .join('\n');
+      if (hostLines) {
+        let section =
+          '## SSH 远程执行\n\n你可以使用 ssh_exec 工具在以下已保存主机上执行一次性命令：\n' +
+          hostLines +
+          '\n\n主机名不唯一时会要求澄清。命令在远程机器上执行，与本地环境无关。';
+        if (hasSshHosts) {
+          section +=
+            '\n\n你可以使用 ssh_hosts 工具管理（新增/更新/删除/列出）已保存主机。凭据不可通过 agent 管理——只能引用已存在凭据的 credentialId。';
+        }
+        parts.push(section);
+      }
+    }
     parts.push(buildTerminalEnvSection(terminalState));
   }
   const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
@@ -173,7 +197,7 @@ function registerAgentHandlers(ipcMain, deps) {
       const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
       const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
       const enabledToolNames = builtinTools.map((t) => t.function.name);
-      const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames);
+      const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames, settingsSnapshot.getSnapshot()?.sshHosts || []);
       const apiMessages = (messages || []).filter((m) => m.role !== 'system');
       const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
       const reasoningEffort = agentConfig.reasoningEffort;

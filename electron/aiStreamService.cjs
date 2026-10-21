@@ -133,7 +133,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
         abortIfNeeded(signal);
 
         const enabledToolNames = builtinTools.map((t) => t.function.name);
-        const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames)
+        const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames, settingsSnapshot.getSnapshot()?.sshHosts || [])
           + knowledgeSystemSuffix;
 
         const toolDeps = buildAgentToolDeps({

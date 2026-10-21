@@ -1,20 +1,20 @@
 import { Button, Icon } from "animal-island-ui";
-import { memo, type MouseEvent } from "react";
+import { memo, useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   Streamdown,
   CodeBlock,
   CodeBlockCopyButton,
   type Components,
   type CustomRendererProps,
+  type DiagramPlugin,
+  type MathPlugin,
   type PluginConfig,
   type StreamdownTranslations,
 } from "streamdown";
 import { code } from "@streamdown/code";
 import { cjk } from "@streamdown/cjk";
-import { createMathPlugin } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { normalizeGfmTables } from "./markdownPrepare";
-import "katex/dist/katex.min.css";
+import { stashTerminalCommand } from "../../shared/panelHandoff";
 import "streamdown/styles.css";
 import "./ChatMarkdown.css";
 
@@ -39,9 +39,8 @@ function ShellCodeRenderer({
   isIncomplete,
 }: CustomRendererProps) {
   const handleRunInTerminal = () => {
-    window.dispatchEvent(
-      new CustomEvent("terminal:run-command", { detail: { command: src } }),
-    );
+    stashTerminalCommand(src);
+    window.dispatchEvent(new CustomEvent("terminal:run-command"));
   };
   return (
     <div className="sd-shell-block">
@@ -66,13 +65,43 @@ function ShellCodeRenderer({
   );
 }
 
-const plugins: PluginConfig = {
+const basePlugins: PluginConfig = {
   code,
   cjk,
-  math: createMathPlugin({ singleDollarTextMath: false }),
-  mermaid,
   renderers: [{ language: SHELL_LANGS, component: ShellCodeRenderer }],
 };
+
+const MATH_RE = /\$\$|\\\[|\\\(/;
+const MERMAID_RE = /```\s*mermaid\b/;
+
+let mathPluginCache: MathPlugin | null = null;
+let mermaidPluginCache: DiagramPlugin | null = null;
+let mathPluginPromise: Promise<MathPlugin> | null = null;
+let mermaidPluginPromise: Promise<DiagramPlugin> | null = null;
+
+function loadMathPlugin(): Promise<MathPlugin> {
+  if (mathPluginCache) return Promise.resolve(mathPluginCache);
+  if (!mathPluginPromise) {
+    mathPluginPromise = import("@streamdown/math").then(async (mod) => {
+      await import("katex/dist/katex.min.css");
+      const plugin = mod.createMathPlugin({ singleDollarTextMath: false });
+      mathPluginCache = plugin;
+      return plugin;
+    });
+  }
+  return mathPluginPromise;
+}
+
+function loadMermaidPlugin(): Promise<DiagramPlugin> {
+  if (mermaidPluginCache) return Promise.resolve(mermaidPluginCache);
+  if (!mermaidPluginPromise) {
+    mermaidPluginPromise = import("@streamdown/mermaid").then((mod) => {
+      mermaidPluginCache = mod.mermaid;
+      return mod.mermaid;
+    });
+  }
+  return mermaidPluginPromise;
+}
 
 const translations: Partial<StreamdownTranslations> = {
   copyCode: "复制",
@@ -137,6 +166,46 @@ const components: Components = {
 };
 
 function ChatMarkdown({ content, streaming }: Props) {
+  const wantMath = MATH_RE.test(content);
+  const wantMermaid = MERMAID_RE.test(content);
+  const [mathPlugin, setMathPlugin] = useState<MathPlugin | null>(
+    () => mathPluginCache,
+  );
+  const [mermaidPlugin, setMermaidPlugin] = useState<DiagramPlugin | null>(
+    () => mermaidPluginCache,
+  );
+
+  useEffect(() => {
+    if (!wantMath || mathPlugin) return;
+    let cancelled = false;
+    void loadMathPlugin().then((plugin) => {
+      if (!cancelled) setMathPlugin(plugin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [wantMath, mathPlugin]);
+
+  useEffect(() => {
+    if (!wantMermaid || mermaidPlugin) return;
+    let cancelled = false;
+    void loadMermaidPlugin().then((plugin) => {
+      if (!cancelled) setMermaidPlugin(plugin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [wantMermaid, mermaidPlugin]);
+
+  const plugins = useMemo(() => {
+    if (!mathPlugin && !mermaidPlugin) return basePlugins;
+    return {
+      ...basePlugins,
+      ...(mathPlugin ? { math: mathPlugin } : {}),
+      ...(mermaidPlugin ? { mermaid: mermaidPlugin } : {}),
+    };
+  }, [mathPlugin, mermaidPlugin]);
+
   if (!content && streaming) return null;
 
   return (

@@ -129,6 +129,20 @@ const DF_EXTRA_BUILTIN_TOOLS = [
     defaultPrompt: true,
   },
   {
+    id: 'ssh_exec',
+    name: 'ssh_exec',
+    description:
+      'Runs a one-shot shell command on a saved SSH host by name and returns stdout/stderr (merged) plus exitCode, then disconnects. `host` is the saved host name (exact match; ambiguous names are rejected with candidates). `timeout` in seconds (default 30, max 600). Hosts are listed in the system prompt. Not a terminal session — no interactivity.',
+    category: 'shell',
+  },
+  {
+    id: 'ssh_hosts',
+    name: 'ssh_hosts',
+    description:
+      'Manages saved SSH hosts. Actions: "list" (read-only), "add" (create a host), "update" (modify fields of an existing host by exact name), "delete" (remove a host by exact name). Credentials are never managed here — reference an existing credential by credentialId only; inline password/privateKeyPath fields are rejected. Write actions require user approval.',
+    category: 'shell',
+  },
+  {
     id: 'AskUserQuestion',
     name: 'AskUserQuestion',
     description: `Asks the user clarifying questions during execution and waits for their answers.
@@ -303,6 +317,33 @@ function getOpenAiToolParameters(toolId) {
           timeout: { type: 'number' },
         },
         required: ['command'],
+      };
+    case 'ssh_exec':
+      return {
+        type: 'object',
+        properties: {
+          host: { type: 'string', description: '已保存 SSH 主机的名称（精确匹配）' },
+          command: { type: 'string', description: '要在远程主机上执行的 shell 命令' },
+          timeout: { type: 'number', description: '超时秒数，默认 30，最大 600' },
+        },
+        required: ['host', 'command'],
+      };
+    case 'ssh_hosts':
+      return {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['list', 'add', 'update', 'delete'] },
+          host: {
+            type: 'string',
+            description: '目标主机条目的 name 字段（update/delete 用，精确匹配）',
+          },
+          fields: {
+            type: 'object',
+            description:
+              'add 的完整字段 / update 的部分字段。可用：name, host, port, user, authMethod(auto|password|privateKey), credentialId, group, proxyJump, proxyJumpAuthMethod, proxyJumpCredentialId。禁止 password/privateKeyPath 等内联凭据字段。',
+          },
+        },
+        required: ['action'],
       };
     case 'AskUserQuestion':
       return {

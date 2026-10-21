@@ -13,6 +13,7 @@ import {
 } from "../shared/knowledge";
 import { getEmbeddingApiConfig, type AppSettings } from "../shared/settings";
 import { setSettings, useSettings } from "../shared/settingsStore";
+import { takeKnowledgeReveals } from "../shared/panelHandoff";
 import ChatMarkdown from "../components/chat/ChatMarkdown";
 import RecallTestModal from "../components/knowledge/RecallTestModal";
 import KnowledgeSettingsSection from "../components/settings/KnowledgeSettingsSection";
@@ -176,13 +177,14 @@ export default function KnowledgePage({
   ]);
 
   useEffect(() => {
-    const onReveal = (e: Event) => {
-      const detail = (e as CustomEvent<{ baseId?: string; itemId?: string }>)
-        .detail;
-      if (detail?.baseId) setActiveId(detail.baseId);
-      if (detail?.itemId) setFocusItemId(detail.itemId);
+    const onReveal = () => {
+      for (const detail of takeKnowledgeReveals()) {
+        if (detail.baseId) setActiveId(detail.baseId);
+        if (detail.itemId) setFocusItemId(detail.itemId);
+      }
     };
     window.addEventListener("knowledge:reveal", onReveal);
+    onReveal();
     return () => window.removeEventListener("knowledge:reveal", onReveal);
   }, []);
 

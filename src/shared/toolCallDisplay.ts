@@ -12,7 +12,8 @@ const TOOL_LABELS: Record<string, string> = {
   Skill: "加载技能",
   Skills: "管理技能",
   McpManager: "管理 MCP",
-  AskUserQuestion: "向用户提问",
+  ssh_exec: "SSH 远程执行",
+  ssh_hosts: "SSH 主机管理",
 };
 
 const TOOL_ICONS: Record<string, string> = {
@@ -28,8 +29,8 @@ const TOOL_ICONS: Record<string, string> = {
   TodoWrite: "☑",
   Skill: "🎯",
   Skills: "📚",
-  McpManager: "🔌",
-  AskUserQuestion: "?",
+  ssh_exec: "⌘",
+  ssh_hosts: "🖥",
 };
 
 type ToolCategory = "shell" | "file" | "search" | "web" | "other";

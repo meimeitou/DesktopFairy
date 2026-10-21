@@ -28,6 +28,22 @@ export function getToolInput(
 
 export function getToolCommandLine(toolName: string, argsJson?: string): string {
   const args = getToolInput(toolName, argsJson);
+  // ssh_exec：命令行摘要带目标主机 —— 审批卡片必须能看到会打到哪台机器。
+  if (toolName === "ssh_exec") {
+    const host = typeof args.host === "string" ? args.host.trim() : "";
+    const cmd = extractCommand(args);
+    if (host && cmd) return `[${host}] ${cmd}`;
+    if (cmd) return cmd;
+  }
+  // ssh_hosts：`action host` 摘要 —— 审批卡头部直接显示要做的操作。
+  if (toolName === "ssh_hosts") {
+    const action = typeof args.action === "string" ? args.action.trim() : "";
+    const fields = (args.fields ?? {}) as Record<string, unknown>;
+    const host =
+      (typeof args.host === "string" && args.host.trim()) ||
+      (typeof fields.name === "string" ? fields.name.trim() : "");
+    if (action) return host ? `${action} ${host}` : action;
+  }
   const fromFields = extractCommand(args);
   if (fromFields) return fromFields;
 

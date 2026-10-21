@@ -33,6 +33,7 @@ import {
   type SshRecentEntry,
 } from "../shared/terminalSettings";
 import type { CursorStyle } from "../shared/terminalSettings";
+import { takeTerminalCommands } from "../shared/panelHandoff";
 
 const api = window.electronAPI;
 
@@ -764,13 +765,15 @@ export default function TerminalPage({
   }
 
   useEffect(() => {
-    const handler = (e: Event) => {
-      const { command } = (e as CustomEvent<{ command?: string }>).detail ?? {};
-      if (!command || !activeTabId) return;
-      pasteCommandToTab(activeTabId, command);
+    const flush = () => {
+      if (!activeTabId) return;
+      for (const command of takeTerminalCommands()) {
+        pasteCommandToTab(activeTabId, command);
+      }
     };
-    window.addEventListener("terminal:run-command", handler);
-    return () => window.removeEventListener("terminal:run-command", handler);
+    window.addEventListener("terminal:run-command", flush);
+    flush();
+    return () => window.removeEventListener("terminal:run-command", flush);
   }, [activeTabId, pasteCommandToTab]);
   const handleAddTab = useCallback(() => {
     const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;

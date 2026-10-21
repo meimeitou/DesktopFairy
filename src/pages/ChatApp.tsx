@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Background, Button, Icon } from "animal-island-ui";
-import ChatPage from "./ChatPage";
-import SettingsPage from "./SettingsPage";
-import TerminalPage from "./TerminalPage";
-import KnowledgePage from "./KnowledgePage";
 import "./ChatApp.css";
+
+const ChatPage = lazy(() => import("./ChatPage"));
+const SettingsPage = lazy(() => import("./SettingsPage"));
+const TerminalPage = lazy(() => import("./TerminalPage"));
+const KnowledgePage = lazy(() => import("./KnowledgePage"));
 
 type AppView = "chat" | "terminal" | "settings" | "knowledge";
 
@@ -46,7 +47,19 @@ function CloseIcon() {
 
 export default function ChatApp() {
   const [view, setView] = useState<AppView>(initialView);
+  const [mountedViews, setMountedViews] = useState<ReadonlySet<AppView>>(
+    () => new Set<AppView>([initialView]),
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    setMountedViews((prev) => {
+      if (prev.has(view)) return prev;
+      const next = new Set(prev);
+      next.add(view);
+      return next;
+    });
+  }, [view]);
 
   useEffect(() => {
     document.title = " ";
@@ -147,30 +160,46 @@ export default function ChatApp() {
       </header>
 
       <main className="chat-app-body">
-        <div
-          className={`chat-app-panel${view === "chat" ? "" : " chat-app-panel-hidden"}`}
-          aria-hidden={view !== "chat"}
-        >
-          <ChatPage embedded />
-        </div>
-        <div
-          className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}
-          aria-hidden={view !== "terminal"}
-        >
-          <TerminalPage isActive={view === "terminal"} />
-        </div>
-        <div
-          className={`chat-app-panel${view === "knowledge" ? "" : " chat-app-panel-hidden"}`}
-          aria-hidden={view !== "knowledge"}
-        >
-          <KnowledgePage isActive={view === "knowledge"} />
-        </div>
-        <div
-          className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}
-          aria-hidden={view !== "settings"}
-        >
-          <SettingsPage embedded />
-        </div>
+        {mountedViews.has("chat") && (
+          <div
+            className={`chat-app-panel${view === "chat" ? "" : " chat-app-panel-hidden"}`}
+            aria-hidden={view !== "chat"}
+          >
+            <Suspense fallback={null}>
+              <ChatPage embedded />
+            </Suspense>
+          </div>
+        )}
+        {mountedViews.has("terminal") && (
+          <div
+            className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}
+            aria-hidden={view !== "terminal"}
+          >
+            <Suspense fallback={null}>
+              <TerminalPage isActive={view === "terminal"} />
+            </Suspense>
+          </div>
+        )}
+        {mountedViews.has("knowledge") && (
+          <div
+            className={`chat-app-panel${view === "knowledge" ? "" : " chat-app-panel-hidden"}`}
+            aria-hidden={view !== "knowledge"}
+          >
+            <Suspense fallback={null}>
+              <KnowledgePage isActive={view === "knowledge"} />
+            </Suspense>
+          </div>
+        )}
+        {mountedViews.has("settings") && (
+          <div
+            className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}
+            aria-hidden={view !== "settings"}
+          >
+            <Suspense fallback={null}>
+              <SettingsPage embedded />
+            </Suspense>
+          </div>
+        )}
       </main>
     </Background>
   );
