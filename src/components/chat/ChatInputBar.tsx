@@ -51,9 +51,11 @@ interface Props {
   onReasoningEffortChange: (value: ReasoningEffort) => void;
   onSend: () => void;
   onStop: () => void;
-  onClearContext: () => void;
-  onClearMessages: () => void;
-  onCompact: () => void;
+  onClearContext?: () => void;
+  onClearMessages?: () => void;
+  onCompact?: () => void;
+  /** Hide upload/screenshot/preview (conversations with no local file semantics). */
+  attachmentsEnabled?: boolean;
   slashCommands?: SlashCommand[];
   onSlashCommand?: (cmd: SlashCommand) => void;
   /** 递增时把焦点收回输入框（划词预填后使用） */
@@ -83,6 +85,7 @@ function ChatInputBar({
   onClearContext,
   onClearMessages,
   onCompact,
+  attachmentsEnabled = true,
   slashCommands,
   onSlashCommand,
   focusSignal,
@@ -138,7 +141,7 @@ function ChatInputBar({
 
   const addAttachments = useCallback(
     (files: ChatAttachment[]) => {
-      if (files.length === 0) return;
+      if (!attachmentsEnabled || files.length === 0) return;
       const supported = files.filter((f) => f.kind !== "other");
       if (supported.length < files.length) {
         Notification.warning(UNSUPPORTED_FILES_HINT);
@@ -151,7 +154,7 @@ function ChatInputBar({
       }
       onAttachmentsChange(next);
     },
-    [attachments, onAttachmentsChange],
+    [attachments, attachmentsEnabled, onAttachmentsChange],
   );
 
   const resolvePathForFile = (file: File): string => {
@@ -339,7 +342,7 @@ function ChatInputBar({
         </div>
       )}
       <AttachmentPreview
-        files={attachments}
+        files={attachmentsEnabled ? attachments : []}
         onRemove={(id) =>
           onAttachmentsChange(attachments.filter((f) => f.id !== id))
         }
@@ -369,26 +372,30 @@ function ChatInputBar({
 
       <div className="chat-input-toolbar">
         <div className="chat-input-tools-left">
-          <Tooltip title={"上传文件"}>
-            <Button
-              type="text"
-              size="small"
-              className="chat-tool-btn"
-              icon={<Icon icon={UploadIcon} size={16} />}
-              onClick={handleSelectFiles}
-              disabled={composerDisabled}
-            />
-          </Tooltip>
-          <Tooltip title={"区域截图"}>
-            <Button
-              type="text"
-              size="small"
-              className="chat-tool-btn"
-              icon={<Icon name="Camera" size={16} />}
-              onClick={handleScreenshot}
-              disabled={composerDisabled}
-            />
-          </Tooltip>
+          {attachmentsEnabled && (
+            <Tooltip title={"上传文件"}>
+              <Button
+                type="text"
+                size="small"
+                className="chat-tool-btn"
+                icon={<Icon icon={UploadIcon} size={16} />}
+                onClick={handleSelectFiles}
+                disabled={composerDisabled}
+              />
+            </Tooltip>
+          )}
+          {attachmentsEnabled && (
+            <Tooltip title={"区域截图"}>
+              <Button
+                type="text"
+                size="small"
+                className="chat-tool-btn"
+                icon={<Icon name="Camera" size={16} />}
+                onClick={handleScreenshot}
+                disabled={composerDisabled}
+              />
+            </Tooltip>
+          )}
           {onKnowledgeBaseIdsChange && (
             <KnowledgePicker
               selectedIds={knowledgeBaseIds || []}
@@ -396,36 +403,42 @@ function ChatInputBar({
               disabled={composerDisabled}
             />
           )}
-          <Tooltip title={"清除上下文"}>
-            <Button
-              type="text"
-              size="small"
-              className="chat-tool-btn"
-              icon={<Icon icon={EraserIcon} size={16} />}
-              onClick={onClearContext}
-              disabled={composerDisabled || !hasMessages}
-            />
-          </Tooltip>
-          <Tooltip title={"压缩上下文"}>
-            <Button
-              type="text"
-              size="small"
-              className="chat-tool-btn"
-              icon={<Icon icon={CompactIcon} size={16} />}
-              onClick={onCompact}
-              disabled={composerDisabled || !hasMessages}
-            />
-          </Tooltip>
-          <Tooltip title={"清空消息"}>
-            <Button
-              type="text"
-              size="small"
-              className="chat-tool-btn"
-              icon={<Icon name="Trash" size={16} />}
-              onClick={onClearMessages}
-              disabled={composerDisabled || !hasMessages}
-            />
-          </Tooltip>
+          {onClearContext && (
+            <Tooltip title={"清除上下文"}>
+              <Button
+                type="text"
+                size="small"
+                className="chat-tool-btn"
+                icon={<Icon icon={EraserIcon} size={16} />}
+                onClick={onClearContext}
+                disabled={composerDisabled || !hasMessages}
+              />
+            </Tooltip>
+          )}
+          {onCompact && (
+            <Tooltip title={"压缩上下文"}>
+              <Button
+                type="text"
+                size="small"
+                className="chat-tool-btn"
+                icon={<Icon icon={CompactIcon} size={16} />}
+                onClick={onCompact}
+                disabled={composerDisabled || !hasMessages}
+              />
+            </Tooltip>
+          )}
+          {onClearMessages && (
+            <Tooltip title={"清空消息"}>
+              <Button
+                type="text"
+                size="small"
+                className="chat-tool-btn"
+                icon={<Icon name="Trash" size={16} />}
+                onClick={onClearMessages}
+                disabled={composerDisabled || !hasMessages}
+              />
+            </Tooltip>
+          )}
           {showModeSelector && (
             <ChatModeSelector
               mode={chatMode}

@@ -26,7 +26,6 @@
 const fs = require('fs');
 const path = require('path');
 const snapshots = require('./agentSnapshotStore.cjs');
-
 const SECTION_RE = /^\[([^\[\]\n]+)#([0-9A-Fa-f]{4})\]\s*$/;
 
 function err(message) {
@@ -490,11 +489,18 @@ function applyOps(plan, absPath, ctx) {
 
 // process-level named registers (pi session semantics); anonymous is batch-local
 const namedRegisters = new Map();
+/**
+ * Remote (`ssh_edit`) registers live in their own map so a local `CUT @a`
+ * can never be pasted into a remote file (and vice versa). They still persist
+ * across remote calls, matching the sync semantics.
+ */
+const asyncNamedRegisters = new Map();
 
-function applyHashlinePatch(input, { resolvePath } = {}) {
+function applyHashlinePatch(input, { resolvePath, snapshotKey } = {}) {
   if (typeof resolvePath !== 'function') {
     throw err('resolvePath callback required');
   }
+  const skey = typeof snapshotKey === 'function' ? snapshotKey : (p) => p;
   const sections = parsePatch(input);
 
   // merge same-path sections (original anchors apply together)
@@ -519,9 +525,10 @@ function applyHashlinePatch(input, { resolvePath } = {}) {
   const stagedNamed = new Map();
   const ctx = {
     snapshotFor(absPath, tag, rawPath) {
-      const snap = snapshots.getSnapshot(absPath, tag);
+      const key = skey(absPath);
+      const snap = snapshots.getSnapshot(key, tag);
       if (snap) return snap;
-      if (!snapshots.latestSnapshot(absPath)) {
+      if (!snapshots.latestSnapshot(key)) {
         throw err(`no snapshot for ${rawPath}; read it first`);
       }
       throw err(`stale tag; re-read ${rawPath}`);
@@ -562,7 +569,7 @@ function applyHashlinePatch(input, { resolvePath } = {}) {
     if (plan.snap.content !== currentNorm) {
       // stale recovery: some other recorded version matches the current file
       const matching = snapshots
-        .getVersions(absPath)
+        .getVersions(skey(absPath))
         .find((v) => v.content === currentNorm);
       if (!matching) throw err(`stale tag; re-read ${plan.section.rawPath}`);
       // re-anchor onto the matching version for application
@@ -595,7 +602,7 @@ function applyHashlinePatch(input, { resolvePath } = {}) {
 
     if (section.rem) {
       fs.unlinkSync(absPath);
-      snapshots.dropSnapshot(absPath);
+      snapshots.dropSnapshot(skey(absPath));
       reports.push({
         rawPath: section.rawPath, absPath, finalPath: absPath,
         rem: true, opCount: section.ops.length, warnings,
@@ -615,14 +622,14 @@ function applyHashlinePatch(input, { resolvePath } = {}) {
       seen = snapshots.mergeRange(seen, cs, ce);
     }
     const newContent = joinContent(outLines, plan.trailingNewline);
-    const tag = snapshots.recordSnapshot(absPath, newContent, seen);
+    const tag = snapshots.recordSnapshot(skey(absPath), newContent, seen);
 
     let finalPath = absPath;
     if (section.mv) {
       const destAbs = resolvePath(section.mv);
       fs.mkdirSync(path.dirname(destAbs), { recursive: true });
       fs.renameSync(absPath, destAbs);
-      snapshots.moveSnapshot(absPath, destAbs);
+      snapshots.moveSnapshot(skey(absPath), skey(destAbs));
       finalPath = destAbs;
     }
 
@@ -636,6 +643,174 @@ function applyHashlinePatch(input, { resolvePath } = {}) {
 
   // Publish staged named registers now that writes landed.
   for (const [name, value] of stagedNamed) namedRegisters.set(name, value);
+
+  return reports;
+}
+
+/**
+ * Async variant with injected I/O (SFTP adapters for ssh_edit). Shares
+ * parsePatch/planSection/applyOps with the sync entry; plan-first semantics
+ * are identical — any section failing leaves the target untouched.
+ */
+async function applyHashlinePatchAsync(
+  input,
+  {
+    resolvePath,
+    snapshotKey,
+    readFile,
+    writeFile,
+    unlink,
+    rename,
+    mkdir,
+  } = {},
+) {
+  if (typeof resolvePath !== 'function') throw err('resolvePath callback required');
+  if (typeof readFile !== 'function' || typeof writeFile !== 'function') {
+    throw err('readFile/writeFile callbacks required');
+  }
+  const skey = typeof snapshotKey === 'function' ? snapshotKey : (p) => p;
+  const unlinkFn = typeof unlink === 'function'
+    ? unlink
+    : async (p) => { fs.unlinkSync(p); };
+  const renameFn = typeof rename === 'function'
+    ? rename
+    : (from, to) => { fs.renameSync(from, to); };
+  const mkdirFn = typeof mkdir === 'function'
+    ? mkdir
+    : async (p) => { fs.mkdirSync(p, { recursive: true }); };
+
+  const sections = parsePatch(input);
+
+  const byPath = new Map();
+  const order = [];
+  for (const sec of sections) {
+    const absPath = resolvePath(sec.rawPath);
+    if (!byPath.has(absPath)) {
+      byPath.set(absPath, {
+        absPath, rawPath: sec.rawPath, tag: sec.tag, ops: [],
+        rem: false, mv: null, headerLine: sec.headerLine,
+      });
+      order.push(absPath);
+    }
+    const merged = byPath.get(absPath);
+    merged.ops.push(...sec.ops);
+    if (sec.rem) merged.rem = true;
+    if (sec.mv) merged.mv = sec.mv;
+  }
+
+  let anonymous = null;
+  const stagedNamed = new Map();
+  const ctx = {
+    snapshotFor(absPath, tag, rawPath) {
+      const key = skey(absPath);
+      const snap = snapshots.getSnapshot(key, tag);
+      if (snap) return snap;
+      if (!snapshots.latestSnapshot(key)) {
+        throw err(`no snapshot for ${rawPath}; read it first`);
+      }
+      throw err(`stale tag; re-read ${rawPath}`);
+    },
+    getRegister(name, lineNo) {
+      if (name === null) {
+        if (anonymous === null) {
+          throw err(`line ${lineNo}: anonymous paste before any CUT in this call`);
+        }
+        return anonymous;
+      }
+      const staged = stagedNamed.get(name);
+      if (staged) return staged;
+      if (asyncNamedRegisters.has(name)) return asyncNamedRegisters.get(name);
+      throw err(`line ${lineNo}: unknown register @${name}`);
+    },
+    setRegister(name, captured) {
+      if (name === null) anonymous = captured;
+      else stagedNamed.set(name, captured);
+    },
+  };
+
+  const plans = order.map((absPath) => planSection(byPath.get(absPath), absPath, ctx));
+
+  for (const plan of plans) {
+    const absPath = plan.section.absPath;
+    let current;
+    try {
+      current = await readFile(absPath);
+    } catch (e) {
+      const reason = e?.code === 'ENOENT' ? 'file not found' : String(e?.message || e);
+      throw err(`cannot read ${plan.section.rawPath}: ${reason}`);
+    }
+    const currentNorm = String(current).replace(/\r\n/g, '\n');
+    if (plan.snap.content !== currentNorm) {
+      const matching = snapshots
+        .getVersions(skey(absPath))
+        .find((v) => v.content === currentNorm);
+      if (!matching) throw err(`stale tag; re-read ${plan.section.rawPath}`);
+      plan.snap = matching;
+      const split = splitContent(matching.content);
+      plan.lines = split.lines;
+      plan.trailingNewline = split.trailingNewline;
+      plan.lastLine = split.lines.length;
+    }
+  }
+
+  const results = plans.map((plan) => {
+    const absPath = plan.section.absPath;
+    const { outLines, touched, warnings } = applyOps(plan, absPath, ctx);
+    const before = joinContent(plan.lines, plan.trailingNewline);
+    const after = joinContent(outLines, plan.trailingNewline);
+    return { plan, outLines, touched, warnings, changed: before !== after };
+  });
+  if (results.every((r) => !r.changed && !r.plan.section.rem && !r.plan.section.mv)) {
+    throw err('no change');
+  }
+
+  const reports = [];
+  for (const r of results) {
+    const { plan, outLines, touched, warnings, changed } = r;
+    const section = plan.section;
+    const absPath = section.absPath;
+
+    if (section.rem) {
+      await unlinkFn(absPath);
+      snapshots.dropSnapshot(skey(absPath));
+      reports.push({
+        rawPath: section.rawPath, absPath, finalPath: absPath,
+        rem: true, opCount: section.ops.length, warnings,
+      });
+      continue;
+    }
+
+    if (changed) await writeFile(absPath, joinContent(outLines, plan.trailingNewline));
+
+    const total = outLines.length;
+    let seen = [];
+    for (const [s, e] of touched) {
+      const cs = Math.max(1, s - 3);
+      const ce = Math.min(Math.max(1, total), e + 3);
+      if (cs > ce) continue;
+      seen = snapshots.mergeRange(seen, cs, ce);
+    }
+    const newContent = joinContent(outLines, plan.trailingNewline);
+    const tag = snapshots.recordSnapshot(skey(absPath), newContent, seen);
+
+    let finalPath = absPath;
+    if (section.mv) {
+      const destAbs = resolvePath(section.mv);
+      await mkdirFn(path.dirname(destAbs));
+      await renameFn(absPath, destAbs);
+      snapshots.moveSnapshot(skey(absPath), skey(destAbs));
+      finalPath = destAbs;
+    }
+
+    reports.push({
+      rawPath: section.rawPath, absPath, finalPath, tag,
+      opCount: section.ops.length,
+      opSummary: section.ops.map((o) => o.targetText || o.kind),
+      warnings, mv: section.mv || null, changed,
+    });
+  }
+
+  for (const [name, value] of stagedNamed) asyncNamedRegisters.set(name, value);
 
   return reports;
 }
@@ -654,6 +829,8 @@ module.exports = {
   parsePatch,
   resolveBlock,
   applyHashlinePatch,
+  applyHashlinePatchAsync,
+  clearRegisters,
   clearRegisters,
   resetAll,
 };

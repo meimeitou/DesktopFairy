@@ -217,6 +217,9 @@
   position: absolute;
   top: 4px;
   left: 0;
+  /* Backdrop is a sibling at z-index 5 — without this the popup paints under
+     it, so every click hit the backdrop and just dismissed the prompt. */
+  z-index: 6;
   background: rgba(248, 244, 232, 0.98);
   border: 1px solid rgba(199, 90, 79, 0.45);
   border-radius: 10px;

@@ -123,17 +123,49 @@ function registerAiStreamHandlers(ipcMain, deps) {
         const signal = entry?.controller?.signal;
         abortIfNeeded(signal);
 
-        mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
+        const isHostConversation = agentConfig.builtinRole === 'host-assistant';
+        let hostRuntime = null;
+        if (isHostConversation) {
+          try {
+            hostRuntime = deps.hostConversationService.resolveHostRuntime(topicId);
+          } catch (e) {
+            legacySend('chat:stream:error', { requestId, message: String(e?.message || e) });
+            throw new DOMException('Aborted', 'AbortError');
+          }
+        }
+
+        if (!isHostConversation) {
+          mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
+        }
         abortIfNeeded(signal);
 
-        const context = terminalSessionId ? 'terminal' : 'local';
+        const context = isHostConversation
+          ? 'host'
+          : terminalSessionId
+            ? 'terminal'
+            : 'local';
         const builtinTools = getBuiltinTools(agentConfig, context);
-        const toolDefinitions = [...builtinTools, ...(mcpRuntime.definitions || [])];
+        const toolDefinitions = isHostConversation
+          ? builtinTools // host: no MCP tools, ever
+          : [...builtinTools, ...(mcpRuntime.definitions || [])];
         const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
         abortIfNeeded(signal);
 
         const enabledToolNames = builtinTools.map((t) => t.function.name);
-        const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames, settingsSnapshot.getSnapshot()?.sshHosts || [])
+        const hostInfo = isHostConversation && hostRuntime
+          ? {
+              defaultHostName: hostRuntime.hostName,
+              cwd: hostRuntime.getCwd(topicId, hostRuntime.hostId) || '',
+            }
+          : null;
+        const systemPrompt = buildAgentSystemPrompt(
+          agentConfig,
+          context,
+          terminalState,
+          enabledToolNames,
+          settingsSnapshot.getSnapshot()?.sshHosts || [],
+          hostInfo,
+        )
           + knowledgeSystemSuffix;
 
         const toolDeps = buildAgentToolDeps({
@@ -156,6 +188,8 @@ function registerAiStreamHandlers(ipcMain, deps) {
           terminalSessionId,
           suppressToolDoneEvent: true,
           onToolDenied: bridge.markDenied,
+          context,
+          hostRuntime,
         });
 
         return streamText({

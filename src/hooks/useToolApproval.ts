@@ -95,7 +95,10 @@ export function useToolApproval(
           (m) =>
             m.type === "tool" &&
             m.toolStatus === "awaiting_approval" &&
-            m.toolApprovalId,
+            m.toolApprovalId &&
+            // Force cards (cross-host grants, ssh_hosts writes) demand an
+            // explicit per-card decision — never bulk-approved.
+            !m.toolForce,
         )
         .map((m) => m.toolApprovalId!)
         .filter(Boolean);

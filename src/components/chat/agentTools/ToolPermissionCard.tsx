@@ -52,16 +52,18 @@ export default function ToolPermissionCard({
         )}
       </div>
       <div className="agent-tool-permission-actions">
-        <Button
-          type="default"
-          size="small"
-          disabled={submitting || !canApprove}
-          onClick={() => msg.toolApprovalId && onAlwaysAllow?.(msg.toolApprovalId)}
-          title="批准本次并切换为全自动模式，后续工具调用不再询问"
-          icon={<Icon name="Check" size={12} />}
-        >
-          {alwaysAllowLabel}
-        </Button>
+        {!msg.toolForce && (
+          <Button
+            type="default"
+            size="small"
+            disabled={submitting || !canApprove}
+            onClick={() => msg.toolApprovalId && onAlwaysAllow?.(msg.toolApprovalId)}
+            title="批准本次并切换为全自动模式，后续工具调用不再询问"
+            icon={<Icon name="Check" size={12} />}
+          >
+            {alwaysAllowLabel}
+          </Button>
+        )}
         <Button
           type="default"
           size="small"

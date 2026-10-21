@@ -27,6 +27,9 @@ const DEFAULT_SAFE_TOOLS = new Set([
   'read',
   'glob',
   'grep',
+  'ssh_read',
+  'ssh_glob',
+  'ssh_grep',
   'TodoWrite',
   'UpdateProfile',
   'AskUserQuestion',
@@ -43,7 +46,32 @@ const PLAN_MODE_BLOCKED_TOOLS = new Set([
   'WebSearch',
   'Terminal',
   'ssh_exec',
+  'ssh_write',
+  'ssh_edit',
+  'ssh_cwd',
 ]);
+
+/** Tools that only make sense in host conversations (remote file ops). */
+const HOST_ONLY_TOOL_IDS = [
+  'ssh_read',
+  'ssh_glob',
+  'ssh_grep',
+  'ssh_write',
+  'ssh_edit',
+  'ssh_cwd',
+];
+
+/** Local-machine tools that never apply to a host conversation. */
+const HOST_FORCED_DISABLED_IDS = [
+  'bash',
+  'Terminal',
+  'read',
+  'write',
+  'edit',
+  'glob',
+  'grep',
+  'McpManager',
+];
 
 const CHAT_MODE_SUFFIXES = {
   plan: '\n\n## 计划模式\n当前处于【计划模式】。你只能使用 read / glob / grep / TodoWrite / Skills / AskUserQuestion 等只读工具来理解现状并输出执行计划。严禁调用 write / edit / bash / WebFetch / WebSearch 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。若目标或方案有歧义，可调用 AskUserQuestion 向用户确认。',
@@ -96,10 +124,16 @@ function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
     disabled.add('Terminal');
     disabled.add('ssh_exec');
     disabled.add('ssh_hosts');
+    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
   }
 
   if (context === 'terminal') {
     disabled.add('bash');
+    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
+  }
+
+  if (context === 'host') {
+    for (const id of HOST_FORCED_DISABLED_IDS) disabled.add(id);
   }
 
   const approvalMode = resolveToolApprovalMode(agentConfig);
@@ -136,6 +170,8 @@ function shouldPromptForTool(toolName, toolApprovalMode, invocationArgs) {
   }
   if (['edit', 'write'].includes(name)) return true;
   if (name === 'bash') return true;
+  if (['ssh_write', 'ssh_edit'].includes(name)) return true;
+  if (name === 'ssh_cwd') return Boolean(invocationArgs?.path);
   if (name === 'ssh_hosts') {
     return invocationArgs?.action !== 'list';
   }
@@ -154,5 +190,8 @@ module.exports = {
   getChatModeSuffix,
   isReadOnlyMode,
   resolveToolApprovalMode,
-  getOpenAiToolParameters,
+  HOST_ONLY_TOOL_IDS,
+  HOST_FORCED_DISABLED_IDS,
+  DEFAULT_SAFE_TOOLS,
 };
+

@@ -16,6 +16,7 @@ import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTo
 import TerminalContextMenu from "../components/terminal/TerminalContextMenu";
 import TerminalSearchBar from "../components/terminal/TerminalSearchBar";
 import TerminalSettingsTab from "../components/terminal/TerminalSettingsTab";
+import HostChatPanel from "../components/terminal/HostChatPanel";
 import SshConnectionPicker from "../components/terminal/SshConnectionPicker";
 import {
   type AppSettings,
@@ -491,11 +492,12 @@ function TerminalInstance({
 interface Tab {
   id: string;
   title: string;
-  kind: "terminal" | "settings" | "ssh";
+  kind: "terminal" | "settings" | "ssh" | "host-chat";
   cwd?: string;
   launchCommand?: string;
   sshHostId?: string;
-  sshHost?: SshHost;  // 临时主机（快速连接），不写入 settings.sshHosts
+  topicId?: string;
+  sshHost?: SshHost; // 临时主机（快速连接），不写入 settings.sshHosts
 }
 
 export default function TerminalPage({
@@ -504,9 +506,9 @@ export default function TerminalPage({
   isActive?: boolean;
 }) {
   const [tabs, setTabs] = useState<Tab[]>(() => [
-    { id: `tab_${Date.now()}`, title: "终端 1", kind: "terminal" },
+    { id: `hostchat_${Date.now()}`, title: "主机对话", kind: "host-chat" },
   ]);
-  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
+  const [activeTabId, setActiveTabId] = useState<string>(() => "");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectionTip, setSelectionTip] = useState<{
     text: string;
@@ -530,6 +532,13 @@ export default function TerminalPage({
   const sessionMapRef = useRef<Map<string, { sessionId: string; kind: "terminal" | "ssh" }>>(new Map());
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  // Default view: the initial host-chat tab becomes active once on mount.
+  const [activeTabInitialized, setActiveTabInitialized] = useState(false);
+  useEffect(() => {
+    if (activeTabInitialized || activeTabId) return;
+    setActiveTabId(tabsRef.current[0]?.id ?? "");
+    setActiveTabInitialized(true);
+  }, [activeTabInitialized, activeTabId]);
   const pendingCommandMapRef = useRef<Map<string, string[]>>(new Map());
   // SearchAddon registry — 每个 tab 创建终端时注册 { xterm, searchAddon }，
   // 卸载时移除。Cmd+F 时从 registry 取当前 tab 的 addon 引用存入 state，
@@ -636,6 +645,18 @@ export default function TerminalPage({
     setTabs((prev) => [...prev, { id: newId, title: "设置", kind: "settings" }]);
     setActiveTabId(newId);
   }, [tabs]);
+
+  const handleOpenHostChat = useCallback(() => {
+    const existing = tabs.find((t) => t.kind === "host-chat");
+    if (existing) {
+      setActiveTabId(existing.id);
+      return;
+    }
+    const newId = `hostchat_${Date.now()}`;
+    setTabs((prev) => [...prev, { id: newId, title: "主机对话", kind: "host-chat" }]);
+    setActiveTabId(newId);
+  }, [tabs]);
+
 
   const handleToggleSshPicker = useCallback(() => {
     setSshPickerOpen((open) => {
@@ -801,6 +822,11 @@ export default function TerminalPage({
   const requestCloseTab = useCallback(async (id: string) => {
     const tab = tabsRef.current.find((t) => t.id === id);
     if (!tab) return;
+    if (tab.kind === "host-chat") {
+      // Closing the tab only detaches; the background stream keeps running.
+      closeTabById(id);
+      return;
+    }
     if (tab.kind === "settings") {
       closeTabById(id);
       return;
@@ -894,7 +920,13 @@ export default function TerminalPage({
             />
           ) : (
             tabs.map((tab) =>
-              tab.kind === "settings" ? (
+              tab.kind === "host-chat" ? (
+                <HostChatPanel
+                  key={tab.id}
+                  isActive={tab.id === activeTabId && isActive}
+                  onOpenSshSettings={handleOpenSshSettings}
+                />
+              ) : tab.kind === "settings" ? (
                 <TerminalSettingsTab
                   key={tab.id}
                   isActive={tab.id === activeTabId && isActive}
@@ -985,6 +1017,14 @@ export default function TerminalPage({
               </span>
             </button>
           ))}
+          <Button
+            type="text"
+            size="small"
+            className="terminal-tab-add"
+            icon={<Icon name="Chat" size={14} />}
+            onClick={handleOpenHostChat}
+            title="主机对话"
+          />
           <Button
             type="text"
             size="small"

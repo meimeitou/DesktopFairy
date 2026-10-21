@@ -173,8 +173,11 @@ function registerChatSessionHandlers({
   sessionsDir,
   toolResultsDir,
   chatLogsDir,
+  getAbortHandler,
+  getSshHosts,
 }) {
   const PERSONAL_ASSISTANT_ID = 'personal-assistant';
+  const HOST_ASSISTANT_ID = 'host-assistant';
   const CHAT_MODES = new Set(['normal', 'plan', 'auto-edit', 'full-auto']);
 
   /** Backfill agentId/chatMode on disk; returns store (mutated in place when changed). */
@@ -223,6 +226,38 @@ function registerChatSessionHandlers({
   function getSessionFilePath(topicId) {
     if (!topicId) return sessionPath();
     return path.join(sessionsDir(), `${topicId}.json`);
+  }
+
+  /** Abort any live stream for a topic and drop its session/tool-result/log files. */
+  function deleteTopicFiles(topicId) {
+    try {
+      const abort = getAbortHandler ? getAbortHandler(topicId) : null;
+      if (abort) abort();
+    } catch (e) {
+      console.warn('Failed to abort stream for topic:', topicId, e);
+    }
+    try {
+      const sessionFile = getSessionFilePath(topicId);
+      if (fs.existsSync(sessionFile)) fs.unlinkSync(sessionFile);
+    } catch (e) {
+      console.warn('Failed to delete session file:', topicId, e);
+    }
+    try {
+      if (toolResultsDir) {
+        const dir = path.join(toolResultsDir(), topicId);
+        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.warn('Failed to delete tool results:', topicId, e);
+    }
+    try {
+      if (chatLogsDir) {
+        const dir = path.join(chatLogsDir(), topicId);
+        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.warn('Failed to delete chat logs:', topicId, e);
+    }
   }
 
   function migrateLegacySessionIfNeeded() {
@@ -284,37 +319,58 @@ function registerChatSessionHandlers({
     return readChatLog(chatLogsDir, topicId);
   });
 
-  ipcMain.handle('chat:topics:list', async () => {
+  ipcMain.handle('chat:topics:list', async (_event, opts) => {
     migrateLegacySessionIfNeeded();
     let store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
     store = normalizeTopicsStore(store);
 
-    // Ensure there is always at least one topic.
+    // Ensure there is always at least one non-host topic with a valid activeId.
     // Without it, renderer's `activeTopicId` stays `null` and the controlled input
     // will silently drop onChange updates (cursor blinks but cannot type).
-    if (!store?.topics || store.topics.length === 0 || !store.activeId) {
-      const now = Date.now();
-      const newTopic = {
-        id: genId(),
-        name: '',
-        createdAt: now,
-        updatedAt: now,
-        orderKey: now,
-        agentId: PERSONAL_ASSISTANT_ID,
-        chatMode: 'normal',
-      };
-      store.topics = [newTopic];
-      store.activeId = newTopic.id;
-      writeJson(topicsIndexPath(), store);
-    } else if (!store.topics.find((t) => t.id === store.activeId)) {
-      store.activeId = store.topics[0]?.id ?? null;
+    // Host topics must never be wiped by this fallback — only appended to.
+    const nonHostTopics = (store.topics || []).filter((t) => !t.host);
+    if (
+      nonHostTopics.length === 0 ||
+      !store.activeId ||
+      !nonHostTopics.find((t) => t.id === store.activeId)
+    ) {
+      if (nonHostTopics.length > 0) {
+        store.activeId = nonHostTopics[0].id;
+      } else {
+        const now = Date.now();
+        const newTopic = {
+          id: genId(),
+          name: '',
+          createdAt: now,
+          updatedAt: now,
+          orderKey: now,
+          agentId: PERSONAL_ASSISTANT_ID,
+          chatMode: 'normal',
+        };
+        store.topics = [...(store.topics || []), newTopic];
+        store.activeId = newTopic.id;
+      }
       writeJson(topicsIndexPath(), store);
     }
 
+    const scope = opts && typeof opts === 'object' ? opts.scope : undefined;
+    if (scope === 'host') {
+      const hostTopics = store.topics.filter((t) => t && t.host);
+      return {
+        ...store,
+        topics: hostTopics,
+        activeId: null,
+        activeHostId:
+          typeof store.activeHostId === 'string' &&
+          hostTopics.some((t) => t.id === store.activeHostId)
+            ? store.activeHostId
+            : (hostTopics[0]?.id ?? null),
+      };
+    }
     return store;
   });
 
-  ipcMain.handle('chat:topics:create', async (_event, { name, agentId, chatMode, knowledgeBaseIds }) => {
+  ipcMain.handle('chat:topics:create', async (_event, { name, agentId, chatMode, knowledgeBaseIds, hostId }) => {
     migrateLegacySessionIfNeeded();
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
     const now = Date.now();
@@ -331,10 +387,33 @@ function registerChatSessionHandlers({
         ? { knowledgeBaseIds: knowledgeBaseIds.filter((id) => typeof id === 'string' && id) }
         : {}),
     };
+    if (hostId !== undefined) {
+      if (typeof hostId !== 'string' || !hostId.trim()) {
+        return { ok: false, error: 'Invalid hostId' };
+      }
+      if (newTopic.agentId !== HOST_ASSISTANT_ID) {
+        return { ok: false, error: 'Host topics must use host-assistant agent' };
+      }
+      const hostList = typeof getSshHosts === 'function' ? getSshHosts() : null;
+      const host = hostList ? hostList.find((h) => h && h.id === hostId) : null;
+      if (!host) {
+        return { ok: false, error: 'Host not found' };
+      }
+      const fingerprint = hostFingerprint(host);
+      newTopic.host = {
+        hostId,
+        grants: { [hostId]: fingerprint },
+        cwdByHost: {},
+      };
+    }
     store.topics.push(newTopic);
-    store.activeId = newTopic.id;
+    if (newTopic.host) {
+      store.activeHostId = newTopic.id;
+    } else {
+      store.activeId = newTopic.id;
+    }
     writeJson(topicsIndexPath(), store);
-    return newTopic;
+    return { ok: true, topic: newTopic };
   });
 
 
@@ -343,19 +422,14 @@ function registerChatSessionHandlers({
     const topicIndex = store.topics.findIndex((t) => t.id === topicId);
     if (topicIndex === -1) return { ok: false, error: 'Topic not found' };
 
+    const wasHostTopic = !!(store.topics[topicIndex] && store.topics[topicIndex].host);
     store.topics.splice(topicIndex, 1);
 
-    try {
-      const sessionFile = getSessionFilePath(topicId);
-      if (fs.existsSync(sessionFile)) {
-        fs.unlinkSync(sessionFile);
-      }
-    } catch (e) {
-      console.warn('Failed to delete session file:', e);
-    }
+    // Host topics: abort the live stream first, then drop files (main-side cascade).
+    deleteTopicFiles(topicId);
 
     let autoCreated = null;
-    if (store.topics.length === 0) {
+    if (!wasHostTopic && store.topics.filter((t) => !t.host).length === 0) {
       const now = Date.now();
       const newTopic = {
         id: genId(),
@@ -370,12 +444,16 @@ function registerChatSessionHandlers({
       store.activeId = newTopic.id;
       autoCreated = newTopic;
     } else if (store.activeId === topicId) {
-      store.activeId = store.topics[0].id;
+      store.activeId = store.topics.find((t) => !t.host)?.id ?? null;
+    }
+    if (store.activeHostId === topicId) {
+      const nextHost = store.topics.find((t) => t.host);
+      store.activeHostId = nextHost ? nextHost.id : null;
     }
 
     writeJson(topicsIndexPath(), store);
 
-    return { ok: true, activeId: store.activeId, autoCreated };
+    return { ok: true, activeId: store.activeId, activeHostId: store.activeHostId, autoCreated };
   });
 
   ipcMain.handle('chat:topics:rename', async (_event, { topicId, name }) => {
@@ -392,6 +470,8 @@ function registerChatSessionHandlers({
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
     const topic = store.topics.find((t) => t.id === topicId);
     if (!topic) return { ok: false, error: 'Topic not found' };
+    // `host` state (grants/cwd) is intentionally NOT updatable from the renderer:
+    // grant lifecycle is owned by main-side tool execution only.
     if (chatMode !== undefined) {
       if (!CHAT_MODES.has(chatMode)) {
         return { ok: false, error: 'Invalid chatMode' };
@@ -408,9 +488,22 @@ function registerChatSessionHandlers({
     return { ok: true, topic };
   });
 
-  ipcMain.handle('chat:topics:setActive', async (_event, topicId) => {
+  ipcMain.handle('chat:topics:setActive', async (_event, topicIdOrPayload) => {
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
-    store.activeId = topicId;
+    const payload =
+      topicIdOrPayload && typeof topicIdOrPayload === 'object'
+        ? topicIdOrPayload
+        : { topicId: topicIdOrPayload, scope: 'chat' };
+    const { topicId, scope } = payload;
+    if (scope === 'host') {
+      if (typeof topicId === 'string' && store.topics.some((t) => t.id === topicId && t.host)) {
+        store.activeHostId = topicId;
+      } else {
+        store.activeHostId = null;
+      }
+    } else {
+      store.activeId = typeof topicId === 'string' ? topicId : null;
+    }
     writeJson(topicsIndexPath(), store);
     return { ok: true };
   });
@@ -428,10 +521,62 @@ function registerChatSessionHandlers({
     writeJson(topicsIndexPath(), store);
     return { ok: true };
   });
+
+  /** Host-state write surface for hostConversationService (single entry point). */
+  const topicStore = {
+    readStore() {
+      return readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    },
+    writeStore(store) {
+      return writeJson(topicsIndexPath(), store);
+    },
+    getTopic(topicId) {
+      const store = topicStore.readStore();
+      return store.topics.find((t) => t.id === topicId) || null;
+    },
+    updateHostState(topicId, updater) {
+      const store = topicStore.readStore();
+      const topic = store.topics.find((t) => t.id === topicId);
+      if (!topic || !topic.host) return false;
+      const next = updater(topic.host);
+      if (!next || typeof next !== 'object' || typeof next.hostId !== 'string') return false;
+      topic.host = next;
+      topic.updatedAt = Date.now();
+      topicStore.writeStore(store);
+      return true;
+    },
+    deleteTopicsByHost(hostId) {
+      const store = topicStore.readStore();
+      const targets = store.topics.filter((t) => t.host && t.host.hostId === hostId);
+      if (targets.length === 0) return 0;
+      for (const t of targets) {
+        store.topics.splice(store.topics.findIndex((x) => x.id === t.id), 1);
+        deleteTopicFiles(t.id);
+      }
+      if (store.activeHostId && !store.topics.find((t) => t.id === store.activeHostId && t.host)) {
+        const nextHost = store.topics.find((t) => t.host);
+        store.activeHostId = nextHost ? nextHost.id : null;
+      }
+      topicStore.writeStore(store);
+      return targets.length;
+    },
+  };
+
+  return topicStore;
+}
+
+function hostFingerprint(host) {
+  const user = typeof host.user === 'string' ? host.user : '';
+  const hostname = typeof host.host === 'string' ? host.host : '';
+  const port = host.port || 22;
+  const jump = typeof host.proxyJump === 'string' && host.proxyJump ? `?jump=${host.proxyJump}` : '';
+  return `${user}@${hostname}:${port}${jump}`;
 }
 
 module.exports = {
   registerChatSessionHandlers,
   normalizeSession,
   processSessionForSave,
+  hostFingerprint,
 };
+

@@ -48,10 +48,11 @@ const {
   formatAnchoredGrep,
   formatGroupedPaths,
   isBinaryFile,
+  classifyBufferAsBinary,
   runRipgrep,
 } = require('./agentBuiltinFsUtils.cjs');
 const snapshots = require('./agentSnapshotStore.cjs');
-const { applyHashlinePatch } = require('./hashlinePatch.cjs');
+const { applyHashlinePatch, applyHashlinePatchAsync } = require('./hashlinePatch.cjs');
 
 const execFileAsync = promisify(execFile);
 const MAX_FETCH_BYTES = 512 * 1024;
@@ -1552,6 +1553,62 @@ function sshHostProjection(h, credentialNameById) {
   };
 }
 
+/** Shared field validation for ssh_hosts add/update (both contexts). */
+function validateSshHostFields(fields, creds) {
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return { error: 'fields 必须是对象' };
+  }
+  const keys = Object.keys(fields);
+  const forbidden = keys.filter((k) => SSH_HOST_FORBIDDEN_FIELDS.includes(k));
+  if (forbidden.length > 0) {
+    return {
+      error: `不允许通过 agent 设置内联凭据（${forbidden.join(', ')}），请引用已存在凭据的 credentialId`,
+    };
+  }
+  const unknown = keys.filter((k) => !SSH_HOST_ALLOWED_FIELDS.includes(k));
+  if (unknown.length > 0) {
+    return {
+      error: `未知字段：${unknown.join(', ')}。可用字段：${SSH_HOST_ALLOWED_FIELDS.join(', ')}`,
+    };
+  }
+  if ('name' in fields) {
+    const name = String(fields.name || '').trim();
+    if (!name) return { error: 'name 不能为空' };
+    fields.name = name;
+  }
+  if ('host' in fields && !String(fields.host || '').trim()) {
+    return { error: 'host 不能为空' };
+  } else if ('host' in fields) {
+    fields.host = String(fields.host).trim();
+  }
+  if ('user' in fields && !String(fields.user || '').trim()) {
+    return { error: 'user 不能为空' };
+  } else if ('user' in fields) {
+    fields.user = String(fields.user).trim();
+  }
+  if ('port' in fields) {
+    const port = Number(fields.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return { error: 'port 必须是 1–65535 的整数' };
+    }
+    fields.port = port;
+  }
+  if ('authMethod' in fields && !['auto', 'password', 'privateKey', 'agent'].includes(fields.authMethod)) {
+    return { error: 'authMethod 必须是 auto / password / privateKey / agent 之一' };
+  }
+  for (const idField of ['credentialId', 'proxyJumpCredentialId']) {
+    if (idField in fields && fields[idField] != null && !creds.some((c) => c && c.id === fields[idField])) {
+      return {
+        error: `credentialId "${fields[idField]}" 不存在。可用凭据：${creds.map((c) => c?.name).join('; ') || '（无）'}`,
+      };
+    }
+  }
+  if ('proxyJump' in fields && fields.proxyJump != null && typeof fields.proxyJump !== 'string') {
+    return { error: 'proxyJump 必须是字符串（user@host 形式）' };
+  }
+  return { fields };
+}
+
 async function toolSshHosts(args, deps = {}) {
   const action = String(args?.action || '').trim();
   if (!['list', 'add', 'update', 'delete'].includes(action)) {
@@ -1560,6 +1617,37 @@ async function toolSshHosts(args, deps = {}) {
   // 计划模式防御纵深：目录层不禁用本工具，由这里拦写操作。
   if (deps?.agentConfig?.chatMode === 'plan' && action !== 'list') {
     return fail('计划模式下仅支持 list 操作');
+  }
+
+  // —— host context：add/update/delete 委托 hostConversationService（含授权失效/级联删除）——
+  // 放在读盘之前：host 路径完全走 settingsSnapshot，不依赖本地 settings 文件。
+  if (deps.hostRuntime && action !== 'list') {
+    const snapshotSettings = require('./settingsSnapshot.cjs').getSnapshot() || {};
+    const snapshotCreds = Array.isArray(snapshotSettings.sshCredentials) ? snapshotSettings.sshCredentials : [];
+    const v = validateSshHostFields(args?.fields ? { ...args.fields } : null, snapshotCreds);
+    if (action !== 'add' && !String(args?.host || '').trim()) {
+      return fail('update/delete 需要 host 参数（已保存主机的 name，精确匹配）');
+    }
+    if (action === 'add' && v.error) return fail(v.error);
+    if (action === 'add' && (!('name' in (v.fields || {})) || !('host' in (v.fields || {})))) {
+      return fail('add 需要在 fields 中提供 name 和 host');
+    }
+    if (action === 'update' && v.error) return fail(v.error);
+    const result = typeof deps.hostRuntime.applyHostSettingsMutation === 'function'
+      ? await deps.hostRuntime.applyHostSettingsMutation({ action, host: args?.host, fields: v.fields })
+      : null;
+    if (!result) return fail('主机设置变更服务不可用');
+    if (!result.ok) return fail(result.error);
+    const entry = result.hostEntry;
+    return ok({
+      action,
+      host: entry?.name,
+      message: action === 'add'
+        ? `已新增主机 ${entry?.name}`
+        : action === 'delete'
+          ? `已删除主机 ${entry?.name}（其主机对话已一并删除）`
+          : `已更新主机 ${entry?.name}`,
+    });
   }
 
   const settingsPath = path.join(getApp().getPath('userData'), 'da_settings.json');
@@ -1575,7 +1663,6 @@ async function toolSshHosts(args, deps = {}) {
   const credentialNameById = (id) =>
     id ? (creds.find((c) => c && c.id === id)?.name ?? null) : null;
 
-  // —— 字段校验（add/update 共用）——
   const validateFields = (fields) => {
     if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
       return { error: 'fields 必须是对象' };
@@ -1719,11 +1806,602 @@ async function toolSshHosts(args, deps = {}) {
     message: `已更新主机 ${target.name}`,
   });
 }
-// 主机按名称从 settings.sshHosts 精确匹配；凭据从 sshCredentials 解析。
+
+// ---------------------------------------------------------------------------
+// ssh_* remote file tools (host conversations, SFTP-backed)
+// ---------------------------------------------------------------------------
+
+/** POSIX path join for remote paths (cwd may be null = login home default). */
+function remoteJoin(cwd, p) {
+  if (!p) return p;
+  if (p.startsWith('/')) return p;
+  // SFTP has no tilde expansion; relative paths already resolve against the
+  // login home, so `~/x` is just `x`.
+  if (p === '~') return '.';
+  if (p.startsWith('~/')) return p.slice(2) || '.';
+  if (!cwd) return p;
+  return `${cwd.replace(/\/+$/, '')}/${p}`;
+}
+
+/** SFTP callback → Promise adapters. */
+function sftpCall(sftp, method, ...args) {
+  return new Promise((resolve, reject) => {
+    sftp[method](...args, (err, result) => {
+      if (err) {
+        const e = new Error(String(err?.message || err));
+        if (err.code) e.code = err.code;
+        reject(e);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
+
+const sftpReadFile = (sftp, p) => sftpCall(sftp, 'readFile', p);
+const sftpWriteFile = (sftp, p, data) => sftpCall(sftp, 'writeFile', p, data);
+const sftpUnlink = (sftp, p) => sftpCall(sftp, 'unlink', p);
+const sftpRename = (sftp, from, to) => sftpCall(sftp, 'rename', from, to);
+const sftpMkdir = (sftp, p) => sftpCall(sftp, 'mkdir', p);
+const sftpStat = (sftp, p) => sftpCall(sftp, 'stat', p);
+const sftpReaddir = (sftp, p) => sftpCall(sftp, 'readdir', p);
+
+/** Recursive remote mkdir (SFTP has no recursive mkdir). */
+async function sftpMkdirp(sftp, dirPath) {
+  if (!dirPath || dirPath === '/' || dirPath === '.') return;
+  const segments = dirPath.split('/').filter(Boolean);
+  let cur = dirPath.startsWith('/') ? '' : '.';
+  for (const seg of segments) {
+    cur = cur === '.' ? seg : `${cur}/${seg}`;
+    try {
+      await sftpMkdir(sftp, cur);
+    } catch (e) {
+      // SSH_FX_FAILURE (4) also covers permission denied — verify instead of
+      // assuming it means "already exists".
+      const st = await sftpStat(sftp, cur).catch(() => null);
+      if (!st || !st.isDirectory()) throw e;
+    }
+  }
+}
+
+/** Glob pattern → RegExp. Covers * ** ? [...] {a,b}; no extglob — complex
+ * patterns degrade to literal matching.
+ * ponytail: no extglob/brace-nesting support; degrade to literal when unsure. */
+function globToRegExp(glob) {
+  let re = '';
+  let i = 0;
+  while (i < glob.length) {
+    const c = glob[i];
+    if (c === '*') {
+      if (glob[i + 1] === '*') {
+        // '**/' or trailing '**'
+        if (glob[i + 2] === '/') { re += '(?:[^/]*(?:/|$))*'; i += 3; continue; }
+        re += '.*'; i += 2; continue;
+      }
+      re += '[^/]*'; i += 1; continue;
+    }
+    if (c === '?') { re += '[^/]'; i += 1; continue; }
+    if (c === '[') {
+      const close = glob.indexOf(']', i + 1);
+      if (close === -1) { re += '\\['; i += 1; continue; }
+      let body = glob.slice(i + 1, close);
+      if (body.startsWith('!')) body = `^${body.slice(1)}`;
+      re += `[${body}]`; i = close + 1; continue;
+    }
+    if (c === '{') {
+      const close = glob.indexOf('}', i + 1);
+      if (close === -1) { re += '\\{'; i += 1; continue; }
+      const alts = glob.slice(i + 1, close).split(',').map((a) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      re += `(?:${alts.join('|')})`; i = close + 1; continue;
+    }
+    re += c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    i += 1;
+  }
+  try {
+    return new RegExp(`^${re}$`);
+  } catch {
+    // Malformed character class (e.g. [z-a]) — degrade to a literal match
+    // instead of throwing out of the tool call.
+    return new RegExp(`^${String(glob).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  }
+}
+
+/** Built-in exclusion set for remote traversal (no remote .gitignore parsing). */
+const SSH_EXCLUDE_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', '__pycache__']);
+
+/** Collect remote files under root (bounded DFS), filtered by matcher. */
+async function sftpCollectFiles(sftp, root, { hidden, matcher, limit, signal }) {
+  const results = [];
+  const stack = [root];
+  const visited = new Set();
+  while (stack.length > 0 && results.length < limit) {
+    if (signal?.aborted) throw new Error('SSH 命令已取消');
+    const dir = stack.pop();
+    if (visited.has(dir)) continue;
+    visited.add(dir);
+    let entries;
+    try {
+      entries = await sftpReaddir(sftp, dir);
+    } catch {
+      continue; // unreadable dir — skip
+    }
+    for (const ent of entries || []) {
+      if (signal?.aborted) throw new Error('SSH 命令已取消');
+      const name = ent.filename || ent.name;
+      if (!name || name === '.' || name === '..') continue;
+      if (!hidden && name.startsWith('.')) continue;
+      const full = dir === '/' ? `/${name}` : `${dir}/${name}`;
+      const isDir = Boolean(ent.longname && ent.longname.startsWith('d'));
+      if (isDir) {
+        if (SSH_EXCLUDE_DIRS.has(name)) continue;
+        stack.push(full);
+        continue;
+      }
+      if (matcher && !matcher.test(full)) continue;
+      let mtime = 0;
+      try {
+        const st = await sftpStat(sftp, full);
+        mtime = (st.mtime || 0) * 1000;
+      } catch { /* vanished */ }
+      results.push({ path: full, mtime });
+      if (results.length >= limit) break;
+    }
+  }
+  return results;
+}
+
+/** Resolve the target host for an ssh_* tool call; enforces grants. */
+function resolveHostTarget(args, deps) {
+  const rt = deps.hostRuntime;
+  if (!rt) return { error: '主机上下文不可用（hostRuntime missing）' };
+  const hostId = typeof args?.hostId === 'string' && args.hostId.trim()
+    ? args.hostId.trim()
+    : rt.hostId;
+  if (hostId !== rt.defaultHostId) {
+    if (!rt.isGranted(hostId)) {
+      return { error: `尚未授权在主机 ${hostId} 上执行操作，请先征得用户确认` };
+    }
+  }
+  let connectParams;
+  try {
+    connectParams = rt.resolveConnectParams(hostId);
+  } catch (e) {
+    return { error: String(e?.message || e) };
+  }
+  const cwd = rt.getCwd(rt.topicId, hostId);
+  return { hostId, connectParams, cwd };
+}
+
+function sshSnapshotKey(topicId, hostId, absPath) {
+  return `${topicId}:${hostId}:${absPath}`;
+}
+
+async function toolSshRead(args, deps = {}) {
+  const rawPath = String(args?.path ?? '').trim();
+  if (!rawPath) return fail('path required');
+  const target = resolveHostTarget(args, deps);
+  if (target.error) return fail(target.error);
+  const { hostId, connectParams, cwd } = target;
+  const sshService = require('./sshService.cjs');
+  const absPath = remoteJoin(cwd, rawPath);
+  const snapKey = (p) => sshSnapshotKey(deps.hostRuntime.topicId, hostId, p);
+
+  try {
+    return await sshService.withSftp(connectParams, async (sftp) => {
+      const st = await sftpStat(sftp, absPath).catch(() => null);
+      if (!st) return fail(`Path not found: ${rawPath}`);
+      if (st.isDirectory()) {
+        const tree = await sftpDirectoryTree(sftp, absPath, rawPath, 0);
+        return ok({ file_path: absPath, content: tree.join('\n'), isDirectory: true });
+      }
+      if (st.size > MAX_READ_BYTES) {
+        return fail(`File too large (max ${MAX_READ_BYTES} bytes)`);
+      }
+
+      const split = await splitPathAndSel(rawPath, {
+        isFileAsync: async (p) => {
+          try {
+            const s = await sftpStat(sftp, remoteJoin(cwd, p));
+            return Boolean(s && s.isFile());
+          } catch {
+            return false;
+          }
+        },
+      });
+      const isRaw = split.isRaw === true;
+
+      const buf = await sftpReadFile(sftp, absPath);
+      if (!isRaw && classifyBufferAsBinary(buf.subarray(0, 4096))) {
+        return ok({ file_path: absPath, content: `[Cannot read binary file: ${rawPath}]` });
+      }
+      const content = buf.toString('utf8');
+      const normalized = content.replace(/\r\n/g, '\n');
+      let lines;
+      let trailingNewline = false;
+      if (normalized === '') {
+        lines = [];
+      } else if (normalized.endsWith('\n')) {
+        lines = normalized.slice(0, -1).split('\n');
+        trailingNewline = true;
+      } else {
+        lines = normalized.split('\n');
+      }
+      const total = lines.length;
+
+      let ranges;
+      if (split.ranges.length === 0) {
+        if (total === 0) return ok({ file_path: absPath, content: '(empty file)' });
+        ranges = [{ start: 1, end: Math.min(DEFAULT_READ_LIMIT, total) }];
+      } else {
+        const resolved = split.ranges.map((r) => ({
+          start: r.start,
+          end: r.end === Infinity ? Math.min(r.start + DEFAULT_READ_LIMIT - 1, Math.max(total, r.start)) : r.end,
+        }));
+        ranges = mergeRanges(resolved);
+        if (ranges.length === 0 || ranges[0].start > total) {
+          return ok({ file_path: absPath, content: `Use :1 ... to read lines; file has ${total} lines` });
+        }
+        if (ranges.length === 1 && !isRaw) {
+          const r = ranges[0];
+          ranges = [{ start: Math.max(1, r.start - 1), end: Math.min(total, r.end + 3) }];
+        }
+      }
+      const displayRanges = ranges
+        .map((r) => ({ start: Math.max(1, r.start), end: Math.min(r.end, total) }))
+        .filter((r) => r.start <= r.end);
+      if (displayRanges.length === 0) {
+        return ok({ file_path: absPath, content: `Use :1 ... to read lines; file has ${total} lines` });
+      }
+
+      let tag = null;
+      if (!isRaw) {
+        const seenRanges = displayRanges.map((r) => [r.start, Math.min(r.end, total)]);
+        tag = snapshots.recordSnapshot(
+          snapKey(absPath),
+          trailingNewline ? lines.join('\n') + '\n' : lines.join('\n'),
+          seenRanges,
+        );
+      }
+      const text = formatHashlineRead(absPath, tag, lines, displayRanges, { isRaw });
+      return ok({ file_path: absPath, content: text });
+    }, { signal: deps.signal });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
+/** Remote directory tree (2-level, mirrors readDirectoryTree rendering). */
+async function sftpDirectoryTree(sftp, dirPath, relPath, depth) {
+  const out = [];
+  let entries;
+  try {
+    entries = await sftpReaddir(sftp, dirPath);
+  } catch {
+    return out;
+  }
+  const decorated = [];
+  for (const e of entries || []) {
+    const name = e.filename || e.name;
+    if (!name || name === '.' || name === '..') continue;
+    let mtime = 0;
+    let size = 0;
+    try {
+      const st = await sftpStat(sftp, dirPath === '/' ? `/${name}` : `${dirPath}/${name}`);
+      mtime = (st.mtime || 0) * 1000;
+      size = st.size || 0;
+    } catch { /* vanished */ }
+    decorated.push({ name, isDir: Boolean(e.longname && e.longname.startsWith('d')), mtime, size });
+  }
+  decorated.sort((a, b) => (a.isDir === b.isDir ? b.mtime - a.mtime : a.isDir ? 1 : -1));
+  const shown = decorated.slice(0, READ_DIR_PER_DIR);
+  const label = relPath === '' ? '.' : relPath;
+  if (depth === 0) {
+    out.push(`${label}/ (${decorated.length} entries)`);
+  } else {
+    out.push(label.endsWith('/') ? label : label + '/');
+  }
+  for (const e of shown) {
+    if (e.isDir) {
+      if (depth + 1 < READ_DIR_DEPTH) {
+        out.push('');
+        out.push(...(await sftpDirectoryTree(sftp, `${dirPath === '/' ? '' : dirPath}/${e.name}`, `${relPath}/${e.name}/`, depth + 1)));
+      } else {
+        out.push(`${e.name}/`);
+      }
+    } else {
+      const size = e.size > 0 ? ` (${formatBytes(e.size)}, ${formatRelativeTime(e.mtime)})` : '';
+      out.push(`${e.name}${size}`);
+    }
+  }
+  if (decorated.length > shown.length) {
+    out.push(`… ${decorated.length - shown.length} more entries not shown`);
+  }
+  return out;
+}
+
+async function toolSshGlob(args, deps = {}) {
+  const rawPath = String(args?.path ?? '').trim() || '.';
+  const hidden = args?.hidden === true;
+  let limit = GLOB_DEFAULT_LIMIT;
+  if (args?.limit != null) {
+    const n = Number(args.limit);
+    if (Number.isFinite(n) && n > 0) limit = Math.min(Math.max(Math.floor(n), 1), GLOB_MAX_LIMIT);
+  }
+  const target = resolveHostTarget(args, deps);
+  if (target.error) return fail(target.error);
+  const { hostId, connectParams, cwd } = target;
+  const sshService = require('./sshService.cjs');
+  const { basePath, glob, hasGlob } = parseFindPattern(rawPath);
+  const root = remoteJoin(cwd, basePath || '.');
+  const matcher = hasGlob ? globToRegExp(glob) : null;
+
+  try {
+    return await sshService.withSftp(connectParams, async (sftp) => {
+      const st = await sftpStat(sftp, root).catch(() => null);
+      if (!st) return fail(`Path not found: ${rawPath}`);
+      if (st.isFile()) {
+        return ok({ output: root, matches: [root], fileCount: 1, truncated: false });
+      }
+      const files = await sftpCollectFiles(sftp, root, { hidden, matcher, limit, signal: deps.signal });
+      files.sort((a, b) => b.mtime - a.mtime);
+      const limited = files.slice(0, limit);
+      if (limited.length === 0) {
+        return ok({ output: 'No files found matching pattern', matches: [], fileCount: 0, truncated: false });
+      }
+      return ok({
+        output: formatGroupedPaths(limited.map((f) => f.path)),
+        matches: limited.map((f) => f.path),
+        fileCount: limited.length,
+        truncated: false,
+      });
+    }, { signal: deps.signal });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
+async function toolSshGrep(args, deps = {}) {
+  const pattern = String(args?.pattern ?? '');
+  if (!pattern.trim()) return fail('Pattern must not be empty');
+  const skip = Math.max(0, Math.floor(Number(args?.skip ?? 0) || 0));
+  const caseSensitive = args?.case !== false;
+  const rawPath = String(args?.path ?? '').trim() || '.';
+  const target = resolveHostTarget(args, deps);
+  if (target.error) return fail(target.error);
+  const { hostId, connectParams, cwd } = target;
+  const sshService = require('./sshService.cjs');
+  const { basePath, glob, hasGlob } = parseFindPattern(rawPath);
+  const root = remoteJoin(cwd, basePath || '.');
+  const globMatcher = hasGlob ? globToRegExp(glob) : null;
+
+  let regex;
+  try {
+    regex = new RegExp(pattern, caseSensitive ? '' : 'i');
+  } catch {
+    return fail(`Invalid regex: ${pattern}`);
+  }
+
+  try {
+    return await sshService.withSftp(connectParams, async (sftp) => {
+      const st = await sftpStat(sftp, root).catch(() => null);
+      if (!st) return fail(`Path not found: ${rawPath}`);
+
+      let files;
+      if (st.isFile()) {
+        files = [{ path: root, mtime: 0 }];
+      } else {
+        files = await sftpCollectFiles(sftp, root, {
+          hidden: false,
+          matcher: globMatcher,
+          limit: 500,
+          signal: deps.signal,
+        });
+      }
+
+      const snapKey = (p) => sshSnapshotKey(deps.hostRuntime.topicId, hostId, p);
+      const perFileCap = st.isFile() ? GREP_PER_FILE_SINGLE : GREP_PER_FILE_MULTI;
+      const rendered = [];
+      let totalMatchCount = 0;
+      const filePageStart = st.isFile() ? 0 : skip * GREP_FILE_PAGE;
+      const pageFiles = st.isFile() ? files : files.slice(filePageStart, filePageStart + GREP_FILE_PAGE);
+
+      for (const f of pageFiles) {
+        if (deps.signal?.aborted) throw new Error('SSH 命令已取消');
+        let buf;
+        try {
+          const fst = await sftpStat(sftp, f.path);
+          if (fst.size > 4 * 1024 * 1024) continue; // max-filesize 4M
+          buf = await sftpReadFile(sftp, f.path);
+        } catch {
+          continue;
+        }
+        if (classifyBufferAsBinary(buf.subarray(0, 4096))) continue;
+        const content = buf.toString('utf8').replace(/\r\n/g, '\n');
+        const lines = content === '' ? [] : content.replace(/\n$/, '').split('\n');
+        const lineMap = new Map();
+        const noteLine = (lineNo, text, isMatch) => {
+          const prev = lineMap.get(lineNo);
+          if (prev && (prev.isMatch || !isMatch)) return;
+          lineMap.set(lineNo, { line: lineNo, text, isMatch });
+        };
+        let matchCount = 0;
+        for (let ln = 0; ln < lines.length && matchCount < perFileCap; ln++) {
+          const line = lines[ln];
+          if (line.length > GREP_MAX_COLUMN) continue;
+          if (regex.test(line)) {
+            noteLine(ln + 1, line, true);
+            matchCount++;
+            // context lines (deduped; a real match always wins over context)
+            for (let c = Math.max(0, ln - GREP_CONTEXT_BEFORE); c < ln; c++) {
+              noteLine(c + 1, lines[c], false);
+            }
+            for (let c = ln + 1; c <= Math.min(lines.length - 1, ln + GREP_CONTEXT_AFTER); c++) {
+              noteLine(c + 1, lines[c], false);
+            }
+          }
+        }
+        if (matchCount === 0) continue;
+        totalMatchCount += matchCount;
+        const entries2 = [...lineMap.values()].sort((a, b) => a.line - b.line);
+        let tag = null;
+        if (Buffer.byteLength(content, 'utf8') <= snapshots.SNAPSHOT_MAX_BYTES) {
+          const seenRanges = entries2.map((e) => [e.line, Math.min(e.line, lines.length)]);
+          tag = snapshots.recordSnapshot(snapKey(f.path), content, seenRanges);
+        }
+        rendered.push({ relPath: f.path, tag, entries: entries2 });
+        if (totalMatchCount >= GREP_TOTAL_CAP) break;
+      }
+
+      const moreFiles = !st.isFile() && filePageStart + GREP_FILE_PAGE < files.length;
+      const nextPageSkip = moreFiles ? skip + 1 : undefined;
+      const totalCapHit = totalMatchCount >= GREP_TOTAL_CAP;
+      const pastEnd = !st.isFile() && skip > 0 && pageFiles.length === 0 && files.length > 0;
+      const output = pastEnd
+        ? `No more results (skip=${skip} is past the last file page; use skip=${skip - 1} to go back)`
+        : formatAnchoredGrep(rendered, { truncated: totalCapHit, nextPageSkip });
+      return ok({ output, matchCount: totalMatchCount, fileCount: pageFiles.length });
+    }, { signal: deps.signal, timeoutMs: 60_000 });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
+async function toolSshWrite(args, deps = {}) {
+  const rawPath = String(args?.path ?? '').trim();
+  if (!rawPath) return fail('path required');
+  if (args?.content === undefined || args?.content === null) return fail('content required');
+  const target = resolveHostTarget(args, deps);
+  if (target.error) return fail(target.error);
+  const { hostId, connectParams, cwd } = target;
+  const sshService = require('./sshService.cjs');
+  const absPath = remoteJoin(cwd, rawPath);
+  const content = stripWriteContent(args.content);
+  const snapKey = (p) => sshSnapshotKey(deps.hostRuntime.topicId, hostId, p);
+
+  try {
+    return await sshService.withSftp(connectParams, async (sftp) => {
+      let isOverwrite = false;
+      try {
+        const st = await sftpStat(sftp, absPath);
+        isOverwrite = Boolean(st && st.isFile());
+      } catch { /* new file */ }
+      // parent dirs
+      const parent = absPath.slice(0, absPath.lastIndexOf('/')) || '/';
+      await sftpMkdirp(sftp, parent);
+      if (isOverwrite) {
+        // In-place write keeps mode/owner and follows symlinks (rename would
+        // replace the inode and break both).
+        await sftpWriteFile(sftp, absPath, Buffer.from(content, 'utf8'));
+      } else {
+        // New file: tmp + rename so a failed upload never leaves a partial file.
+        const tmpPath = `${absPath}.df-tmp-${Math.random().toString(36).slice(2, 10)}`;
+        await sftpWriteFile(sftp, tmpPath, Buffer.from(content, 'utf8'));
+        try {
+          await sftpRename(sftp, tmpPath, absPath);
+        } catch (e) {
+          await sftpUnlink(sftp, tmpPath).catch(() => {});
+          throw e;
+        }
+      }
+
+      const normalized = content.replace(/\r\n/g, '\n');
+      const lines = normalized === '' ? [] : normalized.replace(/\n$/, '').split('\n');
+      const total = lines.length;
+      const tag = snapshots.recordSnapshot(snapKey(absPath), content, total > 0 ? [[1, total]] : []);
+      const header = tag ? `[${absPath}#${tag}]\n` : '';
+      const action = isOverwrite ? 'Updated' : 'Created';
+      return ok({
+        file_path: absPath,
+        message: `${action} file.\n\n${header}Successfully wrote ${content.length} bytes to ${absPath}`,
+      });
+    }, { signal: deps.signal });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
+async function toolSshEdit(args, deps = {}) {
+  const input = String(args?.input ?? '');
+  if (!input.trim()) return fail('input required');
+  const target = resolveHostTarget(args, deps);
+  if (target.error) return fail(target.error);
+  const { hostId, connectParams, cwd } = target;
+  const sshService = require('./sshService.cjs');
+  const snapKey = (p) => sshSnapshotKey(deps.hostRuntime.topicId, hostId, p);
+
+  try {
+    return await sshService.withSftp(connectParams, async (sftp) => {
+      const reports = await applyHashlinePatchAsync(input, {
+        resolvePath: (p) => remoteJoin(cwd, p),
+        snapshotKey: snapKey,
+        readFile: (p) => sftpReadFile(sftp, p).then((b) => b.toString('utf8')),
+        // In place: the file must exist (plan-first read), and replacing the
+        // inode would drop mode/owner and break symlinks.
+        writeFile: (p, c) => sftpWriteFile(sftp, p, Buffer.from(c, 'utf8')),
+        unlink: (p) => sftpUnlink(sftp, p),
+        rename: (from, to) => sftpRename(sftp, from, to),
+        mkdir: (p) => sftpMkdirp(sftp, p),
+      });
+      const parts = [];
+      for (const r of reports) {
+        if (r.rem) {
+          parts.push(`Removed ${r.absPath}`);
+          continue;
+        }
+        const header = r.tag ? `[${r.finalPath}#${r.tag}]` : `[${r.finalPath}]`;
+        const lines = [header, `Applied ${r.opCount} op(s): ${(r.opSummary || []).join(', ')}`];
+        if (r.mv) lines.push(`Moved to ${r.finalPath}`);
+        if (r.warnings && r.warnings.length > 0) {
+          lines.push('Warnings:');
+          for (const w of r.warnings) lines.push(`- ${w}`);
+        }
+        parts.push(lines.join('\n'));
+      }
+      return ok({ message: parts.join('\n\n'), results: reports });
+    }, { signal: deps.signal, timeoutMs: 60_000 });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+
+async function toolSshCwd(args, deps = {}) {
+  const target = resolveHostTarget(args, deps);
+  if (target.error) return fail(target.error);
+  const { hostId, connectParams, cwd } = target;
+  const rt = deps.hostRuntime;
+  const sshService = require('./sshService.cjs');
+  const rawPath = String(args?.path ?? '').trim();
+
+  if (!rawPath) {
+    return ok({
+      cwd: cwd || null,
+      message: cwd ? `当前工作目录：${cwd}` : '当前工作目录：默认（登录 home 目录）',
+    });
+  }
+
+  const absPath = remoteJoin(cwd, rawPath);
+  try {
+    const { stdout, stderr, exitCode } = await sshService.execOnSavedHost(
+      connectParams,
+      `cd ${sshService.shellQuote(absPath)} && pwd`,
+      30_000,
+      deps.signal,
+    );
+    if (exitCode !== 0) {
+      const errText = String(stderr || stdout || '').trim();
+      return fail(`cannot cd to ${absPath}: ${errText || `exit code ${exitCode}`}`);
+    }
+    const canonical = String(stdout || '').trim().split('\n').pop() || absPath;
+    const okSet = rt.setCwd(rt.topicId, hostId, canonical);
+    if (!okSet) return fail('无法持久化工作目录（对话状态写入失败）');
+    return ok({ cwd: canonical, message: `工作目录已切换：${canonical}` });
+  } catch (e) {
+    return fail(String(e?.message || e));
+  }
+}
+// 主机按名称（terminal context）或 hostId/hostRuntime（host context）解析；凭据从 sshCredentials 解析。
 async function toolSshExec(args, deps = {}) {
-  const hostName = String(args?.host || '').trim();
   const command = String(args?.command || '').trim();
-  if (!hostName) return fail('host required');
   if (!command) return fail('command required');
 
   // 超时契约：默认 30s、5..600s；0（bash 语义"禁用"）对一次性远程执行无意义，按默认处理。
@@ -1739,57 +2417,63 @@ async function toolSshExec(args, deps = {}) {
   } catch {
     settings = {};
   }
-  const hosts = Array.isArray(settings.sshHosts) ? settings.sshHosts : [];
-  if (hosts.length === 0) {
-    return fail('暂无已保存的 SSH 主机，请先在终端设置中添加');
-  }
-  const matches = hosts.filter((h) => h && h.name === hostName);
-  const describe = (h) => `${h.name} (${h.user || '?'}@${h.host || '?'}:${h.port || 22})`;
-  if (matches.length === 0) {
-    return fail(`未找到名为 "${hostName}" 的已保存主机。可用主机：${hosts.map(describe).join('; ')}`);
-  }
-  if (matches.length > 1) {
-    return fail(`主机名 "${hostName}" 不唯一，请让用户确认目标：${matches.map(describe).join('; ')}`);
-  }
-  const target = matches[0];
 
-  // 凭据解析（renderer resolveCred 的 main 镜像）：credentialId → sshCredentials，
-  // legacy 内联字段兜底。
-  const creds = Array.isArray(settings.sshCredentials) ? settings.sshCredentials : [];
-  const cred = creds.find((c) => c && c.id === target.credentialId);
-  const password = cred?.password ?? target.password;
-  const privateKeyPath = cred?.privateKeyPath ?? target.privateKeyPath;
-  if (target.authMethod !== 'auto' && target.authMethod !== 'agent' && !password && !privateKeyPath) {
-    return fail(`主机 "${target.name}" 缺少可用凭据，请先在终端设置中配置`);
+  const sshService = require('./sshService.cjs');
+  let target;
+  try {
+    if (deps.hostRuntime) {
+      // host context：host/hostId 都缺省 → 所属主机。`host` 名称必须解析成
+      // hostId 再校验授权，否则会被静默忽略、在所属主机上执行。
+      const hostName = String(args?.host || '').trim() || null;
+      let hostId = String(args?.hostId || '').trim() || null;
+      if (hostName) {
+        const resolved = sshService.resolveSshConnection(settings, { hostName });
+        if (hostId && resolved.hostId !== hostId) {
+          return fail(`host（${hostName}）与 hostId（${hostId}）指向不同主机，请只提供其一`);
+        }
+        hostId = resolved.hostId;
+      }
+      if (!hostId) hostId = deps.hostRuntime.hostId;
+      if (hostId !== deps.hostRuntime.defaultHostId && !deps.hostRuntime.isGranted(hostId)) {
+        return fail(`尚未授权在主机 ${hostId} 上执行操作，请先征得用户确认`);
+      }
+      target = sshService.resolveSshConnection(settings, { hostId });
+    } else {
+      const hostName = String(args?.host || '').trim();
+      if (!hostName) return fail('host required');
+      target = sshService.resolveSshConnection(settings, { hostName });
+    }
+  } catch (e) {
+    return fail(String(e?.message || e));
   }
-  const jumpCred = creds.find((c) => c && c.id === target.proxyJumpCredentialId);
-  const jumpAuth = {
-    authMethod: target.proxyJumpAuthMethod || 'auto',
-    password: jumpCred?.password ?? target.proxyJumpPassword,
-    privateKeyPath: jumpCred?.privateKeyPath ?? target.proxyJumpPrivateKeyPath,
-  };
+
+  // cwd 前缀：host context 且该主机有持久 cwd 时拼接；cwd 为 null 不拼（登录默认 home）。
+  let fullCommand = command;
+  if (deps.hostRuntime) {
+    const cwd = deps.hostRuntime.getCwd(deps.hostRuntime.topicId, target.hostId);
+    if (cwd) {
+      fullCommand = `cd ${sshService.shellQuote(cwd)} && ${command}`;
+    }
+  }
 
   try {
-    const sshService = require('./sshService.cjs');
     const { stdout, stderr, exitCode, truncated } = await sshService.execOnSavedHost(
-      {
-        host: target.host,
-        port: target.port,
-        user: target.user,
-        authMethod: target.authMethod,
-        password,
-        privateKeyPath,
-        proxyJump: target.proxyJump,
-        proxyJumpAuthMethod: jumpAuth.authMethod,
-        proxyJumpPassword: jumpAuth.password,
-        proxyJumpPrivateKeyPath: jumpAuth.privateKeyPath,
-      },
-      command,
+      target.connectParams,
+      fullCommand,
       timeoutMs,
       deps.signal,
     );
+    if (deps.hostRuntime && fullCommand !== command && exitCode !== 0) {
+      // cd 前缀失败：exitCode 非 0 时输出里已含 shell 报错；不静默回 home。
+      return ok({
+        host: target.hostName,
+        command,
+        output: truncateTerminalOutput(String(stdout || '') + (stderr ? '\n' + stderr : '') + (truncated ? '\n…[远程输出超限被截断]' : '') + `\n（注意：cd 到工作目录失败，命令未执行）`),
+        exitCode,
+      });
+    }
     return ok({
-      host: target.name,
+      host: target.hostName,
       command,
       output: truncateTerminalOutput(String(stdout || '') + (stderr ? '\n' + stderr : '') + (truncated ? '\n…[远程输出超限被截断]' : '')),
       exitCode,
@@ -1800,6 +2484,14 @@ async function toolSshExec(args, deps = {}) {
 }
 
 async function executeBuiltinTool(toolName, args, deps = {}) {
+  // Defense in depth: host conversations never touch local machine tools,
+  // regardless of what the catalog allowed through.
+  if (
+    deps.context === 'host' &&
+    ['read', 'write', 'edit', 'bash', 'glob', 'grep', 'Terminal', 'McpManager'].includes(toolName)
+  ) {
+    return fail('主机助手无本机工具：' + toolName);
+  }
   switch (toolName) {
     case 'read':
       return toolRead(args);
@@ -1821,6 +2513,18 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
       return toolSshExec(args, deps);
     case 'ssh_hosts':
       return toolSshHosts(args, deps);
+    case 'ssh_read':
+      return toolSshRead(args, deps);
+    case 'ssh_glob':
+      return toolSshGlob(args, deps);
+    case 'ssh_grep':
+      return toolSshGrep(args, deps);
+    case 'ssh_write':
+      return toolSshWrite(args, deps);
+    case 'ssh_edit':
+      return toolSshEdit(args, deps);
+    case 'ssh_cwd':
+      return toolSshCwd(args, deps);
     case 'TodoWrite':
       return toolTodoWrite(args, deps.requestId);
     case 'Task':

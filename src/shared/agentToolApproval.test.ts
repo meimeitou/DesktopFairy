@@ -12,6 +12,7 @@ const {
   waitForToolApproval: (opts: {
     approvalId: string;
     signal?: AbortSignal;
+    force?: boolean;
   }) => Promise<"approved" | "denied" | "aborted">;
   approveRequestApprovals: (requestId: string) => number;
   dispatchToolApproval: (approvalId: string, approved: boolean) => boolean;
@@ -40,5 +41,31 @@ describe("approveRequestApprovals", () => {
   it("is a no-op when nothing is pending", () => {
     expect(approveRequestApprovals("missing")).toBe(0);
     expect(approveRequestApprovals("")).toBe(0);
+  });
+});
+
+describe("force approvals", () => {
+  it("skips force entries in approveRequestApprovals; single-card dispatch resolves them", async () => {
+    const req = "req_force";
+    const forcedId = makeApprovalId(req, "call_forced");
+    const normalId = makeApprovalId(req, "call_normal");
+
+    const pForced = waitForToolApproval({ approvalId: forcedId, force: true });
+    const pNormal = waitForToolApproval({ approvalId: normalId });
+
+    // Bulk bypass approves only the non-force entry.
+    expect(approveRequestApprovals(req)).toBe(1);
+    await expect(pNormal).resolves.toBe("approved");
+
+    // Force entry is still pending → explicit per-card approve resolves it.
+    expect(dispatchToolApproval(forcedId, true)).toBe(true);
+    await expect(pForced).resolves.toBe("approved");
+  });
+
+  it("force entries can also be denied per-card", async () => {
+    const forcedId = makeApprovalId("req_deny", "call_1");
+    const p = waitForToolApproval({ approvalId: forcedId, force: true });
+    expect(dispatchToolApproval(forcedId, false)).toBe(true);
+    await expect(p).resolves.toBe("denied");
   });
 });

@@ -28,6 +28,15 @@ export interface ChatSession {
 
 export const CHAT_TOPICS_VERSION = 1 as const;
 
+/** Host-conversation state: default host, per-host grants, per-host cwd. */
+export interface HostTopicState {
+  hostId: string;
+  /** hostId -> host fingerprint at grant time. */
+  grants: Record<string, string>;
+  /** hostId -> { identity fingerprint, path absolute cwd }. */
+  cwdByHost: Record<string, { identity: string; path: string }>;
+}
+
 export interface ChatTopic {
   id: string;
   name: string;
@@ -39,17 +48,51 @@ export interface ChatTopic {
   /** Session-level conversation mode. */
   chatMode: ChatMode;
   knowledgeBaseIds?: string[];
+  /** Present only for host conversations (Terminal page host-chat view). */
+  host?: HostTopicState;
 }
 
 export interface ChatTopicsStore {
   version: typeof CHAT_TOPICS_VERSION;
   activeId: string | null;
+  /** Active topic within the host-chat view (independent of activeId). */
+  activeHostId: string | null;
   topics: ChatTopic[];
 }
+
+function normalizeHostTopicState(raw: unknown): HostTopicState | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const data = raw as Partial<HostTopicState>;
+  if (typeof data.hostId !== "string" || !data.hostId.trim()) return undefined;
+  const grants: Record<string, string> = {};
+  if (data.grants && typeof data.grants === "object") {
+    for (const [k, v] of Object.entries(data.grants)) {
+      if (typeof v === "string") grants[k] = v;
+    }
+  }
+  const cwdByHost: Record<string, { identity: string; path: string }> = {};
+  if (data.cwdByHost && typeof data.cwdByHost === "object") {
+    for (const [k, raw] of Object.entries(data.cwdByHost)) {
+      if (
+        raw &&
+        typeof raw === "object" &&
+        "identity" in raw &&
+        "path" in raw &&
+        typeof raw.identity === "string" &&
+        typeof raw.path === "string"
+      ) {
+        cwdByHost[k] = { identity: raw.identity, path: raw.path };
+      }
+    }
+  }
+  return { hostId: data.hostId, grants, cwdByHost };
+}
+
 export function emptyChatTopicsStore(): ChatTopicsStore {
   return {
     version: CHAT_TOPICS_VERSION,
     activeId: null,
+    activeHostId: null,
     topics: [],
   };
 }
@@ -80,14 +123,23 @@ export function normalizeChatTopicsStore(
                 (id): id is string => typeof id === "string",
               )
             : undefined,
+          host: normalizeHostTopicState((t as ChatTopic).host),
         }))
     : [];
+  const hostTopicIds = new Set(
+    topics.filter((t) => t.host).map((t) => t.id),
+  );
   return {
     version: CHAT_TOPICS_VERSION,
     activeId:
       typeof data.activeId === "string"
         ? data.activeId
         : (topics[0]?.id ?? null),
+    activeHostId:
+      typeof data.activeHostId === "string" &&
+      hostTopicIds.has(data.activeHostId)
+        ? data.activeHostId
+        : null,
     topics,
   };
 }

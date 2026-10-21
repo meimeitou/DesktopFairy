@@ -13,7 +13,10 @@ import {
 } from "./reasoningEffort";
 
 
-export type BuiltinAgentRole = "personal-assistant" | "terminal-assistant";
+export type BuiltinAgentRole =
+  | "personal-assistant"
+  | "terminal-assistant"
+  | "host-assistant";
 
 export interface AgentConfig {
   /** Stable unique id; builtin agents use fixed ids. */
@@ -119,6 +122,7 @@ export const DEFAULT_USER_TEMPLATE = `# 用户档案
 （任何希望智能体记住的习惯或要求）`;
 
 export const BUILTIN_AGENT_TOOLS = getBuiltinToolCatalog("confirm");
+export const HOST_ASSISTANT_ID = "host-assistant";
 
 export const PERSONAL_ASSISTANT_ID = "personal-assistant";
 export const TERMINAL_ASSISTANT_ID = "terminal-assistant";
@@ -234,6 +238,70 @@ export function createTerminalAssistantDefaults(
   };
 }
 
+export const HOST_DEFAULT_DISABLED_TOOL_IDS = [
+  "Terminal",
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "glob",
+  "grep",
+  "McpManager",
+];
+
+export const DEFAULT_HOST_SOUL = `# Soul
+
+你是主机助手，通过 SSH 直连用户的远程主机执行命令与文件操作。你没有本地能力——所有文件与命令工具只作用于远程主机。
+
+## 角色定位
+
+- 你是一位**一线运维工程师**：用户的远程主机出问题、要改配置、要查状态，你直接动手，产出是结果，不是教程。
+- 你的一切操作都发生在远程主机上：读文件用 ssh_read，执行命令用 ssh_exec，永远不要假设本地环境。
+
+## 工作方式
+
+### 执行
+
+- **写之前先读**：修改任何文件前先 ssh_read 确认现状，不要凭记忆或猜测写。
+- **破坏性命令先说明影响**：rm、kill、覆盖写、批量修改、改系统配置——先说清会动到什么，用户确认后再执行。只读命令（ls、cat、grep、ps、systemctl status）直接跑。
+- **cd 失败必须报错**：切换工作目录用 ssh_cwd；cd 不成功就把错误原样告诉用户，绝不静默回退到 home 目录。
+- **修复后验证**：改动完成后重跑命令或重读文件确认生效，才收工。
+
+### 路径与主机
+
+- 相对路径基于当前工作目录解析；需要确认位置时先 pwd。
+- 默认操作对话所属的主机；用户明确要求操作另一台主机时，首次需要用户确认。
+
+## 沟通
+
+- 回复精确、简短。结论先行，命令输出引用关键行即可，不大段粘贴。
+- 不确定就说不确定；远程环境（发行版、包管理器、路径）与本地可能完全不同，先确认再动手。`;
+
+export function createHostAssistantDefaults(
+  overrides?: Partial<AgentConfig>,
+): AgentConfig {
+  return {
+    id: HOST_ASSISTANT_ID,
+    builtinRole: "host-assistant",
+    name: "主机助手",
+    avatar: "🐧",
+    description: "SSH 主机助手，直连远程主机执行命令与文件操作",
+    providerId: "openai",
+    modelName: "gpt-4o-mini",
+    soul: DEFAULT_HOST_SOUL,
+    user: "",
+    disabledToolIds: HOST_DEFAULT_DISABLED_TOOL_IDS,
+    mcpServerIds: [],
+    enabledSkillIds: [],
+    knowledgeBaseIds: [],
+    maxTurns: 30,
+    envVars: {},
+    chatMode: DEFAULT_CHAT_MODE,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
+    ...overrides,
+  };
+}
+
 export function isAgentBackend(backend: string): boolean {
   return backend === AGENT_BACKEND_KEY;
 }
@@ -253,7 +321,8 @@ function pickTypedAgentFields(
   if (typeof f.id === "string" && f.id.trim()) out.id = f.id;
   if (
     f.builtinRole === "personal-assistant" ||
-    f.builtinRole === "terminal-assistant"
+    f.builtinRole === "terminal-assistant" ||
+    f.builtinRole === "host-assistant"
   ) {
     out.builtinRole = f.builtinRole;
   }
@@ -339,7 +408,8 @@ export function normalizeAgentConfig(
             : `agent-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`),
     builtinRole:
       raw.builtinRole === "personal-assistant" ||
-      raw.builtinRole === "terminal-assistant"
+      raw.builtinRole === "terminal-assistant" ||
+      raw.builtinRole === "host-assistant"
         ? raw.builtinRole
         : base.builtinRole,
     name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : base.name,
@@ -410,7 +480,7 @@ export function getEffectiveToolApprovalMode(
 
 export function getEnabledAgentBuiltinTools(
   agent: AgentConfig,
-  context: "local" | "terminal" = "local",
+  context: "local" | "terminal" | "host" = "local",
   options?: { hideWebFetch?: boolean }
 ): AgentToolDescriptor[] {
   const approval = getEffectiveToolApprovalMode(agent);
@@ -425,6 +495,9 @@ export function getEnabledAgentBuiltinTools(
       "WebSearch",
       "Terminal",
       "ssh_exec",
+      "ssh_write",
+      "ssh_edit",
+      "ssh_cwd",
     ]) {
       disabled.add(id);
     }
@@ -437,14 +510,39 @@ export function getEnabledAgentBuiltinTools(
     disabled.add("AskUserQuestion");
   }
 
+  const HOST_ONLY_TOOL_IDS = [
+    "ssh_read",
+    "ssh_glob",
+    "ssh_grep",
+    "ssh_write",
+    "ssh_edit",
+    "ssh_cwd",
+  ];
+  const HOST_FORCED_DISABLED_IDS = [
+    "bash",
+    "Terminal",
+    "read",
+    "write",
+    "edit",
+    "glob",
+    "grep",
+    "McpManager",
+  ];
+
   if (context === "local") {
     disabled.add("Terminal");
     disabled.add("ssh_exec");
     disabled.add("ssh_hosts");
+    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
   }
 
   if (context === "terminal") {
     disabled.add("bash");
+    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
+  }
+
+  if (context === "host") {
+    for (const id of HOST_FORCED_DISABLED_IDS) disabled.add(id);
   }
 
   if (options?.hideWebFetch) {

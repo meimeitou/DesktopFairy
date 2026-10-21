@@ -132,7 +132,7 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
   ),
   builtinTool(
     "ssh_exec",
-    "Runs a one-shot shell command on a saved SSH host by name and returns merged output plus exitCode, then disconnects. `host` is the saved host name (exact match; ambiguous names are rejected with candidates). `timeout` in seconds (default 30, max 600). Hosts are listed in the system prompt.",
+    "Runs a one-shot shell command on a saved SSH host and returns merged output plus exitCode, then disconnects. In host conversations, omit `host`/`hostId` to target the conversation host (runs in the conversation cwd when set); cross-host requires prior user approval. Outside host conversations, `host` is the saved host name (exact match; ambiguous names are rejected with candidates). `timeout` in seconds (default 30, max 600).",
     "shell",
     true,
   ),
@@ -140,6 +140,42 @@ export const CLAUDE_CODE_BUILTIN_TOOLS: AgentBuiltinTool[] = [
     "ssh_hosts",
     'Manages saved SSH hosts. Actions: "list" (read-only), "add" (create a host), "update" (modify fields of an existing host by exact name), "delete" (remove a host by exact name). Credentials are never managed here — reference an existing credential by credentialId only; inline password/privateKeyPath fields are rejected. Write actions require user approval.',
     "shell",
+    true,
+  ),
+  builtinTool(
+    "ssh_read",
+    "Reads a file from a saved SSH host over SFTP. Supports `:line`/`:start-end` selectors and hashline anchors like the local read tool; directories render a 2-level tree. `path` may be relative to the conversation cwd. `hostId` defaults to the conversation host; cross-host requires prior user approval.",
+    "file",
+    false,
+  ),
+  builtinTool(
+    "ssh_glob",
+    "Finds files on a saved SSH host by glob pattern (`*`, `**`, `?`, `[...]`, `{a,b}`) via SFTP, sorted by mtime, grouped by directory. `path` is the search root (defaults to the conversation cwd). Hidden files are skipped unless `hidden` is true; built-in exclusion set always applies — remote .gitignore is NOT parsed. `hostId` defaults to the conversation host; cross-host requires prior user approval.",
+    "file",
+    false,
+  ),
+  builtinTool(
+    "ssh_grep",
+    "Searches file CONTENTS on a saved SSH host with a JS regex via SFTP, output anchored with file:line. Contract matches the local grep tool (context lines, per-file caps, total cap, `skip` pagination, binary files skipped, max file size 4M). `path` is the search root (defaults to the conversation cwd); remote .gitignore is NOT parsed. Invalid regex fails with `Invalid regex: <pattern>`. `hostId` defaults to the conversation host; cross-host requires prior user approval.",
+    "file",
+    false,
+  ),
+  builtinTool(
+    "ssh_write",
+    "Writes a file on a saved SSH host over SFTP with atomic replace (tmp file + rename). Creates parent directories as needed. Read the file first (ssh_read) before overwriting. `path` may be relative to the conversation cwd. `hostId` defaults to the conversation host; cross-host requires prior user approval.",
+    "file",
+    true,
+  ),
+  builtinTool(
+    "ssh_edit",
+    "Applies a hashline patch to a file on a saved SSH host over SFTP. Same input format as the local edit tool: `[file#TAG]` header + PUT/CUT ops, plan-first (any section failing leaves the remote file untouched), stale tag rejected. `hostId` defaults to the conversation host; cross-host requires prior user approval.",
+    "file",
+    true,
+  ),
+  builtinTool(
+    "ssh_cwd",
+    "Shows or switches the persistent working directory for the conversation on a saved SSH host. Without `path`, returns the current cwd (or the login home default). With `path`, runs a remote `cd` — on success the cwd persists; on failure the error is returned and the cwd is unchanged (never silently falls back to home). `hostId` defaults to the conversation host; cross-host requires prior user approval.",
+    "file",
     true,
   ),
   builtinTool(
@@ -433,11 +469,72 @@ function getOpenAiToolParameters(toolId: string) {
       return {
         type: "object",
         properties: {
-          host: { type: "string", description: "已保存 SSH 主机的名称（精确匹配）" },
+          host: { type: "string", description: "已保存 SSH 主机的名称（精确匹配；主机对话中可省略）" },
+          hostId: { type: "string", description: "目标主机 id（主机对话中缺省为对话所属主机）" },
           command: { type: "string", description: "要在远程主机上执行的 shell 命令" },
           timeout: { type: "number", description: "超时秒数，默认 30，最大 600" },
         },
-        required: ["host", "command"],
+        required: ["command"],
+      };
+    case "ssh_read":
+      return {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "远程文件路径（可相对当前 cwd）" },
+          hostId: { type: "string", description: "目标主机 id（缺省为对话所属主机）" },
+        },
+        required: ["path"],
+      };
+    case "ssh_glob":
+      return {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "搜索根目录（缺省为当前 cwd）" },
+          hidden: { type: "boolean", description: "是否包含点文件（默认 false）" },
+          gitignore: { type: "boolean", description: "兼容参数：远端不解析 .gitignore，仅应用内置排除集" },
+          limit: { type: "number", description: "最大返回条数" },
+          hostId: { type: "string", description: "目标主机 id（缺省为对话所属主机）" },
+        },
+      };
+    case "ssh_grep":
+      return {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "JS 正则表达式" },
+          path: { type: "string", description: "搜索根目录（缺省为当前 cwd）" },
+          case: { type: "boolean", description: "是否区分大小写（默认 true）" },
+          gitignore: { type: "boolean", description: "兼容参数：远端不解析 .gitignore，仅应用内置排除集" },
+          skip: { type: "number", description: "跳过前 N 条匹配，用于分页" },
+          hostId: { type: "string", description: "目标主机 id（缺省为对话所属主机）" },
+        },
+        required: ["pattern"],
+      };
+    case "ssh_write":
+      return {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "远程文件路径（可相对当前 cwd）" },
+          content: { type: "string", description: "文件完整内容" },
+          hostId: { type: "string", description: "目标主机 id（缺省为对话所属主机）" },
+        },
+        required: ["path", "content"],
+      };
+    case "ssh_edit":
+      return {
+        type: "object",
+        properties: {
+          input: { type: "string", description: "hashline patch 文本（[file#TAG] 头 + PUT/CUT 操作）" },
+          hostId: { type: "string", description: "目标主机 id（缺省为对话所属主机）" },
+        },
+        required: ["input"],
+      };
+    case "ssh_cwd":
+      return {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "要切换到的目录（缺省=查看当前 cwd）" },
+          hostId: { type: "string", description: "目标主机 id（缺省为对话所属主机）" },
+        },
       };
     case "ssh_hosts":
       return {

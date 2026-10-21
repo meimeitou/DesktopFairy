@@ -5,11 +5,14 @@ import {
   normalizeAgentConfig,
   createPersonalAssistantDefaults,
   createTerminalAssistantDefaults,
+  createHostAssistantDefaults,
   findAgentById,
   PERSONAL_ASSISTANT_ID,
   TERMINAL_ASSISTANT_ID,
+  HOST_ASSISTANT_ID,
   PERSONAL_DEFAULT_DISABLED_TOOL_IDS,
   TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
+  HOST_DEFAULT_DISABLED_TOOL_IDS,
   isAgentBackend,
   getAgentBackendLabel,
   type AgentConfig,
@@ -297,5 +300,56 @@ describe('agent', () => {
       expect(label.length).toBeGreaterThan(0)
       expect(label).toContain('TestAgent')
     })
+  })
+})
+
+describe('createHostAssistantDefaults', () => {
+  it('fills host assistant fields', () => {
+    const agent = createHostAssistantDefaults()
+    expect(agent.id).toBe(HOST_ASSISTANT_ID)
+    expect(agent.builtinRole).toBe('host-assistant')
+    expect(agent.name).toBe('主机助手')
+    expect(agent.avatar).toBe('🐧')
+    expect(agent.mcpServerIds).toEqual([])
+    expect(agent.enabledSkillIds).toEqual([])
+    expect(agent.knowledgeBaseIds).toEqual([])
+    expect(agent.maxTurns).toBe(30)
+    expect(agent.chatMode).toBe(DEFAULT_CHAT_MODE)
+    expect(agent.soul).toContain('ssh')
+    expect(agent.disabledToolIds).toEqual(HOST_DEFAULT_DISABLED_TOOL_IDS)
+  })
+})
+
+describe('getEnabledAgentBuiltinTools host context', () => {
+  it('exposes ssh_* tools in host context and hides local machine tools', () => {
+    const agent = createHostAssistantDefaults({ disabledToolIds: [] })
+    const ids = getEnabledAgentBuiltinTools(agent, 'host').map((t) => t.id)
+    for (const id of ['ssh_read', 'ssh_glob', 'ssh_grep', 'ssh_write', 'ssh_edit', 'ssh_cwd', 'ssh_exec', 'ssh_hosts']) {
+      expect(ids).toContain(id)
+    }
+    for (const id of ['bash', 'read', 'write', 'edit', 'glob', 'grep', 'Terminal', 'McpManager']) {
+      expect(ids).not.toContain(id)
+    }
+  })
+
+  it('local and terminal contexts never expose the new ssh_* file tools', () => {
+    const agent = createPersonalAssistantDefaults({ disabledToolIds: [] })
+    const local = getEnabledAgentBuiltinTools(agent, 'local').map((t) => t.id)
+    const term = getEnabledAgentBuiltinTools(createTerminalAssistantDefaults({ disabledToolIds: [] }), 'terminal').map((t) => t.id)
+    for (const id of ['ssh_read', 'ssh_glob', 'ssh_grep', 'ssh_write', 'ssh_edit', 'ssh_cwd']) {
+      expect(local).not.toContain(id)
+      expect(term).not.toContain(id)
+    }
+    // terminal keeps the live-session path
+    expect(term).toContain('ssh_exec')
+  })
+
+  it('plan mode blocks ssh_write/ssh_edit/ssh_cwd but keeps ssh_read', () => {
+    const agent = createHostAssistantDefaults({ chatMode: 'plan', disabledToolIds: [] })
+    const ids = getEnabledAgentBuiltinTools(agent, 'host').map((t) => t.id)
+    expect(ids).not.toContain('ssh_write')
+    expect(ids).not.toContain('ssh_edit')
+    expect(ids).not.toContain('ssh_cwd')
+    expect(ids).toContain('ssh_read')
   })
 })

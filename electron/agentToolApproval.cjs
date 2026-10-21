@@ -25,7 +25,7 @@ function registerToolApprovalHandlers(ipcMain) {
 }
 
 /** @returns {'approved' | 'denied' | 'aborted'} */
-function waitForToolApproval({ approvalId, signal }) {
+function waitForToolApproval({ approvalId, signal, force = false }) {
   return new Promise((resolve) => {
     if (signal?.aborted) {
       resolve('aborted');
@@ -33,6 +33,7 @@ function waitForToolApproval({ approvalId, signal }) {
     }
 
     const entry = {
+      force: force === true,
       resolve: (result) => {
         pending.delete(approvalId);
         resolve(result);
@@ -106,6 +107,8 @@ function dispatchUserAnswer(answerId, answers) {
  * Approve every tool still waiting on this request.
  * Used by "始终允许"/bypass so parallel tools that already entered
  * waitForToolApproval (UI may still show 准备中) are not left hanging.
+ * Force entries (cross-host grants, ssh_hosts writes) are skipped — only an
+ * explicit per-card decision (or abort) can resolve them.
  * Does not touch AskUserQuestion answer waits.
  */
 function approveRequestApprovals(requestId) {
@@ -114,6 +117,7 @@ function approveRequestApprovals(requestId) {
   let count = 0;
   for (const [id, entry] of [...pending.entries()]) {
     if (!id.startsWith(prefix)) continue;
+    if (entry.force) continue; // force items need an explicit per-card decision
     entry.resolve('approved');
     count += 1;
   }

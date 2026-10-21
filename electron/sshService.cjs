@@ -632,6 +632,154 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
     });
   });
 }
+
+/** Single-quote shell escaping for `cd '<path>'` prefixes. */
+function shellQuote(s) {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Resolve a saved host (by id first, then exact name) from settings into
+ * connectParams for execOnSavedHost/withSftp. Mirrors renderer resolveCred:
+ * credentialId → sshCredentials, legacy inline fields as fallback.
+ */
+function resolveSshConnection(settings, { hostId, hostName } = {}) {
+  const hosts = Array.isArray(settings?.sshHosts) ? settings.sshHosts : [];
+  let target = null;
+  if (hostId) {
+    target = hosts.find((h) => h && h.id === hostId) || null;
+    if (!target) {
+      throw new Error(`未找到 id 为 "${hostId}" 的已保存主机`);
+    }
+  } else if (hostName) {
+    const matches = hosts.filter((h) => h && h.name === hostName);
+    const describe = (h) => `${h.name} (${h.user || '?'}@${h.host || '?'}:${h.port || 22})`;
+    if (matches.length === 0) {
+      throw new Error(
+        hosts.length === 0
+          ? '暂无已保存的 SSH 主机，请先在终端设置中添加'
+          : `未找到名为 "${hostName}" 的已保存主机。可用主机：${hosts.map(describe).join('; ')}`,
+      );
+    }
+    if (matches.length > 1) {
+      throw new Error(`主机名 "${hostName}" 不唯一，请让用户确认目标：${matches.map(describe).join('; ')}`);
+    }
+    target = matches[0];
+  } else {
+    throw new Error('hostId 或 hostName 至少提供一个');
+  }
+
+  const creds = Array.isArray(settings?.sshCredentials) ? settings.sshCredentials : [];
+  const cred = creds.find((c) => c && c.id === target.credentialId);
+  const password = cred?.password ?? target.password;
+  const privateKeyPath = cred?.privateKeyPath ?? target.privateKeyPath;
+  if (target.authMethod !== 'auto' && target.authMethod !== 'agent' && !password && !privateKeyPath) {
+    throw new Error(`主机 "${target.name}" 缺少可用凭据，请先在终端设置中配置`);
+  }
+  const jumpCred = creds.find((c) => c && c.id === target.proxyJumpCredentialId);
+  return {
+    hostId: target.id,
+    hostName: target.name,
+    connectParams: {
+      host: target.host,
+      port: target.port,
+      user: target.user,
+      authMethod: target.authMethod,
+      password,
+      privateKeyPath,
+      proxyJump: target.proxyJump,
+      proxyJumpAuthMethod: target.proxyJumpAuthMethod || 'auto',
+      proxyJumpPassword: jumpCred?.password ?? target.proxyJumpPassword,
+      proxyJumpPrivateKeyPath: jumpCred?.privateKeyPath ?? target.proxyJumpPrivateKeyPath,
+    },
+  };
+}
+
+/**
+ * One-shot SFTP session (ssh_read/glob/grep/write/edit): connect → sftp → fn → disconnect.
+ * Mirrors execOnSavedHost's overall-timeout/abort/connection-recycling skeleton.
+ */
+async function withSftp(connectParams, fn, { timeoutMs = 30_000, signal } = {}) {
+  const built = buildConnectConfig({
+    host: connectParams?.host,
+    port: connectParams?.port,
+    user: connectParams?.user,
+    authMethod: connectParams?.authMethod,
+    password: connectParams?.password,
+    privateKeyPath: connectParams?.privateKeyPath,
+  });
+  if (built.error) throw new Error(built.error);
+
+  const jumpAuth = {
+    authMethod: connectParams?.proxyJumpAuthMethod || 'auto',
+    password: connectParams?.proxyJumpPassword,
+    privateKeyPath: connectParams?.proxyJumpPrivateKeyPath,
+  };
+  const jumpRef = { conn: null, jumpConn: null };
+  let overallTimer = null;
+  let overallSettled = false;
+  let overallReject = null;
+  const overallTimeout = new Promise((_resolve, rej) => { overallReject = rej; });
+  overallTimer = setTimeout(() => {
+    if (overallSettled) return;
+    overallSettled = true;
+    try { jumpRef.conn?.end(); } catch { /* already closed */ }
+    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
+    overallReject(new Error(`SSH SFTP 操作超时（${Math.round(timeoutMs / 1000)}s，含连接阶段）`));
+  }, timeoutMs);
+  const onOverallAbort = () => {
+    clearTimeout(overallTimer);
+    if (overallSettled) return;
+    overallSettled = true;
+    try { jumpRef.conn?.end(); } catch { /* already closed */ }
+    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
+    overallReject(new Error('SSH 命令已取消'));
+  };
+  if (signal?.aborted) {
+    clearTimeout(overallTimer);
+    throw new Error('SSH 命令已取消');
+  }
+  signal?.addEventListener('abort', onOverallAbort, { once: true });
+  const clearOverall = () => {
+    clearTimeout(overallTimer);
+    signal?.removeEventListener('abort', onOverallAbort);
+  };
+
+  const connectPromise = connectWithJump(built.config, connectParams?.proxyJump, jumpAuth);
+  const { conn, jumpConn, error } = await Promise.race([connectPromise, overallTimeout]);
+  if (error) { clearOverall(); throw new Error(error); }
+  jumpRef.conn = conn;
+  jumpRef.jumpConn = jumpConn;
+  // NOTE: clearOverall() stays armed through the SFTP phase — the same
+  // deadline covers connect + transfers, and abort must be able to tear the
+  // connection down while a read/write is in flight.
+  connectPromise.then((r) => {
+    if (r && r.conn && r.conn !== conn) { try { r.conn.end(); } catch { /* already closed */ } }
+    if (r && r.jumpConn && r.jumpConn !== jumpConn) { try { r.jumpConn.end(); } catch { /* already closed */ } }
+  }).catch(() => {});
+
+  try {
+    const sftp = await Promise.race([
+      new Promise((resolve, reject) => {
+        conn.sftp((err, sftpSession) => {
+          if (err) reject(new Error(`远端不支持 SFTP（${String(err?.message || err)}），文件工具不可用；命令仍可用 ssh_exec`));
+          else resolve(sftpSession);
+        });
+      }),
+      overallTimeout,
+    ]);
+    try {
+      return await Promise.race([fn(sftp), overallTimeout]);
+    } finally {
+      try { sftp.end(); } catch { /* already closed */ }
+    }
+  } finally {
+    clearOverall();
+    try { conn.end(); } catch { /* already closed */ }
+    if (jumpConn) { try { jumpConn.end(); } catch { /* already closed */ } }
+  }
+}
+
 module.exports = {
   registerSshHandlers,
   killAllSshSessions,
@@ -639,4 +787,7 @@ module.exports = {
   stopSshActiveCapture,
   isSshSessionBusy,
   execOnSavedHost,
+  shellQuote,
+  resolveSshConnection,
+  withSftp,
 };

@@ -50,6 +50,8 @@ function buildAgentToolDeps({
   terminalSessionId,
   suppressToolDoneEvent = true,
   onToolDenied,
+  context = 'local',
+  hostRuntime = null,
 }) {
   const sessionEnabledSkillIds = new Set(agentConfig?.enabledSkillIds || []);
 
@@ -80,6 +82,8 @@ function buildAgentToolDeps({
     terminalSessionId,
     suppressToolDoneEvent,
     onToolDenied,
+    context,
+    hostRuntime,
   };
 }
 

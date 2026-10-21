@@ -227,7 +227,24 @@ export default function TerminalSettingsTab({
   const handleDeleteHost = async (id: string) => {
     const host = sshHosts.find((h) => h.id === id);
     if (!host) return;
-    if (!(await confirm({ title: "删除主机", content: `确定删除主机「${host.name}」吗？` }))) return;
+    let topicCount = 0;
+    try {
+      const store = (await api.invoke("chat:topics:list", {
+        scope: "host",
+      })) as { topics?: { host?: { hostId?: string } }[] };
+      topicCount = (store.topics || []).filter((t) => t.host?.hostId === id).length;
+    } catch {
+      /* count optional — confirmation still shows without it */
+    }
+    const extra = topicCount > 0 ? `将同时删除其 ${topicCount} 个主机对话，` : "";
+    if (
+      !(await confirm({
+        title: "删除主机",
+        content: `删除主机「${host.name}」${extra}确定吗？`,
+      }))
+    ) {
+      return;
+    }
     onChange({ sshHosts: sshHosts.filter((h) => h.id !== id) });
   };
 

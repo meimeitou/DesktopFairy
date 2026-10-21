@@ -36,7 +36,9 @@ const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require(
 const { registerSshHandlers, killAllSshSessions } = require('./sshService.cjs');
 const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
 const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
-const { registerAiStreamHandlers, abortAllAiStreams } = require('./aiStreamService.cjs');
+const { registerAiStreamHandlers, abortAllAiStreams, manager: aiStreamManager } = require('./aiStreamService.cjs');
+const { abortRequestApprovals } = require('./agentToolApproval.cjs');
+const { createHostConversationService } = require('./hostConversationService.cjs');
 const {
   registerToolAbortHandlers,
   clearAllToolAborts,
@@ -153,9 +155,12 @@ const resolveStartupSettings = () => ({
 });
 
 // Seed main-process snapshot so early sends resolve without waiting for renderer sync.
+// backfillBuiltinAgents guarantees the always-present builtin agents exist —
+// a stale disk file missing them must not break early stream resolution.
 {
+  const { backfillBuiltinAgents } = require('./settingsBackfill.cjs');
   const disk = loadSettingsFromDisk();
-  if (disk) settingsSnapshot.setSnapshot(disk);
+  settingsSnapshot.setSnapshot(backfillBuiltinAgents(disk || {}));
 }
 
 
@@ -608,6 +613,7 @@ const setupIPC = () => {
     // swallowed and the renderer assumed success (data loss on restart).
     let persisted = true;
     let error;
+    const previousSettings = settingsSnapshot.getSnapshot();
     try {
       fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(settings, null, 2));
     } catch (e) {
@@ -618,6 +624,23 @@ const setupIPC = () => {
     // Apply in-memory + broadcast even on disk failure so the running session
     // stays consistent; only the on-disk copy is stale.
     const revision = settingsSnapshot.setSnapshot(settings);
+    // Host deletion cascade: any hostId removed from sshHosts drops its
+    // conversations (streams aborted first, then files) before persisting.
+    // Only a payload that actually carries the host list can express a
+    // deletion — a partial/legacy snapshot without sshHosts must never be
+    // read as "all hosts removed" (that silently wiped conversations).
+    try {
+      const before = Array.isArray(previousSettings?.sshHosts) ? previousSettings.sshHosts : [];
+      const hasHostList = Array.isArray(settings.sshHosts);
+      const afterIds = new Set((hasHostList ? settings.sshHosts : []).map((h) => h?.id));
+      const removed = hasHostList ? before.filter((h) => h?.id && !afterIds.has(h.id)) : [];
+      if (removed.length) {
+        console.warn('[settings:sync] cascade delete host conversations:', removed.length);
+        for (const h of removed) hostConversationService.deleteTopicsByHost(h.id);
+      }
+    } catch (e) {
+      console.warn('Failed to cascade-delete host conversations:', e);
+    }
     applySelectionSettings(settings);
     applyChatShortcutSettings(settings);
     // Broadcast to every window, including the sender. Chat / Settings /
@@ -640,13 +663,29 @@ const setupIPC = () => {
     settingsPath: SETTINGS_PATH,
   });
 
-  registerChatSessionHandlers({
+  const topicStore = registerChatSessionHandlers({
     ipcMain,
     sessionPath: CHAT_SESSION_PATH,
     topicsIndexPath: CHAT_TOPICS_INDEX_PATH,
     sessionsDir: CHAT_SESSIONS_DIR,
     toolResultsDir: CHAT_TOOL_RESULTS_DIR,
     chatLogsDir: CHAT_LOGS_DIR,
+    getAbortHandler: (topicId) => () => {
+      const { manager } = require('./aiStreamService.cjs');
+      const { abortRequestApprovals } = require('./agentToolApproval.cjs');
+      try { manager.abort(topicId); } catch { /* no stream */ }
+      try { abortRequestApprovals(topicId); } catch { /* none pending */ }
+    },
+    getSshHosts: () => settingsSnapshot.getSnapshot()?.sshHosts || [],
+  });
+
+  const hostConversationService = createHostConversationService({
+    topicStore,
+    settingsSnapshot,
+    manager: aiStreamManager,
+    abortRequestApprovals,
+    getWindows: getScreenshotWindows,
+    settingsPath: SETTINGS_PATH,
   });
 
   registerPtyHandlers({ ipcMain });
@@ -675,6 +714,7 @@ const setupIPC = () => {
       if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
       return null;
     },
+    hostConversationService,
   });
 
   registerBrowserHandlers(ipcMain, {

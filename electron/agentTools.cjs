@@ -25,7 +25,7 @@ function emitToolEvent(deps, patch) {
   });
 }
 
-async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
+async function requestInlineToolApproval(toolCall, deps, args, rawArgs, { force = false } = {}) {
   const toolCallId = toolCall?.id || deps.toolCallId || 'unknown';
   const toolName = toolCall?.function?.name || 'unknown';
   const approvalId = makeApprovalId(deps.requestId, toolCallId);
@@ -36,12 +36,16 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs) {
     toolArgs: rawArgs,
     approvalId,
     status: 'awaiting_approval',
+    // Force entries cannot be bulk-approved by "always allow" — the renderer
+    // must exclude them from its per-card approval loop.
+    force: force === true,
   });
   deps.onApprovalWaitStart?.();
 
   const approvalResult = await waitForToolApproval({
     approvalId,
     signal: deps.signal,
+    force,
   });
 
   if (approvalResult === 'aborted') {
@@ -244,9 +248,32 @@ async function executeAgentTool(toolCall, deps) {
     return executeAskUserQuestion(toolCall, deps, args, rawArgs, toolCallId);
   }
 
+  // Host conversations: normalize a `host` name to `hostId` before the
+  // approval gate, so cross-host calls by name still get the force card and
+  // the grant is persisted for the right host.
+  if (
+    deps.context === 'host' &&
+    deps.hostRuntime &&
+    name !== 'ssh_hosts' &&
+    typeof args.host === 'string' &&
+    args.host.trim() &&
+    !args.hostId
+  ) {
+    const resolvedId = deps.hostRuntime.resolveHostIdByName(args.host.trim());
+    if (resolvedId) args.hostId = resolvedId;
+  }
+
+  // Host-conversation force rules (ssh_hosts writes, cross-host grants):
+  // even full-auto / "always allow" must show an approval card. The bulk
+  // bypass (approveRequestApprovals) skips force entries, so only an
+  // explicit per-card decision resolves them.
+  const hostForce =
+    deps.context === 'host' && deps.hostRuntime
+      ? deps.hostRuntime.forceApproval(name, args, deps.hostRuntime)
+      : false;
   const approvalMode = resolveToolApprovalMode(deps.agentConfig);
-  if (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args)) {
-    const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs);
+  if (hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args))) {
+    const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs, { force: hostForce });
     if (approvalResult === 'aborted') {
       return { resultText: '', aborted: true };
     }
@@ -257,6 +284,15 @@ async function executeAgentTool(toolCall, deps) {
         denied: true,
       };
     }
+    // Approved force card for a cross-host call → persist the grant.
+    if (
+      hostForce &&
+      name !== 'ssh_hosts' &&
+      args?.hostId &&
+      args.hostId !== deps.hostRuntime.defaultHostId
+    ) {
+      deps.hostRuntime.ensureGrant(deps.hostRuntime.topicId, args.hostId);
+    }
   } else {
     emitToolEvent(deps, {
       toolCallId,
@@ -264,6 +300,18 @@ async function executeAgentTool(toolCall, deps) {
       toolArgs: rawArgs,
       status: 'running',
     });
+  }
+
+  // Host conversations allow Skills load only — never install/remove/search/
+  // init/register (independent of approval and bypass).
+  if (deps.context === 'host' && name === 'Skills' && args?.action !== 'load') {
+    return returnToolResult(
+      deps,
+      toolCallId,
+      name,
+      rawArgs,
+      JSON.stringify({ ok: false, error: '主机助手仅支持 Skills load' }),
+    );
   }
 
   if (name.startsWith('mcp__')) {

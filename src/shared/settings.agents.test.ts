@@ -3,6 +3,7 @@ import { finalizeSettings, DEFAULT_SETTINGS } from "./settings";
 import {
   PERSONAL_ASSISTANT_ID,
   TERMINAL_ASSISTANT_ID,
+  HOST_ASSISTANT_ID,
   findAgentById,
   createPersonalAssistantDefaults,
 } from "./agent";
@@ -45,7 +46,9 @@ describe("settings agents migration (finalizeSettings)", () => {
     const terminal = findAgentById(next.agents, TERMINAL_ASSISTANT_ID);
     expect(personal).toBeDefined();
     expect(terminal).toBeDefined();
-    expect(next.agents).toHaveLength(2);
+    expect(next.agents).toHaveLength(3);
+    const host = findAgentById(next.agents, HOST_ASSISTANT_ID);
+    expect(host).toBeDefined();
 
     // Personal assistant inherits the legacy agent config.
     expect(personal?.soul).toBe("旧灵魂");

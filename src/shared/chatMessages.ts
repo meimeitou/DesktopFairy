@@ -36,6 +36,8 @@ export interface ChatMsg {
   /** Relative path under chat_tool_results/{topicId}/ */
   toolResultRef?: string;
   toolResultBytes?: number;
+  /** Force approval card: never bulk-approved by "always allow". */
+  toolForce?: boolean;
   /** Display-only knowledge citations for plain-chat RAG. Not replayed to the model. */
   knowledgeCitations?: KnowledgeCitation[];
   /** Display-only warning shown when knowledge pre-injection failed. Not replayed. */
@@ -185,6 +187,7 @@ export type AgentToolUpsertFields = {
   toolStatus?: ChatMsg["toolStatus"];
   toolMessage?: string;
   toolResultPreview?: string;
+  toolForce?: boolean;
 };
 
 /**
@@ -224,6 +227,7 @@ export function upsertAgentToolMessage(
     toolStatus: nextStatus,
     toolMessage: fields.toolMessage ?? prevTool?.toolMessage,
     toolResultPreview: fields.toolResultPreview ?? prevTool?.toolResultPreview,
+    toolForce: fields.toolForce ?? prevTool?.toolForce,
     timestamp: prevTool?.timestamp || Date.now(),
   };
 

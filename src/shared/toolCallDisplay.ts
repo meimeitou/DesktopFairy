@@ -14,6 +14,12 @@ const TOOL_LABELS: Record<string, string> = {
   McpManager: "管理 MCP",
   ssh_exec: "SSH 远程执行",
   ssh_hosts: "SSH 主机管理",
+  ssh_read: "SSH 读取文件",
+  ssh_write: "SSH 写入文件",
+  ssh_glob: "SSH 查找文件",
+  ssh_grep: "SSH 搜索内容",
+  ssh_edit: "SSH 编辑文件",
+  ssh_cwd: "SSH 切换目录",
 };
 
 const TOOL_ICONS: Record<string, string> = {
@@ -31,6 +37,12 @@ const TOOL_ICONS: Record<string, string> = {
   Skills: "📚",
   ssh_exec: "⌘",
   ssh_hosts: "🖥",
+  ssh_read: "📄",
+  ssh_write: "✎",
+  ssh_edit: "✎",
+  ssh_glob: "🔍",
+  ssh_grep: "🔎",
+  ssh_cwd: "📁",
 };
 
 type ToolCategory = "shell" | "file" | "search" | "web" | "other";

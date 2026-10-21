@@ -1,4 +1,5 @@
 import { Button, Icon, Notification } from "animal-island-ui";
+import "../pages/ChatPage.css";
 import { SidebarCollapseIcon, SidebarExpandIcon } from "../components/icons/naivePatch";
 import { useConfirm } from "../hooks/useConfirm";
 import {
@@ -497,14 +498,19 @@ export default function ChatPage({
       }));
     }
     try {
-      const topic = (await api.invoke("chat:topics:create", {
+      const result = (await api.invoke("chat:topics:create", {
         name: "",
         agentId: agent.id,
         chatMode: agent.chatMode,
         ...(agent.knowledgeBaseIds.length > 0
           ? { knowledgeBaseIds: agent.knowledgeBaseIds }
           : {}),
-      })) as ChatTopic;
+      })) as { ok?: boolean; topic?: ChatTopic; error?: string };
+      if (!result?.ok || !result.topic) {
+        console.warn("Failed to create topic:", result?.error);
+        return;
+      }
+      const topic = result.topic;
       setTopics((prev) => [...prev, topic]);
       setTopicStates((prev) => ({
         ...prev,
@@ -910,6 +916,7 @@ export default function ChatPage({
       status,
       message,
       resultPreview,
+      force,
     }: {
       requestId: string;
       toolCallId?: string;
@@ -919,6 +926,7 @@ export default function ChatPage({
       status?: ChatMsg["toolStatus"];
       message?: string;
       resultPreview?: string;
+      force?: boolean;
     }) => {
       // Land buffered text on the pre-tool bubble before the tool row is inserted.
       chunkBuffer.flushRequest(requestId);
@@ -934,6 +942,7 @@ export default function ChatPage({
           toolStatus: status,
           toolMessage: message,
           toolResultPreview: resultPreview,
+          toolForce: force,
         }),
       }));
       scheduleTopicSave(topicId);

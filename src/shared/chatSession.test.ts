@@ -78,3 +78,49 @@ describe("createChatTopic", () => {
     expect(topic.agentId).toBe("terminal-assistant");
   });
 });
+
+describe("normalizeChatTopicsStore host state", () => {
+  it("preserves host state and activeHostId on host topics", () => {
+    const store = normalizeChatTopicsStore({
+      activeId: "t1",
+      activeHostId: "h-topic-1",
+      topics: [
+        { id: "t1", name: "chat", createdAt: 1 },
+        {
+          id: "h-topic-1",
+          name: "host",
+          createdAt: 2,
+          host: {
+            hostId: "h1",
+            grants: { h1: "root@1.2.3.4:22", h2: 42 },
+            cwdByHost: {
+              h1: { identity: "root@1.2.3.4:22", path: "/var/log" },
+              bad: "not-an-object",
+            },
+          },
+        },
+      ],
+    });
+    expect(store.activeHostId).toBe("h-topic-1");
+    const hostTopic = store.topics.find((t) => t.id === "h-topic-1");
+    expect(hostTopic?.host?.hostId).toBe("h1");
+    expect(hostTopic?.host?.grants).toEqual({ h1: "root@1.2.3.4:22" });
+    expect(hostTopic?.host?.cwdByHost).toEqual({
+      h1: { identity: "root@1.2.3.4:22", path: "/var/log" },
+    });
+  });
+
+  it("drops malformed host state entirely and nulls invalid activeHostId", () => {
+    const store = normalizeChatTopicsStore({
+      activeHostId: "not-a-topic",
+      topics: [
+        { id: "t1", name: "a", createdAt: 1 },
+        { id: "t2", name: "b", createdAt: 2, host: { hostId: "" } },
+        { id: "t3", name: "c", createdAt: 3, host: "garbage" },
+      ],
+    });
+    expect(store.activeHostId).toBeNull();
+    expect(store.topics[1].host).toBeUndefined();
+    expect(store.topics[2].host).toBeUndefined();
+  });
+});

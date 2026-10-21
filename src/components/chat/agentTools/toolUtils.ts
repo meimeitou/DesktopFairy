@@ -30,7 +30,9 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
   const args = getToolInput(toolName, argsJson);
   // ssh_exec：命令行摘要带目标主机 —— 审批卡片必须能看到会打到哪台机器。
   if (toolName === "ssh_exec") {
-    const host = typeof args.host === "string" ? args.host.trim() : "";
+    const host =
+      (typeof args.host === "string" ? args.host.trim() : "") ||
+      (typeof args.hostId === "string" ? args.hostId.trim() : "");
     const cmd = extractCommand(args);
     if (host && cmd) return `[${host}] ${cmd}`;
     if (cmd) return cmd;
@@ -43,6 +45,29 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
       (typeof args.host === "string" && args.host.trim()) ||
       (typeof fields.name === "string" ? fields.name.trim() : "");
     if (action) return host ? `${action} ${host}` : action;
+  }
+  // ssh_* 远程文件工具：摘要带 [hostId] 前缀（对齐 ssh_exec）。
+  if (
+    toolName === "ssh_read" ||
+    toolName === "ssh_write" ||
+    toolName === "ssh_glob" ||
+    toolName === "ssh_grep" ||
+    toolName === "ssh_cwd"
+  ) {
+    const hostId = typeof args.hostId === "string" ? args.hostId.trim() : "";
+    const p =
+      (typeof args.path === "string" && args.path.trim()) ||
+      (typeof args.pattern === "string" ? args.pattern.trim() : "");
+    if (hostId && p) return `[${hostId}] ${p}`;
+    if (p) return p;
+  }
+  if (toolName === "ssh_edit") {
+    const hostId = typeof args.hostId === "string" ? args.hostId.trim() : "";
+    const input = typeof args.input === "string" ? args.input : "";
+    const firstSection = input.split("\n").find((l) => l.trim().startsWith("["));
+    const head = firstSection || input;
+    if (hostId && head) return `[${hostId}] ${head.slice(0, 120)}`;
+    if (head) return head.slice(0, 120);
   }
   const fromFields = extractCommand(args);
   if (fromFields) return fromFields;

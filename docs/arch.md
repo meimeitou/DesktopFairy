@@ -277,10 +277,13 @@ interface LlmProvider {
 | WebFetch / WebSearch | 网络 | 确认 | URL 抓取 / 搜索；绑定 MCP Fetch 时隐藏 WebFetch |
 | TodoWrite | 编排 | 自动 | 任务列表 |
 | Skills | 上下文 | load 自动；install/remove 确认 | 技能加载与管理 |
+| ssh_exec / ssh_hosts | Shell | 确认 / list 只读 | 在已保存 SSH 主机上执行一次性命令 / 管理已保存主机（凭据只引用 credentialId）；主机对话中缺省 hostId=对话所属主机 |
+| ssh_read / ssh_glob / ssh_grep / ssh_write / ssh_edit / ssh_cwd | 文件（主机对话） | 读取/搜索自动，写入/编辑/切目录确认 | SFTP 远程文件六件套，仅主机助手上下文暴露；相对路径基于对话 cwd；跨主机首次需用户确认（force 审批，full-auto 不可绕过） |
 核心 FS 六件套（read/write/edit/bash/glob/grep）完整移植 pi 契约：小写工具名 + pi 参数 schema + `[path#TAG]` 快照锚点（`electron/agentSnapshotStore.cjs`）+ hashline 补丁引擎（`electron/hashlinePatch.cjs`）。旧的大写工具 id（Read/Write/Edit/MultiEdit/Bash/Glob/Grep）通过 `LEGACY_TOOL_ID_MAP` 映射兼容已保存的工具开关与旧会话回放。
 
 **工具开关**：每个 agent 单套 `disabledToolIds`（旧的 `terminalDisabledToolIds`/`enableTerminalTool` 已删）；场景强制规则在 `getEnabledAgentBuiltinTools(agent, context)` 上层叠加——local 强制禁 Terminal，terminal 强制禁 bash，设置面板以「场景强制」徽章展示。
 
+**主机对话**（内置「主机助手」`host-assistant`，终端页默认视图）：`electron/hostConversationService.cjs` 提供 per-conversation 运行时——对话绑定主机（`ChatTopic.host`，含跨主机授权 `grants` 与按主机持久化 `cwdByHost`，身份指纹 `user@host:port[?jump=]` 变化即失效）、force 审批（ssh_hosts 写操作与未授权跨主机调用，批量 bypass 跳过、仅单卡可决）、`ssh_hosts` add/update/delete 收敛入口（update 变更身份清授权与 cwd；delete 先 abort 流再级联删对话）。远端执行走 `withSftp`（SFTP）与 `execOnSavedHost`（命令，cwd 前缀 `cd '<cwd>' &&`，cd 失败报错不静默回 home）；快照 key 为 `topicId:hostId:path`，与本地快照隔离。
 
 **技能系统**（`electron/agentSkillService.cjs`）：
 
@@ -372,8 +375,9 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | `chat:send` | `{ requestId, messages, chatUrl, apiKey, model }` |
 | `chat:abort` | `{ requestId }` |
 | `chat:session:load` / `chat:session:save` | 单会话 JSON 读写 |
-| `chat:topics:list` / `create` / `delete` / `rename` | 多会话管理；create 接收 `{ name, agentId, chatMode, knowledgeBaseIds }` |
-| `chat:topics:updateMeta` | `{ topicId, chatMode?, knowledgeBaseIds? }` — 会话级元数据更新 |
+| `chat:topics:list` / `create` / `delete` / `rename` | 多会话管理；create 接收 `{ name, agentId, chatMode, knowledgeBaseIds, hostId? }`（hostId 时创建主机对话，默认主机创建即授权）；list 接收 `{ scope: 'chat' | 'host' }` |
+| `chat:topics:updateMeta` | `{ topicId, chatMode?, knowledgeBaseIds? }` — 会话级元数据更新；`host` 字段（授权/cwd）不可经此修改 |
+| `chat:topics:setActive` | `{ topicId, scope: 'chat' | 'host' }` — host scope 写 `activeHostId` |
 | `chat:list_models` | `{ apiHost, apiKey, providerType }` |
 | `chat:check` | 连通性检测 |
 | **智能体** | |

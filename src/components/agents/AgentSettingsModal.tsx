@@ -103,13 +103,16 @@ export default function AgentSettingsModal({
   if (!open || !agent) return null;
 
   const isTerminal = agent.id === settings.terminalAgentId;
+  const isHost = agent.builtinRole === "host-assistant";
   const isBuiltin = Boolean(agent.builtinRole);
   const builtinLabel =
     agent.builtinRole === "personal-assistant"
       ? "内置 · 个人助手"
       : agent.builtinRole === "terminal-assistant"
         ? "内置 · 终端助手"
-        : undefined;
+        : agent.builtinRole === "host-assistant"
+          ? "内置 · 主机助手"
+          : undefined;
 
   const renderSection = () => {
     switch (section) {
@@ -129,7 +132,7 @@ export default function AgentSettingsModal({
             panel="builtin"
             agent={agent}
             onAgentChange={updateAgent}
-            context={isTerminal ? "terminal" : "local"}
+            context={isHost ? "host" : isTerminal ? "terminal" : "local"}
           />
         );
       case "mcp":
@@ -218,7 +221,7 @@ export default function AgentSettingsModal({
         </header>
         <div className="agent-settings-modal-columns">
           <nav className="agent-settings-nav" aria-label="智能体配置分区">
-            {AGENT_CONFIG_SECTIONS.map((item) => (
+            {AGENT_CONFIG_SECTIONS.filter((item) => !(isHost && item.id === "mcp")).map((item) => (
               <button
                 key={item.id}
                 type="button"

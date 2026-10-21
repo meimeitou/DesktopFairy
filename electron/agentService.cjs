@@ -59,7 +59,7 @@ function buildToolListPrompt(enabledToolNames, context) {
   return visible.length > 0 ? visible.join('/') : '';
 }
 
-function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = [], sshHosts = []) {
+function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = [], sshHosts = [], hostInfo = null) {
   const parts = [formatSystemDateLine()];
   if (agentConfig?.soul?.trim()) {
     parts.push(agentConfig.soul.trim());
@@ -85,14 +85,16 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
   const boundMcp = Array.isArray(agentConfig?.mcpServerIds)
     ? agentConfig.mcpServerIds.length
     : 0;
-  if (boundMcp === 0) {
-    parts.push(
-      '## MCP 服务器管理\n\n当前会话未绑定 MCP 服务器。需要外部工具时可用 `McpManager`：`list` 查看可用服务器，`add` 新增。绑定后其工具在下一轮请求生效。'
-    );
-  } else {
-    parts.push(
-      '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
-    );
+  if (context !== 'host') {
+    if (boundMcp === 0) {
+      parts.push(
+        '## MCP 服务器管理\n\n当前会话未绑定 MCP 服务器。需要外部工具时可用 `McpManager`：`list` 查看可用服务器，`add` 新增。绑定后其工具在下一轮请求生效。'
+      );
+    } else {
+      parts.push(
+        '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
+      );
+    }
   }
   parts.push(
     '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。若需指向某条证据，用简短说明即可（如「见上方 WebSearch 结果 #2」）。'
@@ -134,6 +136,27 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
       }
     }
     parts.push(buildTerminalEnvSection(terminalState));
+  }
+
+  if (context === 'host') {
+    parts.push(
+      '## 远程主机\n\n你可以使用 ssh_* 工具直接操作已保存的 SSH 主机（无需已打开的终端）：\n' +
+        (Array.isArray(sshHosts) && sshHosts.length > 0
+          ? sshHosts
+              .filter((h) => h && h.name)
+              .map((h) => {
+                const name = String(h.name).replace(/\s+/g, ' ').trim();
+                const user = String(h.user || '?').replace(/\s+/g, ' ').trim();
+                const host = String(h.host || '?').replace(/\s+/g, ' ').trim();
+                return `- ${name} (${user}@${host}:${h.port || 22})`;
+              })
+              .join('\n')
+          : '（暂无已保存主机）') +
+        '\n\n' +
+        (hostInfo
+          ? `当前对话所属主机：${hostInfo.defaultHostName}。工具的 \`hostId\` 参数缺省即操作该主机；用户明确要求操作另一台主机时，首次需用户确认（批准后在本对话内持续有效）。\n当前工作目录：${hostInfo.cwd || '（登录账号 home 目录）'}。相对路径基于当前 cwd 解析。\n切换工作目录必须用 ssh_cwd 工具显式完成；单条命令内部的 cd 不改变后续 cwd；cd 失败必须报错，绝不静默回退。`
+          : '`hostId` 缺省为对话所属主机；跨主机操作首次需用户确认。相对路径基于当前 cwd 解析；cd 切换必须用 ssh_cwd。')
+    );
   }
   const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
   if (modeSuffix) parts.push(modeSuffix.trim());

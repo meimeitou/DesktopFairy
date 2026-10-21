@@ -20,7 +20,7 @@ interface Props {
   agent: AgentConfig;
   onAgentChange: (patch: Partial<AgentConfig>) => void;
   /** Which context this panel edits; required for the builtin panel. */
-  context?: "local" | "terminal";
+  context?: "local" | "terminal" | "host";
 }
 
 export default function AgentToolsSection({
@@ -96,6 +96,12 @@ export default function AgentToolsSection({
     if (id === "ssh_exec" && context === "local") return;
     if (id === "ssh_hosts" && context === "local") return;
     if (id === "bash" && context === "terminal") return;
+    if (
+      context === "host" &&
+      ["bash", "read", "write", "edit", "glob", "grep", "Terminal", "McpManager"].includes(id)
+    ) {
+      return;
+    }
     if (id === "AskUserQuestion") return;
     if (id === "WebFetch" && hideWebFetch) return;
     if (enabled) {
@@ -146,7 +152,9 @@ export default function AgentToolsSection({
             <HintTip
               tip={
                 hideWebFetch
-                  ? `当前场景（${context === "terminal" ? "终端" : "本地"}）下强制与默认规则已体现。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。`
+                  ? `当前场景（${context === "terminal" ? "终端" : context === "host" ? "主机" : "本地"}）下强制与默认规则已体现。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。`
+                  : context === "host"
+                  ? "主机场景强制禁用本地文件与命令工具及 MCP；ssh_* 远程工具默认可用。"
                   : context === "terminal"
                   ? "终端场景强制禁用 bash；Terminal、ssh_exec 与 ssh_hosts 默认可用。"
                     : "本地场景强制禁用 Terminal、ssh_exec 与 ssh_hosts；bash 需手动启用。"
@@ -158,7 +166,11 @@ export default function AgentToolsSection({
             items={builtinCatalogItems}
             enabledIds={contextEnabledIds}
             forcedDisabledIds={new Set([
-              ...(context === "local" ? ["Terminal", "ssh_exec", "ssh_hosts"] : ["bash"]),
+              ...(context === "local"
+                ? ["Terminal", "ssh_exec", "ssh_hosts"]
+                : context === "host"
+                  ? ["bash", "read", "write", "edit", "glob", "grep", "Terminal", "McpManager"]
+                  : ["bash"]),
               ...(hideWebFetch ? ["WebFetch"] : []),
             ])}
             onToggle={toggleTool}

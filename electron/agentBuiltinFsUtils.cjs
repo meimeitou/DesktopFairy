@@ -92,17 +92,26 @@ function parseLineRangeChunk(chunk) {
  * :R1,R2,..., and :range:raw / :raw:range.
  * Literal-path precedence: the whole string (with colon suffix) wins when it
  * exists as a file. Unrecognized trailing ':...' stays part of the path.
+ * `isFileAsync(path) -> boolean` overrides the local fs stat (SFTP stat).
  */
-async function splitPathAndSel(pathStr) {
+async function splitPathAndSel(pathStr, { isFileAsync } = {}) {
   const raw = String(pathStr || '').trim();
   if (!raw) return { filePath: '', ranges: [], raw: '' };
 
+  const isFile = typeof isFileAsync === 'function'
+    ? isFileAsync
+    : async (p) => {
+        try {
+          const st = await fs.stat(p);
+          return st.isFile();
+        } catch {
+          return false;
+        }
+      };
+
   // literal-path precedence: full string exists as file
   const literal = expandPath(raw);
-  try {
-    const st = await fs.stat(literal);
-    if (st.isFile()) return { filePath: literal, ranges: [], raw };
-  } catch { /* not literal */ }
+  if (await isFile(literal)) return { filePath: literal, ranges: [], raw };
 
   // split into leading path and trailing selector segments after last '/'
   // selector segments: the text after the final ':' sequence at the end.
@@ -342,47 +351,51 @@ function formatGroupedPaths(displayPaths) {
 // Binary file detection (unchanged)
 // ---------------------------------------------------------------------------
 
+/** Pure buffer classification (first ≤4096 bytes) — shared by local and SFTP read. */
+function classifyBufferAsBinary(buffer) {
+  const view = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  if (view.length === 0) return false;
+
+  let zeroBytes = 0;
+  let evenZeros = 0;
+  let oddZeros = 0;
+  let nonPrintable = 0;
+
+  for (let i = 0; i < view.length; i++) {
+    const b = view[i];
+
+    if (b === 0) {
+      zeroBytes++;
+      if (i % 2 === 0) evenZeros++;
+      else oddZeros++;
+      continue;
+    }
+    if (b === 9 || b === 10 || b === 13) continue;
+    if (b >= 32 && b <= 126) continue;
+    if (b >= 128) continue;
+    nonPrintable++;
+  }
+
+  if (zeroBytes > 0) {
+    const evenSlots = Math.ceil(view.length / 2);
+    const oddSlots = Math.floor(view.length / 2);
+    const evenZeroRatio = evenSlots > 0 ? evenZeros / evenSlots : 0;
+    const oddZeroRatio = oddSlots > 0 ? oddZeros / oddSlots : 0;
+    if (evenZeroRatio > 0.7 || oddZeroRatio > 0.7) return false;
+    if (zeroBytes / view.length > 0.05) return true;
+  }
+
+  return nonPrintable / view.length > 0.3;
+}
+
 async function isBinaryFile(filePath) {
   try {
     const buffer = Buffer.alloc(4096);
     const fd = await fs.open(filePath, 'r');
     const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0);
     await fd.close();
-
     if (bytesRead === 0) return false;
-
-    const view = buffer.subarray(0, bytesRead);
-
-    let zeroBytes = 0;
-    let evenZeros = 0;
-    let oddZeros = 0;
-    let nonPrintable = 0;
-
-    for (let i = 0; i < view.length; i++) {
-      const b = view[i];
-
-      if (b === 0) {
-        zeroBytes++;
-        if (i % 2 === 0) evenZeros++;
-        else oddZeros++;
-        continue;
-      }
-      if (b === 9 || b === 10 || b === 13) continue;
-      if (b >= 32 && b <= 126) continue;
-      if (b >= 128) continue;
-      nonPrintable++;
-    }
-
-    if (zeroBytes > 0) {
-      const evenSlots = Math.ceil(view.length / 2);
-      const oddSlots = Math.floor(view.length / 2);
-      const evenZeroRatio = evenSlots > 0 ? evenZeros / evenSlots : 0;
-      const oddZeroRatio = oddSlots > 0 ? oddZeros / oddSlots : 0;
-      if (evenZeroRatio > 0.7 || oddZeroRatio > 0.7) return false;
-      if (zeroBytes / view.length > 0.05) return true;
-    }
-
-    return nonPrintable / view.length > 0.3;
+    return classifyBufferAsBinary(buffer.subarray(0, bytesRead));
   } catch {
     return false;
   }
@@ -481,6 +494,7 @@ module.exports = {
   expandPath,
   resolveAgentPath,
   splitPathAndSel,
+  classifyBufferAsBinary,
   parseLineRangeChunk,
   mergeRanges,
   parseFindPattern,

@@ -8,11 +8,13 @@ import {
   AGENT_BACKEND_KEY,
   createPersonalAssistantDefaults,
   createTerminalAssistantDefaults,
+  createHostAssistantDefaults,
   findAgentById,
   isAgentBackend,
   normalizeAgentConfig,
   PERSONAL_ASSISTANT_ID,
   TERMINAL_ASSISTANT_ID,
+  HOST_ASSISTANT_ID,
   type AgentConfig,
 } from "./agent";
 
@@ -146,6 +148,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   agents: [
     createPersonalAssistantDefaults(),
     createTerminalAssistantDefaults(),
+    createHostAssistantDefaults(),
   ],
   terminalAgentId: TERMINAL_ASSISTANT_ID,
   activeChatAgentId: PERSONAL_ASSISTANT_ID,
@@ -367,6 +370,11 @@ export function finalizeSettings(
     normalized.push(createTerminalAssistantDefaults());
   }
 
+  // Invariant: the host assistant always exists (host conversations bind to it).
+  if (!findAgentById(normalized, HOST_ASSISTANT_ID)) {
+    normalized.push(createHostAssistantDefaults());
+  }
+
   const terminalAgentId = findAgentById(normalized, settings.terminalAgentId)
     ? settings.terminalAgentId
     : (migrated?.terminalAgentId ??
@@ -380,10 +388,15 @@ export function finalizeSettings(
     ? (migrated?.activeChatAgentId ?? settings.activeChatAgentId)
     : undefined;
   const activeChatAgentIdFinal =
-    activeChatAgentId === terminalAgentId
-      ? (normalized.find((a) => a.id !== terminalAgentId)?.id ?? terminalAgentId)
+    activeChatAgentId === terminalAgentId ||
+    activeChatAgentId === HOST_ASSISTANT_ID
+      ? (normalized.find(
+          (a) => a.id !== terminalAgentId && a.builtinRole !== "host-assistant",
+        )?.id ?? terminalAgentId)
       : (activeChatAgentId ??
-        (normalized.find((a) => a.id !== terminalAgentId)?.id ?? terminalAgentId));
+        (normalized.find(
+          (a) => a.id !== terminalAgentId && a.builtinRole !== "host-assistant",
+        )?.id ?? terminalAgentId));
 
   const next: AppSettings = {
     ...settings,
@@ -799,9 +812,11 @@ export function getChatApiConfig(
   return getAgentApiConfig(settings, agent);
 }
 
-/** Agents selectable on the chat page (excludes the terminal-bound one). */
+/** Agents selectable on the chat page (excludes terminal/host-bound ones). */
 export function getChatAgents(settings: AppSettings): AgentConfig[] {
-  return settings.agents.filter((a) => a.id !== settings.terminalAgentId);
+  return settings.agents.filter(
+    (a) => a.id !== settings.terminalAgentId && a.builtinRole !== "host-assistant",
+  );
 }
 
 export function updateAgentInSettings(
@@ -831,7 +846,10 @@ export function removeAgentFromSettings(
   const agents = settings.agents.filter((a) => a.id !== agentId);
   const activeChatAgentId =
     settings.activeChatAgentId === agentId
-      ? (agents.find((a) => a.id !== settings.terminalAgentId)?.id ?? "")
+      ? (agents.find(
+          (a) =>
+            a.id !== settings.terminalAgentId && a.builtinRole !== "host-assistant",
+        )?.id ?? "")
       : settings.activeChatAgentId;
   return { ...settings, agents, activeChatAgentId };
 }
