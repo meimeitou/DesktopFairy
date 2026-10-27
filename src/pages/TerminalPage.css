@@ -6,166 +6,364 @@
   overflow: hidden;
   padding: 0;
   position: relative;
+  background: var(--animal-bg-color);
+  border-radius: 16px;
+  box-shadow: var(--animal-shadow-lg);
 }
 
-.terminal-page-left {
+/* ---- left: collapsible session sidebar ---- */
+
+.terminal-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--hairline);
+  transition: width 0.2s ease;
+  user-select: none;
+  overflow: hidden;
+}
+
+.terminal-sidebar.collapsed {
+  width: 52px;
+}
+
+.terminal-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 6px 14px;
+  min-height: 34px;
+}
+
+.terminal-sidebar.collapsed .terminal-sidebar-head {
+  padding: 12px 0 6px;
+  justify-content: center;
+}
+
+.terminal-sidebar-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--bone-600);
+  text-transform: uppercase;
+}
+
+.terminal-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.terminal-sidebar.collapsed .terminal-sidebar-actions {
+  padding: 4px 0 8px;
+  align-items: center;
+}
+
+.terminal-sidebar .terminal-sidebar-action {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.terminal-sidebar.collapsed .terminal-sidebar-action {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.terminal-sidebar-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px 8px;
+}
+
+.terminal-sidebar.collapsed .terminal-sidebar-groups {
+  display: none;
+}
+
+.terminal-sidebar-group + .terminal-sidebar-group {
+  margin-top: 10px;
+}
+
+/* 分组标题做成实心底色条：与下面透明的会话/终端行拉开层次 */
+.terminal-sidebar-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 4px 5px 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 7px;
+  background: var(--ink-600);
+  min-width: 0;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+/* 折叠箭头默认朝右，展开时转 90° 朝下 */
+.terminal-sidebar-group-caret {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--bone-500);
+  transition: transform 0.12s ease;
+}
+
+.terminal-sidebar-group-head.expanded .terminal-sidebar-group-caret {
+  transform: rotate(90deg);
+}
+
+/* 折叠后仍要看出组里有几条会话 */
+.terminal-sidebar-group-count {
+  flex: 0 0 auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--ink-800);
+  color: var(--bone-400);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.terminal-sidebar-group-head:hover {
+  background: var(--ink-500);
+}
+
+/* 分组标题与首行会话之间留一口气，避免粘连 */
+.terminal-sidebar-group-head + .terminal-sidebar-item {
+  margin-top: 4px;
+}
+
+.terminal-sidebar-group-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--bone-500);
+}
+
+.terminal-sidebar-group-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bone-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 悬停/聚焦分组标题才露出操作按钮，避免侧栏一直挂一排图标 */
+.terminal-sidebar-group-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  /* 隐藏时不能留可点击的命中区：点标题右侧会误触「新建 / 编辑」。 */
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.terminal-sidebar-group-head:hover .terminal-sidebar-group-actions,
+.terminal-sidebar-group-head:focus-within .terminal-sidebar-group-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.terminal-sidebar-group-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--bone-500);
+  cursor: pointer;
+}
+
+.terminal-sidebar-group-btn:hover {
+  background: rgba(121, 79, 39, 0.1);
+  color: var(--bone-200);
+}
+
+.terminal-group-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--ink-750);
+  box-shadow: 0 10px 28px rgba(74, 54, 32, 0.16);
+}
+
+.terminal-group-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bone-300);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.terminal-group-menu-item:hover {
+  background: rgba(121, 79, 39, 0.12);
+  color: var(--bone-100);
+}
+
+.terminal-sidebar-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  /* 从属于上面的分组标题：整体右侧缩进，避免和分组标题左边对齐 */
+  margin-left: 10px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--bone-400);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.terminal-sidebar-item:hover {
+  background: rgba(121, 79, 39, 0.08);
+  color: var(--bone-200);
+}
+
+.terminal-sidebar-item.active {
+  background: var(--persimmon-soft);
+  color: var(--bone-100);
+}
+
+.terminal-sidebar-item-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.terminal-sidebar-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-sidebar-item-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--persimmon);
+}
+
+.terminal-sidebar-item-dot.awaiting {
+  box-shadow: 0 0 0 3px var(--persimmon-softer);
+}
+
+/* 未打开的历史对话：不抢当前会话的视觉权重 */
+.terminal-sidebar-item.history {
+  color: var(--bone-500);
+}
+
+.terminal-sidebar-item.history:hover {
+  color: var(--bone-100);
+}
+
+.terminal-sidebar-item-close {
+  flex: 0 0 auto;
+  display: none;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--bone-500);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.terminal-sidebar-item:hover .terminal-sidebar-item-close {
+  display: inline-flex;
+}
+
+.terminal-sidebar-item-close:hover {
+  background: var(--rust-soft);
+  color: var(--rust-bright);
+}
+
+.terminal-sidebar-foot {
+  padding: 8px 10px;
+  border-top: 1px solid var(--hairline);
+}
+
+.terminal-sidebar.collapsed .terminal-sidebar-foot {
+  padding: 8px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.terminal-sidebar .terminal-sidebar-settings {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.terminal-sidebar.collapsed .terminal-sidebar-settings {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+.terminal-sidebar .terminal-sidebar-settings.active {
+  color: var(--persimmon-bright);
+}
+
+/* ---- right: content area ---- */
+
+.terminal-page-main {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--animal-bg-color);
-  border-radius: 16px;
-  box-shadow: var(--animal-shadow-lg);
+  border-radius: 0 16px 16px 0;
   overflow: hidden;
+}
+
+.terminal-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bone-500);
+  font-size: 13px;
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .terminal-instances-wrapper {
   flex: 1;
   min-height: 0;
   position: relative;
-}
-
-.terminal-empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.terminal-empty-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 320px;
-  max-width: calc(100% - 48px);
-  gap: 28px;
-}
-
-.terminal-empty-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-}
-
-.terminal-empty-hero .terminal-empty-local {
-  align-self: stretch;
-}
-
-.terminal-empty-mark {
-  display: block;
-  color: var(--bone-400);
-}
-
-.terminal-empty-local {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-radius: 8px;
-  background: var(--ink-600);
-  color: var(--bone-100);
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.terminal-empty-local:hover,
-.terminal-empty-local:focus-visible {
-  outline: none;
-  background: var(--ink-500);
-}
-
-.terminal-empty-cursor {
-  flex: 0 0 7px;
-  width: 7px;
-  height: 13px;
-  background: var(--bone-100);
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .terminal-empty-cursor {
-    animation: terminal-empty-blink 1.05s steps(1) infinite;
-  }
-}
-
-@keyframes terminal-empty-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-.terminal-empty-recent {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.terminal-empty-recent-label {
-  padding: 0 12px 8px;
-  font-size: 11px;
-  color: var(--bone-600);
-}
-
-.terminal-empty-recent-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  width: 100%;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s;
-  overflow: hidden;
-}
-
-.terminal-empty-recent-item:hover,
-.terminal-empty-recent-item:focus-visible {
-  outline: none;
-  background: var(--ink-750);
-}
-/* Library Button wraps children in a bare <span> — flex column + min-width:0
-   chain so the name/detail spans' ellipsis can take effect. */
-.terminal-empty-recent-item > span {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  width: 100%;
-  min-width: 0;
-}
-
-.terminal-empty-recent-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--bone-100);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.terminal-empty-recent-detail {
-  font-size: 11px;
-  color: var(--bone-500);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  max-width: 100%;
 }
 
 .terminal-instance {
@@ -215,199 +413,8 @@
   height: 100%;
 }
 
-.terminal-tabs-bottom {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 36px;
-  padding: 0 8px;
-  background: var(--animal-bg-color);
-  border-top: 1px solid var(--hairline);
-  overflow: hidden;
-}
-
-.terminal-tab-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 12px;
-  background: rgba(121, 79, 39, 0.06);
-  color: var(--bone-500);
-  font-size: 12px;
-  cursor: pointer;
-  border: none;
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
-}
-
-.terminal-tab-item:hover {
-  background: rgba(121, 79, 39, 0.11);
-  color: var(--bone-300);
-}
-
-.terminal-tab-item.active {
-  background: var(--persimmon-soft);
-  color: var(--bone-100);
-  box-shadow: inset 0 2px 0 var(--persimmon);
-}
-
-.terminal-tab-close {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
-  color: #794f27;
-  font-size: 16px;
-  font-weight: 400;
-  line-height: 16px;
-  cursor: pointer;
-  opacity: 0.85;
-  z-index: 2;
-}
-
-.terminal-tab-close:hover {
-  background: var(--rust-soft);
-  color: var(--rust-bright);
-  opacity: 1;
-}
-
-.terminal-page .terminal-tabs-bottom .terminal-tab-item {
-  position: relative;
-  flex: 0 1 auto;
-  min-width: 0;
-  height: 24px;
-  padding: 0 22px 0 8px;
-  overflow: hidden;
-  box-shadow: none;
-  max-width: 180px;
-  border-radius: 12px;
-  background: rgba(121, 79, 39, 0.06);
-}
-
-/* 上面这条规则比 .terminal-tab-item.active 更具体，会把选中背景盖掉。
-   选中态在这里重写：浅柿色底 + 顶边 2px 墨痕，和设置页 tab 同一标记。 */
-.terminal-page .terminal-tabs-bottom .terminal-tab-item:hover {
-  background: rgba(121, 79, 39, 0.12);
-  color: var(--bone-300);
-}
-
-.terminal-page .terminal-tabs-bottom .terminal-tab-item.active {
-  background: var(--persimmon-soft);
-  color: var(--bone-100);
-  box-shadow: inset 0 2px 0 var(--persimmon);
-}
-
-.terminal-page .terminal-tabs-bottom .terminal-tab-item.active:hover {
-  background: rgba(25, 200, 185, 0.22);
-  color: var(--bone-100);
-}
-.terminal-tab-item > span {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  max-width: 100%;
-}
-.terminal-tab-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.terminal-tabs-bottom .terminal-tab-add,
-.terminal-tabs-bottom .terminal-tab-ssh-wrap,
-.terminal-tabs-bottom .terminal-tab-settings {
-  flex: 0 0 auto;
-}
-
-.terminal-tab-add {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--bone-500);
-  border: none;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.terminal-tab-add:hover {
-  background: rgba(121, 79, 39, 0.08);
-  color: var(--bone-100);
-}
-
-/* SSH 连接按钮 + popover 容器 */
-.terminal-tab-ssh-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.terminal-tab-ssh-anchor {
-  display: inline-flex;
-  align-items: center;
-}
-
-.terminal-page .terminal-tabs-bottom .terminal-tab-ssh {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--bone-500);
-  border: none;
-  box-shadow: none;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.terminal-page .terminal-tabs-bottom .terminal-tab-ssh:hover,
-.terminal-page .terminal-tabs-bottom .terminal-tab-ssh.active {
-  background: rgba(121, 79, 39, 0.08);
-  color: var(--bone-100);
-}
-
-.terminal-tab-settings {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--bone-500);
-  border: none;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.terminal-tab-settings:hover {
-  background: rgba(121, 79, 39, 0.08);
-  color: var(--bone-100);
-}
-
-/* SSH 连接选择器 popover — position: fixed 由内联样式注入（锚定到按钮，
-   避开 .terminal-tabs-bottom 的 overflow-x: auto 裁切） */
+/* SSH 连接选择器 popover — position: fixed 由内联样式注入，锚定到左栏按钮右侧。
+   避开浮层被父级 overflow 裁切。 */
 .ssh-picker {
   width: 320px;
   max-height: 420px;
@@ -422,6 +429,10 @@
   z-index: 50;
   overflow: hidden;
   animation: ssh-picker-in 0.12s ease-out;
+}
+
+.ssh-picker:focus {
+  outline: none;
 }
 
 @keyframes ssh-picker-in {
@@ -603,10 +614,46 @@
   color: var(--persimmon-bright);
 }
 
+/* 透明遮罩：点击浮层外部关闭（替代原来的全局 mousedown 监听） */
+.ssh-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+}
+
+/* ---- terminal settings: AI 助手分区 ---- */
+
+.terminal-ai-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 12px;
+}
+
+/* 竖向分区菜单跟着页面滚动会消失；内容长时钉在视口顶部。
+   滚动容器是外层 .terminal-settings-content，所以 top 相对它取 0。
+   菜单一旦 sticky 就只剩自身高度，竖线因此挪到正文左边缘，才能贯穿整栏。 */
+.terminal-ai-section .agent-settings-nav {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  border-right: none;
+  padding-right: 12px;
+}
+
+.terminal-ai-section .agent-settings-body {
+  border-left: 1px solid var(--hairline);
+}
+
+.terminal-ai-missing {
+  font-size: 12px;
+  color: var(--bone-500);
+}
+
 .terminal-agent-toggle {
   position: absolute;
   right: 16px;
-  bottom: 52px;
+  bottom: 16px;
   width: 42px;
   height: 42px;
   border-radius: 14px;

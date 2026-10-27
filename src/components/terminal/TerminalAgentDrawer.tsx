@@ -20,12 +20,13 @@ import {
   type AgentSkillDescriptor,
 } from "../../shared/agent";
 import type { ChatMode } from "../../shared/chatMode";
+import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import ChatModeSelector from "../chat/ChatModeSelector";
 import ContextUsageMeter from "../chat/ContextUsageMeter";
 import SlashCommandMenu from "../chat/SlashCommandMenu";
 import ComposerBusyHalo from "../chat/ComposerBusyHalo";
-import KnowledgePicker from "../knowledge/KnowledgePicker";
-import AgentSettingsModal from "../agents/AgentSettingsModal";
+import ComposerQuickMenu from "../chat/ComposerQuickMenu";
+import ReasoningEffortSelector from "../chat/ReasoningEffortSelector";
 import {
   type ChatMsg,
   buildAgentApiMessages,
@@ -49,10 +50,12 @@ import type { ToolTerminalState } from "../../shared/ai/stream";
 import {
   getChatApiConfig,
   getAgentBackendGuidance,
+  updateAgentInSettings,
 } from "../../shared/settings";
 import { findAgentById } from "../../shared/agent";
 import {
   getSettingsSnapshot,
+  setSettings,
   useSettings,
   flushSettingsSave,
 } from "../../shared/settingsStore";
@@ -129,6 +132,8 @@ interface TerminalAgentDrawerProps {
   getActiveSessionId: () => string | undefined;
   // 当前所有终端 tab 的 id 列表 — 用于清理已关闭 tab 的孤立状态与 inflight 请求。
   tabIds: string[];
+  /** 跳到终端设置页的「终端助手」分区 */
+  onOpenSettings: () => void;
 }
 
 interface DrawerTabState {
@@ -163,6 +168,7 @@ export default function TerminalAgentDrawer({
   activeTabId,
   getActiveSessionId,
   tabIds,
+  onOpenSettings,
 }: TerminalAgentDrawerProps) {
   const [tabStates, setTabStates] = useState<Record<string, DrawerTabState>>(
     {},
@@ -176,7 +182,6 @@ export default function TerminalAgentDrawer({
   const [chatMode, setChatMode] = useState<ChatMode>(
     () => terminalAgent?.chatMode ?? "normal",
   );
-  const [showAgentSettings, setShowAgentSettings] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(DRAWER_MIN_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
@@ -188,7 +193,8 @@ export default function TerminalAgentDrawer({
 
   const tabStatesRef = useRef(tabStates);
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
-  const compactRequestIdRef = useRef<string | null>(null);
+  // 多标签可同时流式，压缩请求必须按 requestId 记，不能用单值（会被别的标签的 done 清掉）。
+  const compactRequestIdsRef = useRef<Set<string>>(new Set());
   const handleClearContextRef = useRef<() => void>(() => {});
   const handleSendRef = useRef<(text?: string) => void>(() => {});
   const agentSendLockRef = useRef(new Set<string>());
@@ -491,8 +497,7 @@ export default function TerminalAgentDrawer({
       setTimeout(() => {
         requestIdToTabIdRef.current.delete(requestId);
       }, 0);
-      const isCompact = compactRequestIdRef.current === requestId;
-      compactRequestIdRef.current = null;
+      const isCompact = compactRequestIdsRef.current.delete(requestId);
       updateTabState(tabId, (state) => {
         const reconciled = pruneEmptyAssistantMessages(
           reconcileToolMessages(state.messages, tools, Boolean(aborted)),
@@ -621,15 +626,20 @@ export default function TerminalAgentDrawer({
     };
   }, []);
 
-  // 清理已关闭 tab 的孤立状态：abort inflight 请求、删除 tabStates 条目、
+  // 清理已关闭 tab 的孤立状态：abort inflight 请求、删除 tabStates/知识库勾选、
   // 反向清理 requestIdToTabIdRef 映射。防止关闭标签页后 Agent 仍在后台跑 + 内存泄漏。
   useEffect(() => {
     const liveSet = new Set(tabIds);
     const currentIds = Object.keys(tabStatesRef.current);
+    // 知识库勾选也是按 tab 存的，孤儿 tab 的条目要一起丢，否则只增不减。
+    const orphanKnowledge = Object.keys(knowledgeIdsByTabRef.current).filter(
+      (id) => !liveSet.has(id),
+    );
     const orphans = currentIds.filter((id) => !liveSet.has(id));
-    if (orphans.length === 0) return;
+    if (orphans.length === 0 && orphanKnowledge.length === 0) return;
     for (const orphanId of orphans) {
       const st = tabStatesRef.current[orphanId];
+      agentSendLockRef.current.delete(orphanId);
       if (st?.requestId) {
         abortTopicStream(`terminal:${orphanId}`, st.requestId);
         void api.invoke("agent:abort", { requestId: st.requestId });
@@ -640,6 +650,13 @@ export default function TerminalAgentDrawer({
       if (orphans.includes(tabId)) {
         requestIdToTabIdRef.current.delete(reqId);
       }
+    }
+    if (orphanKnowledge.length > 0) {
+      setKnowledgeIdsByTab((prev) => {
+        const next = { ...prev };
+        for (const id of orphanKnowledge) delete next[id];
+        return next;
+      });
     }
     setTabStates((prev) => {
       const next = { ...prev };
@@ -753,7 +770,7 @@ export default function TerminalAgentDrawer({
         topicIdRef.current = topicId;
         requestIdToTabIdRef.current.set(requestId, activeTabId);
         if (isCompactRequest) {
-          compactRequestIdRef.current = requestId;
+          compactRequestIdsRef.current.add(requestId);
         }
         const now = Date.now();
 
@@ -791,6 +808,10 @@ export default function TerminalAgentDrawer({
             },
             agentConfig,
             terminalSessionId: sessionId,
+            // 抽屉按标签维护知识库勾选；没勾就回落到智能体自身的配置。
+            knowledgeBaseIds:
+              knowledgeIdsByTabRef.current[activeTabId] ??
+              agent.knowledgeBaseIds,
           });
           if (result.mode === "blocked") {
             if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
@@ -1000,6 +1021,19 @@ export default function TerminalAgentDrawer({
     void handleSend(COMPACT_PROMPT);
   }, [activeState.streaming, activeState.messages.length, handleSend]);
 
+  // 思维强度写回终端助手配置：发送时抽屉重新读 settings，无需改发送链路。
+  const handleReasoningEffortChange = useCallback(
+    (value: ReasoningEffort) => {
+      if (!terminalAgent) return;
+      setSettings(
+        updateAgentInSettings(getSettingsSnapshot(), terminalAgent.id, {
+          reasoningEffort: value,
+        }),
+      );
+    },
+    [terminalAgent],
+  );
+
   const handleClearMessages = useCallback(async () => {
     if (activeState.streaming) return;
     if (activeState.messages.length === 0) return;
@@ -1098,7 +1132,7 @@ export default function TerminalAgentDrawer({
               size="small"
               className="terminal-agent-header-btn"
               icon={<Icon name="Settings" size={14} />}
-              onClick={() => setShowAgentSettings(true)}
+              onClick={onOpenSettings}
               title="AI 助手设置"
             />
             <Button
@@ -1165,22 +1199,7 @@ export default function TerminalAgentDrawer({
           </div>
           <div className="chat-input-toolbar">
             <div className="chat-input-tools-left">
-              <KnowledgePicker
-                selectedIds={knowledgeIdsByTab[activeTabId] || []}
-                onChange={(ids) =>
-                  setKnowledgeIdsByTab((prev) => ({
-                    ...prev,
-                    [activeTabId]: ids,
-                  }))
-                }
-                disabled={composerDisabled}
-              />
-              <ChatModeSelector
-                mode={chatMode}
-                onChange={setChatMode}
-                disabled={composerDisabled}
-              />
-              <Tooltip title={"清空上下文"}>
+              <Tooltip title={"清除上下文"}>
                 <Button
                   type="text"
                   size="small"
@@ -1192,30 +1211,44 @@ export default function TerminalAgentDrawer({
                   }
                 />
               </Tooltip>
-              <Tooltip title={"压缩上下文"}>
-                <Button
-                  type="text"
-                  size="small"
-                  className="chat-tool-btn"
-                  icon={<CompactIcon />}
-                  onClick={handleCompact}
-                  disabled={
-                    composerDisabled || activeState.messages.length === 0
-                  }
-                />
-              </Tooltip>
-              <Tooltip title={"删除上下文"}>
-                <Button
-                  type="text"
-                  size="small"
-                  className="chat-tool-btn chat-tool-btn-danger"
-                  icon={<TrashIcon />}
-                  onClick={() => void handleClearMessages()}
-                  disabled={
-                    composerDisabled || activeState.messages.length === 0
-                  }
-                />
-              </Tooltip>
+              <ChatModeSelector
+                mode={chatMode}
+                onChange={setChatMode}
+                disabled={composerDisabled}
+              />
+              <ReasoningEffortSelector
+                value={terminalAgent?.reasoningEffort ?? "default"}
+                onChange={handleReasoningEffortChange}
+                disabled={composerDisabled || !terminalAgent}
+              />
+              <ComposerQuickMenu
+                disabled={composerDisabled}
+                actions={[
+                  {
+                    key: "compact",
+                    label: "压缩上下文",
+                    icon: <CompactIcon />,
+                    disabled: activeState.messages.length === 0,
+                    onSelect: handleCompact,
+                  },
+                  {
+                    key: "clear",
+                    label: "清空消息",
+                    icon: <TrashIcon />,
+                    danger: true,
+                    disabled: activeState.messages.length === 0,
+                    onSelect: () => void handleClearMessages(),
+                  },
+                ]}
+                knowledge={{
+                  selectedIds: knowledgeIdsByTab[activeTabId] || [],
+                  onChange: (ids) =>
+                    setKnowledgeIdsByTab((prev) => ({
+                      ...prev,
+                      [activeTabId]: ids,
+                    })),
+                }}
+              />
             </div>
             <div className="chat-input-toolbar-right">
               <ContextUsageMeter
@@ -1249,11 +1282,6 @@ export default function TerminalAgentDrawer({
         </div>
       </div>
       {confirmDialog}
-      <AgentSettingsModal
-        open={showAgentSettings}
-        agentId={terminalAgent?.id ?? null}
-        onClose={() => setShowAgentSettings(false)}
-      />
     </aside>
   );
 }

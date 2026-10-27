@@ -28,7 +28,7 @@ import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import type { SlashCommand } from "../../shared/slashCommands";
 import { isSupportedFileName } from "../../shared/chatMessages";
 import type { ContextUsageResult } from "../../shared/contextUsage";
-import KnowledgePicker from "../knowledge/KnowledgePicker";
+import ComposerQuickMenu from "./ComposerQuickMenu";
 import ComposerBusyHalo from "./ComposerBusyHalo";
 import "./ChatInputBar.css";
 
@@ -51,6 +51,8 @@ interface Props {
   onReasoningEffortChange: (value: ReasoningEffort) => void;
   onSend: () => void;
   onStop: () => void;
+  /** 基于当前智能体新建对话；终端侧不传 */
+  onNewConversation?: () => void;
   onClearContext?: () => void;
   onClearMessages?: () => void;
   onCompact?: () => void;
@@ -82,6 +84,7 @@ function ChatInputBar({
   onReasoningEffortChange,
   onSend,
   onStop,
+  onNewConversation,
   onClearContext,
   onClearMessages,
   onCompact,
@@ -372,36 +375,18 @@ function ChatInputBar({
 
       <div className="chat-input-toolbar">
         <div className="chat-input-tools-left">
-          {attachmentsEnabled && (
-            <Tooltip title={"上传文件"}>
+          {onNewConversation && (
+            <Tooltip title="新建对话">
               <Button
                 type="text"
                 size="small"
                 className="chat-tool-btn"
-                icon={<Icon icon={UploadIcon} size={16} />}
-                onClick={handleSelectFiles}
+                icon={<Icon name="Chat" size={16} />}
+                onClick={onNewConversation}
                 disabled={composerDisabled}
+                aria-label="新建对话"
               />
             </Tooltip>
-          )}
-          {attachmentsEnabled && (
-            <Tooltip title={"区域截图"}>
-              <Button
-                type="text"
-                size="small"
-                className="chat-tool-btn"
-                icon={<Icon name="Camera" size={16} />}
-                onClick={handleScreenshot}
-                disabled={composerDisabled}
-              />
-            </Tooltip>
-          )}
-          {onKnowledgeBaseIdsChange && (
-            <KnowledgePicker
-              selectedIds={knowledgeBaseIds || []}
-              onChange={onKnowledgeBaseIdsChange}
-              disabled={composerDisabled}
-            />
           )}
           {onClearContext && (
             <Tooltip title={"清除上下文"}>
@@ -411,30 +396,6 @@ function ChatInputBar({
                 className="chat-tool-btn"
                 icon={<Icon icon={EraserIcon} size={16} />}
                 onClick={onClearContext}
-                disabled={composerDisabled || !hasMessages}
-              />
-            </Tooltip>
-          )}
-          {onCompact && (
-            <Tooltip title={"压缩上下文"}>
-              <Button
-                type="text"
-                size="small"
-                className="chat-tool-btn"
-                icon={<Icon icon={CompactIcon} size={16} />}
-                onClick={onCompact}
-                disabled={composerDisabled || !hasMessages}
-              />
-            </Tooltip>
-          )}
-          {onClearMessages && (
-            <Tooltip title={"清空消息"}>
-              <Button
-                type="text"
-                size="small"
-                className="chat-tool-btn"
-                icon={<Icon name="Trash" size={16} />}
-                onClick={onClearMessages}
                 disabled={composerDisabled || !hasMessages}
               />
             </Tooltip>
@@ -453,6 +414,60 @@ function ChatInputBar({
               disabled={composerDisabled}
             />
           )}
+          <ComposerQuickMenu
+            disabled={composerDisabled}
+            actions={[
+              ...(attachmentsEnabled
+                ? [
+                    {
+                      key: "upload",
+                      label: "上传文件",
+                      icon: <Icon icon={UploadIcon} size={16} />,
+                      disabled: composerDisabled,
+                      onSelect: () => void handleSelectFiles(),
+                    },
+                    {
+                      key: "screenshot",
+                      label: "区域截图",
+                      icon: <Icon name="Camera" size={16} />,
+                      disabled: composerDisabled,
+                      onSelect: () => void handleScreenshot(),
+                    },
+                  ]
+                : []),
+              ...(onCompact
+                ? [
+                    {
+                      key: "compact",
+                      label: "压缩上下文",
+                      icon: <Icon icon={CompactIcon} size={16} />,
+                      disabled: composerDisabled || !hasMessages,
+                      onSelect: onCompact,
+                    },
+                  ]
+                : []),
+              ...(onClearMessages
+                ? [
+                    {
+                      key: "clear",
+                      label: "清空消息",
+                      icon: <Icon name="Trash" size={16} />,
+                      disabled: composerDisabled || !hasMessages,
+                      danger: true,
+                      onSelect: onClearMessages,
+                    },
+                  ]
+                : []),
+            ]}
+            knowledge={
+              onKnowledgeBaseIdsChange
+                ? {
+                    selectedIds: knowledgeBaseIds || [],
+                    onChange: onKnowledgeBaseIdsChange,
+                  }
+                : undefined
+            }
+          />
         </div>
 
         <div className="chat-input-toolbar-right">

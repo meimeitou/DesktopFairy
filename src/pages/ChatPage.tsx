@@ -440,11 +440,14 @@ export default function ChatPage({
         activeId: string | null;
         topics: ChatTopic[];
       };
-      const sorted = [...(store.topics || [])].sort(
-        (a, b) => b.orderKey - a.orderKey,
-      );
+      // 终端页「本机」分组创建的会话只在终端侧栏出现。
+      const sorted = [...(store.topics || [])]
+        .filter((t) => t.origin !== "terminal")
+        .sort((a, b) => b.orderKey - a.orderKey);
       setTopics(sorted);
-      const activeId = store.activeId || sorted[0]?.id || null;
+      const activeId = sorted.some((t) => t.id === store.activeId)
+        ? store.activeId
+        : (sorted[0]?.id ?? null);
       setActiveTopicId(activeId);
       if (activeId) {
         await loadSessionForTopic(activeId);
@@ -458,6 +461,38 @@ export default function ChatPage({
   useEffect(() => {
     void loadTopics();
   }, [loadTopics]);
+
+  // 终端页与聊天页各挂一份 topic 列表（两页都 keep-alive），任一侧增删后互相通知。
+  const refreshTopicList = useCallback(async () => {
+    try {
+      const store = (await api.invoke("chat:topics:list")) as {
+        activeId: string | null;
+        topics: ChatTopic[];
+      };
+      const sorted = [...(store.topics || [])]
+        .filter((t) => t.origin !== "terminal")
+        .sort((a, b) => b.orderKey - a.orderKey);
+      setTopics(sorted);
+      const current = activeTopicIdRef.current;
+      // 当前话题还在 → 不动会话与输入（避免打断正在输入/流式的内容）。
+      if (current && sorted.some((t) => t.id === current)) return;
+      const nextId = sorted.some((t) => t.id === store.activeId)
+        ? store.activeId
+        : (sorted[0]?.id ?? null);
+      setActiveTopicId(nextId);
+      if (nextId && !topicStatesRef.current[nextId]) await loadSessionForTopic(nextId);
+    } catch {
+      // 读失败时保持现状：清空列表会把当前会话也一起切走。
+    }
+  }, [loadSessionForTopic]);
+
+  useEffect(() => {
+    const onChanged = () => {
+      void refreshTopicList();
+    };
+    window.addEventListener("chat:topics-changed", onChanged);
+    return () => window.removeEventListener("chat:topics-changed", onChanged);
+  }, [refreshTopicList]);
 
   const handleSelectTopic = useCallback(
     (topicId: string) => {
@@ -517,6 +552,7 @@ export default function ChatPage({
         [topic.id]: { ...emptyTopicState(), sessionReady: true },
       }));
       setActiveTopicId(topic.id);
+      window.dispatchEvent(new CustomEvent("chat:topics-changed"));
     } catch (e) {
       console.warn("Failed to create topic:", e);
     }
@@ -560,6 +596,7 @@ export default function ChatPage({
       } else {
         setActiveTopicId(null);
       }
+      window.dispatchEvent(new CustomEvent("chat:topics-changed"));
     },
     [loadSessionForTopic],
   );
@@ -1807,7 +1844,6 @@ export default function ChatPage({
           onSelectAgent={handleSelectAgent}
           loadingTopicIds={loadingTopicIds}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
         />
       )}
       <div className="chat-main-area">
@@ -1905,6 +1941,7 @@ export default function ChatPage({
           onReasoningEffortChange={handleReasoningEffortChange}
           onSend={handleSendClick}
           onStop={handleStop}
+          onNewConversation={() => void handleCreateTopic(topicAgent?.id)}
           onClearContext={handleClearContext}
           onClearMessages={handleClearMessages}
           onCompact={handleCompactClick}

@@ -1,5 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Terminal } from "@xterm/xterm";
 import type { Terminal as TerminalType } from "@xterm/xterm";
 import { useConfirm } from "../hooks/useConfirm";
@@ -10,14 +10,21 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
-import AgentSettingsModal from "../components/agents/AgentSettingsModal";
-import TerminalEmptyState from "../components/terminal/TerminalEmptyState";
 import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
 import TerminalContextMenu from "../components/terminal/TerminalContextMenu";
 import TerminalSearchBar from "../components/terminal/TerminalSearchBar";
-import TerminalSettingsTab from "../components/terminal/TerminalSettingsTab";
+import TerminalSettingsTab, {
+  type Section as TerminalSettingsSection,
+} from "../components/terminal/TerminalSettingsTab";
 import HostChatPanel from "../components/terminal/HostChatPanel";
-import SshConnectionPicker from "../components/terminal/SshConnectionPicker";
+import TerminalSidebar from "../components/terminal/TerminalSidebar";
+import TerminalHostPicker from "../components/terminal/TerminalHostPicker";
+import {
+  buildSidebarGroups,
+  type SidebarGroup,
+  type SidebarItem,
+  type Tab,
+} from "../components/terminal/terminalSidebarGroups";
 import {
   type AppSettings,
   type SshHost,
@@ -28,13 +35,12 @@ import {
   setSettings as commitAppSettings,
   useSettings,
 } from "../shared/settingsStore";
-import {
-  appendSshRecent,
-  resolveSshRecentTarget,
-  type SshRecentEntry,
-} from "../shared/terminalSettings";
+import { appendSshRecent } from "../shared/terminalSettings";
 import type { CursorStyle } from "../shared/terminalSettings";
+import type { ChatTopic } from "../shared/chatSession";
 import { takeTerminalCommands } from "../shared/panelHandoff";
+import { PERSONAL_ASSISTANT_ID, findAgentById } from "../shared/agent";
+import { abortTopicStream } from "../services/aiTransport/IpcChatTransport";
 
 const api = window.electronAPI;
 
@@ -489,27 +495,36 @@ function TerminalInstance({
   );
 }
 
-interface Tab {
-  id: string;
-  title: string;
-  kind: "terminal" | "settings" | "ssh" | "host-chat";
-  cwd?: string;
-  launchCommand?: string;
-  sshHostId?: string;
-  topicId?: string;
-  sshHost?: SshHost; // 临时主机（快速连接），不写入 settings.sshHosts
-}
-
 export default function TerminalPage({
   isActive = false,
 }: {
   isActive?: boolean;
 }) {
-  const [tabs, setTabs] = useState<Tab[]>(() => [
-    { id: `hostchat_${Date.now()}`, title: "主机对话", kind: "host-chat" },
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>(() => "");
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [settingsSectionRequest, setSettingsSectionRequest] = useState<{
+    section: TerminalSettingsSection;
+    nonce: number;
+  }>({ section: "appearance", nonce: 0 });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    () => localStorage.getItem("df_terminal_sidebar_collapsed") === "1",
+  );
+  const [hostEditRequest, setHostEditRequest] = useState<{ hostId: string; nonce: number }>({
+    hostId: "",
+    nonce: 0,
+  });
+  const [topics, setTopics] = useState<ChatTopic[]>([]);
+  /** 建会话期间忽略重复触发：双击「新建对话」会留下两个空 topic。 */
+  const creatingTopicRef = useRef(false);
+  const [activityAt, setActivityAt] = useState<Record<string, number>>({});
+  const [topicStatus, setTopicStatus] = useState<
+    Record<string, { streaming: boolean; awaiting: boolean }>
+  >({});
+  const [picker, setPicker] = useState<{
+    mode: "terminal" | "conversation";
+    style: React.CSSProperties;
+  } | null>(null);
   const [selectionTip, setSelectionTip] = useState<{
     text: string;
     x: number;
@@ -523,22 +538,10 @@ export default function TerminalPage({
   } | null>(null);
   const settings = useSettings();
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [sshPickerOpen, setSshPickerOpen] = useState(false);
-  const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
-  const [sshPickerStyle, setSshPickerStyle] = useState<React.CSSProperties>({});
-  const [settingsInitialSection, setSettingsInitialSection] = useState<"appearance" | "ssh">("appearance");
-  const sshBtnRef = useRef<HTMLButtonElement>(null);
-  const nextTabIndex = useRef(2);
+  const nextTabIndex = useRef(1);
   const sessionMapRef = useRef<Map<string, { sessionId: string; kind: "terminal" | "ssh" }>>(new Map());
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
-  // Default view: the initial host-chat tab becomes active once on mount.
-  const [activeTabInitialized, setActiveTabInitialized] = useState(false);
-  useEffect(() => {
-    if (activeTabInitialized || activeTabId) return;
-    setActiveTabId(tabsRef.current[0]?.id ?? "");
-    setActiveTabInitialized(true);
-  }, [activeTabInitialized, activeTabId]);
   const pendingCommandMapRef = useRef<Map<string, string[]>>(new Map());
   // SearchAddon registry — 每个 tab 创建终端时注册 { xterm, searchAddon }，
   // 卸载时移除。Cmd+F 时从 registry 取当前 tab 的 addon 引用存入 state，
@@ -597,10 +600,51 @@ export default function TerminalPage({
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
+  /** 唯一激活入口：切 tab 同时记录活跃时间，供左栏按主机分组排序。 */
+  const activateTab = useCallback((id: string) => {
+    setActiveTabId(id);
+    setActivityAt((prev) => ({ ...prev, [id]: Date.now() }));
+  }, []);
+
+  /** 纯过滤：只返回新列表。副作用统一由 closeTabById 处理，
+      避免在 setTabs 的 updater 里调用 setState（StrictMode 会双调用 updater）。 */
   const removeTabFromList = useCallback((prev: Tab[], id: string): Tab[] => {
+    return prev.some((t) => t.id === id)
+      ? prev.filter((t) => t.id !== id)
+      : prev;
+  }, []);
+
+  const closeTabById = useCallback((id: string) => {
+    const prev = tabsRef.current;
     const idx = prev.findIndex((t) => t.id === id);
-    if (idx < 0) return prev;
+    if (idx < 0) return;
     const nextTabs = prev.filter((t) => t.id !== id);
+    const closed = prev[idx];
+    setTabs((current) => removeTabFromList(current, id));
+
+    // 设置页每次重新打开都是新的：清掉上一次的跳转/编辑请求，
+    // 否则挂载时 effect 会拿着旧 nonce 再弹一次编辑窗。
+    if (closed.kind === "settings") {
+      setHostEditRequest({ hostId: "", nonce: 0 });
+      setSettingsSectionRequest({ section: "appearance", nonce: 0 });
+    }
+
+    if (closed.topicId) {
+      const topicId = closed.topicId;
+      setTopicStatus((statuses) => {
+        if (!(topicId in statuses)) return statuses;
+        const next = { ...statuses };
+        delete next[topicId];
+        return next;
+      });
+    }
+    setActivityAt((activity) => {
+      if (!(id in activity)) return activity;
+      const next = { ...activity };
+      delete next[id];
+      return next;
+    });
+
     const hasSession = nextTabs.some(
       (t) => t.kind === "terminal" || t.kind === "ssh",
     );
@@ -612,104 +656,258 @@ export default function TerminalPage({
     }
     if (nextTabs.length === 0) {
       setActiveTabId("");
+      setPicker(null);
       nextTabIndex.current = 1;
-      setSshPickerOpen(false);
-      return nextTabs;
+      return;
     }
     if (activeTabIdRef.current === id) {
-      setActiveTabId(nextTabs[Math.max(0, idx - 1)].id);
+      activateTab(nextTabs[Math.max(0, idx - 1)].id);
     }
-    return nextTabs;
-  }, []);
+  }, [activateTab]);
 
   const handleSessionExit = useCallback((tabId: string) => {
-    setTabs((prev) => {
-      const tab = prev.find((t) => t.id === tabId);
-      const autoClose = tab?.kind === "ssh" || Boolean(tab?.launchCommand);
-      if (!autoClose) return prev;
-      return removeTabFromList(prev, tabId);
-    });
-  }, [removeTabFromList]);
+    const tab = tabsRef.current.find((t) => t.id === tabId);
+    if (!tab) return;
+    const autoClose = tab.kind === "ssh" || Boolean(tab.launchCommand);
+    if (!autoClose) return;
+    closeTabById(tabId);
+  }, [closeTabById]);
 
   const getActiveSessionId = useCallback(() => {
     return sessionMapRef.current.get(activeTabId)?.sessionId;
   }, [activeTabId]);
 
-  const handleOpenSettings = useCallback(() => {
-    const existing = tabs.find((t) => t.kind === "settings");
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
-    }
-    const newId = `settings_${Date.now()}`;
-    setTabs((prev) => [...prev, { id: newId, title: "设置", kind: "settings" }]);
-    setActiveTabId(newId);
-  }, [tabs]);
-
-  const handleOpenHostChat = useCallback(() => {
-    const existing = tabs.find((t) => t.kind === "host-chat");
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
-    }
-    const newId = `hostchat_${Date.now()}`;
-    setTabs((prev) => [...prev, { id: newId, title: "主机对话", kind: "host-chat" }]);
-    setActiveTabId(newId);
-  }, [tabs]);
-
-
-  const handleToggleSshPicker = useCallback(() => {
-    setSshPickerOpen((open) => {
-      if (!open) {
-        const anchor = sshBtnRef.current;
-        const btn = anchor?.querySelector("button") ?? anchor;
-        const rect = btn?.getBoundingClientRect();
-        if (rect) {
-          const PICKER_WIDTH = 320;
-          const GAP = 6;
-          const MARGIN = 8;
-          let left = rect.left;
-          if (left + PICKER_WIDTH > window.innerWidth - MARGIN) {
-            left = rect.right - PICKER_WIDTH;
-          }
-          if (left < MARGIN) left = MARGIN;
-          const bottom = window.innerHeight - rect.top + GAP;
-          setSshPickerStyle({ position: "fixed", left, bottom });
-        }
+  const handleOpenSettings = useCallback(
+    (section?: TerminalSettingsSection) => {
+      if (section) {
+        setSettingsSectionRequest((prev) => ({ section, nonce: prev.nonce + 1 }));
       }
-      return !open;
-    });
-  }, []);
+      const existing = tabsRef.current.find((t) => t.kind === "settings");
+      if (existing) {
+        activateTab(existing.id);
+        return;
+      }
+      const newId = `settings_${Date.now()}`;
+      setTabs((prev) => [...prev, { id: newId, title: "设置", kind: "settings" }]);
+      activateTab(newId);
+    },
+    [activateTab],
+  );
 
-  const handleOpenSshSettings = useCallback(() => {
-    setSettingsInitialSection("ssh");
-    const existing = tabs.find((t) => t.kind === "settings");
-    if (existing) {
-      setActiveTabId(existing.id);
-      return;
-    }
-    const newId = `settings_${Date.now()}`;
-    setTabs((prev) => [...prev, { id: newId, title: "设置", kind: "settings" }]);
-    setActiveTabId(newId);
-  }, [tabs]);
+  // 助手抽屉右上角的齿轮：收起抽屉并跳到终端设置的「终端助手」分区。
+  const handleOpenTerminalAgentSettings = useCallback(() => {
+    setDrawerOpen(false);
+    handleOpenSettings("terminal-ai");
+  }, [handleOpenSettings]);
+
+  // 侧栏分组标题的编辑按钮：跳到终端设置的 SSH 分区并弹出该主机的编辑窗。
+  const handleEditHostFromSidebar = useCallback(
+    (hostId: string) => {
+      setHostEditRequest((prev) => ({ hostId, nonce: prev.nonce + 1 }));
+      handleOpenSettings("ssh");
+    },
+    [handleOpenSettings],
+  );
 
   const handleConnectSsh = useCallback((hostId: string) => {
     const host = settings.sshHosts.find((h) => h.id === hostId);
     if (!host) return;
     const newId = `ssh_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     setTabs((prev) => [...prev, { id: newId, title: host.name, kind: "ssh", sshHostId: hostId }]);
-    setActiveTabId(newId);
+    activateTab(newId);
     handleSettingsChange({ sshRecent: appendSshRecent(settings.sshRecent, host) });
-  }, [settings.sshHosts, settings.sshRecent, handleSettingsChange]);
+  }, [settings.sshHosts, settings.sshRecent, handleSettingsChange, activateTab]);
 
   // 快速连接：临时主机不持久化，直接挂到 Tab 上建立 SSH 会话
   const handleQuickConnect = useCallback((host: SshHost) => {
     const newId = `ssh_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const title = host.name || `${host.user}@${host.host}`;
     setTabs((prev) => [...prev, { id: newId, title, kind: "ssh", sshHost: host }]);
-    setActiveTabId(newId);
+    activateTab(newId);
     handleSettingsChange({ sshRecent: appendSshRecent(settings.sshRecent, host) });
-  }, [settings.sshRecent, handleSettingsChange]);
+  }, [settings.sshRecent, handleSettingsChange, activateTab]);
+
+  const refreshTopics = useCallback(async () => {
+    // 终端侧栏同时列出主机对话与本机对话，因此要全量 topic 列表。
+    try {
+      const store = (await api.invoke("chat:topics:list")) as {
+        topics?: ChatTopic[];
+      };
+      // 响应结构不对时不要当成「没有任何对话」——清理 effect 会据此把已打开的
+      // 对话标签全部关掉。返回 null 表示本次结果不可信，调用方保持现状。
+      if (!Array.isArray(store?.topics)) return null;
+      setTopics(store.topics);
+      return store.topics;
+    } catch {
+      // 读失败同样保持现状，避免清空列表后连带关掉标签。
+      return null;
+    }
+  }, []);
+
+  // 主机增删后重新拉取对话列表（主进程会级联删除该主机的对话）。
+  const sshHostsKey = settings.sshHosts.map((h) => h.id).join(",");
+  useEffect(() => {
+    void refreshTopics();
+  }, [sshHostsKey, refreshTopics]);
+
+  const openConversationTab = useCallback(
+    (topic: ChatTopic) => {
+      const existing = tabsRef.current.find(
+        (t) => t.kind === "host-chat" && t.topicId === topic.id,
+      );
+      if (existing) {
+        activateTab(existing.id);
+        return;
+      }
+      const newId = `hostchat_${Date.now()}`;
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: newId,
+          title: topic.name || "新对话",
+          kind: "host-chat",
+          topicId: topic.id,
+        },
+      ]);
+      activateTab(newId);
+    },
+    [activateTab],
+  );
+
+  const handleNewConversation = useCallback(
+    async (hostId: string) => {
+      if (creatingTopicRef.current) return;
+      creatingTopicRef.current = true;
+      try {
+        const result = (await api.invoke("chat:topics:create", {
+          name: "",
+          agentId: "host-assistant",
+          hostId,
+        })) as { ok?: boolean; topic?: ChatTopic };
+        if (!result?.ok || !result.topic) {
+          // 主机可能已被删除：刷新一次让列表收敛，不建标签。
+          void refreshTopics();
+          return;
+        }
+        await refreshTopics();
+        openConversationTab(result.topic);
+        window.dispatchEvent(new CustomEvent("chat:topics-changed"));
+      } finally {
+        creatingTopicRef.current = false;
+      }
+    },
+    [openConversationTab, refreshTopics],
+  );
+
+  // 本机对话：智能体固定「小雅」，带 origin="terminal" 标记，只属于终端页。
+  const handleNewLocalConversation = useCallback(async () => {
+    if (creatingTopicRef.current) return;
+    creatingTopicRef.current = true;
+    try {
+      const personal = findAgentById(settings.agents, PERSONAL_ASSISTANT_ID);
+      const result = (await api.invoke("chat:topics:create", {
+        name: "",
+        agentId: PERSONAL_ASSISTANT_ID,
+        chatMode: personal?.chatMode ?? "normal",
+        // 标记归属：这类会话只出现在终端页「本机」分组，不进智能体列表。
+        origin: "terminal",
+        // 与聊天页新建一致：把智能体默认知识库固化到会话上，面板据此发送。
+        ...(personal && personal.knowledgeBaseIds.length > 0
+          ? { knowledgeBaseIds: personal.knowledgeBaseIds }
+          : {}),
+      })) as { ok?: boolean; topic?: ChatTopic };
+      if (!result?.ok || !result.topic) {
+        void refreshTopics();
+        return;
+      }
+      await refreshTopics();
+      openConversationTab(result.topic);
+      window.dispatchEvent(new CustomEvent("chat:topics-changed"));
+    } finally {
+      creatingTopicRef.current = false;
+    }
+  }, [openConversationTab, refreshTopics, settings.agents]);
+
+  // 聊天页与终端页各挂一份 topics（两页都 keep-alive），改动后互相通知刷新。
+  useEffect(() => {
+    const onChanged = () => {
+      void refreshTopics();
+    };
+    window.addEventListener("chat:topics-changed", onChanged);
+    return () => window.removeEventListener("chat:topics-changed", onChanged);
+  }, [refreshTopics]);
+
+  const handleDeleteConversation = useCallback(
+    async (topic: ChatTopic) => {
+      const ok = await confirm({
+        title: "删除对话",
+        content: `删除后无法恢复，确定删除「${topic.name || "新对话"}」？`,
+        okText: "删除",
+        danger: true,
+      });
+      if (!ok) return;
+      abortTopicStream(topic.id);
+      await api.invoke("chat:topics:delete", topic.id);
+      const tab = tabsRef.current.find(
+        (t) => t.kind === "host-chat" && t.topicId === topic.id,
+      );
+      if (tab) closeTabById(tab.id);
+      await refreshTopics();
+      window.dispatchEvent(new CustomEvent("chat:topics-changed"));
+    },
+    [closeTabById, confirm, refreshTopics],
+  );
+
+  // 对话被删 / 主机被删 / 会话不属于终端页后，关掉指向已消失资源的标签。
+  useEffect(() => {
+    const topicById = new Map(topics.map((t) => [t.id, t]));
+    const hostIds = new Set(settings.sshHosts.map((h) => h.id));
+    const doomed = tabsRef.current.filter((tab) => {
+      if (tab.kind === "host-chat") {
+        const topic = tab.topicId ? topicById.get(tab.topicId) : undefined;
+        if (!topic) return true;
+        // 聊天页会话（无 host 且非终端页创建）不该占用终端标签。
+        return !topic.host && topic.origin !== "terminal";
+      }
+      if (tab.kind === "ssh" && tab.sshHostId) return !hostIds.has(tab.sshHostId);
+      return false;
+    });
+    // 走统一关闭入口：它负责 topicStatus / activityAt / 抽屉与浮层的复位。
+    for (const tab of doomed) closeTabById(tab.id);
+  }, [topics, settings.sshHosts, closeTabById]);
+
+  // 兜底：activeTabId 失效（标签被裁剪/关闭）时落到最后一个标签。
+  useEffect(() => {
+    if (activeTabId && tabs.some((t) => t.id === activeTabId)) return;
+    if (tabs.length === 0) {
+      if (activeTabId) setActiveTabId("");
+      return;
+    }
+    setActiveTabId(tabs[tabs.length - 1].id);
+  }, [tabs, activeTabId]);
+
+  const handleTopicStatus = useCallback(
+    (topicId: string, status: { streaming: boolean; awaiting: boolean }) => {
+      setTopicStatus((prev) => {
+        const cur = prev[topicId];
+        if (cur?.streaming === status.streaming && cur?.awaiting === status.awaiting) {
+          return prev;
+        }
+        return { ...prev, [topicId]: status };
+      });
+    },
+    [],
+  );
+
+  const handleTopicRenamed = useCallback((topicId: string, name: string) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.topicId === topicId ? { ...t, title: name } : t)),
+    );
+    setTopics((prev) =>
+      prev.map((t) => (t.id === topicId ? { ...t, name } : t)),
+    );
+    void api.invoke("chat:topics:rename", { topicId, name });
+  }, []);
 
   const handleSelectionChange = useCallback(
     (tabId: string, text: string, x: number, y: number) => {
@@ -796,28 +994,13 @@ export default function TerminalPage({
     flush();
     return () => window.removeEventListener("terminal:run-command", flush);
   }, [activeTabId, pasteCommandToTab]);
+
   const handleAddTab = useCallback(() => {
     const newId = `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const newTitle = `终端 ${nextTabIndex.current++}`;
     setTabs((prev) => [...prev, { id: newId, title: newTitle, kind: "terminal" as const }]);
-    setActiveTabId(newId);
-  }, []);
-
-  const closeTabById = useCallback((id: string) => {
-    setTabs((prev) => removeTabFromList(prev, id));
-  }, [removeTabFromList]);
-
-  const handleOpenRecent = useCallback(
-    (entry: SshRecentEntry) => {
-      const target = resolveSshRecentTarget(entry, settings.sshHosts);
-      if (target.type === "saved") {
-        handleConnectSsh(target.id);
-        return;
-      }
-      handleQuickConnect(target.host);
-    },
-    [settings.sshHosts, handleConnectSsh, handleQuickConnect],
-  );
+    activateTab(newId);
+  }, [activateTab]);
 
   const requestCloseTab = useCallback(async (id: string) => {
     const tab = tabsRef.current.find((t) => t.id === id);
@@ -852,17 +1035,54 @@ export default function TerminalPage({
     closeTabById(id);
   }, [closeTabById, confirm]);
 
+  const handleNewTerminalForGroup = useCallback(
+    (group: SidebarGroup) => {
+      if (group.kind === "local") handleAddTab();
+      else if (group.kind === "host" && group.hostId) handleConnectSsh(group.hostId);
+      else if (group.kind === "quick" && group.quickHost) handleQuickConnect(group.quickHost);
+    },
+    [handleAddTab, handleConnectSsh, handleQuickConnect],
+  );
+
+  const handleNewConversationForGroup = useCallback(
+    (group: SidebarGroup) => {
+      // 主机已删（无 hostId）时只能落空：不能退化成建一个本机对话。
+      if (group.kind === "host") {
+        if (group.hostId) void handleNewConversation(group.hostId);
+        return;
+      }
+      void handleNewLocalConversation();
+    },
+    [handleNewConversation, handleNewLocalConversation],
+  );
+
+  const handleSelectSidebarItem = useCallback(
+    (item: SidebarItem) => {
+      if (item.tabId) {
+        activateTab(item.tabId);
+        return;
+      }
+      const topic = topics.find((t) => t.id === item.topicId);
+      if (topic) openConversationTab(topic);
+    },
+    [activateTab, topics, openConversationTab],
+  );
+
+  const handleDeleteSidebarItem = useCallback(
+    (item: SidebarItem) => {
+      if (item.kind === "host-chat") {
+        const topic = topics.find((t) => t.id === item.topicId);
+        if (topic) void handleDeleteConversation(topic);
+        return;
+      }
+      if (item.tabId) void requestCloseTab(item.tabId);
+    },
+    [topics, handleDeleteConversation, requestCloseTab],
+  );
+
   const requestPasteConfirm = useCallback(async () => {
     return confirm({ title: "粘贴多行内容", okText: "粘贴", content: "粘贴内容包含多行，确定继续？" });
   }, [confirm]);
-
-  const handleCloseTab = useCallback(
-    (id: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      void requestCloseTab(id);
-    },
-    [requestCloseTab],
-  );
 
   const handleCloseActiveTab = useCallback(() => {
     void requestCloseTab(activeTabId);
@@ -891,42 +1111,100 @@ export default function TerminalPage({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isActive, handleAddTab, handleCloseActiveTab, activeTabId]);
 
-  // SSH picker：点击外部关闭
-  useEffect(() => {
-    if (!sshPickerOpen) return;
-    const handler = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const picker = document.querySelector(".ssh-picker");
-      const btn = document.querySelector(".terminal-tab-ssh");
-      if (picker && !picker.contains(target) && btn && !btn.contains(target)) {
-        setSshPickerOpen(false);
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((collapsed) => {
+      const next = !collapsed;
+      localStorage.setItem("df_terminal_sidebar_collapsed", next ? "1" : "0");
+      return next;
+    });
+  }, []);
+
+  /** 浮层锚定到触发按钮右侧；右边界不够时左移，不越出窗口。 */
+  const openPicker = useCallback(
+    (mode: "terminal" | "conversation", anchor: HTMLElement) => {
+      const PICKER_WIDTH = 320;
+      const GAP = 6;
+      const MARGIN = 8;
+      const rect = anchor.getBoundingClientRect();
+      let left = rect.right + GAP;
+      if (left + PICKER_WIDTH > window.innerWidth - MARGIN) {
+        left = window.innerWidth - PICKER_WIDTH - MARGIN;
       }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [sshPickerOpen]);
+      if (left < MARGIN) left = MARGIN;
+      const top = Math.max(MARGIN, rect.top - MARGIN);
+      setPicker({
+        mode,
+        style: {
+          position: "fixed",
+          left,
+          top,
+          maxHeight: Math.min(420, window.innerHeight - top - MARGIN),
+        },
+      });
+    },
+    [],
+  );
+
+  const groups = useMemo(
+    () => buildSidebarGroups(tabs, topics, settings.sshHosts, activityAt),
+    [tabs, topics, settings.sshHosts, activityAt],
+  );
 
   const hasSessionTab = tabs.some((t) => t.kind === "terminal" || t.kind === "ssh");
+  // 抽屉按钮压在内容区右下角：只有当前标签是终端/SSH 时才显示，
+  // 否则会盖住对话页的发送按钮。
+  const activeIsSession = tabs.some(
+    (t) => t.id === activeTabId && (t.kind === "terminal" || t.kind === "ssh"),
+  );
+  const settingsActive = tabs.some(
+    (t) => t.kind === "settings" && t.id === activeTabId,
+  );
 
   return (
     <div className="terminal-page">
-      <div className="terminal-page-left">
+      <TerminalSidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
+        groups={groups}
+        activeTabId={activeTabId}
+        settingsActive={settingsActive}
+        topicStatus={topicStatus}
+        onSelectItem={handleSelectSidebarItem}
+        onDeleteItem={handleDeleteSidebarItem}
+        onCreateTerminal={(anchor) => openPicker("terminal", anchor)}
+        onCreateConversation={(anchor) => openPicker("conversation", anchor)}
+        onNewTerminalForGroup={handleNewTerminalForGroup}
+        onNewConversationForGroup={handleNewConversationForGroup}
+        onEditHost={handleEditHostFromSidebar}
+        onOpenSettings={() => handleOpenSettings()}
+      />
+
+      <div className="terminal-page-main">
         <div className="terminal-instances-wrapper">
-          {tabs.length === 0 ? (
-            <TerminalEmptyState
-              recent={settings.sshRecent}
-              onOpenLocal={handleAddTab}
-              onOpenRecent={handleOpenRecent}
-            />
-          ) : (
-            tabs.map((tab) =>
-              tab.kind === "host-chat" ? (
+          {tabs.length === 0 && (
+            <div className="terminal-hint">从左侧新建终端或对话</div>
+          )}
+          {tabs.map((tab) => {
+            if (tab.kind === "host-chat") {
+              const topic = topics.find((t) => t.id === tab.topicId);
+              if (!topic) return null;
+              return (
                 <HostChatPanel
                   key={tab.id}
+                  topicId={topic.id}
+                  topic={topic}
+                  host={
+                    settings.sshHosts.find((h) => h.id === topic.host?.hostId) ??
+                    null
+                  }
                   isActive={tab.id === activeTabId && isActive}
-                  onOpenSshSettings={handleOpenSshSettings}
+                  onStatusChange={handleTopicStatus}
+                  onTopicRenamed={handleTopicRenamed}
                 />
-              ) : tab.kind === "settings" ? (
+              );
+            }
+            if (tab.kind === "settings") {
+              return (
                 <TerminalSettingsTab
                   key={tab.id}
                   isActive={tab.id === activeTabId && isActive}
@@ -934,31 +1212,33 @@ export default function TerminalPage({
                   onChange={handleSettingsChange}
                   onConnectSsh={handleConnectSsh}
                   onQuickConnect={handleQuickConnect}
-                  initialSection={settingsInitialSection}
+                  sectionRequest={settingsSectionRequest}
+                  hostEditRequest={hostEditRequest}
                 />
-              ) : (
-                <TerminalInstance
-                  key={tab.id}
-                  tabId={tab.id}
-                  isActive={tab.id === activeTabId && isActive}
-                  cwd={tab.cwd}
-                  launchCommand={tab.launchCommand}
-                  sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
-                  sshCredentials={settings.sshCredentials}
-                  terminalSettings={settings.terminal}
-                  onSessionReady={handleSessionReady}
-                  onSessionEnd={handleSessionEnd}
-                  onSessionExit={handleSessionExit}
-                  onSelectionChange={handleSelectionChange}
-                  onTitleChange={handleTitleChange}
-                  onSearchAddonReady={handleSearchAddonReady}
-                  onSearchAddonDispose={handleSearchAddonDispose}
-                  onContextMenu={handleContextMenu}
-                  requestPasteConfirm={requestPasteConfirm}
-                />
-              )
-            )
-          )}
+              );
+            }
+            return (
+              <TerminalInstance
+                key={tab.id}
+                tabId={tab.id}
+                isActive={tab.id === activeTabId && isActive}
+                cwd={tab.cwd}
+                launchCommand={tab.launchCommand}
+                sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
+                sshCredentials={settings.sshCredentials}
+                terminalSettings={settings.terminal}
+                onSessionReady={handleSessionReady}
+                onSessionEnd={handleSessionEnd}
+                onSessionExit={handleSessionExit}
+                onSelectionChange={handleSelectionChange}
+                onTitleChange={handleTitleChange}
+                onSearchAddonReady={handleSearchAddonReady}
+                onSearchAddonDispose={handleSearchAddonDispose}
+                onContextMenu={handleContextMenu}
+                requestPasteConfirm={requestPasteConfirm}
+              />
+            );
+          })}
           {searchEntry && (
             <TerminalSearchBar
               xterm={searchEntry.xterm}
@@ -996,97 +1276,36 @@ export default function TerminalPage({
             />
           )}
         </div>
-
-        <div className="terminal-tabs-bottom">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`terminal-tab-item${tab.id === activeTabId ? " active" : ""}`}
-              onClick={() => setActiveTabId(tab.id)}
-            >
-              <span className="terminal-tab-title">{tab.title}</span>
-              <span
-                className="terminal-tab-close"
-                role="button"
-                tabIndex={-1}
-                aria-label="关闭标签页"
-                onClick={(e) => handleCloseTab(tab.id, e)}
-              >
-                ×
-              </span>
-            </button>
-          ))}
-          <Button
-            type="text"
-            size="small"
-            className="terminal-tab-add"
-            icon={<Icon name="Chat" size={14} />}
-            onClick={handleOpenHostChat}
-            title="主机对话"
-          />
-          <Button
-            type="text"
-            size="small"
-            className="terminal-tab-add"
-            icon={<Icon name="Plus" size={14} />}
-            onClick={handleAddTab}
-            title="新建终端 (Cmd+T)"
-          />
-          <div className="terminal-tab-ssh-wrap">
-            <span ref={sshBtnRef as React.RefObject<HTMLSpanElement>} className="terminal-tab-ssh-anchor">
-            <Button
-              type="text"
-              size="small"
-              className={`terminal-tab-ssh${sshPickerOpen ? " active" : ""}`}
-              icon={<Icon name="Video" size={15} />}
-              onClick={handleToggleSshPicker}
-              title="SSH 连接"
-            />
-            </span>
-          </div>
-          <Button
-            type="text"
-            size="small"
-            className="terminal-tab-settings"
-            icon={<Icon name="Smile" size={14} />}
-            onClick={() => setAgentSettingsOpen(true)}
-            title="AI 助手设置"
-          />
-          <Button
-            type="text"
-            size="small"
-            className="terminal-tab-settings"
-            icon={<Icon name="Settings" size={14} />}
-            onClick={handleOpenSettings}
-            title="终端设置"
-          />
-        </div>
       </div>
 
-      {sshPickerOpen && (
-        <SshConnectionPicker
-          style={sshPickerStyle}
+      {picker && (
+        <TerminalHostPicker
+          mode={picker.mode}
+          style={picker.style}
           sshHosts={settings.sshHosts}
-          sshRecent={settings.sshRecent}
-          onConnect={handleConnectSsh}
+          onPickLocal={handleAddTab}
+          onPickHost={handleConnectSsh}
           onQuickConnect={handleQuickConnect}
-          onOpenSettings={handleOpenSshSettings}
-          onClose={() => setSshPickerOpen(false)}
+          onNewConversation={(hostId) => void handleNewConversation(hostId)}
+          onNewLocalConversation={() => void handleNewLocalConversation()}
+          onClose={() => setPicker(null)}
         />
       )}
 
       {hasSessionTab && (
         <TerminalAgentDrawer
-          isOpen={drawerOpen}
+          // 抽屉的一切状态都以 activeTabId 为键、发送时还要取该标签的 PTY 会话；
+          // 对话标签没有会话，展开只会挤压面板并产出无会话的请求。
+          isOpen={drawerOpen && activeIsSession}
           onToggle={() => setDrawerOpen((v) => !v)}
           activeTabId={activeTabId}
           getActiveSessionId={getActiveSessionId}
           tabIds={tabs.map((t) => t.id)}
+          onOpenSettings={handleOpenTerminalAgentSettings}
         />
       )}
 
-      {hasSessionTab && !drawerOpen && (
+      {activeIsSession && !drawerOpen && (
         <Button
           type="default"
           className="terminal-agent-toggle"
@@ -1097,11 +1316,6 @@ export default function TerminalPage({
         </Button>
       )}
       {confirmDialog}
-      <AgentSettingsModal
-        open={agentSettingsOpen}
-        agentId={settings.terminalAgentId}
-        onClose={() => setAgentSettingsOpen(false)}
-      />
     </div>
   );
 }

@@ -1,0 +1,165 @@
+import { Button, Icon, type IconName } from "animal-island-ui";
+import { useState } from "react";
+import { useSettings } from "../../shared/settingsStore";
+import type { AgentConfig } from "../../shared/agent";
+import AgentAvatar from "../AgentAvatar";
+import type { AgentConfigSection } from "../../shared/agentSettingsSections";
+import { AGENT_CONFIG_SECTIONS } from "../../shared/agentSettingsSections";
+import { CHAT_MODE_CARDS, type ChatMode } from "../../shared/chatMode";
+import { FieldHead } from "../HintTip";
+import AgentKnowledgeField from "./AgentKnowledgeField";
+import AgentBasicSection from "../settings/agent/AgentBasicSection";
+import AgentPromptSection from "../settings/agent/AgentPromptSection";
+import AgentToolsSection from "../settings/agent/AgentToolsSection";
+import AgentSkillsSection from "../settings/agent/AgentSkillsSection";
+import AgentAdvancedSection from "../settings/agent/AgentAdvancedSection";
+// 各分区复用了设置页的表单样式（.field / .settings-section / .agent-*）。
+// 这些规则原本只在设置页加载，面板在终端设置里打开时会全部丢失。
+import "../../pages/SettingsPage.css";
+import "./AgentSettingsModal.css";
+
+const sectionIcons: Record<AgentConfigSection, IconName> = {
+  basic: "User",
+  prompt: "Book",
+  builtin: "Settings",
+  mcp: "Share",
+  skills: "Star",
+  knowledge: "Folder",
+  advanced: "Bulb",
+};
+
+export default function AgentSettingsPanel({
+  agent,
+  onChange,
+  onClose,
+}: {
+  agent: AgentConfig;
+  onChange: (patch: Partial<AgentConfig>) => void;
+  /** 传了才渲染右上角关闭按钮 */
+  onClose?: () => void;
+}) {
+  const settings = useSettings();
+  const [section, setSection] = useState<AgentConfigSection>("basic");
+
+  const isTerminal = agent.id === settings.terminalAgentId;
+  const isHost = agent.builtinRole === "host-assistant";
+  const builtinLabel =
+    agent.builtinRole === "personal-assistant"
+      ? "内置 · 个人助手"
+      : agent.builtinRole === "terminal-assistant"
+        ? "内置 · 终端助手"
+        : agent.builtinRole === "host-assistant"
+          ? "内置 · 主机助手"
+          : undefined;
+
+  const sections = AGENT_CONFIG_SECTIONS.filter(
+    (item) => !(isHost && item.id === "mcp"),
+  );
+  // 主机助手隐藏 MCP 分区：切换智能体后 section 可能指向被过滤掉的分区，
+  // 否则会出现「正文渲染 MCP、chips 却没有一个高亮」的孤儿状态。
+  const activeSection = sections.some((item) => item.id === section)
+    ? section
+    : sections[0].id;
+
+  const renderSection = () => {
+    switch (activeSection) {
+      case "basic":
+        return (
+          <AgentBasicSection settings={settings} agent={agent} onChange={onChange} />
+        );
+      case "prompt":
+        return <AgentPromptSection agent={agent} onChange={onChange} />;
+      case "builtin":
+        return (
+          <AgentToolsSection
+            panel="builtin"
+            agent={agent}
+            onAgentChange={onChange}
+            context={isHost ? "host" : isTerminal ? "terminal" : "local"}
+          />
+        );
+      case "mcp":
+        return (
+          <AgentToolsSection panel="mcp" agent={agent} onAgentChange={onChange} />
+        );
+      case "skills":
+        return <AgentSkillsSection agent={agent} onChange={onChange} />;
+      case "knowledge":
+        return (
+          <AgentKnowledgeField
+            selectedIds={agent.knowledgeBaseIds}
+            onChange={(ids) => onChange({ knowledgeBaseIds: ids })}
+          />
+        );
+      case "advanced":
+        return (
+          <AgentAdvancedSection agent={agent} onChange={onChange}>
+            <div className="field">
+              <FieldHead
+                htmlFor="agent-default-chat-mode"
+                hint="该智能体新建会话时使用的默认对话模式；每个会话可单独切换。"
+              >
+                默认对话模式
+              </FieldHead>
+              <div className="agent-chatmode-cards">
+                {CHAT_MODE_CARDS.map((card) => (
+                  <button
+                    key={card.mode}
+                    type="button"
+                    className={`agent-chatmode-card${agent.chatMode === card.mode ? " active" : ""}`}
+                    onClick={() => onChange({ chatMode: card.mode as ChatMode })}
+                  >
+                    <strong>{card.title}</strong>
+                    <span>{card.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </AgentAdvancedSection>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="agent-settings-panel">
+      <header className="agent-settings-modal-head">
+        <AgentAvatar avatar={agent.avatar} className="agent-avatar-preview" />
+        <div className="agent-settings-modal-head-main">
+          <strong>{agent.name || "未命名智能体"}</strong>
+          {builtinLabel && (
+            <span className="agent-tool-auto-badge">{builtinLabel}</span>
+          )}
+        </div>
+        {onClose && (
+          <Button type="text" onClick={onClose} aria-label="关闭">
+            <Icon name="Close" size={16} />
+          </Button>
+        )}
+      </header>
+
+      <div className="agent-settings-modal-columns">
+        <nav className="agent-settings-nav" aria-label="智能体配置分区">
+          {sections.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`agent-settings-nav-item${activeSection === item.id ? " active" : ""}`}
+              aria-current={activeSection === item.id ? "page" : undefined}
+              onClick={() => setSection(item.id)}
+            >
+              <span className="agent-settings-nav-icon">
+                <Icon name={sectionIcons[item.id]} size={16} />
+              </span>
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="agent-settings-body" key={`${agent.id}-${activeSection}`}>
+          {renderSection()}
+        </div>
+      </div>
+    </div>
+  );
+}

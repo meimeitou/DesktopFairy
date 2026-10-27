@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { installSettingsSyncListener } from "./shared/settingsStore";
 import "./App.css";
 
@@ -55,7 +56,11 @@ function App() {
     );
   }
 
-  return <Suspense fallback={null}>{child}</Suspense>;
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={null}>{child}</Suspense>
+    </ErrorBoundary>
+  );
 }
 
 export default App;

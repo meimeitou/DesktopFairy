@@ -50,6 +50,11 @@ export interface ChatTopic {
   knowledgeBaseIds?: string[];
   /** Present only for host conversations (Terminal page host-chat view). */
   host?: HostTopicState;
+  /**
+   * 会话归属界面。`"terminal"` = 终端页「本机」分组里新建的会话，
+   * 只在终端侧栏出现；缺省则属于聊天页（智能体）列表。
+   */
+  origin?: "terminal";
 }
 
 export interface ChatTopicsStore {
@@ -110,7 +115,7 @@ export function normalizeChatTopicsStore(
             typeof (t as ChatTopic).id === "string" &&
             typeof (t as ChatTopic).createdAt === "number",
         )
-        .map((t) => ({
+        .map((t): ChatTopic => ({
           ...t,
           agentId:
             typeof (t as ChatTopic).agentId === "string" &&
@@ -124,6 +129,8 @@ export function normalizeChatTopicsStore(
               )
             : undefined,
           host: normalizeHostTopicState((t as ChatTopic).host),
+          origin:
+            (t as ChatTopic).origin === "terminal" ? "terminal" : undefined,
         }))
     : [];
   const hostTopicIds = new Set(

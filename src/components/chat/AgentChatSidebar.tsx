@@ -7,6 +7,7 @@ import type { AgentConfig } from "../../shared/agent";
 import AgentAvatar from "../AgentAvatar";
 import type { ChatTopic } from "../../shared/chatSession";
 import AgentContextMenu from "./AgentContextMenu";
+import { formatTime } from "../../shared/formatTime";
 import "./AgentChatSidebar.css";
 
 interface Props {
@@ -23,24 +24,6 @@ interface Props {
   onSelectAgent: (agentId: string) => void;
   loadingTopicIds: Set<string>;
   collapsed: boolean;
-  onToggleCollapse: () => void;
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const diff = now.getTime() - ts;
-  const oneDay = 86400000;
-
-  if (diff < 60000) return "刚刚";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
-  if (diff < oneDay) return `${Math.floor(diff / 3600000)} 小时前`;
-  if (d.toDateString() === now.toDateString()) {
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
-  if (diff < oneDay * 2) return "昨天";
-  if (diff < oneDay * 7) return `${Math.floor(diff / oneDay)} 天前`;
-  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 export default function AgentChatSidebar({
@@ -57,7 +40,6 @@ export default function AgentChatSidebar({
   onSelectAgent,
   loadingTopicIds,
   collapsed,
-  onToggleCollapse,
 }: Props) {
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
   const [agentMenu, setAgentMenu] = useState<{ id: string; x: number; y: number } | null>(null);

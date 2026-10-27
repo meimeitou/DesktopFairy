@@ -5,7 +5,7 @@ import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
 import ChatMarkdown from "./ChatMarkdown";
 import ThinkingBlock from "./ThinkingBlock";
-import { KnowledgeCitations } from "../knowledge/KnowledgePicker";
+import { KnowledgeCitations } from "../knowledge/KnowledgeCitations";
 import type { KnowledgeCitation } from "../../shared/knowledge";
 
 

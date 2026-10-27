@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Live2DController } from "../live2d/Live2DController";
+import type { Live2DController } from "../live2d/Live2DController";
 import Live2DSpeechBubble from "./Live2DSpeechBubble";
 import {
   parseBubbleCommand,
@@ -41,7 +41,16 @@ function ensureCubismCore(): Promise<void> {
         `${import.meta.env.BASE_URL}live2dcubismcore.min.js`,
         window.location.href,
       ).href;
-      script.onload = () => resolve();
+      script.onload = () => {
+        // 脚本 200 但没挂上全局（缓存了坏文件 / 版本不匹配）时不能算成功，
+        // 否则后面 new Controller 阶段才炸，错误信息更难定位。
+        if (typeof Live2DCubismCore === "undefined") {
+          cubismCorePromise = null;
+          reject(new Error("Live2D Cubism Core 未注册全局对象"));
+          return;
+        }
+        resolve();
+      };
       script.onerror = () => {
         cubismCorePromise = null;
         reject(new Error("Live2D Cubism Core 加载失败"));
@@ -222,6 +231,12 @@ export default function Live2DCanvas({
     (async () => {
       try {
         await ensureCubismCore();
+        if (cancelled) return;
+        // Cubism 框架在模块求值阶段就读全局 Live2DCubismCore（cubismmodel 的
+        // 枚举一求值就要 core），所以必须在 core 脚本就绪后再动态 import。
+        // 静态 import 会让整个 MainView chunk 在 import 阶段抛 ReferenceError，
+        // 结果是 #root 为空、只剩一个透明窗口挡住点击。
+        const { Live2DController } = await import("../live2d/Live2DController");
         if (cancelled) return;
         controller = new Live2DController(canvas);
         controllerRef.current = controller;

@@ -1,11 +1,12 @@
 import { Button, Form, FormItem, Icon, Input, Modal, Notification as AnimalNotification, useForm } from "animal-island-ui";
 import { CopyIcon } from "../icons/naivePatch";
 import Select from "../Select";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm } from "../../hooks/useConfirm";
 import type { AppSettings } from "../../shared/settings";
 import type { SshHost, SshCredential, SshAuthMethod, CursorStyle } from "../../shared/terminalSettings";
 import { SSH_UNGROUPED_LABEL } from "../../shared/terminalSettings";
+import TerminalAiSettingsSection from "./TerminalAiSettingsSection";
 
 const api = window.electronAPI;
 
@@ -15,7 +16,10 @@ interface Props {
   onChange: (patch: Partial<AppSettings>) => void;
   onConnectSsh: (hostId: string) => void;
   onQuickConnect: (host: SshHost) => void;
-  initialSection?: Section;
+  /** 外部请求切换分区（如助手抽屉跳转），nonce 变化才生效 */
+  sectionRequest?: { section: Section; nonce: number };
+  /** 外部请求编辑某个主机（侧栏分组图标的编辑按钮），nonce 变化才生效 */
+  hostEditRequest?: { hostId: string; nonce: number };
 }
 
 interface HostForm {
@@ -59,7 +63,12 @@ const EMPTY_CRED_FORM: CredForm = {
   note: "",
 };
 
-type Section = "appearance" | "ssh" | "credentials";
+export type Section =
+  | "appearance"
+  | "ssh"
+  | "credentials"
+  | "terminal-ai"
+  | "host-ai";
 type FormMode = "add" | "edit" | "quick" | "duplicate";
 type CredFormMode = "add" | "edit";
 type TestStatus = "testing" | "ok" | "fail";
@@ -72,9 +81,17 @@ export default function TerminalSettingsTab({
   onChange,
   onConnectSsh,
   onQuickConnect,
-  initialSection = "appearance",
+  sectionRequest,
+  hostEditRequest,
 }: Props) {
-  const [activeSection, setActiveSection] = useState<Section>(initialSection);
+  const [activeSection, setActiveSection] = useState<Section>("appearance");
+  const contentRef = useRef<HTMLElement>(null);
+  // 该组件是 keep-alive 的：外部跳转靠 nonce 触发一次分区切换，并回到分区顶部。
+  useEffect(() => {
+    if (!sectionRequest) return;
+    setActiveSection(sectionRequest.section);
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [sectionRequest?.nonce]);
   const [formMode, setFormMode] = useState<FormMode | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -223,6 +240,15 @@ export default function TerminalSettingsTab({
     setEditingId(null);
     setFormMode("duplicate");
   };
+
+  // 侧栏分组标题的编辑按钮：分区切换与弹窗在同一次提交里完成，nonce 变化才生效。
+  useEffect(() => {
+    const hostId = hostEditRequest?.hostId;
+    if (!hostId) return;
+    const host = sshHosts.find((h) => h.id === hostId);
+    if (host) handleEditHost(host);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostEditRequest?.nonce]);
 
   const handleDeleteHost = async (id: string) => {
     const host = sshHosts.find((h) => h.id === id);
@@ -531,9 +557,23 @@ export default function TerminalSettingsTab({
         >
           凭据
         </Button>
+        <Button
+          type="text"
+          className={`terminal-tabstrip-btn${activeSection === "terminal-ai" ? " active" : ""}`}
+          onClick={() => setActiveSection("terminal-ai")}
+        >
+          终端助手
+        </Button>
+        <Button
+          type="text"
+          className={`terminal-tabstrip-btn${activeSection === "host-ai" ? " active" : ""}`}
+          onClick={() => setActiveSection("host-ai")}
+        >
+          主机助手
+        </Button>
       </div>
 
-      <main className="terminal-settings-content">
+      <main ref={contentRef} className="terminal-settings-content">
         {activeSection === "appearance" && (
           <section className="settings-section terminal-appearance-section">
             <div className="terminal-appearance-grid">
@@ -827,6 +867,12 @@ export default function TerminalSettingsTab({
               </div>
             )}
           </section>
+        )}
+        {activeSection === "terminal-ai" && (
+          <TerminalAiSettingsSection target="terminal" />
+        )}
+        {activeSection === "host-ai" && (
+          <TerminalAiSettingsSection target="host" />
         )}
       </main>
 

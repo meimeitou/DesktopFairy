@@ -1,0 +1,25 @@
+.kb-list-empty {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--bone-500);
+}
+
+.kb-list-row {
+  display: block;
+  width: 100%;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-300);
+  text-align: left;
+}
+
+.kb-list-row.selected {
+  color: var(--bone-100);
+}
+
+.kb-list-row.selected::before {
+  content: "✓";
+  margin-right: 4px;
+  color: var(--persimmon);
+}

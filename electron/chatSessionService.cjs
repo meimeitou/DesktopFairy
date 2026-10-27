@@ -301,6 +301,27 @@ function registerChatSessionHandlers({
   });
 
   ipcMain.handle('chat:session:save', async (_event, { topicId, session }) => {
+    // topicId 会参与拼路径：只接受 genId 产生的形状（uuid / topic-<ts>-<rand>），
+    // 避免索引读不出来时（下面的存活检查被跳过）被 `../` 穿越到任意 .json。
+    if (typeof topicId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(topicId)) {
+      return { ok: false, error: 'Invalid topicId' };
+    }
+    // 会话已被删除时不要再落盘：面板卸载/流结束的延迟保存会把
+    // deleteTopicFiles 刚删掉的 session 文件重新写回来（孤儿文件）。
+    // 注意只在索引「读得到且确实是缺这个 topic」时才拒绝——索引损坏时若也拒绝，
+    // 之后所有会话都会静默写不进去（渲染层忽略返回值）。
+    let store = null;
+    try {
+      store = JSON.parse(fs.readFileSync(topicsIndexPath(), 'utf8'));
+    } catch (e) {
+      if (e && e.code !== 'ENOENT') {
+        console.warn('Topics index unreadable, skipping liveness check:', e.message);
+      }
+    }
+    if (store && Array.isArray(store.topics)) {
+      const alive = store.topics.some((t) => t && t.id === topicId);
+      if (!alive) return { ok: false, error: 'Topic not found' };
+    }
     const filePath = getSessionFilePath(topicId);
     const processed = processSessionForSave(session, topicId, toolResultsDir);
     return writeJson(filePath, processed);
@@ -328,7 +349,11 @@ function registerChatSessionHandlers({
     // Without it, renderer's `activeTopicId` stays `null` and the controlled input
     // will silently drop onChange updates (cursor blinks but cannot type).
     // Host topics must never be wiped by this fallback — only appended to.
-    const nonHostTopics = (store.topics || []).filter((t) => !t.host);
+    // Terminal-page topics also stay out: the chat page never lists them, so an
+    // activeId pointing at one would leave the chat input without a topic.
+    const nonHostTopics = (store.topics || []).filter(
+      (t) => !t.host && t.origin !== 'terminal',
+    );
     if (
       nonHostTopics.length === 0 ||
       !store.activeId ||
@@ -370,7 +395,7 @@ function registerChatSessionHandlers({
     return store;
   });
 
-  ipcMain.handle('chat:topics:create', async (_event, { name, agentId, chatMode, knowledgeBaseIds, hostId }) => {
+  ipcMain.handle('chat:topics:create', async (_event, { name, agentId, chatMode, knowledgeBaseIds, hostId, origin }) => {
     migrateLegacySessionIfNeeded();
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
     const now = Date.now();
@@ -406,10 +431,14 @@ function registerChatSessionHandlers({
         cwdByHost: {},
       };
     }
+    // 终端页「本机」分组创建的会话：只在终端侧栏列出，不进智能体列表。
+    if (!newTopic.host && origin === 'terminal') {
+      newTopic.origin = 'terminal';
+    }
     store.topics.push(newTopic);
     if (newTopic.host) {
       store.activeHostId = newTopic.id;
-    } else {
+    } else if (!newTopic.origin) {
       store.activeId = newTopic.id;
     }
     writeJson(topicsIndexPath(), store);
@@ -423,13 +452,20 @@ function registerChatSessionHandlers({
     if (topicIndex === -1) return { ok: false, error: 'Topic not found' };
 
     const wasHostTopic = !!(store.topics[topicIndex] && store.topics[topicIndex].host);
+    // 终端页会话（origin==='terminal'）同样不是聊天页会话：删它不该触发聊天页补建。
+    const wasChatTopic =
+      !wasHostTopic && store.topics[topicIndex].origin !== 'terminal';
     store.topics.splice(topicIndex, 1);
 
     // Host topics: abort the live stream first, then drop files (main-side cascade).
     deleteTopicFiles(topicId);
 
     let autoCreated = null;
-    if (!wasHostTopic && store.topics.filter((t) => !t.host).length === 0) {
+    // 聊天页可见的会话 = 无 host 且非终端页创建的 topic；activeId 必须落在其中，
+    // 否则渲染层拿到一个自己过滤掉的 id。
+    const chatTopicOf = (list) =>
+      list.find((t) => t && !t.host && t.origin !== 'terminal');
+    if (wasChatTopic && !chatTopicOf(store.topics)) {
       const now = Date.now();
       const newTopic = {
         id: genId(),
@@ -444,7 +480,7 @@ function registerChatSessionHandlers({
       store.activeId = newTopic.id;
       autoCreated = newTopic;
     } else if (store.activeId === topicId) {
-      store.activeId = store.topics.find((t) => !t.host)?.id ?? null;
+      store.activeId = chatTopicOf(store.topics)?.id ?? null;
     }
     if (store.activeHostId === topicId) {
       const nextHost = store.topics.find((t) => t.host);

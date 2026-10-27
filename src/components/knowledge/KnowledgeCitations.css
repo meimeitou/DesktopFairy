@@ -1,0 +1,35 @@
+.kb-citations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.kb-citation {
+  position: relative;
+}
+
+.kb-citation-btn {
+  font-size: 11px;
+}
+
+.kb-citation-pop {
+  position: absolute;
+  left: 0;
+  bottom: 28px;
+  z-index: 8;
+  width: 280px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-800);
+}
+
+.kb-citation-pop pre {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  font-size: 11px;
+  color: var(--bone-300);
+}

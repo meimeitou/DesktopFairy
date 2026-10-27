@@ -17,8 +17,17 @@
 .agent-settings-modal-body {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.agent-settings-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .agent-settings-modal-head {
@@ -54,7 +63,7 @@
   min-height: 0;
   gap: 0;
 }
-.agent-settings-modal .agent-settings-nav {
+.agent-settings-panel .agent-settings-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -65,7 +74,7 @@
   border-right: 1px solid var(--hairline);
 }
 
-.agent-settings-modal .agent-settings-nav-item {
+.agent-settings-panel .agent-settings-nav-item {
   position: relative;
   display: flex;
   align-items: center;
@@ -85,19 +94,19 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.agent-settings-modal .agent-settings-nav-item:hover:not(.active) {
+.agent-settings-panel .agent-settings-nav-item:hover:not(.active) {
   background: rgba(121, 79, 39, 0.06);
 }
 
 /* Active: mint soft bg + left-edge marker — same syntax as .settings-menu-item.active. */
-.agent-settings-modal .agent-settings-nav-item.active,
-.agent-settings-modal .agent-settings-nav-item.active:hover {
+.agent-settings-panel .agent-settings-nav-item.active,
+.agent-settings-panel .agent-settings-nav-item.active:hover {
   color: var(--bone-100);
   background: var(--persimmon-softer);
   border-color: rgba(25, 200, 185, 0.28);
 }
 
-.agent-settings-modal .agent-settings-nav-item.active::before {
+.agent-settings-panel .agent-settings-nav-item.active::before {
   content: "";
   position: absolute;
   left: 0;
@@ -108,11 +117,11 @@
   background: var(--persimmon-bright);
 }
 
-.agent-settings-modal .agent-settings-nav-item.active .agent-settings-nav-icon {
+.agent-settings-panel .agent-settings-nav-item.active .agent-settings-nav-icon {
   color: var(--persimmon-bright);
 }
 
-.agent-settings-modal .agent-settings-nav-icon {
+.agent-settings-panel .agent-settings-nav-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -122,7 +131,7 @@
   color: currentColor;
 }
 
-.agent-settings-modal .agent-settings-body {
+.agent-settings-panel .agent-settings-body {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -130,7 +139,7 @@
   padding: 14px 4px 4px 16px;
 }
 
-.agent-settings-modal .settings-section.agent-subsection {
+.agent-settings-panel .settings-section.agent-subsection {
   padding-top: 4px;
 }
 

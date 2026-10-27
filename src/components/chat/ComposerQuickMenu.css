@@ -1,0 +1,89 @@
+.composer-quick {
+  position: relative;
+  display: inline-flex;
+}
+
+.composer-quick .chat-tool-btn {
+  position: relative;
+}
+
+.composer-quick-count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 12px;
+  text-align: center;
+  color: var(--bone-100);
+  background: var(--persimmon);
+  pointer-events: none;
+}
+
+.composer-quick-menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1200;
+  min-width: 200px;
+  max-width: min(260px, calc(100vw - 32px));
+  max-height: 300px;
+  overflow: auto;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(248, 244, 232, 0.98);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 16px 40px rgba(121, 79, 39, 0.25),
+    inset 0 1px 0 rgba(121, 79, 39, 0.04);
+  animation: composer-quick-in 0.14s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes composer-quick-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-quick-menu {
+    animation: none;
+  }
+}
+
+.composer-quick-row {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--bone-300);
+  text-align: left;
+}
+
+.composer-quick-row.danger {
+  color: var(--rust-bright);
+}
+
+.composer-quick-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--hairline-strong);
+}
+
+.composer-quick-label {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--bone-500);
+}

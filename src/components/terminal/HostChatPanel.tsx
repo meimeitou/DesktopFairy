@@ -1,4 +1,4 @@
-import { Button, Icon } from "animal-island-ui";
+import { Icon } from "animal-island-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MessageList, {
   type MessageListHandle,
@@ -6,7 +6,6 @@ import MessageList, {
 import ChatInputBar from "../chat/ChatInputBar";
 import { ToolCancelContext } from "../chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../../hooks/useToolApproval";
-import { useConfirm } from "../../hooks/useConfirm";
 import {
   attachTopicStream,
   detachTopicStream,
@@ -38,15 +37,16 @@ import {
   getChatApiConfig,
   updateAgentInSettings,
 } from "../../shared/settings";
-import { HOST_ASSISTANT_ID, findAgentById } from "../../shared/agent";
+import { findAgentById } from "../../shared/agent";
 import {
   buildTrimOptions,
   estimateAgentSystemPromptTokens,
+  estimateContextUsage,
   resolveActiveModelName,
   resolveContextWindow,
 } from "../../shared/contextUsage";
-import { mergeRefTopicStates } from "../../shared/topicStateSync";
 import { getSettingsSnapshot, setSettings, useSettings } from "../../shared/settingsStore";
+import type { SshHost } from "../../shared/terminalSettings";
 
 import type { ChatMode } from "../../shared/chatMode";
 import type { ReasoningEffort } from "../../shared/reasoningEffort";
@@ -55,15 +55,19 @@ import "./HostChatPanel.css";
 
 const api = window.electronAPI;
 
-type TopicPageState = {
+type PageState = {
   messages: ChatMsg[];
   input: string;
   streaming: boolean;
   requestId: string | null;
   sessionReady: boolean;
+  /** 服务端上报的上一轮 token 用量，用于上下文占用的精确值 */
+  lastPromptTokens?: number;
+  lastCompletionTokens?: number;
+  lastUsageMessageCount?: number;
 };
 
-function emptyTopicState(): TopicPageState {
+function emptyState(): PageState {
   return {
     messages: [],
     input: "",
@@ -81,172 +85,144 @@ function genId(): string {
 }
 
 export default function HostChatPanel({
+  topicId,
+  topic,
+  host,
   isActive,
-  onOpenSshSettings,
+  onStatusChange,
+  onTopicRenamed,
 }: {
+  topicId: string;
+  topic: ChatTopic;
+  host: SshHost | null;
   isActive: boolean;
-  onOpenSshSettings: () => void;
+  onStatusChange: (topicId: string, status: { streaming: boolean; awaiting: boolean }) => void;
+  onTopicRenamed: (topicId: string, name: string) => void;
 }) {
   const settings = useSettings();
-  const { confirm, dialog: confirmDialog } = useConfirm();
-  const [topics, setTopics] = useState<ChatTopic[]>([]);
-  const topicsRef = useRef<ChatTopic[]>([]);
-  const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
-  const [topicStates, setTopicStates] = useState<Record<string, TopicPageState>>({});
-  const topicStatesRef = useRef(topicStates);
-  const [streamingTopics, setStreamingTopics] = useState<Set<string>>(new Set());
-  const [awaitingApprovalTopics, setAwaitingApprovalTopics] = useState<Set<string>>(new Set());
-  const [hostPickerOpen, setHostPickerOpen] = useState(false);
-
-  const activeTopicIdRef = useRef(activeTopicId);
-  activeTopicIdRef.current = activeTopicId;
-  const requestIdToTopicIdRef = useRef<Map<string, string>>(new Map());
-  const agentSendLockRef = useRef<Set<string>>(new Set());
-  const legacyStreamHandlersRef = useRef<LegacyStreamHandlers | null>(null);
+  const stateRef = useRef<PageState>(emptyState());
+  const [state, setState] = useState<PageState>(stateRef.current);
+  const [chatMode, setChatMode] = useState<ChatMode>(topic.chatMode);
+  // 记住上次从 prop 采纳的值：本地切换后 prop 还是旧的，不能直接回灌。
+  const propChatModeRef = useRef<ChatMode>(topic.chatMode);
+  const requestIdRef = useRef<string>("");
   const messageListRef = useRef<MessageListHandle>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
-  const requestIdRef = useRef<string>("");
+  const legacyStreamHandlersRef = useRef<LegacyStreamHandlers | null>(null);
+  const sendLockRef = useRef(false);
 
-  const hostAgent =
-    findAgentById(settings.agents, HOST_ASSISTANT_ID) ?? null;
-  const activeTopic = topics.find((t) => t.id === activeTopicId) ?? null;
-  const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
-  const { messages, input, streaming } = activeState;
+  const { messages, input, streaming, sessionReady } = state;
   chatMessagesRef.current = messages;
-  topicStatesRef.current = mergeRefTopicStates(topicStatesRef.current, topicStates);
-  // `topics` is also written by rename / chatMode updates, not only by
-  // refreshTopics() — keep the ref in sync so handleSend sees the new mode.
-  topicsRef.current = topics;
 
-  const hostById = useCallback(
-    (hostId: string) => settings.sshHosts.find((h) => h.id === hostId) ?? null,
-    [settings.sshHosts],
-  );
+  // 主机对话用 host-assistant，本机对话用 personal-assistant —— 都以 topic 为准。
+  const agent = findAgentById(settings.agents, topic.agentId) ?? null;
+
+  const contextUsage = useMemo(() => {
+    if (!agent) return null;
+    return estimateContextUsage({
+      messages: filterForAgentHistory(messages),
+      input,
+      systemTokens: estimateAgentSystemPromptTokens(agent),
+      contextWindow: resolveContextWindow(resolveActiveModelName(agent)),
+      lastPromptTokens: state.lastPromptTokens,
+      lastCompletionTokens: state.lastCompletionTokens,
+      lastUsageMessageCount: state.lastUsageMessageCount,
+    });
+  }, [
+    agent,
+    messages,
+    input,
+    state.lastPromptTokens,
+    state.lastCompletionTokens,
+    state.lastUsageMessageCount,
+  ]);
 
   const scrollToBottom = useCallback(() => {
     messageListRef.current?.scrollToBottom();
   }, []);
 
-  /** Load host topics (scope:host) + activeHostId. */
-  const refreshTopics = useCallback(async () => {
-    const store = (await api.invoke("chat:topics:list", { scope: "host" })) as {
-      topics: ChatTopic[];
-      activeHostId: string | null;
-    };
-    const list = Array.isArray(store.topics) ? store.topics : [];
-    setTopics(list);
-    topicsRef.current = list;
-    return { list, activeHostId: store.activeHostId ?? null };
+  const patchState = useCallback((updater: (prev: PageState) => PageState) => {
+    const prev = stateRef.current;
+    const next = updater(prev);
+    if (next === prev) return;
+    stateRef.current = next;
+    setState(next);
   }, []);
 
-  /** Hydrate a topic's session from disk. */
-  const hydrateSession = useCallback(async (topicId: string) => {
-    if (topicStatesRef.current[topicId]?.sessionReady) return;
-    const raw = (await api.invoke("chat:session:load", topicId)) as unknown;
-    const session = normalizeChatSession(raw);
-    const next: TopicPageState = {
-      ...emptyTopicState(),
-      messages: session.messages ?? [],
-      input: session.draftInput ?? "",
-      sessionReady: true,
-    };
-    topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
-    setTopicStates((prev) => ({ ...prev, [topicId]: next }));
-  }, []);
-
-  // Load host topics → active topic → hydrate. Also re-runs when the saved
-  // hosts change (main cascades topic deletion when a host is removed), in
-  // which case the selection must fall back instead of pointing at a ghost.
-  const sshHostsKey = settings.sshHosts.map((h) => h.id).join(",");
-  useEffect(() => {
-    void (async () => {
-      const { list, activeHostId } = await refreshTopics();
-      const current = activeTopicIdRef.current;
-      if (current && list.some((t) => t.id === current)) return;
-      const target =
-        (activeHostId && list.some((t) => t.id === activeHostId)
-          ? activeHostId
-          : null) ?? list[0]?.id ?? null;
-      setActiveTopicId(target);
-      if (target) await hydrateSession(target);
-    })();
-  }, [sshHostsKey, refreshTopics, hydrateSession]);
-
-  const persistSession = useCallback(async (topicId?: string) => {
-    const tid = topicId ?? activeTopicIdRef.current;
-    if (!tid) return;
-    const state = topicStatesRef.current[tid];
-    if (!state?.sessionReady) return;
+  const persistSession = useCallback(async () => {
+    const s = stateRef.current;
+    if (!s.sessionReady) return;
     const session = trimSessionForStorage(
-      buildChatSession(state.messages, state.input, []),
+      buildChatSession(s.messages, s.input, []),
     );
-    await api.invoke("chat:session:save", { topicId: tid, session });
-  }, []);
+    await api.invoke("chat:session:save", { topicId, session });
+  }, [topicId]);
 
-  const syncStreamingFlag = useCallback((topicId: string, streaming: boolean) => {
-    setStreamingTopics((prev) => {
-      const next = new Set(prev);
-      if (streaming) next.add(topicId);
-      else next.delete(topicId);
-      return next;
-    });
-  }, []);
-
-  const patchTopicState = useCallback(
-    (topicId: string, updater: (state: TopicPageState) => TopicPageState) => {
-      const prev = topicStatesRef.current[topicId];
-      if (!prev) return;
-      const next = updater(prev);
-      if (next === prev) return;
-      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
-      if (prev.streaming !== next.streaming) {
-        syncStreamingFlag(topicId, next.streaming);
-      }
-      if (topicId === activeTopicIdRef.current) {
-        setTopicStates((s) => ({ ...s, [topicId]: next }));
-      }
-    },
-    [syncStreamingFlag],
-  );
-
-  // Attach to the active topic's live stream (background streams keep running).
+  // Hydrate from disk, THEN attach to the live stream. The order matters:
+  // replayLegacyStreamEvents 会把「标签关闭期间」积压的事件打回 state，
+  // 若先回放后被磁盘快照覆盖，积压内容与 streaming 标记都会丢；反过来先
+  // 覆盖再回放，则持久化的历史会丢。因此串行：先落后磁盘，再叠回放。
   useEffect(() => {
-    if (!activeTopicId) return;
+    let cancelled = false;
     void (async () => {
-      const result = await attachTopicStream(activeTopicId);
-      if (result.requestId) {
-        requestIdToTopicIdRef.current.set(result.requestId, activeTopicId);
+      try {
+        const raw = (await api.invoke("chat:session:load", topicId)) as unknown;
+        if (cancelled) return;
+        const session = normalizeChatSession(raw);
+        const hydrated: PageState = {
+          ...emptyState(),
+          messages: session.messages ?? [],
+          input: session.draftInput ?? "",
+          sessionReady: true,
+        };
+        // 用户在读盘完成前就动了输入框/发了消息：磁盘快照是旧的，整体覆盖会吞掉
+        // 刚敲的草稿、用户消息和 streaming 标记。保留内存态，只补上 sessionReady。
+        const current = stateRef.current;
+        if (
+          current.streaming ||
+          current.sessionReady ||
+          current.input ||
+          current.messages.length > 0
+        ) {
+          patchState((s) => (s.sessionReady ? s : { ...s, sessionReady: true }));
+        } else {
+          stateRef.current = hydrated;
+          setState(hydrated);
+          messageListRef.current?.scrollToBottom();
+        }
+      } catch {
+        // 读盘失败不能连带掐断流挂接；sessionReady 保持 false，
+        // 避免后续把空会话回写、覆盖磁盘上的历史。
       }
+
+      const result = await attachTopicStream(topicId);
+      if (cancelled) return;
+      // requestIdRef 是 chunk/done 的路由判据，必须在回放之前就位，
+      // 否则关标签期间产生的事件会被全部丢弃。
+      if (result.requestId) requestIdRef.current = result.requestId;
       replayLegacyStreamEvents(
         result.legacyEvents,
         legacyStreamHandlersRef.current,
       );
       if (result.attached && result.status === "streaming" && result.requestId) {
-        patchTopicState(activeTopicId, (state) => ({
-          ...state,
-          streaming: true,
-          requestId: result.requestId!,
-        }));
-        syncStreamingFlag(activeTopicId, true);
+        patchState((s) => ({ ...s, streaming: true, requestId: result.requestId! }));
       }
     })();
     return () => {
-      detachTopicStream(activeTopicId);
+      cancelled = true;
+      detachTopicStream(topicId);
     };
-  }, [activeTopicId, patchTopicState, syncStreamingFlag]);
+  }, [topicId, patchState]);
 
-  // Stream event routing (chunk/done/error/tool) — same shape as ChatPage.
+  // Stream event routing (chunk/done/error/tool).
   useEffect(() => {
     const applyChunk = (
-      requestId: string,
-      parts: { partId: string; text: string }[],
+      parts: { partId?: string; text: string }[],
       reasoning: string,
     ) => {
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
       if (parts.length === 0 && !reasoning) return;
-      patchTopicState(topicId, (state) => {
-        let msgs = state.messages;
+      patchState((s) => {
+        let msgs = s.messages;
         for (const part of parts) {
           msgs = applyStreamTextPart(msgs, part.partId, part.text);
         }
@@ -259,11 +235,13 @@ export default function HostChatPanel({
           };
           msgs = next;
         }
-        return { ...state, messages: msgs };
+        return { ...s, messages: msgs };
       });
     };
 
-    const chunkBuffer = createStreamChunkBuffer(applyChunk);
+    const chunkBuffer = createStreamChunkBuffer((_requestId, parts, reasoning) =>
+      applyChunk(parts, reasoning),
+    );
 
     const handleChatChunk = ({
       requestId,
@@ -276,8 +254,7 @@ export default function HostChatPanel({
       delta?: string;
       reasoning?: string;
     }) => {
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
+      if (requestId !== requestIdRef.current) return;
       chunkBuffer.push(requestId, partId, delta, reasoning);
     };
 
@@ -285,31 +262,34 @@ export default function HostChatPanel({
       requestId,
       aborted,
       tools,
+      usage,
     }: {
       requestId: string;
       aborted?: boolean;
       tools?: ToolTerminalState[];
+      usage?: { promptTokens?: number; completionTokens?: number };
     }) => {
+      if (requestId !== requestIdRef.current) return;
       chunkBuffer.flushRequest(requestId);
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      setTimeout(() => {
-        requestIdToTopicIdRef.current.delete(requestId);
-      }, 0);
-      patchTopicState(topicId, (state) => ({
-        ...state,
-        streaming: false,
-        requestId: null,
-        messages: pruneEmptyAssistantMessages(
-          reconcileToolMessages(state.messages, tools, Boolean(aborted)),
-        ),
-      }));
-      setAwaitingApprovalTopics((prev) => {
-        const next = new Set(prev);
-        next.delete(topicId);
-        return next;
+      patchState((s) => {
+        const messages = pruneEmptyAssistantMessages(
+          reconcileToolMessages(s.messages, tools, Boolean(aborted)),
+        );
+        return {
+          ...s,
+          streaming: false,
+          requestId: null,
+          messages,
+          ...(usage?.promptTokens != null && usage.promptTokens > 0
+            ? {
+                lastPromptTokens: usage.promptTokens,
+                lastCompletionTokens: usage.completionTokens,
+                lastUsageMessageCount: filterForAgentHistory(messages).length,
+              }
+            : {}),
+        };
       });
-      void persistSession(topicId);
+      void persistSession();
     };
 
     const handleChatError = ({
@@ -319,15 +299,13 @@ export default function HostChatPanel({
       requestId: string;
       message: string;
     }) => {
+      if (requestId !== requestIdRef.current) return;
       chunkBuffer.flushRequest(requestId);
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      requestIdToTopicIdRef.current.delete(requestId);
-      patchTopicState(topicId, (state) => {
-        const reconciled = reconcileToolMessages(state.messages, undefined, false);
+      patchState((s) => {
+        const reconciled = reconcileToolMessages(s.messages, undefined, false);
         const idx = findLastAssistantReplyIndex(reconciled);
         if (idx < 0) {
-          return { ...state, streaming: false, requestId: null, messages: reconciled };
+          return { ...s, streaming: false, requestId: null, messages: reconciled };
         }
         const next = reconciled.slice();
         const target = next[idx];
@@ -336,14 +314,9 @@ export default function HostChatPanel({
           content: target.content || `请求失败：${message}`,
           error: true,
         };
-        return { ...state, streaming: false, requestId: null, messages: next };
+        return { ...s, streaming: false, requestId: null, messages: next };
       });
-      setAwaitingApprovalTopics((prev) => {
-        const next = new Set(prev);
-        next.delete(topicId);
-        return next;
-      });
-      void persistSession(topicId);
+      void persistSession();
     };
 
     const handleAgentTool = ({
@@ -367,12 +340,11 @@ export default function HostChatPanel({
       resultPreview?: string;
       force?: boolean;
     }) => {
+      if (requestId !== requestIdRef.current) return;
       chunkBuffer.flushRequest(requestId);
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      patchTopicState(topicId, (state) => ({
-        ...state,
-        messages: upsertAgentToolMessage(state.messages, {
+      patchState((s) => ({
+        ...s,
+        messages: upsertAgentToolMessage(s.messages, {
           toolCallId,
           toolName,
           toolArgs,
@@ -383,10 +355,7 @@ export default function HostChatPanel({
           toolForce: force,
         }),
       }));
-      if (status === "awaiting_approval") {
-        setAwaitingApprovalTopics((prev) => new Set([...prev, topicId]));
-      }
-      void persistSession(topicId);
+      void persistSession();
     };
 
     legacyStreamHandlersRef.current = {
@@ -409,16 +378,30 @@ export default function HostChatPanel({
       offError?.();
       offTool?.();
     };
-  }, [patchTopicState, persistSession]);
+  }, [patchState, persistSession]);
 
-  const handleChatModeChange = useCallback((mode: ChatMode) => {
-    const topicId = activeTopicIdRef.current;
-    if (!topicId) return;
-    setTopics((prev) =>
-      prev.map((t) => (t.id === topicId ? { ...t, chatMode: mode } : t)),
-    );
-    void api.invoke("chat:topics:updateMeta", { topicId, chatMode: mode });
-  }, []);
+  // topic.chatMode 被外部改动（设置页 / 其他窗口）时回灌到面板；
+  // 本地切换过的值已经写回 ref，父级刷新回同值时不会触发。
+  useEffect(() => {
+    if (propChatModeRef.current === topic.chatMode) return;
+    propChatModeRef.current = topic.chatMode;
+    setChatMode(topic.chatMode);
+  }, [topic.chatMode]);
+
+  const handleChatModeChange = useCallback(
+    (mode: ChatMode) => {
+      propChatModeRef.current = mode;
+      setChatMode(mode);
+      void api.invoke("chat:topics:updateMeta", {
+        topicId,
+        chatMode: mode,
+      });
+    },
+    [topicId],
+  );
+
+  const topicIdRef = useRef<string | null>(topicId);
+  topicIdRef.current = topicId;
 
   const {
     submittingApprovalId,
@@ -430,136 +413,88 @@ export default function HostChatPanel({
     chatMessagesRef,
     () => handleChatModeChange("full-auto"),
     requestIdRef,
-    activeTopicIdRef,
+    topicIdRef,
   );
 
   const handleCancelTool = useCallback(() => {
-    const topicId = activeTopicIdRef.current;
-    if (!topicId) return;
-    const state = topicStatesRef.current[topicId];
-    if (state?.requestId) {
-      abortTopicStream(topicId, state.requestId);
-    }
-  }, []);
+    const s = stateRef.current;
+    if (s.requestId) abortTopicStream(topicId, s.requestId);
+  }, [topicId]);
 
   const handleStop = useCallback(() => {
-    const topicId = activeTopicIdRef.current;
-    if (!topicId) return;
-    const state = topicStatesRef.current[topicId];
-    if (state?.requestId) {
-      abortTopicStream(topicId, state.requestId);
-    }
-  }, []);
+    const s = stateRef.current;
+    if (s.requestId) abortTopicStream(topicId, s.requestId);
+  }, [topicId]);
 
   const handleReasoningEffortChange = useCallback((value: ReasoningEffort) => {
-    // Host assistant config is shared across all host conversations.
+    // 智能体配置按 topic.agentId 共享：同一智能体的所有对话改一处即全部生效。
     const current = getSettingsSnapshot();
-    setSettings(updateAgentInSettings(current, HOST_ASSISTANT_ID, { reasoningEffort: value }));
-  }, []);
+    setSettings(updateAgentInSettings(current, topic.agentId, { reasoningEffort: value }));
+  }, [topic.agentId]);
 
-  const handleSelectTopic = useCallback(
-    async (topicId: string) => {
-      const old = activeTopicIdRef.current;
-      if (old && old !== topicId) await persistSession(old);
-      setActiveTopicId(topicId);
-      const latest = topicStatesRef.current[topicId];
-      if (latest?.sessionReady) {
-        // The ref may be ahead after background streaming — hydrate React
-        // state from it instead of leaving the stale committed snapshot.
-        setTopicStates((prev) => ({ ...prev, [topicId]: latest }));
-      } else {
-        await hydrateSession(topicId);
-      }
-      void api.invoke("chat:topics:setActive", { topicId, scope: "host" });
-      scrollToBottom();
-    },
-    [hydrateSession, persistSession, scrollToBottom],
-  );
-
-  const handleCreateTopic = useCallback(
-    async (hostId: string) => {
-      const result = (await api.invoke("chat:topics:create", {
-        agentId: HOST_ASSISTANT_ID,
-        hostId,
-      })) as { ok?: boolean; topic?: ChatTopic; error?: string };
-      if (!result?.ok || !result.topic) return;
-      await refreshTopics();
-      const tid = result.topic.id;
-      topicStatesRef.current = { ...topicStatesRef.current, [tid]: emptyTopicState() };
-      setTopicStates((prev) => ({ ...prev, [tid]: emptyTopicState() }));
-      setActiveTopicId(tid);
-      setHostPickerOpen(false);
-      scrollToBottom();
-    },
-    [refreshTopics, scrollToBottom],
-  );
-
-  const handleDeleteTopic = useCallback(
-    async (topicId: string) => {
-      const topic = topicsRef.current.find((t) => t.id === topicId);
-      const host = topic?.host ? hostById(topic.host.hostId) : null;
-      const confirmed = await confirm({
-        title: "删除主机对话",
-        content: `确定删除「${topic?.name || host?.name || "该对话"}」？对话历史将一并删除。`,
-        okText: "删除",
-        danger: true,
-      });
-      if (!confirmed) return;
-      await api.invoke("chat:topics:delete", topicId);
-      const { list, activeHostId } = await refreshTopics();
-      if (activeTopicIdRef.current === topicId) {
-        const next =
-          (activeHostId && list.some((t) => t.id === activeHostId)
-            ? activeHostId
-            : null) ?? list[0]?.id ?? null;
-        setActiveTopicId(next);
-        if (next) await hydrateSession(next);
-      }
-    },
-    [confirm, hostById, hydrateSession, refreshTopics],
-  );
+  // 与 ChatPage 一致：末尾插入 clear 标记；再点一次撤销。
+  const handleClearContext = useCallback(() => {
+    const s = stateRef.current;
+    if (s.streaming || s.messages.length === 0) return;
+    const last = s.messages[s.messages.length - 1];
+    const messages =
+      last.type === "clear"
+        ? s.messages.slice(0, -1)
+        : [
+            ...s.messages,
+            {
+              id: genId(),
+              role: "user" as const,
+              type: "clear" as const,
+              content: "",
+              timestamp: Date.now(),
+            } as ChatMsg,
+          ];
+    patchState((prev) => ({
+      ...prev,
+      messages,
+      lastPromptTokens: undefined,
+      lastCompletionTokens: undefined,
+      lastUsageMessageCount: undefined,
+    }));
+    void persistSession();
+    scrollToBottom();
+  }, [patchState, persistSession, scrollToBottom]);
 
   const failAgentOpen = useCallback(
-    (topicId: string, requestId: string, message: string) => {
-      if (requestIdToTopicIdRef.current.get(requestId) !== topicId) return;
-      requestIdToTopicIdRef.current.delete(requestId);
-      const s = topicStatesRef.current[topicId];
-      if (!s) return;
+    (requestId: string, message: string) => {
+      if (requestId !== requestIdRef.current) return;
+      const s = stateRef.current;
       const owns = s.requestId === requestId;
       const idx = findLastAssistantReplyIndex(s.messages);
       const nextMsgs = s.messages.slice();
       if (idx >= 0) {
         nextMsgs[idx] = { ...nextMsgs[idx], content: message, error: true };
       }
-      const next = {
-        ...s,
+      patchState((prev) => ({
+        ...prev,
         messages: nextMsgs,
-        streaming: owns ? false : s.streaming,
-        requestId: owns ? null : s.requestId,
-      };
-      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
-      setTopicStates((prev) => ({ ...prev, [topicId]: next }));
-      if (owns) syncStreamingFlag(topicId, false);
+        streaming: owns ? false : prev.streaming,
+        requestId: owns ? null : prev.requestId,
+      }));
+      // 用户消息 + 错误气泡也要落盘，否则硬退出会丢这一轮。
+      void persistSession();
     },
-    [syncStreamingFlag],
+    [patchState, persistSession],
   );
 
   const handleSend = useCallback(async () => {
-    const topicId = activeTopicIdRef.current;
-    if (!topicId) return;
-    const state = topicStatesRef.current[topicId];
-    if (!state || state.streaming) return;
-    if (agentSendLockRef.current.has(topicId)) return;
+    const s = stateRef.current;
+    if (s.streaming || sendLockRef.current) return;
 
-    const text = state.input.trim();
+    const text = s.input.trim();
     if (!text) return;
 
-    agentSendLockRef.current.add(topicId);
+    sendLockRef.current = true;
     try {
       const currentSettings = getSettingsSnapshot();
-      const agent = findAgentById(currentSettings.agents, HOST_ASSISTANT_ID);
-      const topic = topicsRef.current.find((t) => t.id === topicId);
-      if (!agent || !topic) return;
+      const agent = findAgentById(currentSettings.agents, topic.agentId);
+      if (!agent) return;
       const apiConfig = getChatApiConfig(currentSettings, agent);
       if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
@@ -568,7 +503,7 @@ export default function HostChatPanel({
         systemTokens: estimateAgentSystemPromptTokens(agent),
       });
       const history = trimMessagesForApi(
-        filterForAgentHistory(state.messages),
+        filterForAgentHistory(s.messages),
         trimOpts,
       );
       const payloadMessages = buildAgentHistoryMessages([
@@ -583,32 +518,24 @@ export default function HostChatPanel({
 
       const requestId = genId();
       requestIdRef.current = requestId;
-      requestIdToTopicIdRef.current.set(requestId, topicId);
 
       const now = Date.now();
-      const next: TopicPageState = {
-        ...state,
+      patchState((prev) => ({
+        ...prev,
         input: "",
         messages: [
-          ...state.messages,
+          ...prev.messages,
           { id: genId(), role: "user", content: text, timestamp: now },
           { id: genId(), role: "assistant", content: "", timestamp: now },
         ],
         streaming: true,
         requestId,
-      };
-      topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
-      setTopicStates((prev) => ({ ...prev, [topicId]: next }));
-      syncStreamingFlag(topicId, true);
+      }));
       scrollToBottom();
 
       // First user message → derive topic title.
       if (!topic.name) {
-        const title = generateTopicTitle(text);
-        setTopics((prev) =>
-          prev.map((t) => (t.id === topicId ? { ...t, name: title } : t)),
-        );
-        void api.invoke("chat:topics:rename", { topicId, name: title });
+        onTopicRenamed(topicId, generateTopicTitle(text));
       }
 
       openAgentStream({
@@ -623,222 +550,99 @@ export default function HostChatPanel({
         },
         agentConfig: {
           ...agent,
-          chatMode: topic.chatMode ?? agent.chatMode,
+          chatMode: chatMode ?? agent.chatMode,
         },
       })
         .then((result) => {
           if (!result || typeof result !== "object") return;
           if ((result as { mode?: string }).mode !== "blocked") return;
-          failAgentOpen(topicId, requestId, "该话题已有进行中的会话，请等待完成或先停止。");
+          failAgentOpen(requestId, "该话题已有进行中的会话，请等待完成或先停止。");
         })
         .catch((e: Error) => {
-          failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
+          failAgentOpen(requestId, `请求失败：${e.message || e}`);
         });
     } finally {
-      agentSendLockRef.current.delete(topicId);
+      sendLockRef.current = false;
     }
-  }, [failAgentOpen, scrollToBottom, syncStreamingFlag]);
+  }, [chatMode, failAgentOpen, onTopicRenamed, patchState, scrollToBottom, topic.agentId, topic.name, topicId]);
 
-  const setActiveInput = useCallback((value: string) => {
-    const topicId = activeTopicIdRef.current;
-    if (!topicId) return;
-    setTopicStates((prev) => ({
-      ...prev,
-      [topicId]: { ...(prev[topicId] ?? emptyTopicState()), input: value },
-    }));
-  }, []);
-
-  // Group topics by host.
-  const groups = useMemo(() => {
-    const m = new Map<string, ChatTopic[]>();
-    for (const t of topics) {
-      const hostId = t.host?.hostId ?? "";
-      if (!m.has(hostId)) m.set(hostId, []);
-      m.get(hostId)!.push(t);
-    }
-    return m;
-  }, [topics]);
-
-  const activeHost = activeTopic?.host ? hostById(activeTopic.host.hostId) : null;
-  const activeChatMode: ChatMode = activeTopic?.chatMode ?? hostAgent?.chatMode ?? "normal";
-
-  const renderSidebar = () => (
-    <div className="host-chat-sidebar">
-      <div className="host-chat-sidebar-head">
-        <span>主机对话</span>
-        <Button
-          type="text"
-          size="small"
-          icon={<Icon name="Plus" size={14} />}
-          title="新建主机对话"
-          onClick={() => setHostPickerOpen((v) => !v)}
-        />
-      </div>
-      <div className="host-chat-sidebar-body">
-        {settings.sshHosts.length === 0 ? (
-          <div className="host-chat-sidebar-empty">
-            <p>还没有已保存的 SSH 主机</p>
-            <Button type="default" size="small" onClick={onOpenSshSettings}>
-              去添加主机
-            </Button>
-          </div>
-        ) : groups.size === 0 ? (
-          // 有主机、无对话：直接列主机，点选即建新对话。
-          settings.sshHosts.map((h) => (
-            <div key={h.id} className="host-chat-group">
-              <div className="host-chat-group-head">
-                <span className="host-chat-group-name">{h.name}</span>
-                <span className="host-chat-group-meta">
-                  {`${h.user}@${h.host}:${h.port || 22}`}
-                </span>
-                <Button
-                  type="text"
-                  size="small"
-                  className="host-chat-group-new"
-                  icon={<Icon name="Plus" size={12} />}
-                  title={`在 ${h.name} 新建对话`}
-                  onClick={() => void handleCreateTopic(h.id)}
-                />
-              </div>
-            </div>
-          ))
-        ) : (
-          [...groups.entries()].map(([hostId, list]) => {
-            const host = hostById(hostId);
-            return (
-              <div key={hostId} className="host-chat-group">
-                <div className="host-chat-group-head">
-                  <span className="host-chat-group-name">
-                    {host?.name || "未知主机"}
-                  </span>
-                  <span className="host-chat-group-meta">
-                    {host ? `${host.user}@${host.host}` : ""}
-                  </span>
-                  <Button
-                    type="text"
-                    size="small"
-                    className="host-chat-group-new"
-                    icon={<Icon name="Plus" size={12} />}
-                    title={`在 ${host?.name || "该主机"} 新建对话`}
-                    onClick={() => void handleCreateTopic(hostId)}
-                  />
-                </div>
-                {list.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`host-chat-topic${t.id === activeTopicId ? " active" : ""}`}
-                    onClick={() => void handleSelectTopic(t.id)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void handleSelectTopic(t.id);
-                    }}
-                  >
-                    <span className="host-chat-topic-name">
-                      {t.name || "新对话"}
-                    </span>
-                    {(streamingTopics.has(t.id) || awaitingApprovalTopics.has(t.id)) && (
-                      <span
-                        className={`host-chat-topic-dot${awaitingApprovalTopics.has(t.id) ? " awaiting" : ""}`}
-                        title={awaitingApprovalTopics.has(t.id) ? "等待审批" : "运行中"}
-                      />
-                    )}
-                    <span
-                      className="host-chat-topic-delete"
-                      role="button"
-                      tabIndex={-1}
-                      aria-label="删除对话"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDeleteTopic(t.id);
-                      }}
-                    >
-                      ×
-                    </span>
-                  </div>
-                ))}
-              </div>
-            );
-          })
-        )}
-      </div>
-      {hostPickerOpen && settings.sshHosts.length > 0 && (
-        <div className="host-chat-host-picker">
-          {settings.sshHosts.map((h) => (
-            <button
-              key={h.id}
-              type="button"
-              className="host-chat-host-option"
-              onClick={() => void handleCreateTopic(h.id)}
-            >
-              <strong>{h.name}</strong>
-              <span>{`${h.user}@${h.host}:${h.port || 22}`}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+  const setInput = useCallback(
+    (value: string) => {
+      patchState((s) => ({ ...s, input: value }));
+    },
+    [patchState],
   );
 
+  // Persist the draft when this tab unmounts (tab closed).
+  useEffect(() => {
+    return () => {
+      void persistSession();
+    };
+  }, [persistSession]);
 
-  const emptyContent = !activeTopic
-    ? settings.sshHosts.length === 0
-      ? undefined
-      : (
-        <div className="host-chat-empty">
-          <p>选择左侧主机开始对话，或新建一个。</p>
-        </div>
-      )
-    : undefined;
+  const awaiting = messages.some((m) => m.toolStatus === "awaiting_approval");
+
+  useEffect(() => {
+    onStatusChange(topicId, { streaming, awaiting });
+  }, [topicId, streaming, awaiting, onStatusChange]);
 
   return (
     <div className={`host-chat-panel${isActive ? " active" : ""}`}>
-      {renderSidebar()}
       <div className="host-chat-main">
-        {activeTopic && (
-          <header className="host-chat-header">
-            <span className="host-chat-header-title">
-              <Icon name="Video" size={14} />
-              {activeHost?.name || "未知主机"}
-              {activeHost ? ` · ${activeHost.user}@${activeHost.host}` : ""}
-            </span>
-            <span className="host-chat-header-topic">
-              {activeTopic.name || "新对话"}
-            </span>
-          </header>
-        )}
+        <header className="host-chat-header">
+          <span className="host-chat-header-title">
+            <Icon name={host ? "Video" : "Home"} size={14} />
+            {host ? `${host.name} · ${host.user}@${host.host}` : (agent?.name || "小雅")}
+          </span>
+          <span className="host-chat-header-topic">
+            {topic.name || "新对话"}
+          </span>
+        </header>
         <ToolCancelContext.Provider value={handleCancelTool}>
           <MessageList
             ref={messageListRef}
             messages={messages}
             streaming={streaming}
             invalidAttachmentPaths={new Set()}
+            emptyContent={
+              sessionReady ? (
+                <div className="host-chat-empty">
+                  <Icon name={host ? "Video" : "Home"} size={44} />
+                  <p>和 {agent?.name || "智能体"} 开始对话</p>
+                  <small>
+                    {host
+                      ? "可以让它在这台主机上执行命令"
+                      : "输入消息开始对话"}
+                  </small>
+                </div>
+              ) : null
+            }
             onApprove={handleApproveTool}
             onDeny={handleDenyTool}
             onAlwaysAllow={handleAlwaysAllowTool}
             onAnswer={submitToolAnswer}
             submittingApprovalId={submittingApprovalId}
-            emptyContent={emptyContent}
           />
         </ToolCancelContext.Provider>
         <ChatInputBar
           input={input}
-          onInputChange={setActiveInput}
+          onInputChange={setInput}
           attachments={[]}
           onAttachmentsChange={() => {}}
           attachmentsEnabled={false}
           streaming={streaming}
           hasMessages={messages.length > 0}
-          chatMode={activeChatMode}
+          chatMode={chatMode}
           onChatModeChange={handleChatModeChange}
           showModeSelector
-          reasoningEffort={hostAgent?.reasoningEffort ?? "default"}
+          contextUsage={contextUsage}
+          reasoningEffort={agent?.reasoningEffort ?? "default"}
           onReasoningEffortChange={handleReasoningEffortChange}
           onSend={() => void handleSend()}
           onStop={handleStop}
+          onClearContext={handleClearContext}
         />
       </div>
-      {confirmDialog}
     </div>
   );
 }
