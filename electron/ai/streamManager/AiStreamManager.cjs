@@ -1,6 +1,7 @@
 const { abortTool } = require('../../mcpRuntimeService.cjs');
 const { pipeStreamLoop } = require('./pipeStreamLoop.cjs');
 const { unseenLegacyEvents, markLegacyCursor } = require('./legacyReplay.cjs');
+const { sendToWebContents } = require('../topicBroadcast.cjs');
 
 const GRACE_MS = 30_000;
 const DEFAULT_IDLE_MS = 30 * 60 * 1000;
@@ -155,11 +156,7 @@ class AiStreamManager {
 
     const broadcast = (channel, payload) => {
       for (const listener of entry.listeners) {
-        try {
-          if (!listener.isDestroyed()) listener.send(channel, payload);
-        } catch {
-          /* gone */
-        }
+        sendToWebContents(listener, channel, payload);
       }
     };
 

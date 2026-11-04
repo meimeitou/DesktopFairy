@@ -7,7 +7,13 @@ const { pushLegacyEvent, markLegacyCursor } = require('./streamManager/legacyRep
 function sendToWebContents(webContents, channel, data) {
   try {
     if (webContents && !webContents.isDestroyed()) {
-      webContents.send(channel, data);
+      // WebContents can outlive its renderer frame during reload/teardown.
+      // Electron's frame.send logs internally instead of throwing, so checking
+      // only WebContents (or wrapping send in try/catch) cannot prevent noise
+      // or correctly track delivery for legacy replay.
+      const frame = webContents.mainFrame;
+      if (!frame || frame.isDestroyed()) return false;
+      frame.send(channel, data);
       return true;
     }
   } catch {
