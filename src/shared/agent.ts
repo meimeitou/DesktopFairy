@@ -1,3 +1,4 @@
+import environmentPolicy from "../../electron/agentEnvironmentPolicy.json";
 import {
   ALWAYS_ENABLED_TOOL_IDS,
   getBuiltinToolCatalog,
@@ -12,6 +13,9 @@ import {
   normalizeReasoningEffort,
 } from "./reasoningEffort";
 
+
+export type AgentEnvironment = keyof typeof environmentPolicy.contexts;
+export const AGENT_ENVIRONMENT_POLICY: Record<AgentEnvironment, { blocked: string[]; defaultDisabled: string[] }> = environmentPolicy.contexts;
 
 export type BuiltinAgentRole =
   | "personal-assistant"
@@ -35,6 +39,8 @@ export interface AgentConfig {
   user: string;
   /** Opt-out: disabled builtin tool ids (single set, context rules applied on top) */
   disabledToolIds: string[];
+  /** Missing key uses environment default; true/false are explicit user preferences. */
+  toolOverrides?: Record<string, boolean>;
   /** Bound global MCP server ids */
   mcpServerIds: string[];
   /** Enabled skill folder ids */
@@ -55,8 +61,8 @@ export type AgentToolDescriptor = AgentBuiltinTool;
 export type { AgentBuiltinTool, ToolApproval } from "./agentBuiltinTools";
 export {
   CLAUDE_CODE_BUILTIN_TOOLS,
+  ALWAYS_ENABLED_TOOL_IDS,
   getBuiltinToolCatalog,
-  buildOpenAiToolDefinitions,
 } from "./agentBuiltinTools";
 
 export interface AgentSkillDescriptor {
@@ -71,7 +77,8 @@ export const AGENT_BACKEND_KEY = "agent";
 
 export const BUILTIN_SKILL_IDS = ["find-skills", "skill-creator"] as const;
 
-export const DEFAULT_SOUL = `# Soul
+/** Previous shipped personal-assistant souls. Exact match upgrades; edited text stays. */
+export const PREVIOUS_PERSONAL_SOULS = [`# Soul
 
 你叫小雅，一位住在用户桌面上、有 Live2D 形象的小伙伴。
 
@@ -89,7 +96,51 @@ export const DEFAULT_SOUL = `# Soul
 - 写之前先读——不要假设文件存在或内容如你所想。
 - 工具调用失败时，先诊断错误、换一种方式重试，再向用户报告。
 - 缺少信息时先用 read/grep 等工具查；只有工具答不上来、且会阻塞下一步时，再用 AskUserQuestion 向用户确认（全自动模式不可用）。
-- 多步修改完成后，验证结果（重读文件、跑测试、看输出）。`;
+- 多步修改完成后，验证结果（重读文件、跑测试、看输出）。`, `# Soul
+
+你叫小雅，用户的桌面伙伴。工作是把需求说清楚、把技术方案想明白：整理需求、比较方案、查公开资料、写出可执行的结论。你不做本地项目开发，不改代码、不跑构建、不排查本机工程。
+
+## 核心原则
+
+- 先弄清用户要决定什么，再回答。需求类问题给出结构化结论：背景、目标、范围、约束、待确认项。方案类问题给出可比较的选项、取舍和推荐。
+- 回答简洁自然、有温度；用户要求展开时再写长。
+- 知之为知之。外部事实不确定时用 WebSearch / WebFetch 查公开资料，不要用本地目录冒充调研。
+- 珍惜用户的时间。
+
+## 工具边界
+
+- 默认不要用 Bash、Glob、Grep、Read、Write、Edit 浏览或修改用户电脑上的文件。用户没有点名路径时，禁止 ls、find、grep、rg 这类本地检索。
+- 只有用户明确要求查看或修改某个具体文件或目录时，才使用本地文件工具，并且只碰该路径。
+- 需要外部信息时优先 WebSearch、WebFetch，或用户已绑定的知识库与 MCP。
+- 缺的是偏好或业务约束、且对话里推不出来时，用 AskUserQuestion 问一个会挡住下一步的问题，不要先去翻本地文件。
+- 写代码、改仓库、跑测试、看日志，请用户交给终端助手。`, `# Soul
+
+你叫小雅，用户的桌面伙伴。主责是需求整理和技术方案研究：把需求说清楚，把方案想明白，查公开资料，写出可执行的结论。
+
+## 工作方式
+
+- 先弄清用户要决定什么，再回答。需求类问题给出结构化结论：背景、目标、范围、约束、待确认项。方案类问题给出可比较的选项、取舍和推荐。
+- 回答简洁自然、有温度；用户要求展开时再写长。
+- 知之为知之。外部事实不确定时，先查资料再下结论。
+- 珍惜用户的时间。用户交代的具体事项照做，工具按任务需要选用。`];
+
+export const DEFAULT_SOUL = `# Soul
+
+你叫小雅，用户的桌面伙伴。主责是需求整理和技术方案研究：把需求说清楚，把方案想明白，查公开资料，写出可执行的结论。
+
+## 工作方式
+
+- 先弄清用户要决定什么，再回答。需求类问题给出结构化结论：背景、目标、范围、约束、待确认项。方案类问题给出可比较的选项、取舍和推荐。
+- 问题不清楚时，用 AskUserQuestion 提问，不要猜测。
+- 回答简洁自然、有温度；用户要求展开时再写长。
+- 知之为知之。外部事实不确定时，先查资料再下结论。
+- 珍惜用户的时间。用户交代的具体事项照做，工具按任务需要选用。`;
+
+export function upgradeDefaultPersonalSoul(soul: string): string {
+  return PREVIOUS_PERSONAL_SOULS.some((previous) => previous.trim() === soul.trim())
+    ? DEFAULT_SOUL
+    : soul;
+}
 
 export const DEFAULT_USER_TEMPLATE = `# 用户档案
 
@@ -138,44 +189,18 @@ export const TERMINAL_DEFAULT_DISABLED_TOOL_IDS = [
   "grep",
 ];
 
-export const DEFAULT_TERMINAL_SOUL = `# Soul
+export const LEGACY_TERMINAL_SOUL = environmentPolicy.legacyTerminalSoul;
 
-你是终端助手，住在用户的终端页面里。你的职责：解释命令、诊断错误、替用户操作终端与远程主机。
+export const DEFAULT_TERMINAL_SOUL = environmentPolicy.terminalSoul;
+export const DEFAULT_TERMINAL_USER_TEMPLATE = environmentPolicy.terminalUserTemplate;
 
-## 角色定位
-
-- 你首先是一位**一线运维工程师**：用户带着报错和卡住的命令来找你，你的产出是能直接粘贴/执行的修复，不是教程。
-- 你和用户共享同一个视图——用户看得到终端输出，也能看到你的每一次工具调用。不要复述双方都看得到的东西，直接给结论和下一步。
-- 你的默认动作是**动手**：能查就查、能跑就跑、能修就修，不要停在"你可以试试"。
-
-## 工作方式
-
-### 诊断
-
-1. **先读错误本身**：从报错最后一行往回找第一个 Error/Exception/fatal——根因通常在那里，不在警告里。
-2. **再看上下文**：确认命令在哪个环境跑的（本地 / SSH 远程 / 容器）、工作目录、用户身份。远程会话的路径、包管理器、系统版本可能与本地完全不同。
-3. **最后给修复**：修复命令 + 一句为什么。多条修复按推荐顺序排列，每条独立可用。
-
-### 解释命令
-
-- 一行一个要点，讲清**每个关键参数**干了什么，不讲废话。
-- 长命令先给一句整体意图，再拆解参数。
-- 对有破坏性风险的参数（rm -rf、--force、chmod 777、| sh）单独标注后果。
-
-### 执行
-
-- 用户让你执行命令时，优先用 Terminal 工具在当前终端会话执行，让输出对用户可见。
-- **破坏性操作先报影响再动手**：删除、覆盖、批量修改、kill 进程、改系统配置——先说清会动到什么，确认后再执行。普通只读命令（ls、cat、grep、ps、git status）直接跑。
-- 远程 SSH 会话中不执行仅适用于本机的命令；不确定在哪个环境时，先 pwd/hostname 确认。
-- 修复后**主动验证**：重跑原命令或检查服务状态，确认真的修好了才收工。
-- 命令卡住或行为异常时，先怀疑环境（网络、权限、磁盘满、进程占用），用只读命令排查，不要盲目重试。
-
-## 沟通
-
-- 回复精确、简短、可执行。结论先行，证据（命令输出、日志片段）点到为止。
-- 用户看得到终端输出，**不要粘贴大段回显**；引用时指出位置即可（如「见上方最后一行」）。
-- 不确定命令含义时如实说"我不确定"，不要猜。宁可多问一句，不要跑错一条。
-- 用户反复遇到同类错误时，主动给出根治方案（别名、配置、脚本），而不只是这次的修复。`
+/** Upgrade known defaults only; an edited SOUL belongs to the user. */
+export function upgradeDefaultTerminalSoul(soul: string): string {
+  return [LEGACY_TERMINAL_SOUL, ...environmentPolicy.previousTerminalSouls]
+    .some((previous) => previous.trim() === soul.trim())
+    ? DEFAULT_TERMINAL_SOUL
+    : soul;
+}
 
 export const NEW_AGENT_SOUL_TEMPLATE = `# Soul
 
@@ -196,7 +221,7 @@ export function createPersonalAssistantDefaults(
     builtinRole: "personal-assistant",
     name: "小雅",
     avatar: DEFAULT_AGENT_AVATAR,
-    description: "桌面个人助手，聊天陪伴与日常事务",
+    description: "需求整理与技术方案研究",
     providerId: "openai",
     modelName: "gpt-4o-mini",
     soul: DEFAULT_SOUL,
@@ -221,12 +246,13 @@ export function createTerminalAssistantDefaults(
     builtinRole: "terminal-assistant",
     name: "终端助手",
     avatar: "🤖",
-    description: "终端里的运维助手，解释命令、诊断错误、操作会话",
+    description: "本机、终端与远程主机的统一运维助手",
     providerId: "openai",
     modelName: "gpt-4o-mini",
     soul: DEFAULT_TERMINAL_SOUL,
     user: "",
-    disabledToolIds: TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
+    disabledToolIds: [],
+    toolOverrides: {},
     mcpServerIds: [],
     enabledSkillIds: [],
     knowledgeBaseIds: [],
@@ -246,7 +272,6 @@ export const HOST_DEFAULT_DISABLED_TOOL_IDS = [
   "edit",
   "glob",
   "grep",
-  "McpManager",
 ];
 
 export const DEFAULT_HOST_SOUL = `# Soul
@@ -337,6 +362,9 @@ function pickTypedAgentFields(
   }
   if (typeof f.soul === "string" && f.soul.trim()) out.soul = f.soul;
   if (typeof f.user === "string") out.user = f.user;
+  if (f.toolOverrides && typeof f.toolOverrides === "object" && !Array.isArray(f.toolOverrides)) {
+    out.toolOverrides = f.toolOverrides;
+  }
   if (Array.isArray(f.disabledToolIds)) out.disabledToolIds = f.disabledToolIds;
   if (Array.isArray(f.mcpServerIds)) out.mcpServerIds = f.mcpServerIds;
   if (Array.isArray(f.enabledSkillIds)) out.enabledSkillIds = f.enabledSkillIds;
@@ -437,10 +465,21 @@ export function normalizeAgentConfig(
       return base.soul;
     })(),
     user: typeof raw.user === "string" ? raw.user : base.user,
-    disabledToolIds: normalizeDisabledToolIds(
-      raw.disabledToolIds,
-      base.disabledToolIds,
-    ),
+    disabledToolIds: (() => {
+      const ids = normalizeDisabledToolIds(
+        raw.disabledToolIds,
+        base.disabledToolIds,
+      );
+      // 一次性迁移：主机助手原强制禁用 McpManager，对齐本地智能体后改为可配置。
+      return (raw.builtinRole ?? base.builtinRole) === "host-assistant"
+        ? ids.filter((id) => id !== "McpManager")
+        : ids;
+    })(),
+    ...(raw.toolOverrides || base.toolOverrides ? {
+      toolOverrides: Object.fromEntries(
+        Object.entries(raw.toolOverrides || base.toolOverrides || {}).filter(([, v]) => typeof v === "boolean"),
+      ),
+    } : {}),
     mcpServerIds,
     enabledSkillIds: Array.isArray(raw.enabledSkillIds)
       ? raw.enabledSkillIds.filter((id): id is string => typeof id === "string")
@@ -480,70 +519,26 @@ export function getEffectiveToolApprovalMode(
 
 export function getEnabledAgentBuiltinTools(
   agent: AgentConfig,
-  context: "local" | "terminal" | "host" = "local",
+  context: AgentEnvironment = "local",
   options?: { hideWebFetch?: boolean }
 ): AgentToolDescriptor[] {
   const approval = getEffectiveToolApprovalMode(agent);
   const card = getChatModeCard(agent.chatMode);
   const disabled = new Set(agent.disabledToolIds);
-  if (card.readOnly) {
-    for (const id of [
-      "write",
-      "edit",
-      "bash",
-      "WebFetch",
-      "WebSearch",
-      "Terminal",
-      "ssh_exec",
-      "ssh_write",
-      "ssh_edit",
-      "ssh_cwd",
-    ]) {
-      disabled.add(id);
+  const policy = AGENT_ENVIRONMENT_POLICY[context];
+  if (agent.toolOverrides) {
+    for (const id of policy.defaultDisabled) disabled.add(id);
+    for (const [id, enabled] of Object.entries(agent.toolOverrides)) {
+      if (enabled) disabled.delete(id); else disabled.add(id);
     }
   }
-
-  for (const id of ALWAYS_ENABLED_TOOL_IDS) {
-    disabled.delete(id);
+  for (const id of policy.blocked) disabled.add(id);
+  // Preferences cannot override plan mode or the question-tool mode rules.
+  if (card.readOnly) {
+    for (const id of environmentPolicy.readOnlyBlocked) disabled.add(id);
   }
-  if (agent.chatMode === "full-auto") {
-    disabled.add("AskUserQuestion");
-  }
-
-  const HOST_ONLY_TOOL_IDS = [
-    "ssh_read",
-    "ssh_glob",
-    "ssh_grep",
-    "ssh_write",
-    "ssh_edit",
-    "ssh_cwd",
-  ];
-  const HOST_FORCED_DISABLED_IDS = [
-    "bash",
-    "Terminal",
-    "read",
-    "write",
-    "edit",
-    "glob",
-    "grep",
-    "McpManager",
-  ];
-
-  if (context === "local") {
-    disabled.add("Terminal");
-    disabled.add("ssh_exec");
-    disabled.add("ssh_hosts");
-    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
-  }
-
-  if (context === "terminal") {
-    disabled.add("bash");
-    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
-  }
-
-  if (context === "host") {
-    for (const id of HOST_FORCED_DISABLED_IDS) disabled.add(id);
-  }
+  for (const id of ALWAYS_ENABLED_TOOL_IDS) disabled.delete(id);
+  if (agent.chatMode === "full-auto") disabled.add("AskUserQuestion");
 
   if (options?.hideWebFetch) {
     disabled.add("WebFetch");

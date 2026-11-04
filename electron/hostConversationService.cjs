@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const { hostFingerprint } = require('./chatSessionService.cjs');
 
-const HOST_ASSISTANT_ID = 'host-assistant';
 
 /** Tools whose cross-host invocation requires a user grant. */
 const CROSS_HOST_TOOL_NAMES = new Set([
@@ -40,6 +39,11 @@ function createHostConversationService({
     return host ? hostFingerprint(host) : null;
   }
 
+  function describeHost(hostId) {
+    const host = findHost(hostId);
+    return host ? `${host.name} (${host.user}@${host.host}:${host.port || 22})` : hostId;
+  }
+
   /** connectParams for a hostId, or throw with a user-readable message. */
   function resolveConnectParams(hostId) {
     const host = findHost(hostId);
@@ -58,11 +62,8 @@ function createHostConversationService({
   function resolveHostRuntime(topicId) {
     const topic = topicStore.getTopic(topicId);
     if (!topic) throw new Error('对话不存在或已被删除');
-    if (topic.agentId !== HOST_ASSISTANT_ID) {
-      throw new Error('该对话未绑定主机助手，无法使用主机工具');
-    }
     if (!topic.host || typeof topic.host.hostId !== 'string' || !topic.host.hostId) {
-      throw new Error('该对话缺少主机绑定信息');
+      throw new Error('该对话未绑定主机运行环境');
     }
     const hostId = topic.host.hostId;
     const host = findHost(hostId);
@@ -86,6 +87,12 @@ function createHostConversationService({
       defaultHostId: hostId,
       hostId,
       hostName: host.name,
+      hostUser: host.user,
+      assertValid: () => {
+        if (topicStore.getTopic(topicId)?.host?.hostId !== hostId || fingerprintOf(hostId) !== hostFingerprint(host)) {
+          throw new Error('主机绑定已变化，请重新发送请求');
+        }
+      },
       fingerprint: hostFingerprint(host),
       grants: { ...(topic.host.grants || {}) },
       cwdByHost: { ...(topic.host.cwdByHost || {}) },
@@ -94,12 +101,61 @@ function createHostConversationService({
       isGranted,
       getCwd,
       setCwd,
+      describeHost,
       fingerprintOf,
       resolveConnectParams,
       resolveHostIdByName,
+      searchSavedHosts,
       applyHostSettingsMutation,
     };
     return rt;
+  }
+
+  function resolveTerminalRuntime(session, sessionId, assertSession) {
+    const hostId = session.savedHostId || null;
+    const host = hostId ? findHost(hostId) : null;
+    const validate = () => {
+      assertSession();
+      if (hostId && (!host || fingerprintOf(hostId) !== session.savedHostFingerprint)) {
+        throw new Error('终端绑定主机已删除或身份变化，请重新连接');
+      }
+    };
+    validate();
+    const state = session.agentHostState ||= {
+      grants: hostId ? { [hostId]: session.savedHostFingerprint } : {},
+      cwdByHost: {},
+    };
+    const id = `terminal-session:${sessionId}`;
+    return {
+      topicId: id, hostId, defaultHostId: hostId,
+      hostName: host?.name, hostUser: host?.user,
+      assertValid: validate,
+      describeHost, fingerprintOf, resolveConnectParams, resolveHostIdByName, searchSavedHosts, applyHostSettingsMutation, forceApproval,
+      isGranted: (target) => {
+        validate();
+        const fp = fingerprintOf(target);
+        return !!fp && state.grants[target] === fp;
+      },
+      ensureGrant: (_scope, target) => {
+        validate();
+        const fp = fingerprintOf(target);
+        if (!fp) return false;
+        state.grants[target] = fp;
+        return true;
+      },
+      getCwd: (_scope, target) => {
+        validate();
+        const entry = state.cwdByHost[target];
+        return entry?.identity === fingerprintOf(target) ? entry.path : null;
+      },
+      setCwd: (_scope, target, cwdPath) => {
+        validate();
+        const fp = fingerprintOf(target);
+        if (!fp) return false;
+        state.cwdByHost[target] = { identity: fp, path: cwdPath };
+        return true;
+      },
+    };
   }
 
   /** cwd for hostId, or null (= login home default, no cd prefix). */
@@ -139,9 +195,7 @@ function createHostConversationService({
     if (name === 'ssh_hosts' && args?.action !== 'list') return true;
     if (
       CROSS_HOST_TOOL_NAMES.has(name) &&
-      args?.hostId &&
-      args.hostId !== rt.defaultHostId &&
-      !rt.isGranted(args.hostId)
+      !rt.isGranted(args?.hostId || rt.defaultHostId)
     ) {
       return true;
     }
@@ -150,7 +204,11 @@ function createHostConversationService({
 
   function persistSettings(settings) {
     try {
-      fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2));
+      // 原子写：写坏盘（崩溃/断电）不能留下截断的 da_settings.json（内含凭据）。
+      const target = settingsPath();
+      const tmp = `${target}.host-conv.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(settings, null, 2));
+      fs.renameSync(tmp, target);
     } catch (e) {
       return { ok: false, error: String(e?.message || e) };
     }
@@ -268,8 +326,31 @@ function createHostConversationService({
     return matches.length === 1 ? matches[0].id : null;
   }
 
+  /** Saved hosts matching a user-supplied name, address, or id. Exact hits rank first. */
+  function searchSavedHosts(query) {
+    const q = String(query || '').trim().toLowerCase();
+    if (!q) return [];
+    const ranked = [];
+    for (const h of getHosts()) {
+      if (!h?.id || !h?.name) continue;
+      const name = String(h.name).toLowerCase();
+      const addr = String(h.host || '').toLowerCase();
+      const id = String(h.id).toLowerCase();
+      const userHost = `${String(h.user || '').toLowerCase()}@${addr}`;
+      let score = 0;
+      if (id === q || name === q) score = 3;
+      else if (name.startsWith(q) || addr === q || userHost === q) score = 2;
+      else if (name.includes(q) || addr.includes(q) || userHost.includes(q)) score = 1;
+      if (score) ranked.push({ h, score });
+    }
+    ranked.sort((a, b) => b.score - a.score || String(a.h.name).localeCompare(String(b.h.name)));
+    return ranked.map((row) => row.h);
+  }
+
   return {
     resolveHostRuntime,
+    resolveTerminalRuntime,
+    getTopic: (topicId) => topicStore.getTopic(topicId),
     fingerprintOf,
     resolveConnectParams,
     getCwd,
@@ -277,6 +358,7 @@ function createHostConversationService({
     ensureGrant,
     forceApproval,
     resolveHostIdByName,
+    searchSavedHosts,
     applyHostSettingsMutation,
     deleteTopicsByHost,
   };

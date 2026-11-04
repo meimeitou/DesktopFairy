@@ -35,11 +35,16 @@ import {
   setSettings as commitAppSettings,
   useSettings,
 } from "../shared/settingsStore";
-import { appendSshRecent } from "../shared/terminalSettings";
+import {
+  appendSshRecent,
+  resolveSshRecentTarget,
+  type SshRecentEntry,
+} from "../shared/terminalSettings";
 import type { CursorStyle } from "../shared/terminalSettings";
+import TerminalEmptyState from "../components/terminal/TerminalEmptyState";
 import type { ChatTopic } from "../shared/chatSession";
 import { takeTerminalCommands } from "../shared/panelHandoff";
-import { PERSONAL_ASSISTANT_ID, findAgentById } from "../shared/agent";
+import { TERMINAL_ASSISTANT_ID, findAgentById } from "../shared/agent";
 import { abortTopicStream } from "../services/aiTransport/IpcChatTransport";
 
 const api = window.electronAPI;
@@ -61,6 +66,7 @@ function TerminalInstance({
   cwd,
   launchCommand,
   sshHost,
+  savedHostId,
   sshCredentials,
   terminalSettings,
   onSessionReady,
@@ -78,6 +84,7 @@ function TerminalInstance({
   cwd?: string;
   launchCommand?: string;
   sshHost?: SshHost;
+  savedHostId?: string;
   sshCredentials?: SshCredential[];
   terminalSettings: TerminalSettings;
   onSessionReady?: (tabId: string, sessionId: string, kind: "terminal" | "ssh") => void;
@@ -201,6 +208,7 @@ function TerminalInstance({
 
     const createParams = isSsh
       ? {
+          savedHostId,
           host: sshHost!.host,
           port: sshHost!.port,
           user: sshHost!.user,
@@ -727,6 +735,18 @@ export default function TerminalPage({
     handleSettingsChange({ sshRecent: appendSshRecent(settings.sshRecent, host) });
   }, [settings.sshRecent, handleSettingsChange, activateTab]);
 
+  const handleOpenRecent = useCallback(
+    (entry: SshRecentEntry) => {
+      const target = resolveSshRecentTarget(entry, settings.sshHosts);
+      if (target.type === "saved") {
+        handleConnectSsh(target.id);
+        return;
+      }
+      handleQuickConnect(target.host);
+    },
+    [settings.sshHosts, handleConnectSsh, handleQuickConnect],
+  );
+
   const refreshTopics = useCallback(async () => {
     // 终端侧栏同时列出主机对话与本机对话，因此要全量 topic 列表。
     try {
@@ -779,9 +799,12 @@ export default function TerminalPage({
       if (creatingTopicRef.current) return;
       creatingTopicRef.current = true;
       try {
+        const agent = findAgentById(settings.agents, settings.terminalAgentId || TERMINAL_ASSISTANT_ID);
         const result = (await api.invoke("chat:topics:create", {
           name: "",
-          agentId: "host-assistant",
+          agentId: settings.terminalAgentId || TERMINAL_ASSISTANT_ID,
+          chatMode: agent?.chatMode ?? "normal",
+          knowledgeBaseIds: agent?.knowledgeBaseIds || [],
           hostId,
         })) as { ok?: boolean; topic?: ChatTopic };
         if (!result?.ok || !result.topic) {
@@ -796,24 +819,24 @@ export default function TerminalPage({
         creatingTopicRef.current = false;
       }
     },
-    [openConversationTab, refreshTopics],
+    [openConversationTab, refreshTopics, settings.terminalAgentId, settings.agents],
   );
 
-  // 本机对话：智能体固定「小雅」，带 origin="terminal" 标记，只属于终端页。
+  // 本机对话：使用统一终端助手，带 origin="terminal" 标记，只属于终端页。
   const handleNewLocalConversation = useCallback(async () => {
     if (creatingTopicRef.current) return;
     creatingTopicRef.current = true;
     try {
-      const personal = findAgentById(settings.agents, PERSONAL_ASSISTANT_ID);
+      const terminalAgent = findAgentById(settings.agents, settings.terminalAgentId || TERMINAL_ASSISTANT_ID);
       const result = (await api.invoke("chat:topics:create", {
         name: "",
-        agentId: PERSONAL_ASSISTANT_ID,
-        chatMode: personal?.chatMode ?? "normal",
+        agentId: settings.terminalAgentId || TERMINAL_ASSISTANT_ID,
+        chatMode: terminalAgent?.chatMode ?? "normal",
         // 标记归属：这类会话只出现在终端页「本机」分组，不进智能体列表。
         origin: "terminal",
         // 与聊天页新建一致：把智能体默认知识库固化到会话上，面板据此发送。
-        ...(personal && personal.knowledgeBaseIds.length > 0
-          ? { knowledgeBaseIds: personal.knowledgeBaseIds }
+        ...(terminalAgent && terminalAgent.knowledgeBaseIds.length > 0
+          ? { knowledgeBaseIds: terminalAgent.knowledgeBaseIds }
           : {}),
       })) as { ok?: boolean; topic?: ChatTopic };
       if (!result?.ok || !result.topic) {
@@ -826,7 +849,7 @@ export default function TerminalPage({
     } finally {
       creatingTopicRef.current = false;
     }
-  }, [openConversationTab, refreshTopics, settings.agents]);
+  }, [openConversationTab, refreshTopics, settings.agents, settings.terminalAgentId]);
 
   // 聊天页与终端页各挂一份 topics（两页都 keep-alive），改动后互相通知刷新。
   useEffect(() => {
@@ -1182,7 +1205,11 @@ export default function TerminalPage({
       <div className="terminal-page-main">
         <div className="terminal-instances-wrapper">
           {tabs.length === 0 && (
-            <div className="terminal-hint">从左侧新建终端或对话</div>
+            <TerminalEmptyState
+              recent={settings.sshRecent}
+              onOpenLocal={handleAddTab}
+              onOpenRecent={handleOpenRecent}
+            />
           )}
           {tabs.map((tab) => {
             if (tab.kind === "host-chat") {
@@ -1200,6 +1227,11 @@ export default function TerminalPage({
                   isActive={tab.id === activeTabId && isActive}
                   onStatusChange={handleTopicStatus}
                   onTopicRenamed={handleTopicRenamed}
+                  onTopicForked={(topic) => {
+                    void refreshTopics().then((list) => {
+                      if (list) openConversationTab(topic);
+                    });
+                  }}
                 />
               );
             }
@@ -1224,6 +1256,7 @@ export default function TerminalPage({
                 isActive={tab.id === activeTabId && isActive}
                 cwd={tab.cwd}
                 launchCommand={tab.launchCommand}
+                savedHostId={tab.sshHostId}
                 sshHost={tab.kind === "ssh" ? (tab.sshHost ?? settings.sshHosts.find((h) => h.id === tab.sshHostId)) : undefined}
                 sshCredentials={settings.sshCredentials}
                 terminalSettings={settings.terminal}

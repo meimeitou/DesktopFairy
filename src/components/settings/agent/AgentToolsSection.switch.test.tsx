@@ -64,21 +64,23 @@ describe("AgentToolsSection builtin panel switches", () => {
     expect(switches).toEqual([]);
   });
 
-  it("AskUserQuestion is ON and interactive in normal mode (both contexts)", () => {
+  it("AskUserQuestion is locked as scene-forced in normal mode (both contexts)", () => {
     for (const context of ["local", "terminal"] as const) {
-      const { switches, disabled } = switchStates(
+      const { switches, forcedBadge } = switchStates(
         renderRow(baseAgent, context, "AskUserQuestion")
       );
-      expect(switches).toEqual(["true"]);
-      expect(disabled).toBe(false);
+      // ALWAYS_ENABLED：偏好覆盖不了 → 展示为「场景强制」，无可交互控件。
+      expect(forcedBadge).toBe(true);
+      expect(switches).toEqual([]);
     }
   });
 
-  it("AskUserQuestion shows OFF in full-auto (runtime-gated off)", () => {
-    const { switches } = switchStates(
+  it("AskUserQuestion locked state is identical in full-auto", () => {
+    const { switches, forcedBadge } = switchStates(
       renderRow({ ...baseAgent, chatMode: "full-auto" }, "local", "AskUserQuestion")
     );
-    expect(switches).toEqual(["false"]);
+    expect(forcedBadge).toBe(true);
+    expect(switches).toEqual([]);
   });
 
   it("editable tool reflects disabledToolIds in local context", () => {

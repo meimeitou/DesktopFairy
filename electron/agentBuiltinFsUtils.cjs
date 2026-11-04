@@ -25,8 +25,27 @@ const GLOB_DEFAULT_LIMIT = 200;
 const GLOB_MAX_LIMIT = 200;
 
 // ---------------------------------------------------------------------------
-// Path helpers
+// Path helpers / app data protection
 // ---------------------------------------------------------------------------
+
+let appDataDir = null;
+
+/**
+ * Guard tool writes against clobbering DesktopFairy's own data files.
+ * A corrupted da_settings.json / da_chat_topics.json bricks the app on next
+ * launch (guardSessionIpc locks all chat:* IPC), so tool writes must not
+ * touch them. Read-only tools are allowed through (diagnostics value).
+ */
+function setAgentFsProtectedDir(dir) {
+  appDataDir = dir ? path.resolve(String(dir)) : null;
+}
+
+function isAgentFsProtectedPath(filePath) {
+  if (!appDataDir) return false;
+  const resolved = path.resolve(String(filePath || ''));
+  return resolved === appDataDir || resolved.startsWith(appDataDir + path.sep);
+}
+
 
 function expandPath(filePath) {
   const raw = String(filePath || '').trim();
@@ -493,6 +512,8 @@ module.exports = {
   RG_EXCLUDE_GLOBS,
   expandPath,
   resolveAgentPath,
+  setAgentFsProtectedDir,
+  isAgentFsProtectedPath,
   splitPathAndSel,
   classifyBufferAsBinary,
   parseLineRangeChunk,

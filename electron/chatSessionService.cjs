@@ -175,6 +175,7 @@ function registerChatSessionHandlers({
   chatLogsDir,
   getAbortHandler,
   getSshHosts,
+  getTerminalAgentId = () => "terminal-assistant",
 }) {
   const PERSONAL_ASSISTANT_ID = 'personal-assistant';
   const HOST_ASSISTANT_ID = 'host-assistant';
@@ -182,7 +183,13 @@ function registerChatSessionHandlers({
 
   /** Backfill agentId/chatMode on disk; returns store (mutated in place when changed). */
   function normalizeTopicsStore(store) {
-    let changed = false;
+    const { migrateTerminalTopics, backupFile } = require('./terminalAssistantMigration.cjs');
+    const migrated = migrateTerminalTopics(store, getTerminalAgentId());
+    let changed = migrated !== store;
+    if (changed) {
+      backupFile(topicsIndexPath());
+      store = migrated;
+    }
     for (const topic of store.topics || []) {
       if (!topic || typeof topic !== 'object') continue;
       if (typeof topic.agentId !== 'string' || !topic.agentId.trim()) {
@@ -416,9 +423,10 @@ function registerChatSessionHandlers({
       if (typeof hostId !== 'string' || !hostId.trim()) {
         return { ok: false, error: 'Invalid hostId' };
       }
-      if (newTopic.agentId !== HOST_ASSISTANT_ID) {
-        return { ok: false, error: 'Host topics must use host-assistant agent' };
+      if (newTopic.agentId !== getTerminalAgentId() && newTopic.agentId !== HOST_ASSISTANT_ID) {
+        return { ok: false, error: 'Host topics must use terminal assistant' };
       }
+      newTopic.agentId = getTerminalAgentId();
       const hostList = typeof getSshHosts === 'function' ? getSshHosts() : null;
       const host = hostList ? hostList.find((h) => h && h.id === hostId) : null;
       if (!host) {
@@ -434,6 +442,7 @@ function registerChatSessionHandlers({
     // 终端页「本机」分组创建的会话：只在终端侧栏列出，不进智能体列表。
     if (!newTopic.host && origin === 'terminal') {
       newTopic.origin = 'terminal';
+      newTopic.agentId = getTerminalAgentId();
     }
     store.topics.push(newTopic);
     if (newTopic.host) {
@@ -442,6 +451,125 @@ function registerChatSessionHandlers({
       store.activeId = newTopic.id;
     }
     writeJson(topicsIndexPath(), store);
+    return { ok: true, topic: newTopic };
+  });
+
+  // Fork: 以源话题某条消息为底（含该消息及之前全部消息）复制出新会话。
+  // 渲染层传入内存中的最新消息（可能有未落盘的防抖内容），主进程不读源 session 文件。
+  ipcMain.handle('chat:topics:fork', async (_event, payload) => {
+    const { sourceTopicId, uptoMessageId, messages } = payload || {};
+    if (
+      typeof sourceTopicId !== 'string' ||
+      !sourceTopicId.trim() ||
+      typeof uptoMessageId !== 'string' ||
+      !uptoMessageId.trim() ||
+      !Array.isArray(messages)
+    ) {
+      return { ok: false, error: 'Invalid fork payload' };
+    }
+    const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    const sourceTopic = (store.topics || []).find((t) => t && t.id === sourceTopicId);
+    if (!sourceTopic) return { ok: false, error: 'Topic not found' };
+
+    const idx = messages.findIndex((m) => m && m.id === uptoMessageId);
+    if (idx === -1) return { ok: false, error: 'Message not found' };
+    const forkMessages = messages.slice(0, idx + 1);
+
+    const now = Date.now();
+    const newTopic = {
+      id: genId(),
+      name:
+        typeof sourceTopic.name === 'string' && sourceTopic.name.trim()
+          ? `${sourceTopic.name}（副本）`
+          : '副本',
+      createdAt: now,
+      updatedAt: now,
+      orderKey: now,
+      agentId:
+        typeof sourceTopic.agentId === 'string' && sourceTopic.agentId.trim()
+          ? sourceTopic.agentId
+          : PERSONAL_ASSISTANT_ID,
+      chatMode: CHAT_MODES.has(sourceTopic.chatMode) ? sourceTopic.chatMode : 'normal',
+    };
+    if (Array.isArray(sourceTopic.knowledgeBaseIds) && sourceTopic.knowledgeBaseIds.length > 0) {
+      newTopic.knowledgeBaseIds = sourceTopic.knowledgeBaseIds.filter(
+        (id) => typeof id === 'string' && id,
+      );
+    }
+    if (sourceTopic.host && typeof sourceTopic.host === 'object') {
+      // host 授权指纹对同一 host 仍有效，浅拷贝继承；fork 不重新校验 host 存活。
+      newTopic.host = { ...sourceTopic.host };
+    } else if (sourceTopic.origin === 'terminal') {
+      newTopic.origin = 'terminal';
+      newTopic.agentId = getTerminalAgentId();
+    }
+
+    // 复制被引用的工具结果文件到新话题目录并重写 ref，与源话题彻底解耦
+    // （源话题删除后 fork 仍可查看完整结果）。单文件失败仅 warn 跳过，不中断 fork。
+    if (toolResultsDir) {
+      const srcPrefix = `${sourceTopicId}/`;
+      for (const m of forkMessages) {
+        if (!m || m.type !== 'tool' || typeof m.toolResultRef !== 'string') continue;
+        if (!m.toolResultRef.startsWith(srcPrefix)) continue;
+        const filename = m.toolResultRef.slice(srcPrefix.length);
+        // 消毒：合法 ref 是 {topicId}/{A-Za-z0-9_-}.json；拒绝路径段防止
+        // `../` 穿越源/目标目录（与 readToolResultFile 拒绝 .. 的惯例一致）。
+        if (!/^[\w.-]+\.json$/.test(filename)) continue;
+        try {
+          const destDir = path.join(toolResultsDir(), newTopic.id);
+          ensureDirLocal(destDir);
+          fs.copyFileSync(
+            path.join(toolResultsDir(), sourceTopicId, filename),
+            path.join(destDir, filename),
+          );
+          m.toolResultRef = `${newTopic.id}/${filename}`;
+        } catch (e) {
+          console.warn('Failed to copy tool result for fork:', m.toolResultRef, e);
+        }
+      }
+    }
+    // fork 点可能是流结束前的残留状态，落盘前收敛为 done，避免渲染成永久转圈。
+    const messagesToSave = forkMessages.map((m) =>
+      m && m.type === 'tool' && STALE_TOOL_STATUSES.has(m.toolStatus)
+        ? { ...m, toolStatus: 'done' }
+        : m,
+    );
+
+    const processed = processSessionForSave(
+      {
+        version: CHAT_SESSION_VERSION,
+        updatedAt: now,
+        messages: messagesToSave,
+        draftInput: '',
+        draftAttachments: [],
+      },
+      newTopic.id,
+      toolResultsDir,
+    );
+    const sessionSave = writeJson(getSessionFilePath(newTopic.id), processed);
+    if (!sessionSave.ok) return { ok: false, error: 'Failed to save session' };
+
+    store.topics.push(newTopic);
+    if (newTopic.host) {
+      store.activeHostId = newTopic.id;
+    } else if (!newTopic.origin) {
+      store.activeId = newTopic.id;
+    }
+    const indexSave = writeJson(topicsIndexPath(), store);
+    if (!indexSave.ok) {
+      // 不留半成品：session/工具结果文件已写但索引没有 → 孤儿文件，清掉。
+      try {
+        fs.unlinkSync(getSessionFilePath(newTopic.id));
+      } catch (e) {
+        console.warn('Failed to clean up fork session file:', e);
+      }
+      try {
+        fs.rmSync(path.join(toolResultsDir(), newTopic.id), { recursive: true, force: true });
+      } catch (e) {
+        console.warn('Failed to clean up fork tool results:', e);
+      }
+      return { ok: false, error: 'Failed to save topics' };
+    }
     return { ok: true, topic: newTopic };
   });
 

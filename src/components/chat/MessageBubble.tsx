@@ -1,5 +1,5 @@
 import { Button, Icon } from "animal-island-ui";
-import { CopyIcon } from "../icons/naivePatch";
+import { CopyIcon, ForkIcon } from "../icons/naivePatch";
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
@@ -20,6 +20,7 @@ export interface MessageBubbleProps {
   isEditing?: boolean;
   onRetry?: (msgId: string) => void;
   onStartEdit?: (msgId: string) => void;
+  onFork?: (msgId: string) => void;
   onConfirmEdit?: (msgId: string, newText: string) => void;
   onCancelEdit?: () => void;
   onDelete?: (msgId: string) => void;
@@ -38,6 +39,7 @@ function MessageBubble({
   onConfirmEdit,
   onCancelEdit,
   onDelete,
+  onFork,
   onOpenCitation,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
@@ -209,6 +211,16 @@ function MessageBubble({
               onClick={handleCopy}
               title="复制"
             />
+            {onFork && (
+              <Button
+                type="text"
+                size="small"
+                className="msg-action-btn"
+                icon={<Icon icon={ForkIcon} size={13} />}
+                onClick={() => onFork(msg.id)}
+                title="从此处分叉新对话"
+              />
+            )}
             {isUser && onRetry && (
             <Button
               type="text"

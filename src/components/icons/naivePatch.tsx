@@ -47,6 +47,18 @@ export function CopyIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function ForkIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Frame {...props}>
+      <path d="M24 42 V26" stroke="#2A2A2A" strokeWidth={3.5} />
+      <path d="M24 26 C24 20, 14 20, 14 13" stroke="#2A2A2A" strokeWidth={3.5} />
+      <path d="M24 26 C24 20, 34 20, 34 13" stroke="#2A2A2A" strokeWidth={3.5} />
+      <circle cx="14" cy="10" r="4.5" fill="#E9C46A" stroke="#2A2A2A" strokeWidth={3} />
+      <circle cx="34" cy="10" r="4.5" fill="#2A9D8F" stroke="#2A2A2A" strokeWidth={3} />
+    </Frame>
+  );
+}
+
 export function UploadIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Frame {...props}>

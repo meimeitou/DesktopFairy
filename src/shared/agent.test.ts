@@ -11,7 +11,6 @@ import {
   TERMINAL_ASSISTANT_ID,
   HOST_ASSISTANT_ID,
   PERSONAL_DEFAULT_DISABLED_TOOL_IDS,
-  TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   HOST_DEFAULT_DISABLED_TOOL_IDS,
   isAgentBackend,
   getAgentBackendLabel,
@@ -38,7 +37,8 @@ describe('agent', () => {
       const agent = createTerminalAssistantDefaults()
       expect(agent.id).toBe(TERMINAL_ASSISTANT_ID)
       expect(agent.builtinRole).toBe('terminal-assistant')
-      expect(agent.disabledToolIds).toEqual(TERMINAL_DEFAULT_DISABLED_TOOL_IDS)
+      expect(agent.disabledToolIds).toEqual([])
+      expect(agent.toolOverrides).toEqual({})
       expect(agent.disabledToolIds).not.toContain('Terminal')
     })
   })
@@ -318,30 +318,49 @@ describe('createHostAssistantDefaults', () => {
     expect(agent.soul).toContain('ssh')
     expect(agent.disabledToolIds).toEqual(HOST_DEFAULT_DISABLED_TOOL_IDS)
   })
+
+  it('migration strips legacy McpManager from persisted host assistant disabledToolIds', () => {
+    const agent = normalizeAgentConfig({
+      ...createHostAssistantDefaults(),
+      disabledToolIds: ['Terminal', 'bash', 'read', 'write', 'edit', 'glob', 'grep', 'McpManager'],
+    })
+    expect(agent.disabledToolIds).not.toContain('McpManager')
+    expect(agent.disabledToolIds).toContain('bash')
+    // 其他智能体不受迁移影响
+    const personal = normalizeAgentConfig({
+      ...createPersonalAssistantDefaults(),
+      disabledToolIds: ['Terminal', 'McpManager'],
+    })
+    expect(personal.disabledToolIds).toContain('McpManager')
+  })
 })
 
 describe('getEnabledAgentBuiltinTools host context', () => {
-  it('exposes ssh_* tools in host context and hides local machine tools', () => {
+  it('exposes ssh_* tools in host context; McpManager and local machine tools stay blocked', () => {
     const agent = createHostAssistantDefaults({ disabledToolIds: [] })
     const ids = getEnabledAgentBuiltinTools(agent, 'host').map((t) => t.id)
     for (const id of ['ssh_read', 'ssh_glob', 'ssh_grep', 'ssh_write', 'ssh_edit', 'ssh_cwd', 'ssh_exec', 'ssh_hosts']) {
       expect(ids).toContain(id)
     }
+    // host: no MCP, ever — McpManager 与本机工具一律 blocked（含 override 强开）。
     for (const id of ['bash', 'read', 'write', 'edit', 'glob', 'grep', 'Terminal', 'McpManager']) {
       expect(ids).not.toContain(id)
     }
+    const forced = getEnabledAgentBuiltinTools(
+      { ...agent, toolOverrides: { McpManager: true } },
+      'host',
+    ).map((t) => t.id)
+    expect(forced).not.toContain('McpManager')
   })
 
-  it('local and terminal contexts never expose the new ssh_* file tools', () => {
-    const agent = createPersonalAssistantDefaults({ disabledToolIds: [] })
-    const local = getEnabledAgentBuiltinTools(agent, 'local').map((t) => t.id)
+  it('local chat hides ssh_* file tools; terminal exposes the same set as host', () => {
+    const local = getEnabledAgentBuiltinTools(createPersonalAssistantDefaults({ disabledToolIds: [] }), 'local').map((t) => t.id)
     const term = getEnabledAgentBuiltinTools(createTerminalAssistantDefaults({ disabledToolIds: [] }), 'terminal').map((t) => t.id)
-    for (const id of ['ssh_read', 'ssh_glob', 'ssh_grep', 'ssh_write', 'ssh_edit', 'ssh_cwd']) {
+    for (const id of ['ssh_read', 'ssh_glob', 'ssh_grep', 'ssh_write', 'ssh_edit', 'ssh_cwd', 'ssh_exec', 'ssh_hosts']) {
       expect(local).not.toContain(id)
-      expect(term).not.toContain(id)
+      expect(term).toContain(id)
     }
-    // terminal keeps the live-session path
-    expect(term).toContain('ssh_exec')
+    expect(term).toContain('Terminal')
   })
 
   it('plan mode blocks ssh_write/ssh_edit/ssh_cwd but keeps ssh_read', () => {

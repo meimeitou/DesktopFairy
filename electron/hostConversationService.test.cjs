@@ -86,7 +86,7 @@ describe('hostConversationService', () => {
     const r = await h.handlers['chat:topics:create']({}, {
       agentId: 'personal-assistant',
     });
-    expect(() => h.svc.resolveHostRuntime(r.topic.id)).toThrow(/未绑定主机助手/);
+    expect(() => h.svc.resolveHostRuntime(r.topic.id)).toThrow(/未绑定主机运行环境/);
     expect(() => h.svc.resolveHostRuntime('nonexistent')).toThrow(/不存在/);
   });
 
@@ -210,6 +210,15 @@ describe('hostConversationService', () => {
     expect(JSON.stringify(h.settings)).toBe(before);
   });
 
+  it('searchSavedHosts ranks exact names ahead of partial address matches', () => {
+    const h = makeHarness();
+    h.settings.sshHosts.push({ id: 'h3', name: 'alpha-backup', user: 'r', host: '10.1.1.8' });
+    h.snapshot.setSnapshot(h.settings);
+    expect(h.svc.searchSavedHosts('alpha').map((x) => x.id)).toEqual(['h1', 'h3']);
+    expect(h.svc.searchSavedHosts('5.6.7.8').map((x) => x.id)).toEqual(['h2']);
+    expect(h.svc.searchSavedHosts('no-such')).toEqual([]);
+  });
+
   it('resolveHostIdByName returns the id only for a unique exact name', async () => {
     const h = makeHarness();
     expect(h.svc.resolveHostIdByName('alpha')).toBe('h1');
@@ -217,5 +226,86 @@ describe('hostConversationService', () => {
     h.settings.sshHosts.push({ id: 'h3', name: 'alpha', user: 'r', host: 'x' });
     h.snapshot.setSnapshot(h.settings);
     expect(h.svc.resolveHostIdByName('alpha')).toBe(null);
+  });
+});
+
+describe('terminal host runtime', () => {
+  it('shares grants/cwd across turns of one session, isolates sessions, and rejects changed identities', () => {
+    const h = makeHarness();
+    const session = { savedHostId: 'h1', savedHostFingerprint: hostFingerprint(h.settings.sshHosts[0]) };
+    let alive = true;
+    const check = () => { if (!alive) throw new Error('closed'); };
+    const rt = h.svc.resolveTerminalRuntime(session, 'ssh_1', check);
+    expect(rt.defaultHostId).toBe('h1');
+    expect(rt.forceApproval('ssh_read', { hostId: 'h2' }, rt)).toBe(true);
+    rt.ensureGrant(rt.topicId, 'h2');
+    rt.setCwd(rt.topicId, 'h1', '/srv');
+    const nextTurn = h.svc.resolveTerminalRuntime(session, 'ssh_1', check);
+    expect(nextTurn.isGranted('h2')).toBe(true);
+    expect(nextTurn.getCwd(nextTurn.topicId, 'h1')).toBe('/srv');
+    const other = h.svc.resolveTerminalRuntime({ savedHostId: 'h1', savedHostFingerprint: session.savedHostFingerprint }, 'ssh_2', check);
+    expect(other.isGranted('h2')).toBe(false);
+    expect(other.getCwd(other.topicId, 'h1')).toBeNull();
+    h.snapshot.setSnapshot({ ...h.settings, sshHosts: h.settings.sshHosts.map((host) => host.id === 'h2' ? { ...host, user: 'changed' } : host) });
+    expect(nextTurn.isGranted('h2')).toBe(false);
+    h.snapshot.setSnapshot({ ...h.settings, sshHosts: h.settings.sshHosts.filter((host) => host.id !== 'h1') });
+    expect(() => nextTurn.assertValid()).toThrow(/删除|变化/);
+    alive = false;
+    expect(() => rt.assertValid()).toThrow('closed');
+  });
+
+  it('keeps unbound terminals ungranted and requires explicit saved-host targets', () => {
+    const h = makeHarness();
+    const rt = h.svc.resolveTerminalRuntime({}, 'pty_1', () => {});
+    expect(rt.defaultHostId).toBeNull();
+    expect(rt.isGranted('h1')).toBe(false);
+    expect(rt.forceApproval('ssh_exec', { hostId: 'h1' }, rt)).toBe(true);
+  });
+
+  it('cross-host calls force per-card approval even with full-auto and bypass enabled; denial grants nothing', async () => {
+    const h = makeHarness();
+    const rt = h.svc.resolveTerminalRuntime({ savedHostId: 'h1', savedHostFingerprint: hostFingerprint(h.settings.sshHosts[0]) }, 'ssh_1', () => {});
+    const { executeAgentTool } = require('./agentTools.cjs');
+    const { dispatchUserAnswer, clearAllToolApprovals } = require('./agentToolApproval.cjs');
+    const events = [];
+    const result = await executeAgentTool({ id: 'forced', function: { name: 'ssh_read', arguments: JSON.stringify({ path: '/etc/hostname', hostId: 'h2' }) } }, {
+      requestId: 'cross-host-force-test', context: 'terminal-ssh', hostRuntime: rt,
+      agentConfig: { chatMode: 'full-auto' }, bypassApproval: true, allowedToolNames: new Set(['ssh_read']),
+      safeSend: (_ch, event) => {
+        events.push(event);
+        if (event.status === 'awaiting_input') queueMicrotask(() => {
+          dispatchUserAnswer(event.approvalId, { unused: '不执行' });
+        });
+      },
+    });
+    expect(JSON.parse(result.resultText).error).toMatch(/没有确认/);
+    expect(events.some((event) => event.status === 'awaiting_input' && event.toolName === 'AskUserQuestion')).toBe(true);
+    expect(events.some((event) => event.status === 'awaiting_approval')).toBe(false);
+    expect(rt.isGranted('h2')).toBe(false);
+    clearAllToolApprovals();
+  });
+});
+
+describe('approval target identity', () => {
+  it('does not grant a different host identity if the target changed while its approval card was open', async () => {
+    const h = makeHarness();
+    const rt = h.svc.resolveTerminalRuntime({ savedHostId: 'h1', savedHostFingerprint: hostFingerprint(h.settings.sshHosts[0]) }, 'ssh_1', () => {});
+    const { executeAgentTool } = require('./agentTools.cjs');
+    const { dispatchUserAnswer, clearAllToolApprovals } = require('./agentToolApproval.cjs');
+    const result = await executeAgentTool({ id: 'changed-target', function: { name: 'ssh_read', arguments: JSON.stringify({ path: '/srv/config', host: 'beta' }) } }, {
+      requestId: 'changed-target-request', context: 'terminal-ssh', hostRuntime: rt,
+      agentConfig: { chatMode: 'full-auto' }, allowedToolNames: new Set(['ssh_read']),
+      safeSend: (_ch, event) => {
+        if (event.status !== 'awaiting_input') return;
+        queueMicrotask(() => {
+          h.snapshot.setSnapshot({ ...h.settings, sshHosts: h.settings.sshHosts.map((host) => host.id === 'h2' ? { ...host, host: '9.9.9.9' } : host) });
+          const questions = JSON.parse(event.toolArgs).questions;
+          dispatchUserAnswer(event.approvalId, { [questions[0].question]: questions[0].options[0].label });
+        });
+      },
+    });
+    expect(JSON.parse(result.resultText).error).toContain('身份已变化');
+    expect(rt.isGranted('h2')).toBe(false);
+    clearAllToolApprovals();
   });
 });

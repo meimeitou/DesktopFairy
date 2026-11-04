@@ -223,13 +223,20 @@ function registerSshHandlers({ ipcMain }) {
     const {
       host, port, user, authMethod, password, privateKeyPath,
       proxyJump, proxyJumpAuthMethod, proxyJumpPassword, proxyJumpPrivateKeyPath,
-      cols, rows,
+      cols, rows, savedHostId,
     } = params || {};
 
     if (!host || !user) {
       return { error: '缺少 host 或 user 参数' };
     }
 
+    let savedHostFingerprint = null;
+    if (savedHostId) {
+      const saved = require('./settingsSnapshot.cjs').getSnapshot()?.sshHosts?.find((h) => h.id === savedHostId);
+      const { hostFingerprint } = require('./chatSessionService.cjs');
+      if (!saved || hostFingerprint(saved) !== hostFingerprint({ host, port, user, proxyJump })) return { error: '已保存主机信息已变化，请重新连接' };
+      savedHostFingerprint = hostFingerprint(saved);
+    }
     const built = buildConnectConfig({ host, port, user, authMethod, password, privateKeyPath });
     if (built.error) return { error: built.error };
 
@@ -269,7 +276,7 @@ function registerSshHandlers({ ipcMain }) {
           try { jumpConn?.end(); } catch { /* already closed */ }
           return;
         }
-        const session = { conn, stream, sender, jumpConn, capture: null, commandRunning: false };
+        const session = { conn, stream, sender, jumpConn, capture: null, commandRunning: false, savedHostId: savedHostId || null, savedHostFingerprint, remoteHost: host, remoteUser: user };
         sessions.set(sessionId, session);
 
         // Capture hook — coexists with the forward-to-renderer listener.
@@ -780,8 +787,15 @@ async function withSftp(connectParams, fn, { timeoutMs = 30_000, signal } = {}) 
   }
 }
 
+function getOwnedSession(sessionId, sender) {
+  const session = sessions.get(sessionId);
+  if (!session || session.sender !== sender || sender.isDestroyed?.()) throw new Error('SSH 终端会话不可用或不属于当前窗口');
+  return session;
+}
+
 module.exports = {
   registerSshHandlers,
+  getOwnedSession,
   killAllSshSessions,
   runCommandInSshSession,
   stopSshActiveCapture,

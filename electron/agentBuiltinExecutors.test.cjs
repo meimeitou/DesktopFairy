@@ -24,6 +24,18 @@ afterEach(() => {
   delete process.env.DF_AGENT_FS_BASE;
 });
 
+describe('ssh_grep user regex', () => {
+  const { compileUserRegex } = require('./agentBuiltinSshExecutors.cjs');
+
+  it('accepts ordinary patterns and rejects nested quantifiers', () => {
+    expect(compileUserRegex('error:\\s+\\d+', '').regex).toBeInstanceOf(RegExp);
+    expect(compileUserRegex('(?:https?://\\S+)', '').regex).toBeInstanceOf(RegExp);
+    expect(compileUserRegex('(a+)+$', '').error).toMatch(/嵌套量词/);
+    expect(compileUserRegex('(a|ab)+', '').error).toMatch(/嵌套量词/);
+    expect(compileUserRegex('a'.repeat(201), '').error).toMatch(/过长/);
+  });
+});
+
 describe('executeBuiltinTool FS six-pack', () => {
   it('write → read → edit → read → grep → glob end-to-end', async () => {
     // write

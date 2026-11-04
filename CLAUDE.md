@@ -42,7 +42,7 @@ macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React 19 + T
 
 **Frontend → Main process IPC**: `window.electronAPI.invoke('command_name', args)` exposed via `contextBridge` in `electron/preload.cjs`. Main process handlers are in `electron/main.cjs` and various `electron/*Service.cjs` files, registered via `ipcMain.handle()`.
 
-**Agent mode** (when `settings.chatBackend === 'agent'`): Renderer calls `ai:stream_open` via `src/services/aiTransport/IpcChatTransport.ts`. Main process runs `ToolLoopAgent` (`electron/ai/AiService.cjs`) with topic-scoped `AiStreamManager` (`electron/aiStreamService.cjs`). Legacy `agent:run` still exists but new code should use `ai:stream_open`. Plain chat uses `chat:send` with no system prompt or tools.
+**Agent mode**: Renderer calls `ai:stream_open` via `src/services/aiTransport/IpcChatTransport.ts`. Main process runs `ToolLoopAgent` (`electron/ai/AiService.cjs`) with topic-scoped `AiStreamManager` (`electron/aiStreamService.cjs`). Plain chat uses `chat:send` with no system prompt or tools.
 
 ## Key Conventions
 
@@ -82,7 +82,7 @@ macOS desktop Live2D companion app. Stack: **Electron** (shell) + **React 19 + T
 | `src/shared/settings.ts` | AppSettings interface, load/save, provider merging, model resolution |
 | `src/shared/providers.ts` | LlmProvider type, SYSTEM_PROVIDERS (OpenAI, Ollama) |
 | `src/shared/live2dReactions.ts` | Chat-to-Live2D expression mapping, `notifyLive2DIfReactive` |
-| `electron/agentService.cjs` | `buildAgentSystemPrompt`, legacy `agent:run` |
+| `electron/agentService.cjs` | `buildAgentSystemPrompt`, `agent:abort` / `websearch:test` IPC |
 | `electron/aiStreamService.cjs` | `ai:stream_*` IPC, topic agent streams |
 | `electron/ai/AiService.cjs` | AI SDK `ToolLoopAgent` wrapper |
 | `electron/ai/chunkBridge.cjs` | UIMessageChunk → legacy stream IPC |

@@ -121,7 +121,7 @@ function TerminalToolBody({ msg }: { msg: ChatMsg }) {
 
 function SshExecToolBody({ msg }: { msg: ChatMsg }) {
   const input = getToolInput(msg.toolName || "ssh_exec", msg.toolArgs);
-  const host = typeof input.host === "string" ? input.host : "";
+  const host = typeof input.targetLabel === "string" ? input.targetLabel : typeof input.host === "string" ? input.host : typeof input.hostId === "string" ? input.hostId : "";
   const command = typeof input.command === "string" ? input.command : "";
   const output = parseToolOutput(msg.toolResultPreview);
   const outObj =

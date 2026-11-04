@@ -1,15 +1,10 @@
 const { manager } = require('./ai/streamManager/AiStreamManager.cjs');
-const { streamText } = require('./ai/AiService.cjs');
 const { createChunkBridge } = require('./ai/chunkBridge.cjs');
 const { broadcastToTopic } = require('./ai/topicBroadcast.cjs');
-const { getBuiltinTools, buildAgentToolDeps } = require('./ai/agentStreamShared.cjs');
 const {
-  buildAgentSystemPrompt,
-  getCurrentWebSearchConfig,
-} = require('./agentService.cjs');
-const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
-const { getServersByIds } = require('./mcpServerService.cjs');
-const { getTerminalForeground } = require('./ptyService.cjs');
+  buildKnowledgeSystemSuffix,
+  createAgentTextStream,
+} = require('./ai/prepareAgentStream.cjs');
 const settingsSnapshot = require('./settingsSnapshot.cjs');
 
 /** @type {Map<string, { bypassApproval: boolean }>} */
@@ -66,143 +61,42 @@ function registerAiStreamHandlers(ipcMain, deps) {
       ? rawKnowledgeBaseIds.filter((id) => typeof id === 'string' && id)
       : [];
     const apiMessages = (messages || []).filter((m) => m.role !== 'system');
-
-    let knowledgeSystemSuffix = '';
-    if (knowledgeBaseIds.length > 0) {
-      try {
-        const { buildKnowledgeInjection } = require('./knowledge/injectForChat.cjs');
-        const injected = await buildKnowledgeInjection({
-          messages: apiMessages,
-          knowledgeBaseIds,
-          apiConfig,
-        });
-        if (injected.systemMessage) {
-          knowledgeSystemSuffix = `\n\n${injected.systemMessage}`;
-        }
-        if (injected.citations?.length) {
-          legacySend('chat:stream:citations', {
-            requestId,
-            citations: injected.citations,
-          });
-        }
-        if (injected.errors?.length) {
-          legacySend('chat:stream:knowledge_error', {
-            requestId,
-            errors: injected.errors,
-          });
-        }
-      } catch (e) {
-        if (e?.name !== 'AbortError') {
-          console.warn('[knowledge] agent pre-inject failed:', e?.message || e);
-          legacySend('chat:stream:knowledge_error', {
-            requestId,
-            errors: [{ kind: 'unknown', message: String(e?.message || e) }],
-          });
-        }
-      }
-    }
+    const knowledgeSystemSuffix = await buildKnowledgeSystemSuffix({
+      apiMessages,
+      knowledgeBaseIds,
+      apiConfig,
+      requestId,
+      legacySend,
+    });
 
     const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
     const bridge = createChunkBridge({ requestId, safeSend: legacySend });
-
-    /** @type {{ dispose?: () => void } | null} */
-    let mcpRuntime = null;
-
-    const abortIfNeeded = (signal) => {
-      if (signal?.aborted) {
-        throw new DOMException('Aborted', 'AbortError');
-      }
+    const streamCtx = {
+      manager,
+      topicId,
+      requestId,
+      terminalSessionId,
+      sender,
+      agentConfig,
+      apiConfig,
+      apiMessages,
+      knowledgeSystemSuffix,
+      maxTurns,
+      bridge,
+      legacySend,
+      topicAgentState,
+      getWindows,
+      parentWindow,
+      hostConversationService: deps.hostConversationService,
+      protectedDir: deps.protectedDir,
+      mcpRuntime: null,
     };
 
     topicAgentState.set(topicId, { bypassApproval: false });
     const startResult = manager.startStream({
       topicId,
       requestId,
-      createStream: async () => {
-        const entry = manager.activeStreams.get(topicId);
-        const signal = entry?.controller?.signal;
-        abortIfNeeded(signal);
-
-        const isHostConversation = agentConfig.builtinRole === 'host-assistant';
-        let hostRuntime = null;
-        if (isHostConversation) {
-          try {
-            hostRuntime = deps.hostConversationService.resolveHostRuntime(topicId);
-          } catch (e) {
-            legacySend('chat:stream:error', { requestId, message: String(e?.message || e) });
-            throw new DOMException('Aborted', 'AbortError');
-          }
-        }
-
-        if (!isHostConversation) {
-          mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
-        }
-        abortIfNeeded(signal);
-
-        const context = isHostConversation
-          ? 'host'
-          : terminalSessionId
-            ? 'terminal'
-            : 'local';
-        const builtinTools = getBuiltinTools(agentConfig, context);
-        const toolDefinitions = isHostConversation
-          ? builtinTools // host: no MCP tools, ever
-          : [...builtinTools, ...(mcpRuntime.definitions || [])];
-        const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-        abortIfNeeded(signal);
-
-        const enabledToolNames = builtinTools.map((t) => t.function.name);
-        const hostInfo = isHostConversation && hostRuntime
-          ? {
-              defaultHostName: hostRuntime.hostName,
-              cwd: hostRuntime.getCwd(topicId, hostRuntime.hostId) || '',
-            }
-          : null;
-        const systemPrompt = buildAgentSystemPrompt(
-          agentConfig,
-          context,
-          terminalState,
-          enabledToolNames,
-          settingsSnapshot.getSnapshot()?.sshHosts || [],
-          hostInfo,
-        )
-          + knowledgeSystemSuffix;
-
-        const toolDeps = buildAgentToolDeps({
-          topicId,
-          requestId,
-          agentConfig,
-          mcpRuntime,
-          signal,
-          registerMcpCall: (tid, callId) => manager.registerMcpCall(tid, callId),
-          getWindows,
-          parentWindow,
-          sender,
-          safeSend: legacySend,
-          getBypassApproval: () => topicAgentState.get(topicId)?.bypassApproval === true,
-          onApprovalWaitStart: () => {
-            const live = manager.activeStreams.get(topicId);
-            if (live?.idle) manager.extendIdleForApproval(topicId, live.idle);
-          },
-          webSearchConfig: getCurrentWebSearchConfig(),
-          terminalSessionId,
-          suppressToolDoneEvent: true,
-          onToolDenied: bridge.markDenied,
-          context,
-          hostRuntime,
-        });
-
-        return streamText({
-          messages: apiMessages,
-          systemPrompt,
-          apiConfig,
-          toolDefinitions,
-          toolDeps,
-          maxTurns,
-          reasoningEffort: agentConfig.reasoningEffort,
-          signal,
-        });
-      },
+      createStream: createAgentTextStream(streamCtx),
       onChunk: (chunk) => bridge.handleChunk(chunk),
       onDone: (donePayload) => {
         legacySend('chat:stream:done', {
@@ -212,7 +106,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
           usage: donePayload.usage || undefined,
         });
         topicAgentState.delete(topicId);
-        mcpRuntime?.dispose?.();
+        streamCtx.mcpRuntime?.dispose?.();
       },
       onError: (errPayload) => {
         if (errPayload.aborted) {
@@ -225,7 +119,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
           legacySend('chat:stream:error', { requestId, message: errPayload.message });
         }
         topicAgentState.delete(topicId);
-        mcpRuntime?.dispose?.();
+        streamCtx.mcpRuntime?.dispose?.();
       },
     });
 

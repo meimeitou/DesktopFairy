@@ -451,9 +451,9 @@ export function shouldApplyToolStatus(
   ) {
     return false;
   }
-  // awaiting_input stays until answered (done) or cancelled (error); block running race.
+  // Host confirmation asks once, then the same tool call starts running.
   if (current === "awaiting_input" && incoming === "running") {
-    return false;
+    return true;
   }
   const rank: Record<NonNullable<ChatMsg["toolStatus"]>, number> = {
     streaming: 1,

@@ -31,7 +31,7 @@ function buildSkillEnvVars(agentConfig) {
 }
 
 /**
- * Shared toolDeps fields for AI SDK agent runs (ai:stream_open + legacy agent:run).
+ * Shared toolDeps fields for AI SDK agent runs (ai:stream_open).
  */
 function buildAgentToolDeps({
   topicId,
@@ -50,8 +50,11 @@ function buildAgentToolDeps({
   terminalSessionId,
   suppressToolDoneEvent = true,
   onToolDenied,
+  onToolArgs,
   context = 'local',
   hostRuntime = null,
+  assertEnvironment,
+  protectedDir,
 }) {
   const sessionEnabledSkillIds = new Set(agentConfig?.enabledSkillIds || []);
 
@@ -82,8 +85,12 @@ function buildAgentToolDeps({
     terminalSessionId,
     suppressToolDoneEvent,
     onToolDenied,
+    onToolArgs,
     context,
     hostRuntime,
+    assertEnvironment,
+    protectedDir,
+    allowedToolNames: new Set([...getBuiltinTools(agentConfig, context).map((t) => t.function.name), ...(mcpRuntime?.definitions || []).map((t) => t.function.name)]),
   };
 }
 

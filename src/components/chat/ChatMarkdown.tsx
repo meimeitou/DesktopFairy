@@ -152,9 +152,13 @@ const components: Components = {
         if (u.protocol === "http:" || u.protocol === "https:") {
           e.preventDefault();
           void window.electronAPI.invoke("browser:open", { url: href });
+        } else {
+          // LLM 输出不可信：javascript:/data: 等一律不交给原生 anchor。
+          e.preventDefault();
         }
       } catch {
-        // non-URL href: keep default behavior
+        // 解析失败的 href 同样不放行默认导航。
+        e.preventDefault();
       }
     };
     return (

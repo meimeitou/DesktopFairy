@@ -18,26 +18,27 @@ import MessageList, {
 } from "../components/chat/MessageList";
 import { ToolCancelContext } from "../components/chat/agentTools/ToolCancelContext";
 import { useToolApproval } from "../hooks/useToolApproval";
-import {
-  createStreamChunkBuffer,
-  type StreamTextPart,
-} from "../hooks/createStreamChunkBuffer";
-import type { ToolTerminalState } from "../shared/ai/stream";
+import { useAgentChatSession } from "../hooks/useAgentChatSession";
 import type { ChatAttachment } from "../shared/chatAttachments";
 import MaxTurnsCard from "../components/chat/MaxTurnsCard";
 import {
   type ChatMsg,
   buildAgentApiMessages,
   buildAgentHistoryMessages,
-  applyStreamTextPart,
   filterForAgentHistory,
   findLastAssistantReplyIndex,
-  findFirstAssistantReplyIndex,
-  pruneEmptyAssistantMessages,
-  reconcileToolMessages,
-  upsertAgentToolMessage,
   trimMessagesForApi,
 } from "../shared/chatMessages";
+import {
+  applySendFail,
+  beginContinue,
+  beginSend,
+  clearMessages as clearSessionMessages,
+  emptyAgentSessionState,
+  genSessionId,
+  toggleClearMarker,
+  type AgentSessionState,
+} from "../shared/agentSession";
 import {
   buildTrimOptions,
   estimateAgentSystemPromptTokens,
@@ -69,7 +70,6 @@ import {
   useSettings,
   flushSettingsSave,
 } from "../shared/settingsStore";
-import type { KnowledgeCitation } from "../shared/knowledge";
 import { stashKnowledgeReveal } from "../shared/panelHandoff";
 import { notifyLive2DScene } from "../shared/live2dReactions";
 import type { ChatMode } from "../shared/chatMode";
@@ -85,12 +85,9 @@ import {
   COMPACT_PROMPT,
 } from "../shared/slashCommands";
 import {
-  attachTopicStream,
   detachTopicStream,
   abortTopicStream,
   openAgentStream,
-  replayLegacyStreamEvents,
-  type LegacyStreamHandlers,
 } from "../services/aiTransport/IpcChatTransport";
 import { mergeRefTopicStates } from "../shared/topicStateSync";
 
@@ -101,38 +98,19 @@ type SendResendOptions = {
 const api = window.electronAPI;
 const SESSION_SAVE_DEBOUNCE_MS = 400;
 
-type TopicPageState = {
-  messages: ChatMsg[];
-  input: string;
+type TopicPageState = AgentSessionState & {
   attachments: ChatAttachment[];
-  streaming: boolean;
-  requestId: string | null;
   requestBackend: string | null;
-  sessionReady: boolean;
   invalidAttachmentPaths: Set<string>;
-  lastPromptTokens?: number;
-  lastCompletionTokens?: number;
-  lastUsageMessageCount?: number;
 };
 
 function emptyTopicState(): TopicPageState {
   return {
-    messages: [],
-    input: "",
+    ...emptyAgentSessionState(),
     attachments: [],
-    streaming: false,
-    requestId: null,
     requestBackend: null,
-    sessionReady: false,
     invalidAttachmentPaths: new Set(),
   };
-}
-
-function genId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 async function collectInvalidAttachmentPaths(
@@ -211,7 +189,6 @@ export default function ChatPage({
   const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
   const agentSendLockRef = useRef(new Set<string>());
-  const legacyStreamHandlersRef = useRef<LegacyStreamHandlers>({});
 
   useEffect(() => {
     // Keep ref in sync without clobbering live stream progress.
@@ -278,6 +255,9 @@ export default function ChatPage({
         syncStreamingFlag(topicId, next.streaming);
       }
       if (topicId === activeTopicIdRef.current || opts?.forceReact) {
+        setTopicStates((s) => ({ ...s, [topicId]: next }));
+      } else if (prev.streaming !== next.streaming) {
+        // done/error 翻转 streaming 时后台 topic 也写一次 React（活页要反映终态）。
         setTopicStates((s) => ({ ...s, [topicId]: next }));
       }
     },
@@ -558,6 +538,43 @@ export default function ChatPage({
     }
   }, [flushSessionSave]);
 
+  const handleFork = useCallback(async (msgId: string) => {
+    const topicId = activeTopicIdRef.current;
+    const state = topicId ? topicStatesRef.current[topicId] : null;
+    if (!topicId || !state?.sessionReady) {
+      console.warn("Fork skipped: active topic not ready");
+      return;
+    }
+    const idx = state.messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) {
+      console.warn("Fork skipped: message not found");
+      return;
+    }
+    const forkMessages = state.messages.slice(0, idx + 1);
+    try {
+      const result = (await api.invoke("chat:topics:fork", {
+        sourceTopicId: topicId,
+        uptoMessageId: msgId,
+        messages: forkMessages,
+      })) as { ok?: boolean; topic?: ChatTopic; error?: string };
+      if (!result?.ok || !result.topic) {
+        console.warn("Failed to fork topic:", result?.error);
+        return;
+      }
+      const topic = result.topic;
+      setTopics((prev) => [...prev, topic]);
+      // 不直接灌内存 forkMessages：主进程已把 toolResultRef 改写为新话题前缀，
+      // 从磁盘读回才能拿到改写后的消息；否则首次 persistSession 会把源前缀
+      // ref 写回磁盘，删源话题后 fork 丢失完整工具结果。
+      await loadSessionForTopic(topic.id);
+      setActiveTopicId(topic.id);
+      setEditingMsgId(null);
+      window.dispatchEvent(new CustomEvent("chat:topics-changed"));
+    } catch (e) {
+      console.warn("Failed to fork topic:", e);
+    }
+  }, [loadSessionForTopic]);
+
   const handleDeleteTopic = useCallback(
     async (topicId: string) => {
       const state = topicStatesRef.current[topicId];
@@ -615,42 +632,6 @@ export default function ChatPage({
   useEffect(() => {
     notifyLive2DScene("chatOpen");
   }, []);
-
-  useEffect(() => {
-    if (!activeTopicId) return;
-
-    void (async () => {
-      const result = await attachTopicStream(activeTopicId);
-      if (result.requestId) {
-        requestIdToTopicIdRef.current.set(result.requestId, activeTopicId);
-      }
-      replayLegacyStreamEvents(
-        result.legacyEvents,
-        legacyStreamHandlersRef.current,
-      );
-      if (
-        result.attached &&
-        result.status === "streaming" &&
-        result.requestId
-      ) {
-        patchTopicState(
-          activeTopicId,
-          (state) => ({
-            ...state,
-            streaming: true,
-            requestId: result.requestId!,
-            requestBackend: AGENT_BACKEND_KEY,
-          }),
-          { forceReact: true },
-        );
-        syncStreamingFlag(activeTopicId, true);
-      }
-    })();
-
-    return () => {
-      detachTopicStream(activeTopicId);
-    };
-  }, [activeTopicId, syncStreamingFlag, patchTopicState]);
 
   const setActiveInput = useCallback(
     (value: string) => {
@@ -732,154 +713,39 @@ export default function ChatPage({
     };
   }, []);
 
-  useEffect(() => {
-    const applyChunk = (
-      requestId: string,
-      parts: StreamTextPart[],
-      reasoning: string,
-    ) => {
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      if (parts.length === 0 && !reasoning) return;
-      patchTopicState(topicId, (state) => {
-        let messages = state.messages;
-        for (const part of parts) {
-          messages = applyStreamTextPart(messages, part.partId, part.text);
-        }
-        if (reasoning) {
-          const ri = Math.max(0, findFirstAssistantReplyIndex(messages));
-          const next = messages.slice();
-          next[ri] = {
-            ...next[ri],
-            reasoning: (next[ri].reasoning ?? "") + reasoning,
-          };
-          messages = next;
-        }
-        return { ...state, messages };
-      });
-      // Do not persist on every chunk — flush on done/error/tool events.
-    };
-
-    const chunkBuffer = createStreamChunkBuffer(applyChunk);
-
-    const handleChatChunk = ({
-      requestId,
-      partId,
-      delta,
-      reasoning,
-    }: {
-      requestId: string;
-      partId?: string;
-      delta?: string;
-      reasoning?: string;
-    }) => {
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      chunkBuffer.push(requestId, partId, delta, reasoning);
-    };
-
-    const handleChatDone = ({
-      requestId,
-      aborted,
-      maxTurnsReached,
-      tools,
-      usage,
-    }: {
-      requestId: string;
-      aborted?: boolean;
-      maxTurnsReached?: boolean;
-      tools?: ToolTerminalState[];
-      usage?: { promptTokens?: number; completionTokens?: number };
-    }) => {
-      chunkBuffer.flushRequest(requestId);
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-
-      setTimeout(() => {
-        requestIdToTopicIdRef.current.delete(requestId);
-      }, 0);
-
-      patchTopicState(
-        topicId,
-        (state) => {
-          const messages = pruneEmptyAssistantMessages(
-            reconcileToolMessages(state.messages, tools, Boolean(aborted)),
-          );
-          return {
-            ...state,
-            streaming: false,
-            requestId: null,
-            requestBackend: null,
-            messages,
-            ...(usage?.promptTokens != null && usage.promptTokens > 0
-              ? {
-                  lastPromptTokens: usage.promptTokens,
-                  lastCompletionTokens: usage.completionTokens,
-                  lastUsageMessageCount: filterForAgentHistory(messages).length,
-                }
-              : {}),
-          };
-        },
-        { forceReact: true },
-      );
-
-      const isActive = topicId === activeTopicIdRef.current;
-
-      if (aborted) {
-        compactRequestIdRef.current = null;
-        if (isActive) notifyLive2DScene("replyError");
-        flushSessionSave(topicId);
-        return;
-      }
-
-      const isCompact = compactRequestIdRef.current === requestId;
+  // 智能体会话：流事件路由 / chunk 合帧 / 工具行 upsert / citations 全部走共享 hook。
+  // ChatPage 特有的 requestBackend 字段在 patchTopicState 的 updater 里补写。
+  const { attachManually } = useAgentChatSession({
+    resolveKey: (requestId) =>
+      requestIdToTopicIdRef.current.get(requestId) ?? null,
+    patchState: (topicId, updater) =>
+      patchTopicState(topicId, (state): TopicPageState => ({
+        ...state,
+        ...updater(state),
+        requestBackend: null,
+      })),
+    isCompactRequest: (requestId) => compactRequestIdRef.current === requestId,
+    settleCompactRequest: () => {
       compactRequestIdRef.current = null;
-
-      if (isCompact) {
-        patchTopicState(
-          topicId,
-          (state) => {
-            const assistantIdx = findLastAssistantReplyIndex(state.messages);
-            const summary =
-              assistantIdx >= 0 && !state.messages[assistantIdx].error
-                ? state.messages[assistantIdx].content
-                : "";
-            if (!summary.trim()) return state;
-            return {
-              ...state,
-              lastPromptTokens: undefined,
-              lastCompletionTokens: undefined,
-              lastUsageMessageCount: undefined,
-              messages: [
-                ...state.messages,
-                {
-                  id: genId(),
-                  role: "user" as const,
-                  type: "clear" as const,
-                  content: "",
-                  timestamp: Date.now(),
-                },
-                {
-                  id: genId(),
-                  role: "user" as const,
-                  content: `[上下文摘要]\n\n${summary.trim()}`,
-                  timestamp: Date.now(),
-                },
-              ],
-            };
-          },
-          { forceReact: true },
-        );
-        if (isActive) notifyLive2DScene("replyDone");
-        flushSessionSave(topicId);
-        return;
-      }
-
-      if (maxTurnsReached) {
-        setMaxTurnsPendingTopics((prev) => new Set([...prev, topicId]));
-      }
-
-      if (isActive) {
+    },
+    forgetRequest: (requestId) => {
+      requestIdToTopicIdRef.current.delete(requestId);
+    },
+    events: {
+      onPersist: (topicId) => flushSessionSave(topicId),
+      onToolEvent: (topicId) => scheduleTopicSave(topicId),
+      onMaxTurnsReached: (topicId) =>
+        setMaxTurnsPendingTopics((prev) => new Set([...prev, topicId])),
+      onAborted: (topicId) => {
+        if (topicId === activeTopicIdRef.current)
+          notifyLive2DScene("replyError");
+      },
+      onCompactSettled: (topicId, aborted) => {
+        if (!aborted && topicId === activeTopicIdRef.current)
+          notifyLive2DScene("replyDone");
+      },
+      onDone: (topicId) => {
+        if (topicId !== activeTopicIdRef.current) return;
         const list = topicStatesRef.current[topicId]?.messages ?? [];
         const assistantIdx = findLastAssistantReplyIndex(list);
         const assistantText =
@@ -887,185 +753,51 @@ export default function ChatPage({
             ? list[assistantIdx].content
             : undefined;
         notifyLive2DScene("replyDone", assistantText);
+      },
+      onError: (topicId) => {
+        if (topicId === activeTopicIdRef.current)
+          notifyLive2DScene("replyError");
+      },
+      onToolRunning: (topicId) => {
+        if (topicId === activeTopicIdRef.current)
+          notifyLive2DScene("toolRunning");
+      },
+    },
+  });
+
+  useEffect(() => {
+    if (!activeTopicId) return;
+
+    void (async () => {
+      const result = await attachManually(activeTopicId);
+      if (result.requestId) {
+        requestIdToTopicIdRef.current.set(result.requestId, activeTopicId);
       }
-      flushSessionSave(topicId);
-    };
-
-    const handleChatError = ({
-      requestId,
-      message,
-    }: {
-      requestId: string;
-      message: string;
-    }) => {
-      chunkBuffer.flushRequest(requestId);
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      requestIdToTopicIdRef.current.delete(requestId);
-
-      patchTopicState(
-        topicId,
-        (state) => {
-          const reconciled = reconcileToolMessages(
-            state.messages,
-            undefined,
-            false,
-          );
-          const idx = findLastAssistantReplyIndex(reconciled);
-          if (idx < 0) {
-            return {
-              ...state,
-              streaming: false,
-              requestId: null,
-              requestBackend: null,
-              messages: reconciled,
-            };
-          }
-          const next = reconciled.slice();
-          const target = next[idx];
-          next[idx] = {
-            ...target,
-            content: target.content || `请求失败：${message}`,
-            error: true,
-          };
-          return {
+      if (
+        result.attached &&
+        result.status === "streaming" &&
+        result.requestId
+      ) {
+        patchTopicState(
+          activeTopicId,
+          (state) => ({
             ...state,
-            streaming: false,
-            requestId: null,
-            requestBackend: null,
-            messages: next,
-          };
-        },
-        { forceReact: true },
-      );
-
-      const isActive = topicId === activeTopicIdRef.current;
-      if (isActive) notifyLive2DScene("replyError");
-      flushSessionSave(topicId);
-    };
-
-    const handleAgentTool = ({
-      requestId,
-      toolCallId,
-      toolName,
-      toolArgs,
-      approvalId,
-      status,
-      message,
-      resultPreview,
-      force,
-    }: {
-      requestId: string;
-      toolCallId?: string;
-      toolName?: string;
-      toolArgs?: string;
-      approvalId?: string;
-      status?: ChatMsg["toolStatus"];
-      message?: string;
-      resultPreview?: string;
-      force?: boolean;
-    }) => {
-      // Land buffered text on the pre-tool bubble before the tool row is inserted.
-      chunkBuffer.flushRequest(requestId);
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      patchTopicState(topicId, (state) => ({
-        ...state,
-        messages: upsertAgentToolMessage(state.messages, {
-          toolCallId,
-          toolName,
-          toolArgs,
-          toolApprovalId: approvalId,
-          toolStatus: status,
-          toolMessage: message,
-          toolResultPreview: resultPreview,
-          toolForce: force,
-        }),
-      }));
-      scheduleTopicSave(topicId);
-      const isActive = topicId === activeTopicIdRef.current;
-      if (status === "running" && isActive) notifyLive2DScene("toolRunning");
-    };
-
-    const handleCitations = ({
-      requestId,
-      citations,
-    }: {
-      requestId: string;
-      citations?: KnowledgeCitation[];
-    }) => {
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId || !citations?.length) return;
-      patchTopicState(topicId, (state) => {
-        const idx = findLastAssistantReplyIndex(state.messages);
-        if (idx < 0) return state;
-        const next = state.messages.slice();
-        next[idx] = { ...next[idx], knowledgeCitations: citations };
-        return { ...state, messages: next };
-      });
-    };
-
-    const handleKnowledgeError = ({
-      requestId,
-      errors,
-    }: {
-      requestId: string;
-      errors?: Array<{ kind: string; message: string }>;
-    }) => {
-      if (!errors?.length) return;
-      const topicId = requestIdToTopicIdRef.current.get(requestId);
-      if (!topicId) return;
-      const summary = errors
-        .map((e) => {
-          const label =
-            e.kind === "vector"
-              ? "向量库检索"
-              : e.kind === "semi_structured"
-                ? "半结构化筛选"
-                : "知识库预注入";
-          return `${label}失败：${e.message}`;
-        })
-        .join("；");
-      // Surface as a non-blocking system notice attached to the last assistant reply.
-      patchTopicState(topicId, (state) => {
-        const idx = findLastAssistantReplyIndex(state.messages);
-        if (idx < 0) return state;
-        const next = state.messages.slice();
-        const prev = next[idx];
-        const existing = String(prev.knowledgeWarning || "");
-        next[idx] = {
-          ...prev,
-          knowledgeWarning: existing ? `${existing}；${summary}` : summary,
-        };
-        return { ...state, messages: next };
-      });
-    };
-
-    legacyStreamHandlersRef.current = {
-      onChatChunk: handleChatChunk,
-      onChatDone: handleChatDone,
-      onChatError: handleChatError,
-      onAgentTool: (data) =>
-        handleAgentTool(data as Parameters<typeof handleAgentTool>[0]),
-    };
-
-    const offChunk = api.onChatStreamChunk(handleChatChunk);
-    const offDone = api.onChatStreamDone(handleChatDone);
-    const offError = api.onChatStreamError(handleChatError);
-    const offTool = api.onAgentStreamTool?.(handleAgentTool);
-    const offCitations = api.onChatStreamCitations?.(handleCitations);
-    const offKbError = api.onChatStreamKnowledgeError?.(handleKnowledgeError);
+            streaming: true,
+            requestId: result.requestId!,
+            requestBackend: AGENT_BACKEND_KEY,
+          }),
+          { forceReact: true },
+        );
+        syncStreamingFlag(activeTopicId, true);
+      }
+    })();
 
     return () => {
-      chunkBuffer.dispose();
-      offChunk?.();
-      offDone?.();
-      offError?.();
-      offTool?.();
-      offCitations?.();
-      offKbError?.();
+      detachTopicStream(activeTopicId);
     };
-  }, [flushSessionSave, scheduleTopicSave, patchTopicState]);
+    // attachManually / patchTopicState / syncStreamingFlag 恒稳定。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTopicId]);
 
   // Switching topics returns to that conversation's bottom.
   useEffect(() => {
@@ -1096,25 +828,18 @@ export default function ChatPage({
   }, []);
 
   const handleSelectAgent = useCallback((agentId: string) => {
+    // 没有会话时不要切走：空白话题页没有可输入的会话。组头仍会展开，
+    // 当前对话页保持跳转前的话题。
+    const latest = [...topicsRef.current]
+      .filter((t) => t.agentId === agentId)
+      .sort((a, b) => b.orderKey - a.orderKey)[0];
+    if (!latest) return;
     setSettings((prev: AppSettings) => ({
       ...prev,
       activeChatAgentId: agentId,
     }));
-    // Jump to that agent's most recent topic; with none, drop the active
-    // topic so the message area doesn't keep showing the previous agent's
-    // conversation under the new agent's highlight.
-    const latest = [...topicsRef.current]
-      .filter((t) => t.agentId === agentId)
-      .sort((a, b) => b.orderKey - a.orderKey)[0];
-    if (latest) {
-      handleSelectTopic(latest.id);
-    } else {
-      const oldTopicId = activeTopicIdRef.current;
-      if (oldTopicId) flushSessionSave(oldTopicId);
-      setActiveTopicId(null);
-      setEditingMsgId(null);
-    }
-  }, [handleSelectTopic, flushSessionSave]);
+    handleSelectTopic(latest.id);
+  }, [handleSelectTopic]);
 
   const handleDuplicateAgent = useCallback((agent: AgentConfig) => {
     const current = getSettingsSnapshot();
@@ -1193,26 +918,14 @@ export default function ChatPage({
       requestIdToTopicIdRef.current.delete(requestId);
       const s = topicStatesRef.current[topicId];
       if (!s) return;
-      const owns = s.requestId === requestId;
-      const idx = findLastAssistantReplyIndex(s.messages);
-      const nextMsgs = s.messages.slice();
-      if (idx >= 0) {
-        nextMsgs[idx] = {
-          ...nextMsgs[idx],
-          content: message,
-          error: true,
-        };
-      }
-      const next = {
+      const next: TopicPageState = {
         ...s,
-        messages: nextMsgs,
-        streaming: owns ? false : s.streaming,
-        requestId: owns ? null : s.requestId,
-        requestBackend: owns ? null : s.requestBackend,
+        ...applySendFail(s, requestId, message),
+        requestBackend: s.requestId === requestId ? null : s.requestBackend,
       };
       topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
       setTopicStates((prev) => ({ ...prev, [topicId]: next }));
-      if (owns) {
+      if (s.requestId === requestId) {
         syncStreamingFlag(topicId, false);
         notifyLive2DScene("replyError");
         flushSessionSave(topicId);
@@ -1256,24 +969,13 @@ export default function ChatPage({
         );
         const payloadMessages = buildAgentHistoryMessages(agentHistory);
 
-        const requestId = genId();
+        const requestId = genSessionId();
         requestIdToTopicIdRef.current.set(requestId, topicId);
 
-        const now = Date.now();
         const s = topicStatesRef.current[topicId] ?? emptyTopicState();
-        const nextTopic = {
+        const nextTopic: TopicPageState = {
           ...s,
-          messages: [
-            ...s.messages,
-            {
-              id: genId(),
-              role: "assistant" as const,
-              content: "",
-              timestamp: now,
-            },
-          ],
-          streaming: true,
-          requestId,
+          ...beginContinue(s, requestId),
           requestBackend: AGENT_BACKEND_KEY,
         };
         topicStatesRef.current = {
@@ -1381,39 +1083,29 @@ export default function ChatPage({
         {
           const guidance = getAgentBackendGuidance(settings, agent);
           if (guidance) {
-            const now = Date.now();
-            const userMsg: ChatMsg = {
-              id: genId(),
-              role: "user",
-              content: finalText,
-              attachments:
-                sendAttachments.length > 0 ? [...sendAttachments] : undefined,
-              timestamp: now,
-            };
             setTopicStates((prev) => {
               const s = prev[topicId] ?? emptyTopicState();
-              return {
-                ...prev,
-                [topicId]: {
-                  ...s,
-                  messages: [
-                    ...s.messages,
-                    userMsg,
-                    {
-                      id: genId(),
-                      role: "assistant",
-                      content: guidance,
-                      error: true,
-                      timestamp: now,
-                    },
-                  ],
-                  input: isResend ? s.input : "",
-                  attachments: isResend ? s.attachments : [],
-                  streaming: false,
-                  requestId: null,
-                  requestBackend: null,
-                },
+              const next: TopicPageState = {
+                ...s,
+                ...beginSend(s, {
+                  requestId: "",
+                  userText: finalText,
+                  keepInput: isResend,
+                  attachments:
+                    sendAttachments.length > 0 ? [...sendAttachments] : undefined,
+                }),
+                attachments: isResend ? s.attachments : [],
+                requestBackend: null,
+                // beginSend 置 streaming:true/requestId:""，guidance 无流事件，
+                // 必须显式重置（与 Drawer/HostPanel 一致），否则输入框永久禁用。
+                streaming: false,
+                requestId: null,
               };
+              // beginSend 的占位气泡替换为引导错误气泡。
+              const idx = next.messages.length - 1;
+              const msgs = next.messages.slice();
+              msgs[idx] = { ...msgs[idx], content: guidance, error: true };
+              return { ...prev, [topicId]: { ...next, messages: msgs } };
             });
             scrollToBottom();
             scheduleTopicSave(topicId);
@@ -1469,17 +1161,7 @@ export default function ChatPage({
           sendAgent.soul,
         );
 
-        const now = Date.now();
-        const userMsg: ChatMsg = {
-          id: genId(),
-          role: "user",
-          content: finalText,
-          attachments:
-            sendAttachments.length > 0 ? [...sendAttachments] : undefined,
-          timestamp: now,
-        };
-
-        const requestId = genId();
+        const requestId = genSessionId();
         requestIdToTopicIdRef.current.set(requestId, topicId);
         if (isCompactRequest) {
           compactRequestIdRef.current = requestId;
@@ -1488,22 +1170,17 @@ export default function ChatPage({
         const shouldAutoTitle = state.messages.length === 0;
 
         const live = topicStatesRef.current[topicId] ?? emptyTopicState();
-        const nextTopic = {
+        const nextTopic: TopicPageState = {
           ...live,
-          messages: [
-            ...live.messages,
-            userMsg,
-            {
-              id: genId(),
-              role: "assistant" as const,
-              content: "",
-              timestamp: now,
-            },
-          ],
-          input: isResend ? live.input : "",
+          ...beginSend(live, {
+            requestId,
+            userText: finalText,
+            isCompact: isCompactRequest,
+            keepInput: isResend,
+            attachments:
+              sendAttachments.length > 0 ? [...sendAttachments] : undefined,
+          }),
           attachments: isResend ? live.attachments : [],
-          streaming: true,
-          requestId,
           requestBackend: AGENT_BACKEND_KEY,
         };
         topicStatesRef.current = {
@@ -1606,32 +1283,11 @@ export default function ChatPage({
     const state = topicStatesRef.current[topicId];
     if (!state || state.streaming || state.messages.length === 0) return;
 
-    const last = state.messages[state.messages.length - 1];
-    const nextMessages =
-      last.type === "clear"
-        ? state.messages.slice(0, -1)
-        : [
-            ...state.messages,
-            {
-              id: genId(),
-              role: "user" as const,
-              type: "clear" as const,
-              content: "",
-              timestamp: Date.now(),
-            } as ChatMsg,
-          ];
-
     setTopicStates((prev) => {
       const s = prev[topicId] ?? emptyTopicState();
       return {
         ...prev,
-        [topicId]: {
-          ...s,
-          messages: nextMessages,
-          lastPromptTokens: undefined,
-          lastCompletionTokens: undefined,
-          lastUsageMessageCount: undefined,
-        },
+        [topicId]: { ...s, ...toggleClearMarker(s) },
       };
     });
     scheduleTopicSave(topicId);
@@ -1677,14 +1333,10 @@ export default function ChatPage({
       ...prev,
       [topicId]: {
         ...(prev[topicId] ?? emptyTopicState()),
-        messages: [],
-        input: "",
+        ...clearSessionMessages(prev[topicId] ?? emptyTopicState()),
         attachments: [],
         invalidAttachmentPaths: new Set(),
-        lastPromptTokens: undefined,
-        lastCompletionTokens: undefined,
-        lastUsageMessageCount: undefined,
-      },
+      } as TopicPageState,
     }));
     flushSessionSave(topicId);
   }, [flushSessionSave, confirm]);
@@ -1894,6 +1546,7 @@ export default function ChatPage({
             submittingApprovalId={submittingApprovalId}
             onRetry={streaming ? undefined : handleRetry}
             onStartEdit={streaming ? undefined : handleStartEdit}
+            onFork={streaming ? undefined : handleFork}
             onConfirmEdit={handleConfirmEdit}
             onCancelEdit={handleCancelEdit}
             editingMsgId={editingMsgId}

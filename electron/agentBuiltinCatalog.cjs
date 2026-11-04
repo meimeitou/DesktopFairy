@@ -1,3 +1,5 @@
+const environmentPolicy = require('./agentEnvironmentPolicy.json');
+const toolCatalog = require('./agentBuiltinCatalogData.json');
 const {
   CLAUDE_CODE_BUILTIN_TOOLS,
   TOOL_LABELS,
@@ -7,81 +9,24 @@ const {
 /**
  * Legacy (Cherry-aligned capitalized) tool ids → pi-contract lowercase ids.
  * Applied when reading persisted user settings so saved tool toggles keep
- * working after the id migration. Mirrored in src/shared/agentBuiltinTools.ts.
+ * working after the id migration. Shared with the renderer via agentBuiltinCatalogData.json.
  */
-const LEGACY_TOOL_ID_MAP = {
-  Read: 'read',
-  Write: 'write',
-  Edit: 'edit',
-  MultiEdit: 'edit',
-  Bash: 'bash',
-  Glob: 'glob',
-  Grep: 'grep',
-};
+const LEGACY_TOOL_ID_MAP = toolCatalog.legacyToolIdMap;
 
 function mapLegacyToolId(id) {
   return LEGACY_TOOL_ID_MAP[id] || id;
 }
 
-const DEFAULT_SAFE_TOOLS = new Set([
-  'read',
-  'glob',
-  'grep',
-  'ssh_read',
-  'ssh_glob',
-  'ssh_grep',
-  'TodoWrite',
-  'UpdateProfile',
-  'AskUserQuestion',
-]);
+const DEFAULT_SAFE_TOOLS = new Set(toolCatalog.defaultSafeTools);
 
 /** Enabled by default; only chatMode rules (full-auto) may hide from the model. */
-const ALWAYS_ENABLED_TOOL_IDS = new Set(['AskUserQuestion']);
+const ALWAYS_ENABLED_TOOL_IDS = new Set(toolCatalog.alwaysEnabledToolIds);
 
-const PLAN_MODE_BLOCKED_TOOLS = new Set([
-  'write',
-  'edit',
-  'bash',
-  'WebFetch',
-  'WebSearch',
-  'Terminal',
-  'ssh_exec',
-  'ssh_write',
-  'ssh_edit',
-  'ssh_cwd',
-]);
-
-/** Tools that only make sense in host conversations (remote file ops). */
-const HOST_ONLY_TOOL_IDS = [
-  'ssh_read',
-  'ssh_glob',
-  'ssh_grep',
-  'ssh_write',
-  'ssh_edit',
-  'ssh_cwd',
-];
-
-/** Local-machine tools that never apply to a host conversation. */
-const HOST_FORCED_DISABLED_IDS = [
-  'bash',
-  'Terminal',
-  'read',
-  'write',
-  'edit',
-  'glob',
-  'grep',
-  'McpManager',
-];
-
-const CHAT_MODE_SUFFIXES = {
-  plan: '\n\n## 计划模式\n当前处于【计划模式】。你只能使用 read / glob / grep / TodoWrite / Skills / AskUserQuestion 等只读工具来理解现状并输出执行计划。严禁调用 write / edit / bash / WebFetch / WebSearch 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。若目标或方案有歧义，可调用 AskUserQuestion 向用户确认。',
-  'auto-edit': '\n\n## 自动编辑模式\n当前处于【自动编辑模式】。为了推进任务，你可以直接读写文件，无需再为 edit / write 等编辑类操作请求用户确认；但 bash / WebFetch / WebSearch / 网络请求或可能破坏环境的操作仍需先征得用户同意。若缺少关键偏好或实现方向不明确，可调用 AskUserQuestion 向用户确认。',
-  'full-auto': '\n\n## 全自动模式\n当前处于【全自动模式】。为了高效推进任务，你可以自主决定使用任何已提供的工具，无需再向用户请求确认，包括文件编辑、bash 命令、网络请求等。全自动模式下不可向用户追问方向，请自行做出合理假设并继续；请保持操作的正确性与安全，在任务完成后再向用户汇报结果。',
-};
+const PLAN_MODE_BLOCKED_TOOLS = new Set(environmentPolicy.readOnlyBlocked);
 
 function getChatModeSuffix(chatMode) {
   if (!chatMode) return '';
-  return CHAT_MODE_SUFFIXES[chatMode] || '';
+  return environmentPolicy.chatModeSuffixes[chatMode] || '';
 }
 
 function isReadOnlyMode(chatMode) {
@@ -111,30 +56,21 @@ function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
     (agentConfig?.disabledToolIds || []).map(mapLegacyToolId),
   );
   const chatMode = agentConfig?.chatMode;
+  const policy = environmentPolicy.contexts[context];
+  if (!policy) throw new Error('未知运行环境: ' + context);
+  if (agentConfig?.toolOverrides) {
+    for (const id of policy.defaultDisabled) disabled.add(id);
+    for (const [id, enabled] of Object.entries(agentConfig.toolOverrides)) {
+      if (enabled === true) disabled.delete(id);
+      if (enabled === false) disabled.add(id);
+    }
+  }
+  for (const id of policy.blocked) disabled.add(id);
   if (isReadOnlyMode(chatMode)) {
     for (const id of PLAN_MODE_BLOCKED_TOOLS) disabled.add(id);
   }
-
   for (const id of ALWAYS_ENABLED_TOOL_IDS) disabled.delete(id);
-  if (chatMode === 'full-auto') {
-    disabled.add('AskUserQuestion');
-  }
-
-  if (context === 'local') {
-    disabled.add('Terminal');
-    disabled.add('ssh_exec');
-    disabled.add('ssh_hosts');
-    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
-  }
-
-  if (context === 'terminal') {
-    disabled.add('bash');
-    for (const id of HOST_ONLY_TOOL_IDS) disabled.add(id);
-  }
-
-  if (context === 'host') {
-    for (const id of HOST_FORCED_DISABLED_IDS) disabled.add(id);
-  }
+  if (chatMode === 'full-auto') disabled.add('AskUserQuestion');
 
   const approvalMode = resolveToolApprovalMode(agentConfig);
   return CLAUDE_CODE_BUILTIN_TOOLS.filter((t) => !disabled.has(t.id)).map((tool) => ({
@@ -190,8 +126,8 @@ module.exports = {
   getChatModeSuffix,
   isReadOnlyMode,
   resolveToolApprovalMode,
-  HOST_ONLY_TOOL_IDS,
-  HOST_FORCED_DISABLED_IDS,
+  HOST_ONLY_TOOL_IDS: environmentPolicy.contexts.local.blocked.filter((id) => id.startsWith("ssh_") && !["ssh_exec", "ssh_hosts"].includes(id)),
+  HOST_FORCED_DISABLED_IDS: environmentPolicy.contexts.host.blocked,
   DEFAULT_SAFE_TOOLS,
 };
 

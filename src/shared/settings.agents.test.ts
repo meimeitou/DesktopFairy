@@ -6,6 +6,8 @@ import {
   HOST_ASSISTANT_ID,
   findAgentById,
   createPersonalAssistantDefaults,
+  DEFAULT_SOUL,
+  PREVIOUS_PERSONAL_SOULS,
 } from "./agent";
 import type { AppSettings } from "./settings";
 
@@ -23,6 +25,15 @@ function legacySettings(legacyAgent: Record<string, unknown>): AppSettings {
 }
 
 describe("settings agents migration (finalizeSettings)", () => {
+  it("upgrades the shipped personal soul and keeps an edited one", () => {
+    const upgraded = finalizeSettings({
+      ...DEFAULT_SETTINGS,
+      agents: [createPersonalAssistantDefaults({ soul: PREVIOUS_PERSONAL_SOULS[0] }), createPersonalAssistantDefaults({ id: "custom", builtinRole: undefined, soul: "我改过的小雅" })],
+    });
+    expect(findAgentById(upgraded.agents, PERSONAL_ASSISTANT_ID)?.soul).toBe(DEFAULT_SOUL);
+    expect(findAgentById(upgraded.agents, "custom")?.soul).toBe("我改过的小雅");
+  });
+
   it("migrates legacy settings.agent into two builtin agents", () => {
     const next = finalizeSettings(
       legacySettings({
@@ -46,9 +57,9 @@ describe("settings agents migration (finalizeSettings)", () => {
     const terminal = findAgentById(next.agents, TERMINAL_ASSISTANT_ID);
     expect(personal).toBeDefined();
     expect(terminal).toBeDefined();
-    expect(next.agents).toHaveLength(3);
+    expect(next.agents).toHaveLength(2);
     const host = findAgentById(next.agents, HOST_ASSISTANT_ID);
-    expect(host).toBeDefined();
+    expect(host).toBeUndefined();
 
     // Personal assistant inherits the legacy agent config.
     expect(personal?.soul).toBe("旧灵魂");

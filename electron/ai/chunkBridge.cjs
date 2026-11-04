@@ -2,9 +2,26 @@
  * Bridge AI SDK UIMessageChunk stream to DesktopFairy IPC events.
  * Maintains a tool ledger for terminal reconciliation on stream:done.
  */
+/** Builtin tools return `{ ok: false, error }` as a normal tool output. That is a failure, not a completed call. */
+function failureFromToolOutput(output) {
+  let obj = output;
+  if (typeof output === 'string') {
+    const trimmed = output.trim();
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (!obj || typeof obj !== 'object' || obj.ok !== false) return null;
+  return typeof obj.error === 'string' && obj.error ? obj.error : 'Tool error';
+}
+
 function createChunkBridge({ requestId, safeSend, onToolEvent }) {
   const toolLedger = new Map();
   const toolArgsAcc = new Map();
+  const executionArgs = new Map();
   const deniedIds = new Set();
 
   const updateLedger = (toolCallId, patch) => {
@@ -46,6 +63,7 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
         break;
 
       case 'tool-input-delta': {
+        if (executionArgs.has(chunk.toolCallId)) break;
         const acc = (toolArgsAcc.get(chunk.toolCallId) || '') + (chunk.inputTextDelta || '');
         toolArgsAcc.set(chunk.toolCallId, acc);
         updateLedger(chunk.toolCallId, { toolArgs: acc, status: 'streaming' });
@@ -63,7 +81,7 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
         // Args are ready but execute() (incl. user approval) has not started yet.
         // Do NOT emit "running" here — it can race ahead of awaiting_approval and
         // hide the permission card while the backend blocks on approval.
-        const argsJson = JSON.stringify(chunk.input ?? {});
+        const argsJson = executionArgs.get(chunk.toolCallId) || JSON.stringify(chunk.input ?? {});
         toolArgsAcc.set(chunk.toolCallId, argsJson);
         updateLedger(chunk.toolCallId, {
           toolName: chunk.toolName,
@@ -85,17 +103,21 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
         const preview = typeof chunk.output === 'string'
           ? chunk.output
           : JSON.stringify(chunk.output ?? {});
+        const errorMessage = failureFromToolOutput(chunk.output);
+        const status = errorMessage ? 'error' : 'done';
         updateLedger(chunk.toolCallId, {
-          status: 'done',
+          status,
           resultPreview: preview,
+          ...(errorMessage ? { message: errorMessage } : {}),
         });
         safeSend('agent:stream:tool', {
           requestId,
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName,
           toolArgs: toolArgsAcc.get(chunk.toolCallId) || '',
-          status: 'done',
+          status,
           resultPreview: preview,
+          ...(errorMessage ? { message: errorMessage } : {}),
         });
         break;
       }
@@ -132,7 +154,12 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
   const getToolSnapshot = () => [...toolLedger.values()];
   const markDenied = (toolCallId) => deniedIds.add(toolCallId);
 
-  return { handleChunk, getToolSnapshot, toolLedger, markDenied };
+  const setToolArgs = (toolCallId, toolName, toolArgs) => {
+    executionArgs.set(toolCallId, toolArgs);
+    toolArgsAcc.set(toolCallId, toolArgs);
+    updateLedger(toolCallId, { toolName, toolArgs });
+  };
+  return { handleChunk, getToolSnapshot, toolLedger, markDenied, setToolArgs };
 }
 
 module.exports = { createChunkBridge };

@@ -1404,6 +1404,19 @@
   min-width: 0;
 }
 
+.agent-environment-preview > .df-select {
+  max-width: 300px;
+}
+
+.agent-tool-preference {
+  flex: 0 0 128px;
+}
+
+.agent-tool-preference button.df-select-trigger {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .agent-toggle-title-row {
   display: flex;
   align-items: center;

@@ -7,7 +7,7 @@ for (const _s of [process.stdout, process.stderr]) {
     throw _err;
   });
 }
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, globalShortcut, clipboard, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, screen, globalShortcut, clipboard, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -35,7 +35,7 @@ const { classifyCatalog } = require('./modelKind.cjs');
 const { registerPtyHandlers, killAllSessions, killSessionsForSender } = require('./ptyService.cjs');
 const { registerSshHandlers, killAllSshSessions } = require('./sshService.cjs');
 const { registerAgentSkillHandlers } = require('./agentSkillService.cjs');
-const { registerAgentHandlers, abortAllAgentRuns } = require('./agentService.cjs');
+const { registerAgentHandlers } = require('./agentService.cjs');
 const { registerAiStreamHandlers, abortAllAiStreams, manager: aiStreamManager } = require('./aiStreamService.cjs');
 const { abortRequestApprovals } = require('./agentToolApproval.cjs');
 const { createHostConversationService } = require('./hostConversationService.cjs');
@@ -157,19 +157,19 @@ const resolveStartupSettings = () => ({
 // Seed main-process snapshot so early sends resolve without waiting for renderer sync.
 // backfillBuiltinAgents guarantees the always-present builtin agents exist —
 // a stale disk file missing them must not break early stream resolution.
-{
-  const { backfillBuiltinAgents } = require('./settingsBackfill.cjs');
-  const disk = loadSettingsFromDisk();
-  settingsSnapshot.setSnapshot(backfillBuiltinAgents(disk || {}));
-}
+const startupSettings = require('./startupSettings.cjs').initializeStartupSettings(SETTINGS_PATH(), CHAT_TOPICS_INDEX_PATH());
+let startupMigrationError = startupSettings.migrationError;
+settingsSnapshot.setSnapshot(startupSettings.settings);
 
 
 const TRAY_GUID = 'com.desktop.fairy.status';
 
 const getTrayIcon = () => {
   if (process.platform === 'darwin') {
-    // Empty image: no icon width, only the emoji title (tray.setTitle) shows.
-    return nativeImage.createEmpty();
+    // A 16pt template (+ @2x representation) needs less menu-bar space than an emoji title.
+    const icon = nativeImage.createFromPath(path.join(PUBLIC_ROOT, 'trayIconTemplate.png'));
+    if (!icon.isEmpty()) icon.setTemplateImage(true);
+    return icon;
   }
 
   const legacyPath = path.join(PUBLIC_ROOT, 'trayTemplate.png');
@@ -608,6 +608,15 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('settings:sync', async (event, settings) => {
+    const migration = require('./terminalAssistantMigration.cjs');
+    try {
+      migration.migrateTerminalFiles(SETTINGS_PATH(), CHAT_TOPICS_INDEX_PATH());
+      if (settings.terminalAssistantMigrationSource) migration.backupRendererSettings(SETTINGS_PATH(), settings.terminalAssistantMigrationSource);
+      settings = migration.migrateTerminalSettings(settings);
+      startupMigrationError = null;
+    } catch (e) {
+      return { persisted: false, error: '终端助手迁移备份失败：' + e.message };
+    }
     // Persist to disk. A write failure is surfaced to the renderer via the
     // return value so it can alert the user — previously it was silently
     // swallowed and the renderer assumed success (data loss on restart).
@@ -664,7 +673,7 @@ const setupIPC = () => {
   });
 
   const topicStore = registerChatSessionHandlers({
-    ipcMain,
+    ipcMain: require('./startupSettings.cjs').guardSessionIpc(ipcMain, () => startupMigrationError),
     sessionPath: CHAT_SESSION_PATH,
     topicsIndexPath: CHAT_TOPICS_INDEX_PATH,
     sessionsDir: CHAT_SESSIONS_DIR,
@@ -677,6 +686,7 @@ const setupIPC = () => {
       try { abortRequestApprovals(topicId); } catch { /* none pending */ }
     },
     getSshHosts: () => settingsSnapshot.getSnapshot()?.sshHosts || [],
+    getTerminalAgentId: () => settingsSnapshot.getSnapshot()?.terminalAgentId || "terminal-assistant",
   });
 
   const hostConversationService = createHostConversationService({
@@ -698,15 +708,7 @@ const setupIPC = () => {
   registerAgentAvatarHandlers(ipcMain);
   registerToolAbortHandlers(ipcMain);
   registerToolApprovalHandlers(ipcMain);
-  registerAgentHandlers(ipcMain, {
-    getWindows: getScreenshotWindows,
-    chatLogsDir: CHAT_LOGS_DIR,
-    getParentWindow: () => {
-      if (chatWindow && !chatWindow.isDestroyed()) return chatWindow;
-      if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
-      return null;
-    },
-  });
+  registerAgentHandlers(ipcMain);
   registerAiStreamHandlers(ipcMain, {
     getWindows: getScreenshotWindows,
     getParentWindow: () => {
@@ -715,6 +717,7 @@ const setupIPC = () => {
       return null;
     },
     hostConversationService,
+    protectedDir: () => app.getPath('userData'),
   });
 
   registerBrowserHandlers(ipcMain, {
@@ -788,6 +791,7 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('set_shortcut', async (_event, shortcut) => {
+    if (startupMigrationError) throw new Error('配置迁移未完成，暂不能修改快捷键');
     const settings = resolveStartupSettings();
     settings.selectionShortcut = shortcut;
     try {
@@ -809,6 +813,7 @@ const setupIPC = () => {
   });
 
   ipcMain.handle('set_chat_shortcut', async (_event, shortcut) => {
+    if (startupMigrationError) throw new Error('配置迁移未完成，暂不能修改快捷键');
     const settings = resolveStartupSettings();
     settings.chatShortcut = shortcut;
     try {
@@ -999,12 +1004,20 @@ const togglePresence = () => {
 const refreshMenus = () => {
   const visible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
   const toggleLabel = visible ? '隐藏模型' : '显示模型';
+  const openWindowItem = {
+    label: '打开窗口',
+    accelerator: 'CommandOrControl+R',
+    // The global shortcut is registered separately; this is its native menu hint.
+    registerAccelerator: false,
+    click: () => createChatWindow(),
+  };
 
   // App menu bar
   const appMenu = Menu.buildFromTemplate([
     {
       label: app.name,
       submenu: [
+        { ...openWindowItem },
         { label: '设置', click: () => createChatWindow({ view: 'settings' }) },
         ...screenshotMenuItems(),
         { type: 'separator' },
@@ -1053,6 +1066,7 @@ const refreshMenus = () => {
   // Tray context menu
   if (tray && !tray.isDestroyed()) {
     const contextMenu = Menu.buildFromTemplate([
+      { ...openWindowItem },
       { label: '设置', click: () => createChatWindow({ view: 'settings' }) },
       ...screenshotMenuItems(),
       { label: toggleLabel, click: toggleMainWindow },
@@ -1066,22 +1080,26 @@ const refreshMenus = () => {
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
 const setupTray = () => {
-  destroyTray();
   try {
     const icon = getTrayIcon();
     if (icon.isEmpty() && process.platform !== 'darwin') {
       console.error('[tray] icon is empty');
       return null;
     }
-    tray = process.platform === 'darwin'
-      ? new Tray(icon, TRAY_GUID)
-      : new Tray(icon);
+    const existing = tray && !tray.isDestroyed();
+    if (existing) {
+      tray.setImage(icon);
+    } else {
+      tray = process.platform === 'darwin'
+        ? new Tray(icon, TRAY_GUID)
+        : new Tray(icon);
+    }
     tray.setToolTip('DesktopFairy');
     if (process.platform === 'darwin') {
-      // Emoji title is the only visible element (icon is empty).
-      tray.setTitle('🧚‍♀️');
+      // Retain a visible fallback if an asset is missing, without widening a valid icon.
+      tray.setTitle(icon.isEmpty() ? '🧚‍♀️' : '');
     }
-    tray.on('click', () => {
+    if (!existing) tray.on('click', () => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
       // 「隐藏/显示模型」仅由菜单项控制；托盘点击不擅自显示 app 窗口，
       // 避免用户「打开菜单就自动弹出模型」。窗口可见时仅聚焦置顶。
@@ -1162,6 +1180,21 @@ app.whenReady().then(() => {
   }
   createMainWindow();
   setupIPC();
+  if (startupMigrationError) {
+    console.error('[startup] settings migration failed:', startupMigrationError.code || startupMigrationError.name);
+    void dialog.showMessageBox({
+      type: 'warning',
+      title: 'DesktopFairy 启动恢复',
+      message: '设置或会话数据迁移未完成',
+      detail: `应用已启动，原数据文件不会被自动覆盖。会话访问已暂停，设置保存会在迁移成功后恢复。\n\n请检查数据文件，或从备份恢复后重启应用。\n数据目录：${app.getPath('userData')}`,
+      buttons: ['打开数据目录', '稍后处理'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    }).then(({ response }) => {
+      if (response === 0) return shell.openPath(app.getPath('userData'));
+    }).catch(() => console.error('[startup] could not show migration recovery prompt'));
+  }
   void installBuiltinSkills().catch((err) => {
     console.error('[builtin-skills] install failed:', err);
   });
@@ -1237,7 +1270,6 @@ app.on('before-quit', () => {
   killAllSessions();
   killAllSshSessions();
   clearAllToolAborts();
-  abortAllAgentRuns();
   abortAllAiStreams();
   disposeAllMcpClients();
   selectionService.stopAll();

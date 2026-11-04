@@ -194,7 +194,7 @@ export default function TerminalHostPicker({
             <span className="ssh-picker-item-main">
               <span className="ssh-picker-item-name">本机</span>
               <span className="ssh-picker-item-detail">
-                {mode === "conversation" ? "本机 · 小雅" : "本地终端"}
+                {mode === "conversation" ? "本机对话" : "本地终端"}
               </span>
             </span>
           </Button>,

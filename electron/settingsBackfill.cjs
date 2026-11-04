@@ -5,10 +5,7 @@
  * so early stream/tool resolution (resolveForSend, host conversations) works
  * before the renderer's first settings:sync.
  *
- * Keep field defaults in sync with createTerminalAssistantDefaults /
- * createHostAssistantDefaults in src/shared/agent.ts. `soul` is intentionally
- * empty here: the renderer owns prompt text and syncs the full defaults on
- * its first settings load; main only needs the identity fields.
+ * Keep field defaults in sync with createTerminalAssistantDefaults in src/shared/agent.ts. The terminal prompt is shared with the renderer via agentEnvironmentPolicy.json.
  */
 
 const BUILTIN_AGENTS = [
@@ -17,7 +14,7 @@ const BUILTIN_AGENTS = [
     builtinRole: 'personal-assistant',
     name: '小雅',
     avatar: '🌸',
-    description: '桌面个人助手，聊天陪伴与日常事务',
+    description: '需求整理与技术方案研究',
     providerId: 'openai',
     modelName: 'gpt-4o-mini',
     soul: '',
@@ -38,9 +35,10 @@ const BUILTIN_AGENTS = [
     description: '终端里的运维助手，解释命令、诊断错误、操作会话',
     providerId: 'openai',
     modelName: 'gpt-4o-mini',
-    soul: '',
+    soul: require('./agentEnvironmentPolicy.json').terminalSoul,
     user: '',
-    disabledToolIds: ['bash', 'read', 'write', 'edit', 'glob', 'grep'],
+    disabledToolIds: [],
+    toolOverrides: {},
     mcpServerIds: [],
     enabledSkillIds: [],
     knowledgeBaseIds: [],
@@ -48,29 +46,13 @@ const BUILTIN_AGENTS = [
     envVars: {},
     chatMode: 'normal',
   },
-  {
-    id: 'host-assistant',
-    builtinRole: 'host-assistant',
-    name: '主机助手',
-    avatar: '🐧',
-    description: 'SSH 主机助手，直连远程主机执行命令与文件操作',
-    providerId: 'openai',
-    modelName: 'gpt-4o-mini',
-    soul: '',
-    user: '',
-    disabledToolIds: ['Terminal', 'bash', 'read', 'write', 'edit', 'glob', 'grep', 'McpManager'],
-    mcpServerIds: [],
-    enabledSkillIds: [],
-    knowledgeBaseIds: [],
-    maxTurns: 30,
-    envVars: {},
-    chatMode: 'normal',
-  },
+
 ];
 
 /** Backfill missing builtin agents onto a raw settings object (no full normalize). */
 function backfillBuiltinAgents(settings) {
-  const next = settings && typeof settings === 'object' ? { ...settings } : {};
+  const { migrateTerminalSettings } = require('./terminalAssistantMigration.cjs');
+  const next = migrateTerminalSettings(settings && typeof settings === 'object' ? settings : {});
   const agents = Array.isArray(next.agents) ? next.agents.filter(Boolean) : [];
   const have = new Set(agents.map((a) => a && a.id).filter(Boolean));
   let changed = false;

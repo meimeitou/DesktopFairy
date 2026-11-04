@@ -89,7 +89,7 @@ export default function TerminalSettingsTab({
   // 该组件是 keep-alive 的：外部跳转靠 nonce 触发一次分区切换，并回到分区顶部。
   useEffect(() => {
     if (!sectionRequest) return;
-    setActiveSection(sectionRequest.section);
+    setActiveSection(sectionRequest.section === "host-ai" ? "terminal-ai" : sectionRequest.section);
     contentRef.current?.scrollTo({ top: 0 });
   }, [sectionRequest?.nonce]);
   const [formMode, setFormMode] = useState<FormMode | null>(null);
@@ -564,13 +564,7 @@ export default function TerminalSettingsTab({
         >
           终端助手
         </Button>
-        <Button
-          type="text"
-          className={`terminal-tabstrip-btn${activeSection === "host-ai" ? " active" : ""}`}
-          onClick={() => setActiveSection("host-ai")}
-        >
-          主机助手
-        </Button>
+
       </div>
 
       <main ref={contentRef} className="terminal-settings-content">
@@ -869,10 +863,7 @@ export default function TerminalSettingsTab({
           </section>
         )}
         {activeSection === "terminal-ai" && (
-          <TerminalAiSettingsSection target="terminal" />
-        )}
-        {activeSection === "host-ai" && (
-          <TerminalAiSettingsSection target="host" />
+          <TerminalAiSettingsSection />
         )}
       </main>
 

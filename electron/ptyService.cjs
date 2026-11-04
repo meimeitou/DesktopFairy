@@ -779,8 +779,15 @@ function killSessionsForSender(sender) {
   }
 }
 
+function getOwnedSession(sessionId, sender) {
+  const session = sessions.get(sessionId);
+  if (!session || session.sender !== sender || sender.isDestroyed?.()) throw new Error('终端会话不可用或不属于当前窗口');
+  return session;
+}
+
 module.exports = {
   registerPtyHandlers,
+  getOwnedSession,
   runCommandInSession,
   stopActiveCapture,
   killAllSessions,

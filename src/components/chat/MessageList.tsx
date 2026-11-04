@@ -64,6 +64,7 @@ export interface MessageListProps {
   onCancelEdit?: () => void;
   editingMsgId?: string | null;
   onDelete?: (msgId: string) => void;
+  onFork?: (msgId: string) => void;
   onOpenCitation?: (citation: import("../../shared/knowledge").KnowledgeCitation) => void;
 }
 
@@ -88,6 +89,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       editingMsgId = null,
       onDelete,
       onOpenCitation,
+      onFork,
     },
     ref,
   ) {
@@ -478,6 +480,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     isEditing={item.msg.id === editingMsgId}
                     onRetry={item.msg.role === "user" ? onRetry : undefined}
                     onStartEdit={item.msg.role === "user" ? onStartEdit : undefined}
+                    onFork={item.msg.role === "assistant" ? onFork : undefined}
                     onConfirmEdit={onConfirmEdit}
                     onCancelEdit={onCancelEdit}
                     onDelete={onDelete}

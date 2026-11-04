@@ -8,7 +8,9 @@ import {
   AGENT_BACKEND_KEY,
   createPersonalAssistantDefaults,
   createTerminalAssistantDefaults,
-  createHostAssistantDefaults,
+  upgradeDefaultPersonalSoul,
+  upgradeDefaultTerminalSoul,
+  TERMINAL_DEFAULT_DISABLED_TOOL_IDS,
   findAgentById,
   isAgentBackend,
   normalizeAgentConfig,
@@ -26,9 +28,7 @@ import {
   type LlmProvider,
 } from "./providers";
 import {
-  DEFAULT_CHAT_MODE,
   normalizeChatMode,
-  type ChatMode,
 } from "./chatMode";
 import {
   DEFAULT_WEB_SEARCH_CONFIG,
@@ -67,6 +67,8 @@ export interface CustomLive2DModel {
 }
 
 export interface AppSettings {
+  terminalAssistantVersion?: number;
+  terminalAssistantMigrationSource?: Record<string, unknown>;
   activeProviderId: string;
   providers: LlmProvider[];
 
@@ -148,7 +150,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   agents: [
     createPersonalAssistantDefaults(),
     createTerminalAssistantDefaults(),
-    createHostAssistantDefaults(),
   ],
   terminalAgentId: TERMINAL_ASSISTANT_ID,
   activeChatAgentId: PERSONAL_ASSISTANT_ID,
@@ -357,7 +358,23 @@ export function finalizeSettings(
   for (const raw of sourceAgents) {
     // Pass the raw agent as fallback so pre-normalized fields (e.g. migrated
     // soul) survive instead of being replaced by builtin defaults.
-    const agent = normalizeAgentConfig(raw, raw);
+    if (raw && (raw.id === HOST_ASSISTANT_ID || raw.builtinRole === "host-assistant")) continue;
+    let agent = normalizeAgentConfig(raw, raw);
+    if ((agent.id === settings.terminalAgentId || agent.id === TERMINAL_ASSISTANT_ID) && !agent.toolOverrides) {
+      agent = {
+        ...agent,
+        disabledToolIds: [],
+        toolOverrides: Object.fromEntries(agent.disabledToolIds
+          .filter((id) => !TERMINAL_DEFAULT_DISABLED_TOOL_IDS.includes(id))
+          .map((id) => [id, false])),
+      };
+    }
+    if (agent.id === settings.terminalAgentId || agent.id === TERMINAL_ASSISTANT_ID) {
+      agent = { ...agent, soul: upgradeDefaultTerminalSoul(agent.soul) };
+    }
+    if (agent.id === PERSONAL_ASSISTANT_ID) {
+      agent = { ...agent, soul: upgradeDefaultPersonalSoul(agent.soul) };
+    }
     if (seenIds.has(agent.id)) continue;
     seenIds.add(agent.id);
     normalized.push(agent);
@@ -368,11 +385,6 @@ export function finalizeSettings(
   // fall activeChatAgentId back to the first non-terminal agent.
   if (!findAgentById(normalized, TERMINAL_ASSISTANT_ID)) {
     normalized.push(createTerminalAssistantDefaults());
-  }
-
-  // Invariant: the host assistant always exists (host conversations bind to it).
-  if (!findAgentById(normalized, HOST_ASSISTANT_ID)) {
-    normalized.push(createHostAssistantDefaults());
   }
 
   const terminalAgentId = findAgentById(normalized, settings.terminalAgentId)
@@ -433,6 +445,7 @@ export function finalizeSettings(
     ),
     customModels: normalizeCustomModels(settings.customModels),
     agents: normalized,
+    terminalAssistantVersion: 1,
     terminalAgentId,
     activeChatAgentId: activeChatAgentIdFinal,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
@@ -484,7 +497,13 @@ function migrateFromLegacy(
   // and finalizeSettings only migrates when agents is absent/empty.
   const { agents: _defaultAgents, ...defaults } = DEFAULT_SETTINGS;
   void _defaultAgents;
-  const base = { ...defaults, ...parsed };
+  const base = {
+    ...defaults,
+    ...parsed,
+    ...(parsed.terminalAssistantVersion !== 1
+      ? { terminalAssistantMigrationSource: parsed as Record<string, unknown> }
+      : {}),
+  };
   if (Array.isArray(parsed.providers) && parsed.providers.length > 0) {
     return finalizeSettings({
       ...base,

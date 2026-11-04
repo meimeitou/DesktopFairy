@@ -119,6 +119,7 @@ export default function AskUserQuestionCard({
               <div className="agent-tool-ask-question-text">{q.question}</div>
               {q.multiSelect ? (
                 <Checkbox
+                  direction="vertical"
                   disabled={submitting || submitted || !answerReady}
                   value={[
                     ...(selected[q.question] || []),
@@ -137,6 +138,7 @@ export default function AskUserQuestionCard({
                 />
               ) : (
                 <Radio
+                  direction="vertical"
                   disabled={submitting || submitted || !answerReady}
                   value={
                     otherSelected[q.question]

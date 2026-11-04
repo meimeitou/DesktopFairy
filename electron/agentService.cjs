@@ -2,18 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const { buildSkillsPrompt } = require('./agentSkillService.cjs');
-const { testWebSearchConfig, clearRequestTodos } = require('./agentBuiltinExecutors.cjs');
-const { abortRequestApprovals } = require('./agentToolApproval.cjs');
-const { loadMcpToolDefinitions } = require('./agentMcpClient.cjs');
-const { runAgentStream } = require('./ai/runAgentStream.cjs');
-const { getServersByIds } = require('./mcpServerService.cjs');
+const { testWebSearchConfig } = require('./agentBuiltinExecutors.cjs');
 const { getChatModeSuffix } = require('./agentBuiltinCatalog.cjs');
-const { getBuiltinTools, buildAgentToolDeps } = require('./ai/agentStreamShared.cjs');
 const { normalizeWebSearchConfig } = require('./webSearchProviders.cjs');
-const { getTerminalForeground } = require('./ptyService.cjs');
 const { formatSystemDateLine } = require('./systemDate.cjs');
-
-const inflightAgents = new Map();
 
 function getCurrentWebSearchConfig() {
   try {
@@ -27,11 +19,11 @@ function getCurrentWebSearchConfig() {
 }
 
 function buildTerminalEnvSection(terminalState) {
-  let envLine = '当前终端前台为本地 shell。';
+  let envLine = '你是终端页右侧已经打开的助手，对话绑定用户正在看的这个终端标签。当前标签是本机 shell，跑在安装 DesktopFairy 的这台电脑上。询问应用、进程、配置或本机路径时，就在这个终端里查，不要再问要在哪台机器上执行。';
   if (terminalState && terminalState.kind === 'remote') {
-    envLine = '⚠️ 当前终端处于 SSH 远程会话' +
+    envLine = '你是终端页右侧已经打开的助手，对话绑定用户正在看的这个终端标签。当前标签是 SSH 远程会话' +
       (terminalState.remoteHost ? '（' + terminalState.remoteHost + '）' : '') +
-      '。通过 Terminal 工具执行的命令将在远程主机上运行，请注意目标环境（路径、操作系统、已安装工具可能与本地不同）。';
+      '。询问应用或在这台机器上执行时，命令通过 Terminal 工具跑在该远程主机上，不要再问要在哪台机器上执行。路径、操作系统和已安装工具以远程环境为准，不要用本机经验猜测。';
   }
   let section = '## 当前终端环境\n\n' + envLine;
   // cwd comes from OSC 7 (zsh/bash shell integration) or OSC 1337 (iTerm2).
@@ -57,6 +49,43 @@ function buildToolListPrompt(enabledToolNames, context) {
   }
   const visible = names.filter((n) => !TOOLS_WITH_OWN_SECTION.has(n));
   return visible.length > 0 ? visible.join('/') : '';
+}
+
+function formatSavedHostLines(sshHosts) {
+  if (!Array.isArray(sshHosts) || sshHosts.length === 0) return '（暂无已保存主机）';
+  const lines = sshHosts
+    .filter((h) => h && h.name)
+    .map((h) => {
+      const name = String(h.name).replace(/\s+/g, ' ').trim();
+      const user = String(h.user || '?').replace(/\s+/g, ' ').trim();
+      const host = String(h.host || '?').replace(/\s+/g, ' ').trim();
+      return `- ${name} (${user}@${host}:${h.port || 22})`;
+    });
+  return lines.length > 0 ? lines.join('\n') : '（暂无已保存主机）';
+}
+
+function buildSavedHostSection(sshHosts, hostInfo, context) {
+  let section =
+    '## 已保存主机（ssh_*）\n\n' +
+    'ssh_* 由本软件直接连接已保存主机，与当前是主机对话还是终端对话无关。\n' +
+    formatSavedHostLines(sshHosts) +
+    '\n\n';
+  if (context === 'host') {
+    section += '当前是主机对话，没有可见终端，不能使用 Terminal。命令和文件都走 ssh_*。\n';
+  }
+  if (hostInfo) {
+    section +=
+      `绑定主机：${hostInfo.defaultHostName}，登录账号：${hostInfo.defaultHostUser || '（配置账号）'}。` +
+      '工具的 `hostId` 缺省即操作该主机，不要再问。用户点名其他主机时，把名称原样传给 ssh_* 的 `host`；工具会在已保存列表里搜索，并用一次 AskUserQuestion 确认后执行。不要自己再调用 AskUserQuestion。\n' +
+      `当前工作目录：${hostInfo.cwd || '（登录账号 home 目录）'}。相对路径基于当前 cwd 解析。\n`;
+  } else {
+    section +=
+      '当前没有绑定主机。用户给出主机名时，把名称原样传给 ssh_* 的 `host`。工具会在已保存列表里搜索匹配项，用一次 AskUserQuestion 确认后再执行。没有匹配就不要执行，也不要编造地址或凭据。同一台主机在本对话里确认过一次即可，不要重复提问。\n';
+  }
+  section +=
+    '切换 ssh_* 的工作目录必须用 ssh_cwd；单条命令内部的 cd 不改变后续 cwd；cd 失败必须报错，绝不静默回退。\n' +
+    'ssh_hosts 的新增、修改、删除必须等用户批准后才会写入，list 不需要批准。凭据不能由你创建，只能引用已有 credentialId。';
+  return section;
 }
 
 function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = null, enabledToolNames = [], sshHosts = [], hostInfo = null) {
@@ -85,16 +114,14 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
   const boundMcp = Array.isArray(agentConfig?.mcpServerIds)
     ? agentConfig.mcpServerIds.length
     : 0;
-  if (context !== 'host') {
-    if (boundMcp === 0) {
-      parts.push(
-        '## MCP 服务器管理\n\n当前会话未绑定 MCP 服务器。需要外部工具时可用 `McpManager`：`list` 查看可用服务器，`add` 新增。绑定后其工具在下一轮请求生效。'
-      );
-    } else {
-      parts.push(
-        '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
-      );
-    }
+  if (boundMcp === 0) {
+    parts.push(
+      '## MCP 服务器管理\n\n当前会话未绑定 MCP 服务器。需要外部工具时可用 `McpManager`：`list` 查看可用服务器，`add` 新增。绑定后其工具在下一轮请求生效。'
+    );
+  } else {
+    parts.push(
+      '## MCP 服务器管理\n\n你可以使用 `McpManager` 工具探查与管理本应用的 MCP 服务器（外部工具服务）：\n- `list` — 列出全部服务器及其运行时状态、是否绑定当前会话\n- `status` — 查看单个服务器的状态、最近错误与日志（需 `serverId`）\n- `tools` — 列出某服务器暴露的工具名与入参 schema（需 `serverId`）\n- `enable` / `disable` — 启用或停用服务器（停用会立即断开子进程/连接）\n- `restart` / `stop` — 重启或停止已运行的服务器\n- `add` / `edit` / `remove` — 新增、修改、删除服务器配置（`add`/`edit` 传入 `server` 对象；`remove` 传入 `serverId`）\n\n使用前先 `list` 探查现状；需要某服务器工具细节时用 `tools`。状态切换与配置变更会向用户请求确认。新增的服务器 `installSource` 固定为 `manual`；内置预设的 `command` 不可改写。'
+    );
   }
   parts.push(
     '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。若需指向某条证据，用简短说明即可（如「见上方 WebSearch 结果 #2」）。'
@@ -107,57 +134,20 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
         '**参数**：`questions` 1–4 题；每题 `question` + `options`（0–4 个，可为 `{label, description?}` 或字符串）。界面始终有「其他」供自由输入，不要在 options 里重复。需要多选时设 `multiSelect: true`。'
     );
   }
-  if (context === 'terminal') {
+  if (context === 'terminal' || context === 'terminal-ssh') {
     parts.push(
       '## 终端操作\n\n你可以使用 Terminal 工具将 shell 命令发送到用户当前可见的终端执行，命令输出会实时显示在用户终端中，同时返回给你用于判断下一步操作。在当前终端会话中，所有 shell 命令都必须通过 Terminal 工具执行；发送命令前确保意图明确，命令执行结果（包括 exit code）会返回给你。过长的输出会被截断，如需完整输出请缩小命令范围。'
     );
-    const hasSshExec = enabledToolNames.includes('ssh_exec');
-    const hasSshHosts = enabledToolNames.includes('ssh_hosts');
-    if ((hasSshExec || hasSshHosts) && Array.isArray(sshHosts) && sshHosts.length > 0) {
-      const hostLines = sshHosts
-        .filter((h) => h && h.name)
-        .map((h) => {
-          const name = String(h.name).replace(/\s+/g, ' ').trim();
-          const user = String(h.user || '?').replace(/\s+/g, ' ').trim();
-          const host = String(h.host || '?').replace(/\s+/g, ' ').trim();
-          return `- ${name} (${user}@${host}:${h.port || 22})`;
-        })
-        .join('\n');
-      if (hostLines) {
-        let section =
-          '## SSH 远程执行\n\n你可以使用 ssh_exec 工具在以下已保存主机上执行一次性命令：\n' +
-          hostLines +
-          '\n\n主机名不唯一时会要求澄清。命令在远程机器上执行，与本地环境无关。';
-        if (hasSshHosts) {
-          section +=
-            '\n\n你可以使用 ssh_hosts 工具管理（新增/更新/删除/列出）已保存主机。凭据不可通过 agent 管理——只能引用已存在凭据的 credentialId。';
-        }
-        parts.push(section);
-      }
-    }
+    parts.push(
+      '当前标签上的 shell 命令只用 Terminal，不要在 Terminal 里再执行 ssh 或 scp。已保存主机上的文件和命令只用 ssh_*。从另一台已保存主机读取并写回当前标签时，用 ssh_read 读取，再用 Terminal 写入。Terminal 跟随当前交互会话，包括二次 SSH、sudo、容器；ssh_* 使用已保存主机的配置账号和自己的工作目录，不跟随终端里的 cd 或登录变化。'
+    );
     parts.push(buildTerminalEnvSection(terminalState));
   }
 
-  if (context === 'host') {
-    parts.push(
-      '## 远程主机\n\n你可以使用 ssh_* 工具直接操作已保存的 SSH 主机（无需已打开的终端）：\n' +
-        (Array.isArray(sshHosts) && sshHosts.length > 0
-          ? sshHosts
-              .filter((h) => h && h.name)
-              .map((h) => {
-                const name = String(h.name).replace(/\s+/g, ' ').trim();
-                const user = String(h.user || '?').replace(/\s+/g, ' ').trim();
-                const host = String(h.host || '?').replace(/\s+/g, ' ').trim();
-                return `- ${name} (${user}@${host}:${h.port || 22})`;
-              })
-              .join('\n')
-          : '（暂无已保存主机）') +
-        '\n\n' +
-        (hostInfo
-          ? `当前对话所属主机：${hostInfo.defaultHostName}。工具的 \`hostId\` 参数缺省即操作该主机；用户明确要求操作另一台主机时，首次需用户确认（批准后在本对话内持续有效）。\n当前工作目录：${hostInfo.cwd || '（登录账号 home 目录）'}。相对路径基于当前 cwd 解析。\n切换工作目录必须用 ssh_cwd 工具显式完成；单条命令内部的 cd 不改变后续 cwd；cd 失败必须报错，绝不静默回退。`
-          : '`hostId` 缺省为对话所属主机；跨主机操作首次需用户确认。相对路径基于当前 cwd 解析；cd 切换必须用 ssh_cwd。')
-    );
+  if (context === 'terminal' || context === 'terminal-ssh' || context === 'host') {
+    parts.push(buildSavedHostSection(sshHosts, hostInfo, context));
   }
+  if (context === 'local') parts.push('## 本机环境\n\n当前为本机对话，本地文件工具作用于运行 DesktopFairy 的计算机；仅使用当前已提供的工具。');
   const modeSuffix = getChatModeSuffix(agentConfig?.chatMode);
   if (modeSuffix) parts.push(modeSuffix.trim());
   return parts.join('\n\n');
@@ -169,127 +159,10 @@ function mergeSystemMessage(messages, systemPrompt) {
   return [{ role: 'system', content: systemPrompt.trim() }, ...rest];
 }
 
-function registerAgentHandlers(ipcMain, deps) {
-  const { getWindows, getParentWindow, chatLogsDir } = deps;
-
-  // Legacy IPC — prefer ai:stream_open for new callers. Shares tool/MCP wiring via agentStreamShared.
-  ipcMain.handle('agent:run', async (event, payload) => {
-    const {
-      requestId,
-      messages,
-      terminalSessionId,
-      topicId,
-    } = payload || {};
-
-    if (!requestId || !Array.isArray(messages)) {
-      throw new Error('agent:run invalid payload');
-    }
-
-    const settingsSnapshot = require('./settingsSnapshot.cjs');
-    const resolved = settingsSnapshot.resolveForSend({
-      agentConfig: payload?.agentConfig,
-      apiConfig: payload?.apiConfig,
-    });
-    if (!resolved.ok || !resolved.apiConfig || !resolved.agentConfig) {
-      throw new Error(resolved.error || 'agent:run missing API config');
-    }
-    const apiConfig = resolved.apiConfig;
-    const agentConfig = resolved.agentConfig;
-
-    const controller = new AbortController();
-    const agentState = { controller, bypassApproval: false };
-    inflightAgents.set(requestId, agentState);
-    const sender = event.sender;
-    const parentWindow = getParentWindow?.() || null;
-
-    const safeSend = (channel, data) => {
-      try {
-        if (!sender.isDestroyed()) sender.send(channel, data);
-      } catch {
-        /* receiver gone */
-      }
-    };
-
-    let mcpRuntime = null;
-    try {
-      mcpRuntime = await loadMcpToolDefinitions(
-        getServersByIds(agentConfig.mcpServerIds)
-      );
-      const context = terminalSessionId ? 'terminal' : 'local';
-      const builtinTools = getBuiltinTools(agentConfig, context);
-      const tools = [...builtinTools, ...(mcpRuntime.definitions || [])];
-      const terminalState = context === 'terminal' ? await getTerminalForeground(terminalSessionId) : null;
-      const enabledToolNames = builtinTools.map((t) => t.function.name);
-      const systemPrompt = buildAgentSystemPrompt(agentConfig, context, terminalState, enabledToolNames, settingsSnapshot.getSnapshot()?.sshHosts || []);
-      const apiMessages = (messages || []).filter((m) => m.role !== 'system');
-      const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
-      const reasoningEffort = agentConfig.reasoningEffort;
-      const legacyTopicId = topicId || `legacy:${requestId}`;
-
-      const toolDeps = buildAgentToolDeps({
-        topicId: legacyTopicId,
-        requestId,
-        agentConfig,
-        mcpRuntime,
-        signal: controller.signal,
-        registerMcpCall: (_tid, callId) => {
-          try {
-            const { manager } = require('./aiStreamService.cjs');
-            manager.registerMcpCall(legacyTopicId, callId);
-          } catch {
-            /* stream manager optional */
-          }
-        },
-        getWindows,
-        parentWindow,
-        sender,
-        safeSend,
-        getBypassApproval: () => agentState.bypassApproval === true,
-        webSearchConfig: getCurrentWebSearchConfig(),
-        terminalSessionId,
-        suppressToolDoneEvent: true,
-      });
-
-      const { toolSnapshot, aborted, usage } = await runAgentStream({
-        requestId,
-        messages: apiMessages,
-        systemPrompt,
-        apiConfig,
-        toolDefinitions: tools,
-        toolDeps,
-        maxTurns,
-        reasoningEffort,
-        signal: controller.signal,
-        safeSend,
-      });
-
-      safeSend('chat:stream:done', {
-        requestId,
-        ...(aborted || controller.signal.aborted ? { aborted: true } : {}),
-        tools: toolSnapshot,
-        usage: usage || undefined,
-      });
-    } catch (e) {
-      if (e && e.name === 'AbortError') {
-        safeSend('chat:stream:done', { requestId, aborted: true });
-      } else {
-        safeSend('chat:stream:error', {
-          requestId,
-          message: String(e?.message || e),
-        });
-      }
-    } finally {
-      inflightAgents.delete(requestId);
-      abortRequestApprovals(requestId);
-      clearRequestTodos(requestId);
-      mcpRuntime?.dispose?.();
-    }
-  });
-
+function registerAgentHandlers(ipcMain) {
   ipcMain.handle('agent:abort', async (_event, payload) => {
     const requestId = payload?.requestId;
-    const agentState = requestId ? inflightAgents.get(requestId) : null;
-    if (agentState) agentState.controller.abort();
+    if (!requestId) return;
     try {
       const { manager } = require('./aiStreamService.cjs');
       for (const [, entry] of manager.activeStreams.entries()) {
@@ -308,12 +181,6 @@ function registerAgentHandlers(ipcMain, deps) {
     const topicId = payload?.topicId;
     let ok = false;
 
-    const agentState = requestId ? inflightAgents.get(requestId) : null;
-    if (agentState) {
-      agentState.bypassApproval = true;
-      ok = true;
-    }
-
     try {
       const { setTopicBypassApproval, setBypassApprovalByRequestId } = require('./aiStreamService.cjs');
       // setTopicBypassApproval / setBypassApprovalByRequestId also flush any
@@ -324,7 +191,7 @@ function registerAgentHandlers(ipcMain, deps) {
       /* stream manager optional */
     }
 
-    // Legacy agent:run may have no stream row — still release hung approvals.
+    // Streams may have already finished (no stream row) — still release hung approvals.
     if (requestId) {
       try {
         const { approveRequestApprovals } = require('./agentToolApproval.cjs');
@@ -343,16 +210,8 @@ function registerAgentHandlers(ipcMain, deps) {
   });
 }
 
-function abortAllAgentRuns() {
-  for (const agentState of inflightAgents.values()) {
-    agentState.controller.abort();
-  }
-  inflightAgents.clear();
-}
-
 module.exports = {
   registerAgentHandlers,
-  abortAllAgentRuns,
   buildAgentSystemPrompt,
   getCurrentWebSearchConfig,
 };

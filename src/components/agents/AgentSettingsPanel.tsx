@@ -42,21 +42,14 @@ export default function AgentSettingsPanel({
   const [section, setSection] = useState<AgentConfigSection>("basic");
 
   const isTerminal = agent.id === settings.terminalAgentId;
-  const isHost = agent.builtinRole === "host-assistant";
   const builtinLabel =
     agent.builtinRole === "personal-assistant"
       ? "内置 · 个人助手"
       : agent.builtinRole === "terminal-assistant"
         ? "内置 · 终端助手"
-        : agent.builtinRole === "host-assistant"
-          ? "内置 · 主机助手"
-          : undefined;
+        : undefined;
 
-  const sections = AGENT_CONFIG_SECTIONS.filter(
-    (item) => !(isHost && item.id === "mcp"),
-  );
-  // 主机助手隐藏 MCP 分区：切换智能体后 section 可能指向被过滤掉的分区，
-  // 否则会出现「正文渲染 MCP、chips 却没有一个高亮」的孤儿状态。
+  const sections = AGENT_CONFIG_SECTIONS;
   const activeSection = sections.some((item) => item.id === section)
     ? section
     : sections[0].id;
@@ -68,14 +61,14 @@ export default function AgentSettingsPanel({
           <AgentBasicSection settings={settings} agent={agent} onChange={onChange} />
         );
       case "prompt":
-        return <AgentPromptSection agent={agent} onChange={onChange} />;
+        return <AgentPromptSection agent={agent} onChange={onChange} isTerminal={isTerminal} />;
       case "builtin":
         return (
           <AgentToolsSection
             panel="builtin"
             agent={agent}
             onAgentChange={onChange}
-            context={isHost ? "host" : isTerminal ? "terminal" : "local"}
+            context={isTerminal ? "terminal" : "local"}
           />
         );
       case "mcp":

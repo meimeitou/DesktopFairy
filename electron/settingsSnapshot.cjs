@@ -148,6 +148,8 @@ function resolveForSend(payload = {}) {
     builtinRole: diskAgent.builtinRole,
     providerId: diskAgent.providerId,
     modelName: diskAgent.modelName,
+    disabledToolIds: diskAgent.disabledToolIds,
+    toolOverrides: diskAgent.toolOverrides,
   };
   return {
     ok: true,

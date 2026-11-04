@@ -78,7 +78,6 @@ ChatPage / TerminalAgentDrawer
   → chunkBridge → chat:stream:chunk / agent:stream:tool
   → chat:stream:done（含 tools snapshot）
 
-Legacy: agent:run 仍保留（同步等待、无 topic 管理），新代码请用 ai:stream_open。
 普通对话: chat:send 不变（无系统提示词、无工具）。
 ```
 
@@ -98,6 +97,8 @@ Legacy: agent:run 仍保留（同步等待、无 topic 管理），新代码请�
 
 **Renderer 传输层**：`src/services/aiTransport/IpcChatTransport.ts` — `openAgentStream`、`attachTopicStream`、`replayLegacyStreamEvents`、`abortTopicStream`。
 
+**智能体会话状态机**：`src/shared/agentSession.ts` — chunk/done/error/tool/compact 的全部状态转移（纯函数，vitest 直接测）。聊天页、终端抽屉、主机面板三个界面经 `src/hooks/useAgentChatSession.ts`（IPC 订阅 + requestId→会话路由 + attach 回放）共用它；新增聊天面时不要手写流编排，接这个 hook。
+
 **关窗重连**：`ai:stream_attach` 返回 `legacyEvents`，renderer 回放错过的 `chat:stream:*` 事件；进行中流通过 `broadcastToTopic` 推送到所有已 attach 窗口。
 
 **同 topic 并发**：`ai:stream_open` 若 topic 已在 streaming 返回 `{ mode: 'blocked' }`；UI 应在发送前检查 `streaming` 状态。
@@ -108,8 +109,7 @@ Legacy: agent:run 仍保留（同步等待、无 topic 管理），新代码请�
 
 ## Agent System Prompt
 
-Agent config lives at `settings.agent` (`AgentConfig` in `src/shared/agent.ts`). The system prompt is built in the **main process** by `buildAgentSystemPrompt()` in `electron/agentService.cjs`, NOT in the renderer. The renderer passes `agentConfig` via `ai:stream_open` (or legacy `agent:run`); any system message in the renderer payload is stripped and replaced in main.
-
+Agent config lives at `settings.agents` (`AgentConfig` in `src/shared/agent.ts`). The system prompt is built in the **main process** by `buildAgentSystemPrompt()` in `electron/agentService.cjs`, NOT in the renderer. The renderer passes `agentConfig` via `ai:stream_open`; any system message in the renderer payload is stripped and replaced in main.
 Prompt assembly order: `soul` → `user` (wrapped under `# 用户档案` header) → skills block → hardcoded tool guidance → chat-mode suffix.
 
 - **`soul`** (SOUL.md): agent's purpose, personality, execution rules. Migrated from legacy `instructions` field by `normalizeAgentConfig`.

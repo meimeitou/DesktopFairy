@@ -3,6 +3,7 @@ import { FieldHead } from "../../HintTip";
 import {
   DEFAULT_SOUL,
   DEFAULT_TERMINAL_SOUL,
+  DEFAULT_TERMINAL_USER_TEMPLATE,
   DEFAULT_USER_TEMPLATE,
   type AgentConfig,
 } from "../../../shared/agent";
@@ -10,13 +11,15 @@ import {
 interface Props {
   agent: AgentConfig;
   onChange: (patch: Partial<AgentConfig>) => void;
+  isTerminal?: boolean;
 }
 
-export default function AgentPromptSection({ agent, onChange }: Props) {
+export default function AgentPromptSection({ agent, onChange, isTerminal = agent.builtinRole === "terminal-assistant" }: Props) {
   const defaultSoul =
-    agent.builtinRole === "terminal-assistant"
+    isTerminal
       ? DEFAULT_TERMINAL_SOUL
       : DEFAULT_SOUL;
+  const userTemplate = isTerminal ? DEFAULT_TERMINAL_USER_TEMPLATE : DEFAULT_USER_TEMPLATE;
   const isDefaultSoul = agent.soul.trim() === defaultSoul.trim();
 
   return (
@@ -55,7 +58,9 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
           <div className="agent-manuscript-spine">
             <FieldHead
               htmlFor="agent-user"
-              hint="记录你的身份、偏好与工作习惯，智能体据此个性化回复。留空则不注入。"
+              hint={isTerminal
+                ? "记录已确认的长期沟通偏好、工作背景与运维习惯。当前主机和目录由会话提供，不填写凭据；留空则不注入。"
+                : "记录你的身份、偏好与工作习惯，智能体据此个性化回复。留空则不注入。"}
             >
               USER.md
             </FieldHead>
@@ -64,7 +69,7 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
                 type="default"
                 size="small"
                 disabled={!!agent.user.trim()}
-                onClick={() => onChange({ user: DEFAULT_USER_TEMPLATE })}
+                onClick={() => onChange({ user: userTemplate })}
               >
                 载入模板
               </Button>
@@ -85,7 +90,7 @@ export default function AgentPromptSection({ agent, onChange }: Props) {
             value={agent.user}
             onChange={(e) => onChange({ user: e.target.value })}
             placeholder={
-              "# 用户档案\n\n- 称呼：\n- 时区：UTC+8\n- 偏好的沟通风格：\n- 常用工具："
+              isTerminal ? userTemplate : "# 用户档案\n\n- 称呼：\n- 时区：UTC+8\n- 偏好的沟通风格：\n- 常用工具："
             }
           />
         </div>

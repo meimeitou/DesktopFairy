@@ -1,9 +1,9 @@
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import {
   filterHitsByThreshold,
   mergeKnowledgeHits,
   normalizeKnowledgeSettings,
-  splitMarkdownChunks,
   uniqueCopyName,
   replaceDocumentImages,
   normalizeKnowledgeBaseKind,
@@ -114,6 +114,11 @@ describe("filterHitsByThreshold", () => {
     expect(kept.map((h) => h.sourceName)).toEqual(["edge", "high"]);
   });
 });
+
+const nodeRequire = createRequire(import.meta.url);
+const { splitMarkdownChunks } = nodeRequire("../../electron/knowledge/lib.cjs") as {
+  splitMarkdownChunks: (text: string, chunkSize: number, chunkOverlap: number) => string[];
+};
 
 describe("splitMarkdownChunks", () => {
   it("keeps heading blocks together when they fit", () => {

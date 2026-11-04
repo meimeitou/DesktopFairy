@@ -115,6 +115,10 @@
 
 **托盘**：设置、显示/隐藏模型、退出（Live2D 相关项已移至设置页）。
 
+macOS 托盘使用 `trayIconTemplate.png`（16pt，配套 `@2x`）且不附加标题，缺图时才回退为 emoji。启动延迟检查及显示器变化复用同一个 Tray，不重复销毁重建；菜单栏空间不足时仍可能被系统收起。
+
+启动设置迁移由 `electron/startupSettings.cjs` 捕获异常。迁移失败时仍创建托盘和窗口并显示恢复提示，暂停会话 IPC（包括可能回写索引的读取回退）及快捷键设置写入；`settings:sync` 迁移重试成功后解除保护，避免以空索引覆盖损坏数据。
+
 **macOS 菜单**：应用名菜单（设置、显示/隐藏、退出）+ 编辑菜单（复制/粘贴/全选）。
 
 ### 5.2 Live2D 角色引擎
@@ -188,7 +192,6 @@ Main (aiStreamService.cjs)
   → AiService.streamText → ToolLoopAgent
   → chunkBridge → chat:stream:chunk / agent:stream:tool / chat:stream:done
 
-Legacy: agent:run（同步等待，无 topic 管理，仍可用但不推荐新接入）
 ```
 
 | topicId 来源 | 场景 |
@@ -283,7 +286,7 @@ interface LlmProvider {
 
 **工具开关**：每个 agent 单套 `disabledToolIds`（旧的 `terminalDisabledToolIds`/`enableTerminalTool` 已删）；场景强制规则在 `getEnabledAgentBuiltinTools(agent, context)` 上层叠加——local 强制禁 Terminal，terminal 强制禁 bash，设置面板以「场景强制」徽章展示。
 
-**主机对话**（内置「主机助手」`host-assistant`，终端页默认视图）：`electron/hostConversationService.cjs` 提供 per-conversation 运行时——对话绑定主机（`ChatTopic.host`，含跨主机授权 `grants` 与按主机持久化 `cwdByHost`，身份指纹 `user@host:port[?jump=]` 变化即失效）、force 审批（ssh_hosts 写操作与未授权跨主机调用，批量 bypass 跳过、仅单卡可决）、`ssh_hosts` add/update/delete 收敛入口（update 变更身份清授权与 cwd；delete 先 abort 流再级联删对话）。远端执行走 `withSftp`（SFTP）与 `execOnSavedHost`（命令，cwd 前缀 `cd '<cwd>' &&`，cd 失败报错不静默回 home）；快照 key 为 `topicId:hostId:path`，与本地快照隔离。
+**主机对话**（内置「主机助手」`host-assistant`，终端页默认视图）：`electron/hostConversationService.cjs` 提供 per-conversation 运行时——对话绑定主机（`ChatTopic.host`，含跨主机授权 `grants` 与按主机持久化 `cwdByHost`，身份指纹 `user@host:port[?jump=]` 变化即失效）、force 审批（ssh_hosts 写操作与未授权跨主机调用，批量 bypass 跳过、仅单卡可决）、`ssh_hosts` add/update/delete 收敛入口（update 变更身份清授权与 cwd；delete 先 abort 流再级联删对话）。远端执行走 `withSftp`（SFTP）与 `execOnSavedHost`（命令，cwd 前缀 `cd '<cwd>' &&`，cd 失败报错不静默回 home）；快照 key 为 `topicId:hostId:path`，与本地快照隔离。工具能力与本地智能体对齐：MCP 服务器绑定、McpManager、Skills、TodoWrite、WebFetch/WebSearch、AskUserQuestion 照常可用，仅本机 FS/bash 工具被场景强制禁用（远程对应物为 ssh_* 系列）；Skills 在主机对话仅允许 load。主机面板（`HostChatPanel`）功能与聊天页对齐：消息重试/编辑/删除、斜杠命令（/clear、/compact、/技能）、压缩上下文、清空消息、知识库绑定与引用、maxTurns 续跑卡、单工具调用取消。
 
 **技能系统**（`electron/agentSkillService.cjs`）：
 
@@ -386,7 +389,6 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | `ai:stream_detach` | `{ topicId }` |
 | `ai:stream_abort` | `{ topicId?, requestId? }` |
 | `ai:tool:bypass_approval` | `{ topicId }` — 本次 topic 后续工具免审批 |
-| `agent:run` | **Legacy** — `{ requestId, messages, agentConfig, apiConfig }` |
 | `agent:abort` | `{ requestId }` — 同时尝试 abort 对应 ai stream |
 | `agent:tool:approve` | `{ approvalId, approved }` |
 | `agent:tool:bypass_approval` | `{ requestId?, topicId? }` |
@@ -445,11 +447,10 @@ electron/
     chunkBridge.cjs         # UIMessageChunk → legacy IPC + tool ledger
     agentStreamShared.cjs   # 共享 buildAgentToolDeps
     topicBroadcast.cjs      # 多窗口广播 + MCP abort 包装
-    runAgentStream.cjs      # legacy agent:run 内联消费流
     streamManager/
       AiStreamManager.cjs   # attach/detach、grace、idle timeout、MCP callId
       pipeStreamLoop.cjs    # ReadableStream 消费循环
-  agentService.cjs          # buildAgentSystemPrompt、legacy agent:run
+  agentService.cjs          # buildAgentSystemPrompt、agent:abort / websearch:test
   agentTools.cjs            # 工具执行路由 + 审批
   agentBuiltinCatalog.cjs   # 内置工具定义、参数 schema、审批模式
   agentBuiltinExecutors.cjs # 内置工具执行器（read/write/edit/bash/glob/grep/WebSearch/UpdateProfile…）
@@ -520,6 +521,7 @@ src/
     agentSettingsSections.ts
     agentAvatar.ts
     chatMode.ts             # ChatMode 类型、模式卡片
+    agentSession.ts         # 智能体会话状态机（chunk/done/error/tool/compact 转移）
     chatMessages.ts         # 上下文过滤、API 消息构建、trimMessagesForApi
     chatSession.ts          # ChatSession 类型、多会话
     chatAttachments.ts
@@ -528,6 +530,8 @@ src/
     live2dPaths.ts          # bundled/local 路径判定与 dfmodel URL
     selectionActions.ts
     webSearch.ts            # 网络搜索配置类型
+  hooks/
+    useAgentChatSession.ts  # 智能体会话 React hook（IPC 订阅、requestId 路由、attach 回放）
   services/
     aiTransport/
       IpcChatTransport.ts  # openAgentStream、attach、replay、abort
@@ -540,6 +544,18 @@ public/
   models/                   # Live2D 模型资源
   shaders/                  # WebGL shader
 ```
+
+---
+
+### 终端助手与运行环境
+
+终端页面的本机对话、主机对话和终端抽屉共用 `terminal-assistant`（或 `terminalAgentId` 指定的配置）。主进程的 `agentEnvironment.cjs` 从 topic 主机绑定或属于请求窗口的有效 session 解析环境；`ai:stream_open` 使用该逻辑，不再根据助手角色判断远程环境。
+
+`agentEnvironmentPolicy.json` 是 renderer 与 main 共用的工具能力表：本机对话开放本地文件工具、默认关闭 `bash`；终端通过 `Terminal` 操作交互会话；明确绑定已保存 SSH 主机的终端额外开放远程文件工具；主机对话仅提供远程命令与文件工具。`toolOverrides` 的缺省/true/false 表示环境默认/启用/禁用，不能突破环境或计划模式的限制。MCP、技能和知识库配置在各入口共用。
+
+`Terminal` 跟随当前交互环境；独立 SSH 工具固定使用绑定主机及配置账号，cwd 不跟随终端中的 `cd`、二次 SSH、容器或 `sudo`。调用卡片记录解析后的目标与账号。跨主机首次调用强制逐卡授权，全自动模式不可绕过；主机指纹变化使旧授权与 cwd 失效。终端的 SSH 授权/cwd 保存在 session 内，主机对话的状态继续随 topic 持久化。
+
+首次升级在 `userData/terminal-assistant-migration-v1/` 备份原设置和 topic 索引后迁移；主机助手与终端页本机对话的助手引用改为统一助手，消息文件不重写。以终端助手配置为主，移除旧环境默认禁用项，保留其他工具禁用偏好和自定义 SOUL。旧 `host-ai` 设置链接导向统一设置。仅有 localStorage 的旧设置在首次同步时另存 `renderer-settings.json` 备份。
 
 ---
 
@@ -598,7 +614,8 @@ interface AgentConfig {
   modelName: string;
   soul: string;                 // SOUL.md — 人格与执行规则
   user: string;                 // USER.md — 用户偏好（留空则不注入）
-  disabledToolIds: string[];    // 单套；场景强制（local 禁 Terminal / terminal 禁 bash）运行时叠加
+  disabledToolIds: string[];    // 旧配置兼容；统一终端助手迁移后使用 toolOverrides
+  toolOverrides?: Record<string, boolean>; // 缺省跟随环境默认，true/false 为用户偏好
   mcpServerIds: string[];
   enabledSkillIds: string[];
   knowledgeBaseIds: string[];
@@ -686,9 +703,6 @@ await openAgentStream({
 });
 // 监听 chat:stream:chunk / agent:stream:tool / chat:stream:done（与旧版相同）
 // 关窗重连：attachTopicStream(topicId) 回放 legacyEvents
-
-// Legacy（不推荐新代码使用）
-// await api.invoke('agent:run', { requestId, messages, agentConfig, apiConfig, ... });
 
 // 快捷指令 /compact — 发送压缩 prompt，流结束后自动清除旧上下文
 handleSend(COMPACT_PROMPT);  // 在 onChatStreamDone 中检测并插入 clear + 摘要

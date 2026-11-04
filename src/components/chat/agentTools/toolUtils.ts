@@ -31,6 +31,7 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
   // ssh_exec：命令行摘要带目标主机 —— 审批卡片必须能看到会打到哪台机器。
   if (toolName === "ssh_exec") {
     const host =
+      (typeof args.targetLabel === "string" ? args.targetLabel : "") ||
       (typeof args.host === "string" ? args.host.trim() : "") ||
       (typeof args.hostId === "string" ? args.hostId.trim() : "");
     const cmd = extractCommand(args);
@@ -42,6 +43,7 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
     const action = typeof args.action === "string" ? args.action.trim() : "";
     const fields = (args.fields ?? {}) as Record<string, unknown>;
     const host =
+      (typeof args.targetLabel === "string" ? args.targetLabel : "") ||
       (typeof args.host === "string" && args.host.trim()) ||
       (typeof fields.name === "string" ? fields.name.trim() : "");
     if (action) return host ? `${action} ${host}` : action;
@@ -54,7 +56,7 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
     toolName === "ssh_grep" ||
     toolName === "ssh_cwd"
   ) {
-    const hostId = typeof args.hostId === "string" ? args.hostId.trim() : "";
+    const hostId = typeof args.targetLabel === "string" ? args.targetLabel : typeof args.hostId === "string" ? args.hostId.trim() : "";
     const p =
       (typeof args.path === "string" && args.path.trim()) ||
       (typeof args.pattern === "string" ? args.pattern.trim() : "");
@@ -62,13 +64,14 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
     if (p) return p;
   }
   if (toolName === "ssh_edit") {
-    const hostId = typeof args.hostId === "string" ? args.hostId.trim() : "";
+    const hostId = typeof args.targetLabel === "string" ? args.targetLabel : typeof args.hostId === "string" ? args.hostId.trim() : "";
     const input = typeof args.input === "string" ? args.input : "";
     const firstSection = input.split("\n").find((l) => l.trim().startsWith("["));
     const head = firstSection || input;
     if (hostId && head) return `[${hostId}] ${head.slice(0, 120)}`;
     if (head) return head.slice(0, 120);
   }
+  if (toolName === "Terminal" && typeof args.targetLabel === "string") return `[${args.targetLabel}] ${extractCommand(args)}`;
   const fromFields = extractCommand(args);
   if (fromFields) return fromFields;
 

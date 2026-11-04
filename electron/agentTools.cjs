@@ -82,14 +82,29 @@ async function requestInlineToolApproval(toolCall, deps, args, rawArgs, { force 
   return 'approved';
 }
 
+function toolFailureMessage(resultText) {
+  if (typeof resultText !== 'string') return null;
+  const trimmed = resultText.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    const obj = JSON.parse(trimmed);
+    if (!obj || obj.ok !== false) return null;
+    return typeof obj.error === 'string' && obj.error ? obj.error : 'Tool error';
+  } catch {
+    return null;
+  }
+}
+
 function returnToolResult(deps, toolCallId, toolName, rawArgs, resultText) {
   if (!deps.suppressToolDoneEvent) {
+    const errorMessage = toolFailureMessage(resultText);
     emitToolEvent(deps, {
       toolCallId,
       toolName,
       toolArgs: rawArgs,
-      status: 'done',
+      status: errorMessage ? 'error' : 'done',
       resultPreview: resultText,
+      ...(errorMessage ? { message: errorMessage } : {}),
     });
   }
   return { resultText, denied: false };
@@ -216,9 +231,95 @@ async function executeAskUserQuestion(toolCall, deps, args, rawArgs, toolCallId)
   );
 }
 
+function savedHostLabel(host) {
+  return `${host.name} (${host.user || '?'}@${host.host || '?'}:${host.port || 22})`;
+}
+
+function explicitHostQuery(args, rt) {
+  const name = typeof args.host === 'string' ? args.host.trim() : '';
+  if (name) return name;
+  const id = typeof args.hostId === 'string' ? args.hostId.trim() : '';
+  if (id && id !== rt.defaultHostId) return id;
+  return '';
+}
+
+function pickHostFromAnswer(matches, answer) {
+  const text = String(answer || '').trim();
+  if (!text) return null;
+  const byLabel = matches.find((h) => savedHostLabel(h) === text || h.name === text || h.id === text);
+  if (byLabel) return byLabel;
+  const again = matches.filter((h) => {
+    const blob = `${h.name} ${h.host || ''} ${h.user || ''}@${h.host || ''}`.toLowerCase();
+    return blob.includes(text.toLowerCase());
+  });
+  return again.length === 1 ? again[0] : null;
+}
+
+/** One AskUserQuestion before ssh_* when the user named a host that is not yet granted. */
+async function confirmSavedSshHost(deps, args, toolCallId) {
+  const rt = deps.hostRuntime;
+  const query = explicitHostQuery(args, rt);
+  if (!query) {
+    args.hostId = rt.defaultHostId;
+    if (!args.hostId || !rt.fingerprintOf(args.hostId)) {
+      return { error: '请明确指定已保存主机' };
+    }
+    return { asked: false };
+  }
+  const matches = typeof rt.searchSavedHosts === 'function' ? rt.searchSavedHosts(query) : [];
+  if (matches.length === 0) {
+    return { error: `已保存主机中没有与「${query}」匹配的主机` };
+  }
+  const exact = matches.filter((h) => String(h.name).toLowerCase() === query.toLowerCase() || h.id === query);
+  if (exact.length === 1 && rt.isGranted(exact[0].id)) {
+    args.hostId = exact[0].id;
+    delete args.host;
+    return { asked: false };
+  }
+  if (matches.length === 1 && rt.isGranted(matches[0].id)) {
+    args.hostId = matches[0].id;
+    delete args.host;
+    return { asked: false };
+  }
+
+  const shown = matches.slice(0, 4);
+  const extra = matches.length - shown.length;
+  const fingerprintAtAsk = new Map(matches.map((h) => [h.id, rt.fingerprintOf(h.id)]));
+  const question = matches.length === 1
+    ? `在已保存主机「${savedHostLabel(matches[0])}」上执行这次操作？`
+    : `「${query}」匹配到 ${matches.length} 台已保存主机，要在哪一台执行？`;
+  const questionText = extra > 0 ? `${question}（另有 ${extra} 台未列出，可在「其他」填写完整主机名）` : question;
+  const questions = [{
+    question: questionText,
+    header: '主机',
+    options: shown.map((h) => ({ label: savedHostLabel(h) })),
+  }];
+  const answerId = makeAnswerId(deps.requestId, toolCallId);
+  emitToolEvent(deps, {
+    toolCallId,
+    toolName: 'AskUserQuestion',
+    toolArgs: JSON.stringify({ questions }),
+    approvalId: answerId,
+    status: 'awaiting_input',
+  });
+  deps.onApprovalWaitStart?.();
+  const answerResult = await waitForUserAnswer({ answerId, signal: deps.signal });
+  if (answerResult.kind === 'aborted') return { aborted: true };
+  const answer = answerResult.answers?.[questionText] || Object.values(answerResult.answers || {})[0] || '';
+  const picked = pickHostFromAnswer(matches, answer);
+  if (!picked) return { error: '没有确认到已保存主机，已取消执行' };
+  if (rt.fingerprintOf(picked.id) !== fingerprintAtAsk.get(picked.id)) {
+    return { error: '确认期间目标主机身份已变化，请重新确认' };
+  }
+  args.hostId = picked.id;
+  delete args.host;
+  rt.ensureGrant(rt.topicId, picked.id);
+  return { asked: true };
+}
+
 async function executeAgentTool(toolCall, deps) {
   const name = toolCall?.function?.name;
-  const rawArgs = toolCall?.function?.arguments || '';
+  let rawArgs = toolCall?.function?.arguments || '';
   // readSseResponse 已为缺失 id 提供 call_${index} 兜底（agentService.cjs），
   // 此处再补一个本地兜底，避免引用不存在的 deps.toolCallId（历史死代码）。
   const toolCallId = toolCall?.id || `call_${name || 'unknown'}_${Date.now()}`;
@@ -243,36 +344,48 @@ async function executeAgentTool(toolCall, deps) {
     };
   }
 
+  try {
+    deps.assertEnvironment?.();
+    if (deps.allowedToolNames && !deps.allowedToolNames.has(name)) throw new Error('当前环境或配置未开放工具：' + name);
+  } catch (e) {
+    return { resultText: JSON.stringify({ ok: false, error: e.message }), denied: true };
+  }
+
   // AskUserQuestion: never go through danger-tool approval / bypass; always wait for answers.
   if (name === 'AskUserQuestion') {
     return executeAskUserQuestion(toolCall, deps, args, rawArgs, toolCallId);
   }
 
-  // Host conversations: normalize a `host` name to `hostId` before the
-  // approval gate, so cross-host calls by name still get the force card and
-  // the grant is persisted for the right host.
-  if (
-    deps.context === 'host' &&
-    deps.hostRuntime &&
-    name !== 'ssh_hosts' &&
-    typeof args.host === 'string' &&
-    args.host.trim() &&
-    !args.hostId
-  ) {
-    const resolvedId = deps.hostRuntime.resolveHostIdByName(args.host.trim());
-    if (resolvedId) args.hostId = resolvedId;
+  const isSshTargetTool = deps.hostRuntime && name.startsWith('ssh_') && name !== 'ssh_hosts';
+  let hostJustConfirmed = false;
+  if (isSshTargetTool) {
+    const confirmed = await confirmSavedSshHost(deps, args, toolCallId);
+    if (confirmed.aborted) return { resultText: '', aborted: true };
+    if (confirmed.error) {
+      return { resultText: JSON.stringify({ ok: false, error: confirmed.error }), denied: false };
+    }
+    hostJustConfirmed = confirmed.asked === true;
+    args.targetLabel = deps.hostRuntime.describeHost?.(args.hostId) || args.hostId;
+    rawArgs = JSON.stringify(args);
   }
+  const targetFingerprint = isSshTargetTool ? deps.hostRuntime.fingerprintOf(args.hostId) : null;
+
+  if (name === 'Terminal') {
+    args.targetLabel = '当前交互终端（跟随会话）';
+    rawArgs = JSON.stringify(args);
+  }
+  deps.onToolArgs?.(toolCallId, name, rawArgs);
 
   // Host-conversation force rules (ssh_hosts writes, cross-host grants):
   // even full-auto / "always allow" must show an approval card. The bulk
   // bypass (approveRequestApprovals) skips force entries, so only an
   // explicit per-card decision resolves them.
   const hostForce =
-    deps.context === 'host' && deps.hostRuntime
+    deps.hostRuntime
       ? deps.hostRuntime.forceApproval(name, args, deps.hostRuntime)
       : false;
   const approvalMode = resolveToolApprovalMode(deps.agentConfig);
-  if (hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args))) {
+  if (!hostJustConfirmed && (hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args)))) {
     const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs, { force: hostForce });
     if (approvalResult === 'aborted') {
       return { resultText: '', aborted: true };
@@ -284,14 +397,16 @@ async function executeAgentTool(toolCall, deps) {
         denied: true,
       };
     }
+    if (isSshTargetTool && deps.hostRuntime.fingerprintOf(args.hostId) !== targetFingerprint) {
+      return { resultText: JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }) };
+    }
     // Approved force card for a cross-host call → persist the grant.
     if (
       hostForce &&
       name !== 'ssh_hosts' &&
-      args?.hostId &&
-      args.hostId !== deps.hostRuntime.defaultHostId
+      (args?.hostId || deps.hostRuntime.defaultHostId)
     ) {
-      deps.hostRuntime.ensureGrant(deps.hostRuntime.topicId, args.hostId);
+      deps.hostRuntime.ensureGrant(deps.hostRuntime.topicId, args.hostId || deps.hostRuntime.defaultHostId);
     }
   } else {
     emitToolEvent(deps, {
@@ -302,16 +417,9 @@ async function executeAgentTool(toolCall, deps) {
     });
   }
 
-  // Host conversations allow Skills load only — never install/remove/search/
-  // init/register (independent of approval and bypass).
-  if (deps.context === 'host' && name === 'Skills' && args?.action !== 'load') {
-    return returnToolResult(
-      deps,
-      toolCallId,
-      name,
-      rawArgs,
-      JSON.stringify({ ok: false, error: '主机助手仅支持 Skills load' }),
-    );
+  // Recheck after approval: the terminal or host may have changed while waiting.
+  try { deps.assertEnvironment?.(); } catch (e) {
+    return returnToolResult(deps, toolCallId, name, rawArgs, JSON.stringify({ ok: false, error: e.message }));
   }
 
   if (name.startsWith('mcp__')) {

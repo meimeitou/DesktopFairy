@@ -1,3 +1,4 @@
+import Select from "../../Select";
 import { Switch } from "animal-island-ui";
 
 interface CatalogItem {
@@ -12,6 +13,9 @@ interface Props {
   enabledIds: Set<string>;
   onToggle: (id: string, enabled: boolean) => void;
   search?: string;
+  defaultEnabledIds?: Set<string>;
+  toolOverrides?: Record<string, boolean>;
+  onPreference?: (id: string, value: string) => void;
   emptyLabel?: string;
   /** Ids force-disabled by context rules; switch hidden, no interaction. */
   forcedDisabledIds?: Set<string>;
@@ -26,6 +30,9 @@ export default function AgentCatalogToggleList({
   search = "",
   emptyLabel = "暂无项目",
   forcedDisabledIds,
+  defaultEnabledIds,
+  toolOverrides,
+  onPreference,
   layout = "list",
 }: Props) {
   const q = search.trim().toLowerCase();
@@ -58,6 +65,18 @@ export default function AgentCatalogToggleList({
             </div>
             {forcedDisabledIds?.has(item.id) ? (
               <span className="agent-tool-auto-badge">场景强制</span>
+            ) : onPreference ? (
+              <div className="agent-tool-preference">
+                <Select aria-label={`${item.name} 工具偏好`}
+                  value={toolOverrides?.[item.id] === true ? "on" : toolOverrides?.[item.id] === false ? "off" : "default"}
+                  onChange={(value) => onPreference(item.id, value)}
+                  options={[
+                    { key: "default", label: `默认（${defaultEnabledIds?.has(item.id) ? "启用" : "关闭"}）` },
+                    { key: "on", label: "启用" },
+                    { key: "off", label: "禁用" },
+                  ]}
+                />
+              </div>
             ) : (
               <Switch
                 checked={enabled}

@@ -1,19 +1,12 @@
-import { HOST_ASSISTANT_ID, findAgentById, type AgentConfig } from "../../shared/agent";
+import { findAgentById, type AgentConfig } from "../../shared/agent";
 import { updateAgentInSettings } from "../../shared/settings";
 import { setSettings, useSettings } from "../../shared/settingsStore";
 import AgentSettingsPanel from "../agents/AgentSettingsPanel";
 
-export default function TerminalAiSettingsSection({
-  target,
-}: {
-  target: "terminal" | "host";
-}) {
+export default function TerminalAiSettingsSection() {
   const settings = useSettings();
 
-  const agent =
-    target === "terminal"
-      ? findAgentById(settings.agents, settings.terminalAgentId)
-      : findAgentById(settings.agents, HOST_ASSISTANT_ID);
+  const agent = findAgentById(settings.agents, settings.terminalAgentId);
 
   const handleChange = (patch: Partial<AgentConfig>) => {
     if (!agent) return;
