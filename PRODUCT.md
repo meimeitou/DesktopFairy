@@ -31,7 +31,7 @@ web
 
 ## Capabilities and Constraints
 
-已实现：透明主窗 + 拟人化反应、流式对话（OpenAI 兼容 / Anthropic / Ollama）、多会话、智能体工具循环、技能系统、MCP、网络搜索（6 Provider）、内置终端（xterm + PTY，SSH）、知识库向量检索（sqlite-vec）、划词助手、区域截图、系统托盘。
+已实现：透明主窗 + 拟人化反应、流式对话（OpenAI 兼容 / Anthropic / Ollama）、多会话、智能体工具循环、技能系统、MCP、网络搜索（6 Provider）、内置终端（xterm + PTY，SSH）、Obsidian / Markdown vault 只读挂载与本地全文检索（SQLite FTS5）、划词助手、区域截图、系统托盘。
 
 未实现：TTS 播放与嘴型同步（仅有设置开关）、ASR。
 
@@ -60,7 +60,7 @@ web
 1. **有感情的助手**：情感陪伴与工具能力同等重要，任何一侧的削弱都偏离定位。
 2. **优先可运行、可扩展**：不做 Agent 平台与大而全编排（docs/arch.md 设计原则）。
 3. **常驻不打扰**：透明置顶、关闭即隐藏、划词按需出现——桌面存在感以不干扰为前提。
-4. **用户的数据归用户**：本地配置与多会话持久化、知识库本地向量检索。
+4. **用户的数据归用户**：本地配置与多会话持久化、Obsidian / Markdown vault 只读挂载与本地全文检索。
 5. **中文优先**：界面与文档默认中文。
 
 ## Accessibility & Inclusion

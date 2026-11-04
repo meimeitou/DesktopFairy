@@ -20,8 +20,7 @@ const chatShortcutService = require('./chatShortcutService.cjs');
 const tipWindow = require('./tipWindow.cjs');
 const { isOverlayElevated } = require('./tipWindowMacPolicy.cjs');
 const { registerFileHandlers } = require('./fileService.cjs');
-const { registerKnowledgeHandlers, retrieveForChat } = require('./knowledge/knowledgeService.cjs');
-const { buildKnowledgeInjection } = require('./knowledge/injectForChat.cjs');
+const { registerKnowledgeHandlers } = require('./knowledge/vaultService.cjs');
 const { prependSystemDate } = require('./systemDate.cjs');
 const { registerScreenshotHandlers, captureRegion, screenshotCopyText, isOcrAvailable } = require('./screenshotService.cjs');
 const {

@@ -963,7 +963,7 @@ export default function TerminalAgentDrawer({
                   },
                 ]}
                 knowledge={{
-                  selectedIds: knowledgeIdsByTab[activeTabId] || [],
+                  selectedIds: knowledgeIdsByTab[activeTabId] ?? terminalAgent?.knowledgeBaseIds ?? [],
                   onChange: (ids) =>
                     setKnowledgeIdsByTab((prev) => ({
                       ...prev,

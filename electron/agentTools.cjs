@@ -433,6 +433,10 @@ async function executeAgentTool(toolCall, deps) {
     };
   }
 
+  if (require('./knowledge/tools.cjs').TOOL_NAMES.has(name)) {
+    return returnToolResult(deps, toolCallId, name, rawArgs, await require('./knowledge/tools.cjs').executeKnowledgeTool(name, args, deps));
+  }
+
   if (name === 'Skill') {
     return returnToolResult(
       deps,

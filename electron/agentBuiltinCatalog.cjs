@@ -87,7 +87,7 @@ function getEnabledOpenAiToolDefinitions(agentConfig, context = 'local') {
 function shouldPromptForTool(toolName, toolApprovalMode, invocationArgs) {
   const name = mapLegacyToolId(toolName);
   if (toolApprovalMode === 'bypass') return false;
-  if (DEFAULT_SAFE_TOOLS.has(name)) return false;
+  if (DEFAULT_SAFE_TOOLS.has(name) || require('./knowledge/tools.cjs').TOOL_NAMES.has(name)) return false;
   if (name === 'Skills') {
     const action = invocationArgs?.action;
     return action === 'install' || action === 'remove';

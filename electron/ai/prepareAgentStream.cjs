@@ -16,50 +16,6 @@ function abortIfNeeded(signal) {
 }
 
 /**
- * Pre-inject knowledge hits before the tool loop. Failures are reported on
- * the legacy stream and do not abort the turn.
- */
-async function buildKnowledgeSystemSuffix({
-  apiMessages,
-  knowledgeBaseIds,
-  apiConfig,
-  requestId,
-  legacySend,
-}) {
-  if (!knowledgeBaseIds.length) return '';
-  try {
-    const { buildKnowledgeInjection } = require('../knowledge/injectForChat.cjs');
-    const injected = await buildKnowledgeInjection({
-      messages: apiMessages,
-      knowledgeBaseIds,
-      apiConfig,
-    });
-    if (injected.citations?.length) {
-      legacySend('chat:stream:citations', {
-        requestId,
-        citations: injected.citations,
-      });
-    }
-    if (injected.errors?.length) {
-      legacySend('chat:stream:knowledge_error', {
-        requestId,
-        errors: injected.errors,
-      });
-    }
-    return injected.systemMessage ? `\n\n${injected.systemMessage}` : '';
-  } catch (e) {
-    if (e?.name !== 'AbortError') {
-      console.warn('[knowledge] agent pre-inject failed:', e?.message || e);
-      legacySend('chat:stream:knowledge_error', {
-        requestId,
-        errors: [{ kind: 'unknown', message: String(e?.message || e) }],
-      });
-    }
-    return '';
-  }
-}
-
-/**
  * createStream callback for AiStreamManager. Assigns ctx.mcpRuntime as MCP
  * loads so the IPC handler can dispose it on done/error.
  */
@@ -74,7 +30,7 @@ function createAgentTextStream(ctx) {
       agentConfig,
       apiConfig,
       apiMessages,
-      knowledgeSystemSuffix,
+      knowledgeBaseIds,
       maxTurns,
       bridge,
       legacySend,
@@ -101,7 +57,7 @@ function createAgentTextStream(ctx) {
 
     const terminalState = environment.getTerminalState ? await environment.getTerminalState() : null;
     abortIfNeeded(signal);
-    const builtinTools = getBuiltinTools(agentConfig, context);
+    const builtinTools = getBuiltinTools(agentConfig, context, knowledgeBaseIds);
     const toolDefinitions = [...builtinTools, ...(ctx.mcpRuntime?.definitions || [])];
     const enabledToolNames = builtinTools.map((t) => t.function.name);
     const hostInfo = hostRuntime?.hostId
@@ -118,13 +74,14 @@ function createAgentTextStream(ctx) {
       enabledToolNames,
       settingsSnapshot.getSnapshot()?.sshHosts || [],
       hostInfo,
-    ) + knowledgeSystemSuffix;
+    );
 
     const toolDeps = buildAgentToolDeps({
       topicId,
       requestId,
       agentConfig,
       mcpRuntime: ctx.mcpRuntime,
+      knowledgeBaseIds,
       signal,
       registerMcpCall: (tid, callId) => manager.registerMcpCall(tid, callId),
       getWindows,
@@ -161,6 +118,5 @@ function createAgentTextStream(ctx) {
 }
 
 module.exports = {
-  buildKnowledgeSystemSuffix,
   createAgentTextStream,
 };

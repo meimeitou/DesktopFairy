@@ -1,0 +1,16 @@
+.vault-directory-select { min-width: 0; }
+.vault-directory-trigger { width: 100%; }
+.vault-directory-trigger > span:first-child { flex: 1; min-width: 0; text-align: left; }
+.vault-directory-selected { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.vault-directory-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 4px 2px 10px; border-radius: 12px; background: var(--persimmon-softer); color: var(--bone-200); font-size: 12px; }
+.vault-directory-tag > span { overflow-wrap: anywhere; min-width: 0; }
+.vault-directory-tag button { flex-shrink: 0; }
+.vault-directory-dropdown { margin-top: 8px; padding: 10px; border: 1px solid var(--hairline-strong); border-radius: 12px; background: var(--ink-850); }
+.vault-directory-options { margin-top: 8px; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; }
+.vault-config-fields .vault-directory-option { display: block; width: 100%; text-align: left; padding: 8px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--bone-200); background: transparent; overflow-wrap: anywhere; }
+.vault-directory-option:hover { background: var(--persimmon-softer); }
+.vault-directory-option.selected, .vault-directory-option.selected:hover { background: var(--persimmon-soft); color: var(--bone-100); font-weight: 700; }
+.vault-directory-message { display: flex; gap: 8px; align-items: center; padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.vault-directory-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--hairline); font-size: 12px; color: var(--bone-500); }
+.vault-directory-select :is(button, input):focus-visible { outline: 2px solid var(--persimmon); outline-offset: 2px; }
+.vault-directory-select [class^="animal-wrapper"] input:focus-visible { outline: none; }

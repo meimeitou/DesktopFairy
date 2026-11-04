@@ -48,16 +48,6 @@ import {
   type SshRecentEntry,
   type SshCredential,
 } from "./terminalSettings";
-import {
-  DEFAULT_KNOWLEDGE_SETTINGS,
-  normalizeKnowledgeSettings,
-  type KnowledgeSettings,
-} from "./knowledge";
-import {
-  DEFAULT_FILE_PROCESSING_SETTINGS,
-  normalizeFileProcessingSettings,
-  type FileProcessingSettings,
-} from "./fileProcessing";
 
 export type SelectionTriggerMode = "shortcut" | "auto";
 
@@ -117,10 +107,6 @@ export interface AppSettings {
   sshCredentials: SshCredential[];
   /** Recent SSH connection history (max 5, newest first) */
   sshRecent: SshRecentEntry[];
-  /** Global knowledge retrieval config (embedding / chunk / topK / score threshold) */
-  knowledge: KnowledgeSettings;
-  /** Active PDF processor plus MinerU / Open MinerU credentials */
-  fileProcessing: FileProcessingSettings;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -159,12 +145,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sshGroups: [],
   sshCredentials: [],
   sshRecent: [],
-  knowledge: { ...DEFAULT_KNOWLEDGE_SETTINGS },
-  fileProcessing: {
-    processorId: DEFAULT_FILE_PROCESSING_SETTINGS.processorId,
-    mineru: { ...DEFAULT_FILE_PROCESSING_SETTINGS.mineru },
-    openMineru: { ...DEFAULT_FILE_PROCESSING_SETTINGS.openMineru },
-  },
 };
 
 const STORAGE_KEY = "da_settings";
@@ -450,8 +430,6 @@ export function finalizeSettings(
     activeChatAgentId: activeChatAgentIdFinal,
     webSearch: normalizeWebSearchConfig(settings.webSearch),
     terminal: normalizeTerminalSettings(settings.terminal),
-    knowledge: normalizeKnowledgeSettings(settings.knowledge),
-    fileProcessing: normalizeFileProcessingSettings(settings.fileProcessing),
     // 先 normalize 再迁移：把残留的内联凭据(password/privateKeyPath 等)提取为
     // 独立的 SshCredential 并改存 credentialId 引用。幂等。
     ...((): Pick<
@@ -628,64 +606,6 @@ export function listEmbeddingModelItems(settings: AppSettings): ModelItem[] {
     }
   }
   return items;
-}
-
-export function getEmbeddingApiConfig(settings: AppSettings): {
-  apiHost: string;
-  apiKey: string;
-  providerType: LlmProvider["type"];
-  modelName: string;
-  providerId: string;
-} | null {
-  const knowledge = settings.knowledge;
-  if (!knowledge?.embeddingProviderId || !knowledge.embeddingModel) return null;
-  const provider = settings.providers.find(
-    (p) => p.id === knowledge.embeddingProviderId && p.enabled,
-  );
-  if (!provider || !provider.apiHost) return null;
-  if (
-    (provider.embeddingModels || []).length > 0 &&
-    !provider.embeddingModels.includes(knowledge.embeddingModel)
-  ) {
-    return null;
-  }
-  return {
-    apiHost: provider.apiHost,
-    apiKey: provider.apiKey,
-    providerType: provider.type,
-    modelName: knowledge.embeddingModel,
-    providerId: provider.id,
-  };
-}
-
-/** Chat-completion config used to auto-describe semi-structured KB files. */
-export function getDescriptionApiConfig(settings: AppSettings): {
-  apiHost: string;
-  apiKey: string;
-  providerType: LlmProvider["type"];
-  modelName: string;
-  providerId: string;
-} | null {
-  const knowledge = settings.knowledge;
-  if (!knowledge?.descriptionProviderId || !knowledge.descriptionModel)
-    return null;
-  const provider = settings.providers.find(
-    (p) => p.id === knowledge.descriptionProviderId && p.enabled,
-  );
-  if (!provider || !provider.apiHost) return null;
-  if (
-    (provider.models || []).length > 0 &&
-    !provider.models.includes(knowledge.descriptionModel)
-  ) {
-    return null;
-  }
-  return {
-    apiHost: provider.apiHost,
-    apiKey: provider.apiKey,
-    providerType: provider.type,
-    modelName: knowledge.descriptionModel,
-    providerId: provider.id,
-  };
 }
 
 export function updateProviderInSettings(

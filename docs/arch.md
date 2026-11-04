@@ -709,3 +709,21 @@ handleSend(COMPACT_PROMPT);  // 在 onChatStreamDone 中检测并插入 clear + 
 ```
 
 ---
+
+## Obsidian / Markdown vault 知识库
+
+知识库直接挂载一个或多个本机目录，不复制或修改笔记。允许没有 `.obsidian` 的普通 Markdown 目录；仅索引 `.md` / `.markdown`，默认跳过隐藏文件、隐藏目录、符号链接，并支持每个 vault 的相对子目录排除。重复路径去重，父子目录不能重复挂载。旧导入式知识库与文档处理入口已移除；历史磁盘文件不迁移、不主动清理。
+
+- `electron/knowledge/vaultService.cjs`：vault 目录配置、IPC、递归文件监听、防抖、启动和每分钟补扫、worker 生命周期。配置位于 `userData/vault-knowledge/vaults.json`，索引位于同目录 `indexes/`。配置由专用 IPC 原子写盘，并通过 `knowledge:updated` 广播；不向 vault 写入 `.index` 等文件。
+- `vaultWorker.cjs`：后台 SQLite FTS5 索引，按文件修改时间和大小增量更新；每 100 个文件让出执行权，支持索引期间查询。标题、aliases、tags、路径、正文按不同权重检索；中日韩文字按字符分词并以短语检索，英文按词和大小写归一。查询作为文本处理，不接受原始 FTS 运算符。
+- `vaultFiles.cjs`：共享路径与排除校验、无符号链接读取、YAML frontmatter、按行分段。单篇文件上限 16 MB，超限在索引提示中显示；读取每次默认 200 行、最多 500 行 / 32 KB。
+
+绑定字段沿用 `knowledgeBaseIds`，内容为 vault ID。agent 默认选择可被对话覆盖，显式空数组表示不使用知识库；无效 ID 在发送时过滤。仅在选中有效 vault 时向 AI SDK 工具集开放 `kb_search`、`kb_read`、`kb_resolve_link`；聊天页、终端抽屉、主机面板共用同一条 agent 流。主机对话中的知识库仍指本机已选 vault。取消沿用流与单工具的合并 AbortSignal。普通对话不使用知识库，不再进行对话前检索注入。
+
+`kb_search` 返回 vault、路径、标题、当前源文件片段和原文行号，默认 10 条、最多 50 条；`kb_read` 始终读取当前磁盘原文并返回后续行号。`kb_resolve_link` 支持 Wiki / Markdown 内链和标题锚点，优先源目录相对路径、再 vault 根目录路径、最后笔记名或别名；多个候选交由 agent 选择。不会展开嵌入、建立知识图谱或运行插件查询。工具结果可用 vault / 相对路径 / 行号引用。
+
+vault 离线时保留挂载，返回明确错误，不返回缓存正文；目录恢复后补扫。移除挂载只删除应用内索引；排除规则同时作用于搜索、原文读取和链接解析。这里的只读和排除规则约束知识库功能，已有 Shell 等通用工具仍按原权限配置运行。
+
+验证：`npm test -- src/shared/vaultKnowledge.test.ts`；`node scripts/benchmark-vault.cjs 50000` 在临时目录构造约 4 KB/篇的中英文笔记，验证完整索引、查询 p95 和全量核对后的增量可见时间，完成后清理临时文件。Electron 原生模块重建后需用 `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/Electron scripts/benchmark-vault.cjs 50000` 运行同一验证。
+
+打包后的完整烟测：`node_modules/.bin/electron scripts/smoke-vault-electron.cjs release/mac-arm64/DesktopFairy.app/Contents/Resources/app.asar`。使用隔离临时 userData，验证四种 agent 环境的工具注册与执行、取消、目录监听、真实 preload / IPC、搜索与原文预览、排除规则及移除挂载；不会访问现有用户配置。

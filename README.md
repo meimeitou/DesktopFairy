@@ -22,7 +22,7 @@
 - 多会话管理（侧边栏新建 / 切换 / 重命名 / 删除）
 - 上下文管理：清除上下文、**AI 压缩上下文**（`/compact`）
 - 附件：文本嵌入、图片 multimodal、拖拽 / 粘贴 / 截图
-- 可勾选知识库：普通对话发送前预检索并注入上下文
+- 智能体对话可选择 Obsidian / Markdown vault，由工具按需搜索和读取原文
 
 ### 智能体模式
 
@@ -31,7 +31,7 @@
 - **UpdateProfile 工具** — 智能体在对话中自动学习并更新 USER.md
 - **Skills 系统** — 可安装 / 启用技能扩展能力（内置 find-skills、skill-creator）
 - **MCP 服务器** — 接入外部工具服务
-- **内置工具** — Read / Write / Edit / Bash / Terminal / Glob / Grep / WebSearch / WebFetch / TodoWrite / Skills / AskUserQuestion / kb_search / kb_read
+- **内置工具** — Read / Write / Edit / Bash / Terminal / Glob / Grep / WebSearch / WebFetch / TodoWrite / Skills / AskUserQuestion / kb_search / kb_read / kb_resolve_link
 - **对话模式** — 普通 / 计划（只读）/ 自动编辑（文件免确认）/ 全自动（全部免确认）
 
 ### 终端
@@ -42,11 +42,10 @@
 
 ### 知识库
 
-- 多个知识库；库内可添加文件或 Markdown 笔记
-- 支持 `.txt` / `.md` / `.docx`；PDF 需配置文档处理器（MinerU 官方 API 或自托管 Open MinerU）
-- 全局 embedding 与分块 / 召回参数（所有库共用）
-- 向量检索；智能体通过 `kb_search` / `kb_read` 引用原文；对话可多选库预检索
-- 库内召回测试：查看分块与匹配度
+- 挂载多个 Obsidian vault 或普通 Markdown 目录，只读 `.md` / `.markdown`，支持排除子目录
+- 本地全文索引，自动监听文件变化并增量更新，无需配置 embedding 模型
+- 智能体通过 `kb_search` / `kb_read` / `kb_resolve_link` 搜索、读取原文和解析内部链接；按 agent 或对话选择 vault
+- 页面内搜索、原文预览、索引状态与手动重建，可在 Obsidian 中打开原笔记
 
 ### 快捷指令
 
@@ -142,5 +141,5 @@ make build-adhoc     # 无需 Apple Developer 账户的 ad-hoc DMG
 - **Live2D Cubism SDK** — 角色渲染（WebGL2）
 - **Vercel AI SDK** — 智能体多轮工具循环（`ToolLoopAgent`）
 - **xterm.js + node-pty** — 终端；**ssh2** — SSH
-- **better-sqlite3 + sqlite-vec** — 知识库向量检索
+- **better-sqlite3 / SQLite FTS5** — 知识库本地全文检索
 - **Vite** — 前端构建

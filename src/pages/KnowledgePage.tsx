@@ -1,1344 +1,187 @@
-import { Button, Icon, Input } from "animal-island-ui";
-import Select from "../components/Select";
+import { Button, Icon, Input, Modal } from "animal-island-ui";
+import { useEffect, useRef, useState } from "react";
+import { useKnowledgeBases } from "../hooks/useKnowledgeBases";
+import VaultDirectorySelect from "../components/knowledge/VaultDirectorySelect";
 import { useConfirm } from "../hooks/useConfirm";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  KnowledgeBase,
-  KnowledgeBaseKind,
-  KnowledgeItem,
-} from "../shared/knowledge";
-import {
-  knowledgeSettingsConfigured,
-  semiDescriptionConfigured,
-} from "../shared/knowledge";
-import { getEmbeddingApiConfig, type AppSettings } from "../shared/settings";
-import { setSettings, useSettings } from "../shared/settingsStore";
-import { takeKnowledgeReveals } from "../shared/panelHandoff";
-import ChatMarkdown from "../components/chat/ChatMarkdown";
-import RecallTestModal from "../components/knowledge/RecallTestModal";
-import KnowledgeSettingsSection from "../components/settings/KnowledgeSettingsSection";
-import Checkbox from "../components/Checkbox";
-import "./SettingsPage.css";
+import type { VaultKnowledgeBase, VaultReadResult, VaultSearchHit } from "../shared/knowledge";
 import "./KnowledgePage.css";
 
 const api = window.electronAPI;
+const STATUS = { pending: "等待索引", indexing: "正在索引", ready: "已就绪", error: "目录或索引不可用" };
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-type FileCandidate = {
-  path: string;
-  name: string;
-  size: number;
-  allowed: boolean;
-  error?: string | null;
-  conflict?: boolean;
-  existingItemId?: string | null;
-  action?: "keep" | "replace";
-};
-
-const STATUS_LABEL: Record<string, string> = {
-  pending: "排队",
-  processing: "处理中",
-  completed: "已完成",
-  failed: "失败",
-};
-
-function formatItemTime(ts: number): string {
-  if (!Number.isFinite(ts) || ts <= 0) return "—";
-  const d = new Date(ts);
-  const now = new Date();
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (d.toDateString() === now.toDateString()) return `今天 ${hm}`;
-  if (d.getFullYear() === now.getFullYear()) {
-    return `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
-  }
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function MoreIcon() {
-  return <Icon name="Plus" size={14} />;
-}
-
-function NoteAddIcon() {
-  return <Icon name="Edit" size={20} />;
-}
-
-function FileAddIcon() {
-  return <Icon name="File" size={20} />;
-}
-
-function DeleteIcon() {
-  return <Icon name="Trash" size={12} />;
-}
-
-function EditIcon() {
-  return <Icon name="Edit" size={12} />;
-}
-
-function SettingsGearIcon() {
-  return <Icon name="Settings" size={14} />;
-}
-
-export default function KnowledgePage({
-  isActive = true,
-}: {
-  isActive?: boolean;
+function VaultConfiguration({ vault, onSave, onClose, busy, error }: {
+  vault: VaultKnowledgeBase;
+  onSave: (patch: { name: string; excludes: string[] }) => Promise<boolean>;
+  onClose: () => void;
+  busy: boolean;
+  error: string;
 }) {
-  const settings = useSettings();
-  const { confirm, dialog: confirmDialog } = useConfirm();
-  const embeddingReady =
-    Boolean(getEmbeddingApiConfig(settings)) &&
-    knowledgeSettingsConfigured(settings.knowledge);
-  const [bases, setBases] = useState<KnowledgeBase[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [creating, setCreating] = useState("");
-  const [newKind, setNewKind] = useState<KnowledgeBaseKind>("vector");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [descEditing, setDescEditing] = useState<{
-    item: KnowledgeItem;
-    text: string;
-    regenerating: boolean;
-  } | null>(null);
-  const [noteTitle, setNoteTitle] = useState("");
-  const [noteBody, setNoteBody] = useState("");
-  const [notePreview, setNotePreview] = useState(false);
-  const [editingNote, setEditingNote] = useState<KnowledgeItem | null>(null);
-  const [conflicts, setConflicts] = useState<FileCandidate[] | null>(null);
-  const [error, setError] = useState("");
-  const [focusItemId, setFocusItemId] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [recallOpen, setRecallOpen] = useState(false);
-  const [noteOpen, setNoteOpen] = useState(false);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameText, setRenameText] = useState("");
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [itemMenu, setItemMenu] = useState<{
-    id: string;
-    top: number;
-    left: number;
-  } | null>(null);
-  const [preview, setPreview] = useState<
-    | {
-        title: string;
-        text: string;
-        truncated: boolean;
-        error?: string;
-      }
-    | "loading"
-    | null
-  >(null);
-  const skipRenameCommit = useRef(false);
-
-  const reload = useCallback(async () => {
-    const rows = (await api.invoke("knowledge:list_bases")) as KnowledgeBase[];
-    setBases(Array.isArray(rows) ? rows : []);
-  }, []);
-
-  useEffect(() => {
-    void reload().catch((e) => setError(String(e?.message || e)));
-  }, [reload]);
-
-  useEffect(() => {
-    if (!isActive) return;
-    const t = window.setInterval(() => {
-      void reload();
-    }, 1500);
-    return () => window.clearInterval(t);
-  }, [isActive, reload]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (settingsOpen) setSettingsOpen(false);
-      else if (preview) setPreview(null);
-      else if (noteOpen) {
-        setNoteOpen(false);
-        setNoteTitle("");
-        setNoteBody("");
-        setEditingNote(null);
-        setNotePreview(false);
-      } else if (recallOpen) setRecallOpen(false);
-      else if (addOpen) setAddOpen(false);
-      else if (createOpen) setCreateOpen(false);
-      else if (itemMenu) setItemMenu(null);
-      else if (conflicts) setConflicts(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [
-    settingsOpen,
-    preview,
-    noteOpen,
-    recallOpen,
-    addOpen,
-    createOpen,
-    itemMenu,
-    conflicts,
-  ]);
-
-  useEffect(() => {
-    const onReveal = () => {
-      for (const detail of takeKnowledgeReveals()) {
-        if (detail.baseId) setActiveId(detail.baseId);
-        if (detail.itemId) setFocusItemId(detail.itemId);
-      }
-    };
-    window.addEventListener("knowledge:reveal", onReveal);
-    onReveal();
-    return () => window.removeEventListener("knowledge:reveal", onReveal);
-  }, []);
-
-  const active = useMemo(
-    () => bases.find((b) => b.id === activeId) || bases[0] || null,
-    [bases, activeId],
-  );
-  const activeSemi = active?.kind === "semi_structured";
-  const descReady = semiDescriptionConfigured(settings.knowledge);
-
-  const items = active?.items || [];
-  const selectedItems = items.filter((item) => selectedIds.includes(item.id));
-  const allSelected = items.length > 0 && selectedItems.length === items.length;
-  const someSelected = selectedItems.length > 0 && !allSelected;
-
-  useEffect(() => {
-    setSelectedIds([]);
-    setItemMenu(null);
-    setRecallOpen(false);
-  }, [active?.id]);
-
-  useEffect(() => {
-    if (!itemMenu) return;
-    const onDoc = () => setItemMenu(null);
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [itemMenu]);
-
-  const resetNote = () => {
-    setNoteTitle("");
-    setNoteBody("");
-    setEditingNote(null);
-    setNotePreview(false);
-    setNoteOpen(false);
+  const [name, setName] = useState(vault.name);
+  const [excludes, setExcludes] = useState<string[]>(vault.excludes);
+  const changed = name.trim() !== vault.name || excludes.length !== vault.excludes.length || excludes.some((dir) => !vault.excludes.includes(dir));
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!changed || !name.trim() || busy) return;
+    const saved = await onSave({ name, excludes });
+    if (saved) onClose();
   };
-
-  const openCreateNote = () => {
-    setAddOpen(false);
-    setEditingNote(null);
-    setNoteTitle("");
-    setNoteBody("");
-    setNotePreview(false);
-    setNoteOpen(true);
-  };
-
-  const openEditNote = (item: KnowledgeItem) => {
-    setEditingNote(item);
-    setNoteTitle(item.sourceName);
-    setNoteBody(item.noteContent || "");
-    setNotePreview(false);
-    setNoteOpen(true);
-  };
-
-  const openPreview = async (item: KnowledgeItem) => {
-    if (!active) return;
-    setItemMenu(null);
-    setPreview("loading");
-    try {
-      if (item.type === "note" && item.noteContent) {
-        setPreview({
-          title: item.sourceName,
-          text: item.noteContent,
-          truncated: false,
-        });
-        return;
-      }
-      const result = (await api.invoke("knowledge:read_item", {
-        baseId: active.id,
-        itemId: item.id,
-        maxChars: 50000,
-      })) as { text?: string; truncated?: boolean };
-      setPreview({
-        title: item.sourceName,
-        text: String(result?.text || ""),
-        truncated: Boolean(result?.truncated),
-      });
-    } catch (e) {
-      setPreview({
-        title: item.sourceName,
-        text: "",
-        truncated: false,
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
-  };
-
-  const startRename = (base: KnowledgeBase) => {
-    setRenamingId(base.id);
-    setRenameText(base.name);
-    setActiveId(base.id);
-  };
-
-  const commitRename = async () => {
-    if (skipRenameCommit.current) {
-      skipRenameCommit.current = false;
-      return;
-    }
-    if (!renamingId) return;
-    const name = renameText.trim() || "未命名知识库";
-    setBases((prev) =>
-      prev.map((b) => (b.id === renamingId ? { ...b, name } : b)),
-    );
-    setRenamingId(null);
-    setRenameText("");
-    await api.invoke("knowledge:update_base", {
-      baseId: renamingId,
-      patch: { name },
-    });
-  };
-
-  const deleteBase = async (base: KnowledgeBase) => {
-    if (!(await confirm({ title: "删除知识库", content: `删除知识库「${base.name}」？` }))) return;
-    await api.invoke("knowledge:delete_base", { baseId: base.id });
-    if (activeId === base.id) setActiveId(null);
-    await reload();
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  };
-
-  const toggleSelectAll = () => {
-    setSelectedIds(allSelected ? [] : items.map((item) => item.id));
-  };
-
-  const deleteItems = async (ids: string[]) => {
-    if (!active || ids.length === 0) return;
-    const first = items.find((item) => item.id === ids[0]);
-    if (!(await confirm({
-      title: "删除条目",
-      content:
-        ids.length === 1
-          ? `删除「${first?.sourceName || "该条目"}」？`
-          : `删除选中的 ${ids.length} 条？`,
-    }))) return;
-    setItemMenu(null);
-    for (const itemId of ids) {
-      await api.invoke("knowledge:delete_item", { baseId: active.id, itemId });
-    }
-    setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
-    await reload();
-  };
-
-  const reindexItems = async (ids: string[]) => {
-    if (!active || ids.length === 0) return;
-    if (!activeSemi && !embeddingReady) {
-      setItemMenu(null);
-      setError("请先在左下角「设置」中配置 embedding 模型");
-      setSettingsOpen(true);
-      return;
-    }
-    setItemMenu(null);
-    for (const itemId of ids) {
-      const item = items.find((row) => row.id === itemId);
-      if (item?.status === "processing") continue;
-      await api.invoke("knowledge:reindex_item", { baseId: active.id, itemId });
-    }
-    await reload();
-  };
-
-  const openItemMenu = (itemId: string, el: HTMLElement) => {
-    const rect = el.getBoundingClientRect();
-    setItemMenu({ id: itemId, top: rect.bottom + 4, left: rect.right });
-  };
-
-  const openDescEditor = (item: KnowledgeItem) => {
-    setItemMenu(null);
-    setDescEditing({ item, text: item.description || "", regenerating: false });
-  };
-
-  const saveDescription = async () => {
-    if (!descEditing || !active) return;
-    const value = descEditing.text.trim();
-    try {
-      await api.invoke("knowledge:set_item_description", {
-        baseId: active.id,
-        itemId: descEditing.item.id,
-        description: value,
-      });
-      setDescEditing(null);
-      await reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const regenerateDescription = async () => {
-    if (!descEditing || !active) return;
-    if (!descReady) {
-      setError("请先在设置中选择「描述生成 LLM」");
-      return;
-    }
-    setDescEditing({ ...descEditing, regenerating: true });
-    try {
-      // persist: false → preview only. User must click "保存" to persist.
-      const res = (await api.invoke("knowledge:describe_item", {
-        baseId: active.id,
-        itemId: descEditing.item.id,
-        persist: false,
-      })) as { description?: string };
-      setDescEditing((prev) =>
-        prev
-          ? {
-              ...prev,
-              text: String(res?.description || prev.text),
-              regenerating: false,
-            }
-          : null,
-      );
-    } catch (e) {
-      setDescEditing((prev) =>
-        prev ? { ...prev, regenerating: false } : null,
-      );
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
-  const createBase = async () => {
-    const name = creating.trim() || "未命名知识库";
-    const created = (await api.invoke("knowledge:create_base", {
-      name,
-      kind: newKind,
-    })) as KnowledgeBase;
-    setCreating("");
-    setNewKind("vector");
-    setCreateOpen(false);
-    await reload();
-    setActiveId(created.id);
-  };
-
-  const addFiles = async () => {
-    setAddOpen(false);
-    if (!active) return;
-    if (!activeSemi && !embeddingReady) {
-      setError("请先在左下角「设置」中配置 embedding 模型");
-      setSettingsOpen(true);
-      return;
-    }
-    const picked = (await api.invoke("knowledge:select_files", {
-      baseId: active.id,
-    })) as FileCandidate[];
-    if (!picked?.length) return;
-    const blocked = picked.filter((f) => !f.allowed);
-    if (blocked.length && blocked.length === picked.length) {
-      setError(blocked[0].error || "文件不被接受");
-      return;
-    }
-    const pending = picked.filter((f) => f.allowed);
-    if (pending.some((f) => f.conflict)) {
-      setConflicts(pending.map((f) => ({ ...f, action: "keep" })));
-      return;
-    }
-    await api.invoke("knowledge:add_files", {
-      baseId: active.id,
-      decisions: pending,
-    });
-    await reload();
-  };
-
-  const confirmConflicts = async () => {
-    if (!active || !conflicts) return;
-    await api.invoke("knowledge:add_files", {
-      baseId: active.id,
-      decisions: conflicts,
-    });
-    setConflicts(null);
-    await reload();
-  };
-
-  const saveNote = async () => {
-    if (!active) return;
-    if (!embeddingReady) {
-      resetNote();
-      setError("请先在左下角「设置」中配置 embedding 模型");
-      setSettingsOpen(true);
-      return;
-    }
-    if (editingNote) {
-      await api.invoke("knowledge:update_note", {
-        baseId: active.id,
-        itemId: editingNote.id,
-        title: noteTitle,
-        content: noteBody,
-      });
-    } else {
-      await api.invoke("knowledge:add_note", {
-        baseId: active.id,
-        title: noteTitle,
-        content: noteBody,
-      });
-    }
-    resetNote();
-    await reload();
-  };
-
-  return (
-    <div className="kb-page">
-      {!embeddingReady && (
-        <div className="kb-banner">
-          <span>
-            尚未配置全局 embedding 模型，请在左侧底部打开设置完成配置。
-          </span>
-          <Button
-            type="text"
-            size="small"
-            className="kb-banner-dismiss"
-            onClick={() => setSettingsOpen(true)}
-          >
-            打开设置
-          </Button>
-        </div>
-      )}
-      {error && (
-        <div className="kb-banner kb-banner-error">
-          <span>{error}</span>
-          <Button
-            type="text"
-            size="small"
-            className="kb-banner-dismiss"
-            onClick={() => setError("")}
-          >
-            关闭
-          </Button>
-        </div>
-      )}
-      <div className="kb-layout">
-        <aside className="kb-nav">
-          <div className="kb-nav-add">
-            <Button
-              type="primary"
-              size="small"
-              block
-              onClick={() => {
-                setCreating("");
-                setNewKind("vector");
-                setCreateOpen(true);
-              }}
-            >
-              + 新建知识库
-            </Button>
-          </div>
-          {bases.length === 0 ? (
-            <p className="kb-nav-empty">还没有知识库</p>
-          ) : (
-            <ul className="kb-nav-list">
-              {bases.map((base) => (
-                <li
-                  key={base.id}
-                  className={`kb-nav-item${base.id === active?.id ? " active" : ""}`}
-                >
-                  {renamingId === base.id ? (
-                    <Input
-                      className="kb-nav-rename"
-                      value={renameText}
-                      autoFocus
-                      aria-label="知识库名称"
-                      onChange={(e) => setRenameText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void commitRename();
-                        }
-                        if (e.key === "Escape") {
-                          e.preventDefault();
-                          skipRenameCommit.current = true;
-                          setRenamingId(null);
-                          setRenameText("");
-                        }
-                      }}
-                      onBlur={() => void commitRename()}
-                    />
-                  ) : (
-                    <>
-                      <Button
-                        type="text"
-                        className="kb-nav-item-main"
-                        onClick={() => setActiveId(base.id)}
-                      >
-                        <span className="kb-nav-item-name">{base.name}</span>
-                        {base.kind === "semi_structured" && (
-                          <span
-                            className="kb-item-kind"
-                            title="半结构化知识库"
-                            style={{
-                              marginLeft: 6,
-                              fontSize: 10,
-                              padding: "0 4px",
-                              borderRadius: 3,
-                              background: "var(--persimmon-softer)",
-                            }}
-                          >
-                            半
-                          </span>
-                        )}
-                      </Button>
-                      <span className="kb-nav-item-count">
-                        {base.items?.length || 0}
-                      </span>
-                      <div className="kb-nav-item-actions">
-                        <Button
-                          type="text"
-                          size="small"
-                          className="kb-nav-action"
-                          title="重命名"
-                          icon={<EditIcon />}
-                          onClick={() => startRename(base)}
-                        />
-                        <Button
-                          type="default"
-                          size="small"
-                          danger
-                          className="kb-nav-action"
-                          title="删除"
-                          icon={<DeleteIcon />}
-                          onClick={() => void deleteBase(base)}
-                        />
-                      </div>
-                    </>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="kb-nav-footer">
-            <Button
-              type="text"
-              size="small"
-              className="kb-nav-settings"
-              icon={<SettingsGearIcon />}
-              onClick={() => setSettingsOpen(true)}
-            >
-              <span>设置</span>
-            </Button>
-          </div>
-        </aside>
-        <section className="kb-detail">
-          {!active ? (
-            <div className="kb-empty-state">
-              <p className="kb-empty-title">创建第一个知识库</p>
-              <p className="kb-empty">
-                在左侧输入名称后点「新建」，再加入文件或笔记。
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="kb-detail-body">
-                <div className="kb-list-head">
-                  <h3>条目{items.length ? ` · ${items.length}` : ""}</h3>
-                  {selectedItems.length > 0 && (
-                    <div className="kb-bulk-actions">
-                      <span>已选 {selectedItems.length}</span>
-                      <Button
-                        type="default"
-                        size="small"
-                        onClick={() =>
-                          void reindexItems(
-                            selectedItems.map((item) => item.id),
-                          )
-                        }
-                      >
-                        重建索引
-                      </Button>
-                      <Button
-                        type="default"
-                        size="small"
-                        danger
-                        onClick={() =>
-                          void deleteItems(selectedItems.map((item) => item.id))
-                        }
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  )}
-                  <span className="kb-modal-spacer" />
-                  <Button
-                    type="default"
-                    size="small"
-                    onClick={() => setRecallOpen(true)}
-                  >
-                    召回测试
-                  </Button>
-                  <Button
-                    type="primary"
-                    size="small"
-                    onClick={() => setAddOpen(true)}
-                  >
-                    添加数据
-                  </Button>
-                </div>
-                {items.length === 0 ? (
-                  <div className="kb-empty-state kb-list-empty">
-                    <p className="kb-empty-title">还没有条目</p>
-                    <p className="kb-empty">
-                      点右上角「添加数据」，加入文件或笔记。
-                    </p>
-                  </div>
-                ) : (
-                  <div className="kb-table-wrap">
-                    <table className="kb-table">
-                      <thead>
-                        <tr>
-                          <th className="kb-col-check">
-                            <Checkbox
-                              compact
-                              checked={allSelected}
-                              indeterminate={someSelected}
-                              onChange={() => toggleSelectAll()}
-                              ariaLabel="全选"
-                            />
-                          </th>
-                          <th className="kb-col-name">名称</th>
-                          <th className="kb-col-type">类型</th>
-                          {activeSemi && <th className="kb-col-desc">描述</th>}
-                          <th className="kb-col-status">状态</th>
-                          <th className="kb-col-time">时间</th>
-                          <th className="kb-col-action">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map((item) => {
-                          const selected = selectedIds.includes(item.id);
-                          return (
-                            <tr
-                              key={item.id}
-                              className={`${selected ? " selected" : ""}${focusItemId === item.id ? " kb-item-focus" : ""}`}
-                            >
-                              <td className="kb-col-check">
-                                <Checkbox
-                                  compact
-                                  checked={selected}
-                                  onChange={() => toggleSelect(item.id)}
-                                  ariaLabel={`选择 ${item.sourceName}`}
-                                />
-                              </td>
-                              <td className="kb-col-name">
-                                {item.type === "note" ? (
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    className="kb-item-name-btn"
-                                    onClick={() => openEditNote(item)}
-                                    title={item.sourceName}
-                                  >
-                                    {item.sourceName}
-                                  </Button>
-                                ) : (
-                                  <span
-                                    className="kb-item-name"
-                                    title={item.sourceName}
-                                  >
-                                    {item.sourceName}
-                                  </span>
-                                )}
-                                {item.error && (
-                                  <p className="kb-item-error">{item.error}</p>
-                                )}
-                              </td>
-                              <td className="kb-col-type">
-                                <span
-                                  className={`kb-type kb-type-${item.type}`}
-                                >
-                                  {item.type === "note" ? "笔记" : "文件"}
-                                </span>
-                              </td>
-                              {activeSemi && (
-                                <td className="kb-col-desc">
-                                  {item.description ? (
-                                    <Button
-                                      type="text"
-                                      size="small"
-                                      className="kb-item-name-btn"
-                                      onClick={() => openDescEditor(item)}
-                                      title={item.description}
-                                      style={{ maxWidth: 280 }}
-                                    >
-                                      {item.description}
-                                    </Button>
-                                  ) : item.descriptionStatus ===
-                                    "generating" ? (
-                                    <span className="kb-empty">生成中…</span>
-                                  ) : (
-                                    <Button
-                                      type="default"
-                                      size="small"
-                                      onClick={() => openDescEditor(item)}
-                                    >
-                                      未设置，去添加
-                                    </Button>
-                                  )}
-                                </td>
-                              )}
-                              <td className="kb-col-status">
-                                <span
-                                  className={`kb-status kb-status-${item.status}`}
-                                >
-                                  {STATUS_LABEL[item.status] || item.status}
-                                </span>
-                              </td>
-                              <td className="kb-col-time">
-                                {formatItemTime(
-                                  item.updatedAt || item.createdAt,
-                                )}
-                              </td>
-                              <td className="kb-col-action">
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  className="kb-row-more"
-                                  title="操作"
-                                  icon={<MoreIcon />}
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (itemMenu?.id === item.id) {
-                                      setItemMenu(null);
-                                      return;
-                                    }
-                                    openItemMenu(item.id, e.currentTarget);
-                                  }}
-                                />
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </section>
+  return <Modal open title="目录设置" onClose={onClose} width={480} className="vault-settings-modal" footer={null} typewriter={false}>
+    <form className="vault-config-fields" onSubmit={(event) => void submit(event)}>
+      <p className="vault-settings-target">正在设置：<strong>{vault.name}</strong></p>
+      {error && <p className="vault-settings-error" role="alert">{error}</p>}
+      <label htmlFor="vault-name">显示名称</label>
+      <Input shadow id="vault-name" value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+      <label id="vault-excludes-label" htmlFor="vault-excludes">排除子目录</label>
+      <VaultDirectorySelect baseId={vault.id} value={excludes} onChange={setExcludes} disabled={busy} />
+      <p id="vault-excludes-hint">搜索并勾选多个子目录。排除后不会被搜索、读取或通过链接访问；隐藏目录和符号链接始终跳过。</p>
+      <div className="vault-settings-footer">
+        <Button type="text" htmlType="button" disabled={busy} onClick={onClose}>取消</Button>
+        <Button type="primary" htmlType="submit" disabled={busy || !changed || !name.trim()}>{busy ? "保存中…" : "保存设置"}</Button>
       </div>
-      {itemMenu &&
-        (() => {
-          const menuItem = items.find((item) => item.id === itemMenu.id);
-          if (!menuItem) return null;
-          const reindexDisabled = menuItem.status === "processing";
-          return (
-            <div
-              className="kb-row-menu"
-              style={{ top: itemMenu.top, left: itemMenu.left }}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <Button type="text" onClick={() => void openPreview(menuItem)}>
-                预览
-              </Button>
-              {menuItem.type === "note" && (
-                <Button
-                  type="text"
-                  onClick={() => {
-                    setItemMenu(null);
-                    openEditNote(menuItem);
-                  }}
-                >
-                  编辑
-                </Button>
-              )}
-              {activeSemi && menuItem.type === "file" && (
-                <Button type="text" onClick={() => openDescEditor(menuItem)}>
-                  编辑描述
-                </Button>
-              )}
-              <Button
-                type="text"
-                disabled={reindexDisabled}
-                onClick={() => void reindexItems([menuItem.id])}
-              >
-                重建索引
-              </Button>
-              <Button
-                type="default"
-                danger
-                onClick={() => void deleteItems([menuItem.id])}
-              >
-                删除
-              </Button>
-            </div>
-          );
-        })()}
-      {preview && (
-        <div className="kb-modal" onClick={() => setPreview(null)}>
-          <div
-            className="kb-modal-card kb-preview-modal-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="kb-settings-modal-header">
-              <div>
-                <h3>预览</h3>
-                <p className="field-hint">
-                  {preview === "loading" ? "读取中…" : preview.title}
-                </p>
-              </div>
-              <Button
-                type="default"
-                size="small"
-                className="kb-settings-close"
-                onClick={() => setPreview(null)}
-                aria-label="关闭"
-              >
-                关闭
-              </Button>
-            </header>
-            {preview === "loading" ? (
-              <p className="kb-empty">正在读取内容…</p>
-            ) : preview.error ? (
-              <p className="kb-item-error">{preview.error}</p>
-            ) : (
-              <>
-                <div className="kb-preview-body">
-                  {preview.text.trim() ? (
-                    <ChatMarkdown content={preview.text} />
-                  ) : (
-                    <p className="kb-empty">没有可预览的内容</p>
-                  )}
-                </div>
-                {preview.truncated && (
-                  <p className="field-hint">内容过长，仅显示前面部分。</p>
-                )}
-              </>
-            )}
+    </form>
+  </Modal>;
+}
+
+export default function KnowledgePage({ isActive = true }: { isActive?: boolean }) {
+  const { bases, loaded, error: loadError, reload } = useKnowledgeBases();
+  const { confirm, dialog } = useConfirm();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [settingsVault, setSettingsVault] = useState<VaultKnowledgeBase | null>(null);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
+  const [allVaults, setAllVaults] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [hits, setHits] = useState<VaultSearchHit[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [preview, setPreview] = useState<VaultReadResult | null>(null);
+  const [previewPath, setPreviewPath] = useState("");
+  const [previewError, setPreviewError] = useState("");
+  const [reading, setReading] = useState(false);
+  const searchId = useRef(0);
+  const readId = useRef(0);
+  const current = bases.find((base) => base.id === selected) ?? bases[0];
+  const scope = allVaults ? bases.map((base) => base.id).join(",") : current?.id ?? "";
+  const scopeRules = JSON.stringify((allVaults ? bases : current ? [current] : []).map((v) => [v.id, v.excludes]));
+  useEffect(() => {
+    searchId.current++; readId.current++;
+    setHits([]); setSearched(false); setPreview(null); setPreviewPath(""); setPreviewError(""); setWarnings([]); setSearching(false); setReading(false);
+  }, [scope, scopeRules]);
+  useEffect(() => () => { searchId.current++; readId.current++; }, []);
+
+  async function mutate(action: () => Promise<unknown>): Promise<boolean> {
+    setBusy(true); setError("");
+    try { await action(); await reload(); return true; } catch (cause) { setError(message(cause)); return false; }
+    finally { setBusy(false); }
+  }
+  async function search(event: React.FormEvent) {
+    event.preventDefault();
+    if (!query.trim() || !current) return;
+    const id = ++searchId.current;
+    readId.current++; setPreview(null); setPreviewPath(""); setPreviewError(""); setReading(false); setSearching(true); setError("");
+    try {
+      const result = await api.invoke("knowledge:search", { query, baseIds: scope.split(","), limit: 50 }) as {
+        hits: VaultSearchHit[]; errors: { baseId: string; message: string }[];
+      };
+      if (id !== searchId.current) return;
+      setHits(result.hits); setWarnings(result.errors.map((e) => e.message)); setSearched(true);
+    } catch (cause) { if (id === searchId.current) setError(message(cause)); }
+    finally { if (id === searchId.current) setSearching(false); }
+  }
+  async function read(baseId: string, path: string, startLine = 1) {
+    const id = ++readId.current;
+    setReading(true); setPreviewError("");
+    try {
+      const result = await api.invoke("knowledge:read_item", { baseId, path, startLine }) as VaultReadResult;
+      if (id === readId.current) setPreview(result);
+    } catch (cause) { if (id === readId.current) { setPreviewError(message(cause)); setPreview(null); } }
+    finally { if (id === readId.current) setReading(false); }
+  }
+  async function remove(vault: VaultKnowledgeBase) {
+    if (!await confirm({ title: "移除 vault", content: `移除「${vault.name}」的挂载和本地索引？原目录中的笔记会保留。`, okText: "移除挂载", danger: true })) return;
+    await mutate(() => api.invoke("knowledge:delete_base", { baseId: vault.id }));
+  }
+  const save = async (vault: VaultKnowledgeBase, patch: { name: string; excludes: string[] }) => {
+    const saved = await mutate(() => api.invoke("knowledge:update_base", { baseId: vault.id, patch }));
+    if (saved) {
+      searchId.current++; readId.current++; setHits([]); setPreview(null); setPreviewPath(""); setPreviewError(""); setSearched(false);
+    }
+    return saved;
+  };
+
+  return <div className="kb-page vault-page" aria-hidden={!isActive}>
+    {(error || loadError) && <div className="vault-error" role="alert"><span>{error || loadError}</span><Button type="text" size="small" onClick={() => { setError(""); void reload(); }}>重试加载</Button></div>}
+    <div className="vault-layout">
+      <aside className="vault-sidebar" aria-label="已挂载的 vault">
+        <div className="vault-sidebar-heading"><h2>知识库</h2><div className="vault-sidebar-tools">
+          <Button size="small" disabled={busy} icon={<Icon name="Plus" size={14} />} onClick={() => void mutate(async () => {
+          const added = await api.invoke("knowledge:select_vaults") as VaultKnowledgeBase[];
+          if (added[0]) setSelected(added[0].id);
+          })}>添加目录</Button>
+        </div></div>
+        <p className="vault-sidebar-hint">连接 Obsidian vault，直接读取你的笔记。</p>
+        <nav className="vault-list">
+          {bases.map((vault) => <div key={vault.id} className={`vault-list-item${current?.id === vault.id ? " active" : ""}`}>
+            <Button type="text" className="vault-list-item-select" aria-pressed={current?.id === vault.id} onClick={() => setSelected(vault.id)}>
+              <Icon name="Folder" size={18} /><span><strong>{vault.name}</strong><small>{vault.fileCount.toLocaleString()} 篇笔记 · {STATUS[vault.state]}</small></span>
+            </Button>
+            <Button type="text" className="vault-item-action vault-open-item" title={`在 Obsidian 中打开${vault.name}`} aria-label={`在 Obsidian 中打开${vault.name}`} disabled={busy}
+              icon={<Icon name="Book" size={15} />} onClick={() => void mutate(() => api.invoke("knowledge:open_vault", { baseId: vault.id }))} />
+            <Button type="text" className="vault-item-action vault-item-settings" title={`设置${vault.name}`} aria-label={`设置${vault.name}`} disabled={busy}
+              icon={<Icon name="Settings" size={15} />} onClick={() => { setError(""); setSettingsVault(vault); }} />
+          </div>)}
+        </nav>
+        <p className="vault-readonly"><Icon name="File" size={14} />只读目录 · 本地全文索引</p>
+      </aside>
+      <main className="vault-main">
+        {!loaded ? <p role="status">正在加载目录…</p> : !current ? <div className="vault-empty">
+          <Icon name="Folder" size={36} /><h2>让智能体读懂你的笔记</h2>
+          <p>添加一个或多个 Obsidian vault，也可以选择普通 Markdown 目录。笔记留在原处，索引会自动更新。</p>
+          <Button type="primary" disabled={busy} onClick={() => void mutate(() => api.invoke("knowledge:select_vaults"))}>选择笔记目录</Button>
+          <p>添加后，在智能体或对话中选择要使用的 vault。</p>
+        </div> : <>
+          <header className="vault-heading"><div><h1>{current.name}</h1><p className="vault-path" title={current.path}>{current.path}</p></div>
+            <div className="vault-actions"><Button size="small" disabled={busy || current.state === "indexing"} onClick={() => void mutate(() => api.invoke("knowledge:rebuild_all", { baseId: current.id }))}>重建索引</Button>
+              <Button type="text" size="small" disabled={busy} onClick={() => void remove(current)}>移除挂载</Button></div>
+          </header>
+          <div className="vault-status" role="status"><span>{STATUS[current.state]}</span><span>{current.fileCount.toLocaleString()} 篇笔记</span>
+            {current.state === "indexing" ? <span>已检查 {current.processed?.toLocaleString() ?? 0} 个文件</span> : current.updatedAt ? <span>上次同步 {new Date(current.updatedAt).toLocaleTimeString()}</span> : null}
           </div>
-        </div>
-      )}
-      {recallOpen && active && (
-        <RecallTestModal
-          baseId={active.id}
-          baseName={active.name}
-          defaultTopK={settings.knowledge.topK}
-          defaultScoreThreshold={settings.knowledge.scoreThreshold}
-          embeddingReady={embeddingReady}
-          completedCount={
-            items.filter((item) => item.status === "completed").length
-          }
-          onClose={() => setRecallOpen(false)}
-          onOpenItem={(itemId, sourceName) => {
-            const item = items.find((row) => row.id === itemId);
-            setRecallOpen(false);
-            if (item) void openPreview(item);
-            else {
-              setPreview({
-                title: sourceName,
-                text: "",
-                truncated: false,
-                error: "条目不存在或已被删除",
-              });
-            }
-          }}
-        />
-      )}
-      {addOpen && (
-        <div className="kb-modal" onClick={() => setAddOpen(false)}>
-          <div
-            className="kb-modal-card kb-add-modal-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3>添加数据</h3>
-            <p className="field-hint">
-              {activeSemi
-                ? "半结构化库支持文件（md / txt / json / yaml）和笔记，按文件描述整体注入。"
-                : "选择要加入当前知识库的类型。"}
-            </p>
-            <div className="kb-add-choices">
-              <Button
-                type="text"
-                className="kb-add-choice"
-                onClick={() => void addFiles()}
-              >
-                <FileAddIcon />
-                <span className="kb-add-choice-title">文件</span>
-                <span className="kb-add-choice-desc">
-                  {activeSemi
-                    ? "md / txt / json / yaml"
-                    : "txt / md / docx / pdf"}
-                </span>
-              </Button>
-              <Button
-                type="text"
-                className="kb-add-choice"
-                onClick={openCreateNote}
-              >
-                <NoteAddIcon />
-                <span className="kb-add-choice-title">笔记</span>
-                <span className="kb-add-choice-desc">标题 + Markdown 正文</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {noteOpen && (
-        <div className="kb-modal" onClick={resetNote}>
-          <div
-            className="kb-modal-card kb-note-modal-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="kb-settings-modal-header">
-              <h3>{editingNote ? "编辑笔记" : "新建笔记"}</h3>
-              <Button
-                type="default"
-                size="small"
-                className="kb-settings-close"
-                onClick={resetNote}
-                aria-label="关闭"
-              >
-                关闭
-              </Button>
-            </header>
-            <div className="field">
-              <label>标题</label>
-              <Input
-                type="text"
-                value={noteTitle}
-                placeholder="笔记标题"
-                onChange={(e) => setNoteTitle(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label>正文</label>
-              {notePreview ? (
-                <div className="kb-note-preview">
-                  {noteBody.trim() ? (
-                    <ChatMarkdown content={noteBody} />
-                  ) : (
-                    <p className="kb-empty">没有可预览的内容</p>
-                  )}
-                </div>
-              ) : (
-                <textarea
-                  rows={10}
-                  value={noteBody}
-                  placeholder="Markdown 正文"
-                  onChange={(e) => setNoteBody(e.target.value)}
-                />
-              )}
-            </div>
-            <div className="kb-note-tools">
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setNotePreview((v) => !v)}
-              >
-                {notePreview ? "编辑" : "预览"}
-              </Button>
-              <span className="kb-modal-spacer" />
-              <Button type="primary" size="small" onClick={resetNote}>
-                取消
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => void saveNote()}
-              >
-                {editingNote ? "保存" : "添加"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {createOpen && (
-        <div className="kb-modal" onClick={() => setCreateOpen(false)}>
-          <div
-            className="kb-modal-card kb-note-modal-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="kb-settings-modal-header">
-              <h3>新建知识库</h3>
-              <Button
-                type="default"
-                size="small"
-                className="kb-settings-close"
-                onClick={() => setCreateOpen(false)}
-                aria-label="关闭"
-              >
-                关闭
-              </Button>
-            </header>
-            <div className="field">
-              <label>名称</label>
-              <Input
-                type="text"
-                autoFocus
-                value={creating}
-                placeholder="例如：产品文档 / 角色设定"
-                onChange={(e) => setCreating(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void createBase();
-                }}
-              />
-            </div>
-            <div className="field">
-              <label>类型</label>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 8,
-                  padding: "8px 10px",
-                  border: "1px solid var(--hairline-strong)",
-                  borderRadius: 6,
-                  marginBottom: 6,
-                  cursor: "pointer",
-                  background:
-                    newKind === "vector"
-                      ? "var(--persimmon-softer)"
-                      : "transparent",
-                }}
-              >
-                <input
-                  type="radio"
-                  name="kb-create-kind"
-                  checked={newKind === "vector"}
-                  onChange={() => setNewKind("vector")}
-                  style={{ marginTop: 3 }}
-                />
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
-                >
-                  <span style={{ fontWeight: 500 }}>非结构化（向量检索）</span>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>
-                    支持 txt / md / pdf / docx；分块后用 embedding
-                    模型做相似度检索，适合大段文档、跨文件查资料。
-                  </span>
-                </div>
-              </label>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 8,
-                  padding: "8px 10px",
-                  border: "1px solid var(--hairline-strong)",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  background:
-                    newKind === "semi_structured"
-                      ? "var(--persimmon-softer)"
-                      : "transparent",
-                }}
-              >
-                <input
-                  type="radio"
-                  name="kb-create-kind"
-                  checked={newKind === "semi_structured"}
-                  onChange={() => setNewKind("semi_structured")}
-                  style={{ marginTop: 3 }}
-                />
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
-                >
-                  <span style={{ fontWeight: 500 }}>
-                    半结构化（按描述挑文件）
-                  </span>
-                  <span style={{ fontSize: 12, opacity: 0.7 }}>
-                    仅支持 md / txt / json / yaml；每个文件带一段描述，对话时由
-                    LLM 按描述挑相关文件整篇注入上下文。
-                  </span>
-                </div>
-              </label>
-            </div>
-            <div className="kb-note-tools">
-              <span className="kb-modal-spacer" />
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setCreateOpen(false)}
-              >
-                取消
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => void createBase()}
-              >
-                创建
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {descEditing && (
-        <div className="kb-modal" onClick={() => setDescEditing(null)}>
-          <div
-            className="kb-modal-card kb-note-modal-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="kb-settings-modal-header">
-              <div>
-                <h3>编辑描述</h3>
-                <p className="field-hint">{descEditing.item.sourceName}</p>
-              </div>
-              <Button
-                type="default"
-                size="small"
-                className="kb-settings-close"
-                onClick={() => setDescEditing(null)}
-                aria-label="关闭"
-              >
-                关闭
-              </Button>
-            </header>
-            <div className="field">
-              <label>描述（LLM 将根据它筛选文件，200-500 字为佳）</label>
-              <textarea
-                rows={6}
-                value={descEditing.text}
-                maxLength={500}
-                placeholder="用一段话说明这个文件的主题、涵盖的知识点或用途…"
-                onChange={(e) =>
-                  setDescEditing((prev) =>
-                    prev ? { ...prev, text: e.target.value } : null,
-                  )
-                }
-              />
-              <p className="field-hint">
-                当前 {descEditing.text.length} 字（上限 500）
-              </p>
-            </div>
-            <div className="kb-note-tools">
-              <Button
-                type="default"
-                size="small"
-                disabled={!descReady || descEditing.regenerating}
-                onClick={() => void regenerateDescription()}
-                title={descReady ? "" : "需在设置中选择描述生成 LLM"}
-              >
-                {descEditing.regenerating ? "生成中…" : "AI 重新生成"}
-              </Button>
-              <span className="kb-modal-spacer" />
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setDescEditing(null)}
-              >
-                取消
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => void saveDescription()}
-              >
-                保存
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {settingsOpen && (
-        <div className="kb-modal" onClick={() => setSettingsOpen(false)}>
-          <div
-            className="kb-modal-card kb-settings-modal-card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="kb-settings-modal-header">
-              <div>
-                <h3>知识库设置</h3>
-                <p className="field-hint">全局 embedding、分块与召回条数</p>
-              </div>
-              <Button
-                type="default"
-                size="small"
-                className="kb-settings-close"
-                onClick={() => setSettingsOpen(false)}
-                aria-label="关闭"
-              >
-                关闭
-              </Button>
-            </header>
-            <KnowledgeSettingsSection
-              settings={settings}
-              onChange={(patch: Partial<AppSettings>) =>
-                setSettings((prev) => ({ ...prev, ...patch }))
-              }
-            />
-          </div>
-        </div>
-      )}
-      {conflicts && (
-        <div className="kb-modal" onClick={() => setConflicts(null)}>
-          <div className="kb-modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3>文件名冲突</h3>
-            <p className="field-hint">
-              同名文件已在库中。为每一条选择保留两者或替换已有。
-            </p>
-            {conflicts.map((file, idx) => (
-              <label key={file.path} className="kb-conflict-row">
-                <span className="kb-conflict-name">{file.name}</span>
-                <Select
-                  value={file.action}
-                  onChange={(key) => {
-                    const action = key as "keep" | "replace";
-                    setConflicts(
-                      (prev) =>
-                        prev?.map((row, i) =>
-                          i === idx ? { ...row, action } : row,
-                        ) || null,
-                    );
-                  }}
-                  options={[
-                    { key: "keep", label: "保留两者" },
-                    { key: "replace", label: "替换已有" },
-                  ]}
-                  aria-label={`冲突处理：${file.name}`}
-                />
-              </label>
-            ))}
-            <div className="kb-modal-actions">
-              <Button
-                type="default"
-                size="small"
-                onClick={() =>
-                  setConflicts(
-                    (prev) =>
-                      prev?.map((row) => ({ ...row, action: "keep" })) || null,
-                  )
-                }
-              >
-                全部保留
-              </Button>
-              <Button
-                type="default"
-                size="small"
-                onClick={() =>
-                  setConflicts(
-                    (prev) =>
-                      prev?.map((row) => ({ ...row, action: "replace" })) ||
-                      null,
-                  )
-                }
-              >
-                全部替换
-              </Button>
-              <span className="kb-modal-spacer" />
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setConflicts(null)}
-              >
-                取消
-              </Button>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => void confirmConflicts()}
-              >
-                确定
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-      {confirmDialog}
+          {current.errors.length > 0 && <details className="vault-errors"><summary>{current.errors.length} 条索引提示</summary><ul>{current.errors.map((item, i) => <li key={i}>{item}</li>)}</ul></details>}
+          <section className="vault-search" aria-label="搜索笔记">
+            <form onSubmit={(event) => void search(event)} className="vault-search-form">
+              <Input shadow aria-label="搜索笔记关键词" placeholder="搜索标题、标签、别名或正文…" value={query} onChange={(event) => setQuery(event.target.value)} />
+              <Button type="primary" htmlType="submit" disabled={searching || !query.trim()}>{searching ? "搜索中…" : "搜索"}</Button>
+            </form>
+            <label className="vault-search-scope"><input type="checkbox" checked={allVaults} onChange={(event) => setAllVaults(event.target.checked)} />搜索全部已挂载目录</label>
+            {warnings.map((warning, i) => <p className="vault-error" role="alert" key={i}>{warning}</p>)}
+            {searched && <p className="vault-result-count" role="status">{hits.length ? `${hits.length} 条结果（最多显示 50 条）` : "未找到匹配笔记，试试更短的关键词或笔记别名。"}</p>}
+            <div className="vault-results">{hits.map((hit) => <button type="button" key={hit.baseId + hit.path} className={`vault-result${previewPath && preview?.baseId === hit.baseId && preview.path === hit.path ? " selected" : ""}`} onClick={() => { setPreviewPath(hit.path); setPreview(null); setPreviewError(""); void read(hit.baseId, hit.path, hit.startLine); }}>
+              <strong>{hit.title}</strong><span>{hit.baseName} / {hit.path} · L{hit.startLine}–{hit.endLine}{hit.matchedBy.length ? ` · 命中${hit.matchedBy.join("、")}` : ""}</span><p>{hit.text.slice(0, 600)}</p>
+            </button>)}</div>
+            {previewPath && <Modal open title="笔记原文" onClose={() => { readId.current++; setPreviewPath(""); setPreview(null); setPreviewError(""); }} width={760} className="vault-preview-modal" footer={null} typewriter={false}>
+              <section className="vault-preview" aria-label="笔记原文">
+              {reading && <p role="status">正在读取原文…</p>}
+              {previewError && <p className="vault-error" role="alert">{previewError}</p>}
+              {preview && <>
+              <header><div><h2>{preview.path}</h2><p>L{preview.startLine}–{preview.endLine} / {preview.totalLines} 行</p></div>
+                <Button size="small" onClick={() => void mutate(() => api.invoke("knowledge:open_file", { baseId: preview.baseId, path: preview.path }))}>{bases.find((v) => v.id === preview.baseId)?.obsidian ? "在 Obsidian 打开" : "打开文件"}</Button></header>
+              <pre>{preview.text.split("\n").map((line, i) => <span className="vault-source-line" key={i}><span aria-hidden="true">{preview.startLine + i}</span><code>{line || " "}</code></span>)}</pre>
+              {preview.warning && <p role="status">{preview.warning}</p>}
+              <div className="vault-preview-pagination"><Button size="small" disabled={reading || preview.startLine <= 1} onClick={() => void read(preview.baseId, preview.path, Math.max(1, preview.startLine - 200))}>上一段</Button>
+                <Button size="small" disabled={reading || !preview.nextLine} onClick={() => void read(preview.baseId, preview.path, preview.nextLine!)}>下一段</Button></div>
+              </>}
+              </section>
+            </Modal>}
+            {!searched && !searching && <p className="vault-search-hint">使用关键词检查检索结果。智能体会按需搜索，再读取原文；无需配置 embedding 模型。</p>}
+          </section>
+        </>}
+      </main>
     </div>
-  );
+    {settingsVault && <VaultConfiguration key={settingsVault.id + JSON.stringify(settingsVault.excludes) + settingsVault.name}
+      vault={settingsVault} onSave={(patch) => save(settingsVault, patch)} onClose={() => setSettingsVault(null)} busy={busy} error={error} />}
+    {dialog}
+  </div>;
 }

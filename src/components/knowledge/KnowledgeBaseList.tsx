@@ -1,9 +1,8 @@
 import { Button } from "animal-island-ui";
-import { useEffect, useState } from "react";
-import type { KnowledgeBase } from "../../shared/knowledge";
+
+import { useKnowledgeBases } from "../../hooks/useKnowledgeBases";
 import "./KnowledgeBaseList.css";
 
-const api = window.electronAPI;
 
 interface Props {
   selectedIds: string[];
@@ -17,24 +16,8 @@ export default function KnowledgeBaseList({
   onChange,
   disabled,
 }: Props) {
-  const [bases, setBases] = useState<KnowledgeBase[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .invoke("knowledge:list_bases")
-      .then((rows) => {
-        if (!cancelled) setBases(Array.isArray(rows) ? (rows as KnowledgeBase[]) : []);
-      })
-      .catch(() => {
-        if (!cancelled) setBases([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!bases) return null;
+  const { bases, loaded } = useKnowledgeBases();
+  if (!loaded) return null;
   if (bases.length === 0) return <p className="kb-list-empty">还没有知识库</p>;
 
   return (
@@ -58,19 +41,7 @@ export default function KnowledgeBaseList({
             }
           >
             {base.name}
-            {base.kind === "semi_structured" && (
-              <span
-                style={{
-                  marginLeft: 6,
-                  fontSize: 10,
-                  padding: "0 4px",
-                  borderRadius: 3,
-                  background: "var(--persimmon-softer)",
-                }}
-              >
-                半
-              </span>
-            )}
+
           </Button>
         );
       })}

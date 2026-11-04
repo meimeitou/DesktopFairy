@@ -79,6 +79,7 @@ declare global {
           }>;
         }) => void
       ) => () => void;
+      onKnowledgeUpdated: (callback: () => void) => () => void;
       onChatStreamKnowledgeError?: (
         callback: (payload: {
           requestId: string;

@@ -2,11 +2,12 @@ const { getEnabledOpenAiToolDefinitions, resolveToolApprovalMode } = require('..
 const { getSkillsDir } = require('../agentSkillService.cjs');
 const { wrapMcpToolExecute } = require('./topicBroadcast.cjs');
 
-function getBuiltinTools(agentConfig, context) {
+function getBuiltinTools(agentConfig, context, knowledgeBaseIds = []) {
   const defs = getEnabledOpenAiToolDefinitions(agentConfig, context).map(({ type, function: fn }) => ({
     type,
     function: fn,
   }));
+  if (knowledgeBaseIds.length) defs.push(...require('../knowledge/tools.cjs').knowledgeToolDefinitions());
   if (!shouldHideBuiltinWebFetch(agentConfig)) return defs;
   return defs.filter((t) => t.function?.name !== 'WebFetch');
 }
@@ -38,6 +39,7 @@ function buildAgentToolDeps({
   requestId,
   agentConfig,
   mcpRuntime,
+  knowledgeBaseIds = [],
   signal,
   registerMcpCall,
   getWindows,
@@ -63,6 +65,7 @@ function buildAgentToolDeps({
     parentWindow,
     sender,
     agentConfig,
+    knowledgeBaseIds,
     topicId,
     toolApprovalMode: resolveToolApprovalMode(agentConfig),
     get bypassApproval() {
@@ -90,7 +93,7 @@ function buildAgentToolDeps({
     hostRuntime,
     assertEnvironment,
     protectedDir,
-    allowedToolNames: new Set([...getBuiltinTools(agentConfig, context).map((t) => t.function.name), ...(mcpRuntime?.definitions || []).map((t) => t.function.name)]),
+    allowedToolNames: new Set([...getBuiltinTools(agentConfig, context, knowledgeBaseIds).map((t) => t.function.name), ...(mcpRuntime?.definitions || []).map((t) => t.function.name)]),
   };
 }
 

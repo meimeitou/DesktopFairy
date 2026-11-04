@@ -2,7 +2,6 @@ const { manager } = require('./ai/streamManager/AiStreamManager.cjs');
 const { createChunkBridge } = require('./ai/chunkBridge.cjs');
 const { broadcastToTopic } = require('./ai/topicBroadcast.cjs');
 const {
-  buildKnowledgeSystemSuffix,
   createAgentTextStream,
 } = require('./ai/prepareAgentStream.cjs');
 const settingsSnapshot = require('./settingsSnapshot.cjs');
@@ -57,17 +56,10 @@ function registerAiStreamHandlers(ipcMain, deps) {
       broadcastToTopic(manager, topicId, sender, channel, data);
     };
 
-    const knowledgeBaseIds = Array.isArray(rawKnowledgeBaseIds)
-      ? rawKnowledgeBaseIds.filter((id) => typeof id === 'string' && id)
-      : [];
+    const knowledgeBaseIds = require('./knowledge/vaultService.cjs').validIds(
+      Array.isArray(rawKnowledgeBaseIds) ? rawKnowledgeBaseIds : agentConfig.knowledgeBaseIds,
+    );
     const apiMessages = (messages || []).filter((m) => m.role !== 'system');
-    const knowledgeSystemSuffix = await buildKnowledgeSystemSuffix({
-      apiMessages,
-      knowledgeBaseIds,
-      apiConfig,
-      requestId,
-      legacySend,
-    });
 
     const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
     const bridge = createChunkBridge({ requestId, safeSend: legacySend });
@@ -80,7 +72,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
       agentConfig,
       apiConfig,
       apiMessages,
-      knowledgeSystemSuffix,
+      knowledgeBaseIds,
       maxTurns,
       bridge,
       legacySend,

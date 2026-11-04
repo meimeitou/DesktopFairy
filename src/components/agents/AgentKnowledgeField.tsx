@@ -1,6 +1,6 @@
 import { Icon, Input, Tooltip } from "animal-island-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KnowledgeBase } from "../../shared/knowledge";
+import { useKnowledgeBases } from "../../hooks/useKnowledgeBases";
 import "./AgentKnowledgeField.css";
 
 
@@ -18,29 +18,16 @@ interface Props {
 export default function AgentKnowledgeField({ selectedIds, onChange, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [bases, setBases] = useState<KnowledgeBase[]>([]);
+  const { bases, loaded } = useKnowledgeBases();
   const rootRef = useRef<HTMLDivElement>(null);
-
-  // cherry 的 useKnowledgeBases 常驻加载；这里挂载即拉一次（列表页/弹窗场景足够）。
-  useEffect(() => {
-    let alive = true;
-    window.electronAPI.invoke("knowledge:list_bases")
-      .then((rows) => {
-        if (alive) setBases(Array.isArray(rows) ? (rows as KnowledgeBase[]) : []);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // 失效引用收敛：知识库删除后清掉悬空 id（cherry 同款行为）。
   useEffect(() => {
     const valid = new Set(bases.map((b) => b.id));
-    if (bases.length && selectedIds.some((id) => !valid.has(id))) {
+    if (loaded && selectedIds.some((id) => !valid.has(id))) {
       onChange(selectedIds.filter((id) => valid.has(id)));
     }
-  }, [bases]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bases, loaded, selectedIds, onChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -57,7 +44,7 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
   const byId = useMemo(() => new Map(bases.map((b) => [b.id, b])), [bases]);
 
   const linked = selectedIds.map(
-    (id) => byId.get(id) ?? { id, name: `${id.slice(0, 8)}... (已失效)`, items: [] as never, kind: "plain" as never },
+    (id) => byId.get(id) ?? { id, name: `${id.slice(0, 8)}... (已失效)`, fileCount: 0, kind: "vault" as const },
   );
   const addable = bases.filter(
     (b) =>
@@ -115,9 +102,9 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
                 </span>
                 <span className="agent-kb-pop-row-main">
                   <span className="agent-kb-pop-row-name">{b.name}</span>
-                  <span className="agent-kb-pop-row-desc">{b.items.length} 文档</span>
+                  <span className="agent-kb-pop-row-desc">{b.fileCount} 文档</span>
                 </span>
-                {b.kind === "semi_structured" && <span className="agent-kb-kind">半</span>}
+
               </button>
             ))
           )}
@@ -140,8 +127,8 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
               <div className="agent-kb-row-main">
                 <div className="agent-kb-row-name">{kb.name}</div>
                 <div className="agent-kb-row-count">
-                  {kb.items.length} 文档
-                  {kb.kind === "semi_structured" && <span className="agent-kb-kind">半</span>}
+                  {kb.fileCount} 文档
+
                 </div>
               </div>
               <Tooltip title="移除">
