@@ -6,7 +6,6 @@ import {
   formatThinkingLabel,
   syncThinkingClock,
 } from "../../shared/thinkingElapsed";
-import { thinkingPreviewTail } from "../../shared/thinkingPreview";
 import ChatMarkdown from "./ChatMarkdown";
 import "./ThinkingBlock.css";
 
@@ -76,16 +75,10 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
   const content = msg.reasoning ?? "";
   // Agent turns put answer text on a later assistant after tools; this bubble
   // often has reasoning only. Use topic streaming, not last-assistant streaming.
-  const isThinking = isStreaming && !msg.content;
+  const isThinking = clockLive ?? (isStreaming && !msg.content);
   const tickClock = clockLive ?? isThinking;
-  // Three-level display: "half" shows a clipped latest-suffix preview,
-  // "full" shows the whole body, "collapsed" hides the body entirely.
-  type FoldState = "collapsed" | "half" | "full";
-  const [fold, setFold] = useState<FoldState>("half");
+  const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-  // Half-fold only paints a suffix: full-doc markdown + CSS mask + scrollTop
-  // on every chunk is what flickered once reasoning overflowed the preview.
-  const bodyContent = fold === "half" ? thinkingPreviewTail(content) : content;
 
   const handleCopy = async () => {
     if (!content) return;
@@ -98,21 +91,14 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
     }
   };
 
-  // Click cycles: half -> full -> collapsed -> half.
-  const onHeaderClick = () => {
-    setFold((prev) => (prev === "half" ? "full" : prev === "full" ? "collapsed" : "half"));
-  };
-
-  const showBody = fold === "half" || fold === "full";
-  const expanded = fold === "full";
-  const cls = `thinking-block${isThinking ? " thinking-active" : ""}${fold === "full" ? " thinking-expanded" : ""}${fold === "half" ? " thinking-half" : ""}`;
+  const cls = `thinking-block${isThinking ? " thinking-active" : ""}${expanded ? " thinking-expanded" : ""}`;
 
   return (
     <div className={cls}>
       <Button
         type="text"
         className="thinking-header"
-        onClick={onHeaderClick}
+        onClick={() => setExpanded((value) => !value)}
         aria-expanded={expanded}
       >
         <Icon name="Bulb" />
@@ -123,9 +109,9 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
         />
         <Icon icon={ChevronDown} className="thinking-chevron" />
       </Button>
-      {showBody && (
-        <div className={`thinking-body${fold === "half" ? " thinking-body-half" : ""}`}>
-          {!isThinking && fold === "full" && (
+      {expanded && (
+        <div className="thinking-body">
+          {!isThinking && (
             <Button
               type="text"
               size="small"
@@ -135,7 +121,7 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
               icon={copied ? <Icon name="Check" size={13} /> : <Icon icon={CopyIcon} size={13} />}
             />
           )}
-          <ThinkingMarkdownBody content={bodyContent} isThinking={isThinking} />
+          <ThinkingMarkdownBody content={content} isThinking={isThinking} />
         </div>
       )}
     </div>

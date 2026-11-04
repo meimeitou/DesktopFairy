@@ -1,4 +1,6 @@
 .thinking-block {
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: 8px;
   border: 1px solid rgba(232, 184, 74, 0.3);
   border-radius: 10px;
@@ -21,13 +23,31 @@
   font-weight: 700;
 }
 
+/* Button wraps its children in a span; keep the compact header aligned. */
+.thinking-header > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
 .thinking-bulb {
   flex: 0 0 auto;
   display: inline-flex;
   color: var(--amber);
 }
 
-.thinking-block.thinking-active .thinking-bulb {
+.thinking-block.thinking-active /* Button wraps its children in a span; keep the compact header aligned. */
+.thinking-header > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.thinking-bulb {
   animation: thinking-bulb-pulse 1.2s ease-in-out infinite;
 }
 
@@ -69,17 +89,6 @@
   transition: max-height var(--motion-base) var(--ease-island);
 }
 
-/* Half-fold: pin the latest suffix to the bottom and clip the top.
-   Do not mask+scroll this box — that compositor path flickers while
-   streaming long reasoning. */
-.thinking-body-half {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  max-height: 92px;
-  overflow: hidden;
-}
-
 /* .thinking-copy: official Button skin; pinned position only */
 .thinking-copy {
   position: absolute;
@@ -91,10 +100,6 @@
   flex: 0 0 auto;
   font-size: 12.5px;
   color: var(--bone-500);
-}
-
-.thinking-body-half .chat-markdown {
-  flex: 0 0 auto;
 }
 
 .thinking-body .chat-markdown p {

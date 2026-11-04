@@ -407,13 +407,6 @@ function ChatInputBar({
               disabled={composerDisabled}
             />
           )}
-          {showModeSelector && (
-            <ReasoningEffortSelector
-              value={reasoningEffort}
-              onChange={onReasoningEffortChange}
-              disabled={composerDisabled}
-            />
-          )}
           <ComposerQuickMenu
             disabled={composerDisabled}
             actions={[
@@ -471,6 +464,13 @@ function ChatInputBar({
         </div>
 
         <div className="chat-input-toolbar-right">
+          {showModeSelector && (
+            <ReasoningEffortSelector
+              value={reasoningEffort}
+              onChange={onReasoningEffortChange}
+              disabled={composerDisabled}
+            />
+          )}
           {contextUsage && (
             <ContextUsageMeter
               usage={contextUsage}

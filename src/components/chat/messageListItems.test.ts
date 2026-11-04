@@ -7,7 +7,7 @@ import {
 import type { ChatMsg } from "../../shared/chatMessages";
 
 describe("buildMessageListItems", () => {
-  it("batches consecutive tool messages", () => {
+  it("keeps consecutive tool calls independent and ordered", () => {
     const messages: ChatMsg[] = [
       { id: "u1", role: "user", content: "hi", timestamp: 1 },
       {
@@ -29,16 +29,14 @@ describe("buildMessageListItems", () => {
       { id: "a1", role: "assistant", content: "done", timestamp: 4 },
     ];
     const items = buildMessageListItems(messages);
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     expect(items[0]).toMatchObject({ kind: "message", id: "u1" });
-    expect(items[1]).toMatchObject({ kind: "tools", id: "t1" });
-    if (items[1].kind === "tools") {
-      expect(items[1].tools).toHaveLength(2);
-    }
-    expect(items[2]).toMatchObject({ kind: "message", id: "a1" });
+    expect(items[1]).toMatchObject({ kind: "tool", id: "t1" });
+    expect(items[2]).toMatchObject({ kind: "tool", id: "t2" });
+    expect(items[3]).toMatchObject({ kind: "message", id: "a1" });
   });
 
-  it("isolates AskUserQuestion into its own batch", () => {
+  it("keeps interactive questions independent from adjacent tools", () => {
     const ask: ChatMsg = {
       id: "t0",
       role: "assistant",
@@ -57,9 +55,8 @@ describe("buildMessageListItems", () => {
     };
     const items = buildMessageListItems([ask, bash]);
     expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ kind: "tools", id: "t0" });
-    if (items[0].kind === "tools") expect(items[0].tools).toHaveLength(1);
-    expect(items[1]).toMatchObject({ kind: "tools", id: "t1" });
+    expect(items[0]).toMatchObject({ kind: "tool", id: "t0" });
+    expect(items[1]).toMatchObject({ kind: "tool", id: "t1" });
   });
 
   it("builds a stable stick key from last message", () => {
@@ -139,6 +136,17 @@ describe("reuseStableMessageListItems", () => {
     ]);
     const stable = reuseStableMessageListItems(nextBuilt, prev);
     expect(stable[0]).toBe(prev[0]);
-    expect(stable[1]).not.toBe(prev[1]);
+    expect(stable[1]).toBe(prev[1]);
+    expect(stable[2]).not.toBe(prev[2]);
   });
+});
+
+it("updates only the changed invocation even for repeated tool names", () => {
+  const first: ChatMsg = { id: "t1", role: "assistant", type: "tool", content: "", toolName: "bash", toolStatus: "running", timestamp: 1 };
+  const second: ChatMsg = { ...first, id: "t2", timestamp: 2 };
+  const prev = buildMessageListItems([first, second]);
+  const next = reuseStableMessageListItems(buildMessageListItems([{ ...first, toolStatus: "done" }, second]), prev);
+  expect(next.map((item) => item.id)).toEqual(["t1", "t2"]);
+  expect(next[0]).not.toBe(prev[0]);
+  expect(next[1]).toBe(prev[1]);
 });

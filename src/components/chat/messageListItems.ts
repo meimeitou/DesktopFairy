@@ -2,51 +2,20 @@ import type { ChatMsg } from "../../shared/chatMessages";
 
 export type MessageListItem =
   | { kind: "clear"; id: string }
-  | { kind: "tools"; id: string; tools: ChatMsg[] }
+  | { kind: "tool"; id: string; msg: ChatMsg }
   | { kind: "message"; id: string; msg: ChatMsg };
 
 export function buildMessageListItems(messages: ChatMsg[]): MessageListItem[] {
-  const items: MessageListItem[] = [];
-  let i = 0;
-  while (i < messages.length) {
-    const m = messages[i];
-    if (m.type === "clear") {
-      items.push({ kind: "clear", id: m.id });
-      i += 1;
-      continue;
-    }
-    if (m.type === "tool") {
-      if (m.toolName === "AskUserQuestion") {
-        items.push({ kind: "tools", id: m.id, tools: [m] });
-        i += 1;
-        continue;
-      }
-      const batch: ChatMsg[] = [];
-      while (i < messages.length && messages[i].type === "tool") {
-        batch.push(messages[i]);
-        i += 1;
-      }
-      items.push({ kind: "tools", id: batch[0].id, tools: batch });
-      continue;
-    }
-    items.push({ kind: "message", id: m.id, msg: m });
-    i += 1;
-  }
-  return items;
-}
-
-function toolsShallowEqual(a: ChatMsg[], b: ChatMsg[]): boolean {
-  if (a === b) return true;
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
+  return messages.map((msg) =>
+    msg.type === "clear"
+      ? { kind: "clear", id: msg.id }
+      : { kind: msg.type === "tool" ? "tool" : "message", id: msg.id, msg },
+  );
 }
 
 /**
  * Reuse previous list-item object refs when underlying ChatMsg refs are unchanged.
- * Prevents ToolCallGroup memo from breaking on every text-stream frame.
+ * Keeps unchanged tool rows stable during text-stream updates.
  */
 export function reuseStableMessageListItems(
   next: MessageListItem[],
@@ -61,17 +30,12 @@ export function reuseStableMessageListItems(
       return item;
     }
     if (item.kind === "clear" && old.kind === "clear") return old;
-    if (item.kind === "message" && old.kind === "message") {
+    if (item.kind !== "clear" && old.kind !== "clear") {
       if (old.msg === item.msg) return old;
       reusedAll = false;
       return item;
     }
-    if (item.kind === "tools" && old.kind === "tools") {
-      if (toolsShallowEqual(old.tools, item.tools)) return old;
-      reusedAll = false;
-      return item;
-    }
-    reusedAll = false;
+
     return item;
   });
   return reusedAll ? prev : out;

@@ -175,7 +175,7 @@
   gap: 2px;
   min-width: 0;
   flex: 1;
-  /* Must stay visible — mode/reasoning popovers open upward from here. */
+  /* Mode and quick-menu popovers open upward from here. */
   overflow: visible;
 }
 
@@ -266,14 +266,10 @@
   }
 }
 
-/* Narrow chat window (minWidth 640px): the meter is contextual info and the
-   model selector is the widest flex item — collapse both before any button
-   can clip. Toolbar keeps the send action always visible. */
+/* Narrow chat window: hide the wide model selector while keeping reasoning,
+   context usage, and the send action together on the right. */
 @container composer (max-width: 620px) {
   .chat-input-model {
-    display: none;
-  }
-  .chat-input-toolbar-right .context-usage-meter {
     display: none;
   }
 }

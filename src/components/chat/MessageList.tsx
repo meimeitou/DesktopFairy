@@ -17,7 +17,7 @@ import type { ChatMsg } from "../../shared/chatMessages";
 import { findLastAssistantReplyIndex } from "../../shared/chatMessages";
 import { isThinkingClockLive } from "../../shared/thinkingElapsed";
 import MessageBubble from "./MessageBubble";
-import ToolCallBubble, { ToolCallGroup } from "./ToolCallBubble";
+import ToolCallBubble from "./ToolCallBubble";
 import type { AskUserAnswers } from "./agentTools/askUserQuestionParse";
 import {
   buildMessageListItems,
@@ -188,18 +188,13 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     const approvalInfo = useMemo(() => {
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
-        if (item.kind !== "tools") continue;
-        const waiting = item.tools.filter(
-          (t) =>
-            (t.toolStatus === "awaiting_approval" ||
-              t.toolStatus === "awaiting_input") &&
-            t.toolApprovalId,
-        );
-        if (waiting.length > 0) {
-          return {
-            index: i,
-            key: waiting.map((t) => t.toolApprovalId).join(","),
-          };
+        if (item.kind !== "tool") continue;
+        const tool = item.msg;
+        if (
+          (tool.toolStatus === "awaiting_approval" || tool.toolStatus === "awaiting_input") &&
+          tool.toolApprovalId
+        ) {
+          return { index: i, key: tool.toolApprovalId };
         }
       }
       return null;
@@ -212,7 +207,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         const item = items[index];
         if (!item) return 72;
         if (item.kind === "clear") return 36;
-        if (item.kind === "tools") return 88 + item.tools.length * 48;
+        if (item.kind === "tool") return 48;
         return 72;
       },
       overscan: 6,
@@ -444,28 +439,16 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
               >
                 {item.kind === "clear" ? (
                   <ContextClearDivider />
-                ) : item.kind === "tools" ? (
-                  item.tools.length > 1 ? (
-                    <ToolCallGroup
-                      tools={item.tools}
-                      onApprove={onApprove}
-                      onDeny={onDeny}
-                      onAlwaysAllow={onAlwaysAllow}
-                      onAnswer={onAnswer}
-                      submittingApprovalId={submittingApprovalId}
-                      alwaysAllowLabel={alwaysAllowLabel}
-                    />
-                  ) : (
-                    <ToolCallBubble
-                      msg={item.tools[0]}
-                      onApprove={onApprove}
-                      onDeny={onDeny}
-                      onAlwaysAllow={onAlwaysAllow}
-                      onAnswer={onAnswer}
-                      submittingApprovalId={submittingApprovalId}
-                      alwaysAllowLabel={alwaysAllowLabel}
-                    />
-                  )
+                ) : item.kind === "tool" ? (
+                  <ToolCallBubble
+                    msg={item.msg}
+                    onApprove={onApprove}
+                    onDeny={onDeny}
+                    onAlwaysAllow={onAlwaysAllow}
+                    onAnswer={onAnswer}
+                    submittingApprovalId={submittingApprovalId}
+                    alwaysAllowLabel={alwaysAllowLabel}
+                  />
                 ) : (
                   <MessageBubble
                     msg={item.msg}

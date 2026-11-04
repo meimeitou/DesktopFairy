@@ -1,1 +1,70 @@
-@import "./ChatModeSelector.css";
+.reasoning-effort-selector {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 4;
+}
+
+.reasoning-effort-trigger {
+  min-width: 32px;
+  height: 26px;
+  padding: 0 6px;
+  color: var(--bone-500);
+}
+
+.reasoning-effort-trigger.open {
+  color: var(--bone-100);
+}
+
+.reasoning-effort-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  width: 200px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--ink-800);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: 0 4px 16px rgba(121, 79, 39, 0.18);
+}
+
+.reasoning-effort-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--bone-200);
+  font-size: 12px;
+}
+
+.reasoning-effort-slider {
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 6px 0 0;
+  accent-color: var(--animal-primary-color);
+  cursor: pointer;
+}
+
+.reasoning-effort-slider.is-default {
+  accent-color: var(--bone-600);
+}
+
+.reasoning-effort-slider:focus-visible {
+  outline: 2px solid var(--bone-400);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.reasoning-effort-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--bone-500);
+}
+
+.reasoning-effort-ticks .selected {
+  font-weight: 700;
+  color: var(--bone-100);
+}

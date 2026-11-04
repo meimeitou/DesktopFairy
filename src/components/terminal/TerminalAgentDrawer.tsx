@@ -943,11 +943,6 @@ export default function TerminalAgentDrawer({
                 onChange={setChatMode}
                 disabled={composerDisabled}
               />
-              <ReasoningEffortSelector
-                value={terminalAgent?.reasoningEffort ?? "default"}
-                onChange={handleReasoningEffortChange}
-                disabled={composerDisabled || !terminalAgent}
-              />
               <ComposerQuickMenu
                 disabled={composerDisabled}
                 actions={[
@@ -978,6 +973,11 @@ export default function TerminalAgentDrawer({
               />
             </div>
             <div className="chat-input-toolbar-right">
+              <ReasoningEffortSelector
+                value={terminalAgent?.reasoningEffort ?? "default"}
+                onChange={handleReasoningEffortChange}
+                disabled={composerDisabled || !terminalAgent}
+              />
               <ContextUsageMeter
                 usage={contextUsage}
                 disabled={composerDisabled}

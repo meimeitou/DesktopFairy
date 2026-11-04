@@ -42,11 +42,9 @@ export default function ToolHeader({
         {getToolIcon(toolName)}
       </span>
       <div className="agent-tool-header-main">
-        <div className="agent-tool-header-title-row">
-          <strong>{getToolDisplayName(toolName)}</strong>
-          {status}
-        </div>
+        <strong>{getToolDisplayName(toolName)}</strong>
         {params && <div className="agent-tool-header-params">{params}</div>}
+        {status}
       </div>
       {collapsible && (
         <span

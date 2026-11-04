@@ -396,65 +396,10 @@
 }
 
 .msg-tool {
+  min-width: 0;
+  width: 100%;
   align-self: stretch;
   max-width: 100%;
-}
-
-.msg-tool-group-card {
-  padding: 10px 12px;
-  /* default cream dots — same wallpaper as the assistant bubble */
-  background:
-    radial-gradient(circle, rgba(196, 184, 158, 0.15) 1.5px, transparent 1.5px)
-      0 0 / 28px 28px,
-    radial-gradient(circle, rgba(196, 184, 158, 0.1) 1px, transparent 1px) 7px
-      7px / 14px 14px,
-    #f7f3df;
-  border-radius: 12px;
-}
-
-.msg-tool-group-head {
-  justify-content: space-between;
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 0 0 8px;
-  border-bottom: 1px solid rgba(121, 79, 39, 0.06);
-  border-top: none;
-  border-left: none;
-  border-right: none;
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  box-shadow: none;
-}
-
-.msg-tool-group-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(121, 79, 39, 0.72);
-}
-
-.msg-tool-group-meta {
-  margin-left: auto;
-  font-size: 11px;
-  color: rgba(121, 79, 39, 0.42);
-}
-
-.msg-tool-group-chevron {
-  font-size: 10px;
-  color: rgba(121, 79, 39, 0.42);
-  transition: transform var(--motion-fast) var(--ease-island);
-}
-
-.msg-tool-group-chevron.open {
-  transform: rotate(180deg);
-}
-
-.msg-tool-group-collapsed .msg-tool-group-head {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
 }
 
 .msg-tool-steps {
@@ -517,6 +462,7 @@
 
 .msg-tool-step-status {
   margin-left: auto;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -661,11 +607,11 @@
 }
 
 .agent-tool-card {
-  border-left: 3px solid rgba(121, 79, 39, 0.22);
+  flex: 1;
+  min-width: 0;
   border-radius: 8px;
   background: var(--ink-800);
   border: 1px solid rgba(121, 79, 39, 0.12);
-  border-left-width: 3px;
   overflow: hidden;
 }
 
@@ -745,18 +691,6 @@
 .agent-tool-header-main {
   flex: 1;
   min-width: 0;
-}
-
-.agent-tool-header-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.agent-tool-header-title-row strong {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--bone-100);
 }
 
 .agent-tool-header-params,
@@ -1088,4 +1022,61 @@
   padding: 8px 12px;
   border-top: 1px solid var(--hairline);
   background: rgba(121, 79, 39, 0.07);
+}
+
+/* Each invocation is an independent compact row; details are opt-in. */
+.agent-tool-summary-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.agent-tool-summary-row .agent-tool-header {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 0;
+}
+
+.agent-tool-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-tool-header-main > strong {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--bone-100);
+}
+
+.agent-tool-header-main .agent-tool-header-params {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--bone-400);
+}
+
+.agent-tool-header-main .agent-tool-inline-param {
+  margin: 0;
+  color: inherit;
+}
+
+.agent-tool-summary-actions {
+  flex-shrink: 0;
+  padding-right: 8px;
+}
+
+.agent-tool-error-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

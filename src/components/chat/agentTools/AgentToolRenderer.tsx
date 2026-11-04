@@ -1,5 +1,5 @@
 import { Button } from "animal-island-ui";
-import { memo, useContext, useEffect, useRef, useState } from "react";
+import { memo, useContext, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import {
   extractFilePath,
@@ -420,20 +420,15 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
   const cancelTool = useContext(ToolCancelContext);
   const status = msg.toolStatus || "streaming";
   const label = STATUS_LABEL[status] || status;
-  const isCollapsible = status === "done";
-  const [expanded, setExpanded] = useState(status !== "done");
-  const prevStatus = useRef(status);
+  const [expanded, setExpanded] = useState(false);
   const isRunning = status === "running" || status === "streaming";
-
-  useEffect(() => {
-    if (prevStatus.current !== "done" && status === "done") {
-      setExpanded(false);
-    }
-    if (status === "running" || status === "streaming") {
-      setExpanded(true);
-    }
-    prevStatus.current = status;
-  }, [status]);
+  const isFailed = status === "error" || status === "denied";
+  const output = isFailed ? parseToolOutput(msg.toolResultPreview) : null;
+  const errorText = isFailed
+    ? msg.toolMessage || (typeof output === "string" ? output :
+        output && typeof output === "object" && "error" in output && typeof output.error === "string"
+          ? output.error : "")
+    : "";
 
   const input = getToolInput(msg.toolName || "", msg.toolArgs);
   const summary =
@@ -443,42 +438,44 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
     (typeof input.url === "string" ? input.url : "") ||
     (typeof input.pattern === "string" ? input.pattern : "");
 
-  const showBody = !isCollapsible || expanded;
-
   return (
     <div
       className={`agent-tool-card agent-tool-card-${status}${
-        isCollapsible && !expanded ? " agent-tool-card-collapsed" : ""
+        !expanded ? " agent-tool-card-collapsed" : ""
       }`}
     >
-      <ToolHeader
-        toolName={msg.toolName || "工具"}
-        params={
-          summary ? (
-            <span className="agent-tool-inline-param">{summary}</span>
-          ) : undefined
-        }
-        status={<StatusBadge status={status} label={label} />}
-        collapsible={isCollapsible}
-        expanded={expanded}
-        onToggle={() => setExpanded((v) => !v)}
-      />
-      {showBody && renderToolBody(msg)}
-      {isRunning && cancelTool && msg.toolCallId && (
-        <div className="agent-tool-card-actions">
-          <Button
-            type="primary"
-            size="small"
-            className="agent-tool-cancel-btn"
-            onClick={() => cancelTool(msg.toolCallId!)}
-          >
-            取消
-          </Button>
-        </div>
+      <div className="agent-tool-summary-row">
+        <ToolHeader
+          toolName={msg.toolName || "工具"}
+          params={
+            summary ? (
+              <span className="agent-tool-inline-param" title={summary}>{summary}</span>
+            ) : undefined
+          }
+          status={<StatusBadge status={status} label={label} />}
+          collapsible
+          expanded={expanded}
+          onToggle={() => setExpanded((v) => !v)}
+        />
+        {isRunning && cancelTool && msg.toolCallId && (
+          <div className="agent-tool-summary-actions">
+            <Button
+              type="primary"
+              size="small"
+              className="agent-tool-cancel-btn"
+              onClick={() => cancelTool(msg.toolCallId!)}
+            >
+              取消
+            </Button>
+          </div>
+        )}
+      </div>
+      {errorText && (
+        <p className={`agent-tool-error-text${expanded ? "" : " agent-tool-error-summary"}`} title={errorText}>
+          {errorText}
+        </p>
       )}
-      {msg.toolMessage && (status === "error" || status === "denied") && (
-        <p className="agent-tool-error-text">{msg.toolMessage}</p>
-      )}
+      {expanded && renderToolBody(msg)}
     </div>
   );
 }

@@ -1,10 +1,6 @@
-import { Button, Icon } from "animal-island-ui";
-import { useState, useRef, useEffect } from "react";
-import type { ReasoningEffort, ReasoningEffortCard } from "../../shared/reasoningEffort";
-import {
-  REASONING_EFFORT_CARDS,
-  getReasoningEffortCard,
-} from "../../shared/reasoningEffort";
+import { Button } from "animal-island-ui";
+import { useState, useRef, useEffect, useId } from "react";
+import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import "./ReasoningEffortSelector.css";
 
 interface Props {
@@ -13,94 +9,86 @@ interface Props {
   disabled?: boolean;
 }
 
-function EffortIcon({ size = 16 }: { size?: number }) {
-  return <Icon className="chat-mode-icon" name="Bulb" size={size} />;
-}
+const LEVELS = ["default", "low", "medium", "high"] as const;
+const LABELS: Record<ReasoningEffort, string> = {
+  default: "默认", low: "低", medium: "中", high: "高",
+};
 
-export default function ReasoningEffortSelector({
-  value,
-  onChange,
-  disabled = false,
-}: Props) {
+export default function ReasoningEffortSelector({ value, onChange, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
-  const current = getReasoningEffortCard(value);
+  const sliderRef = useRef<HTMLInputElement>(null);
+  const panelId = useId();
+  const isDefault = value === "default";
+  const index = LEVELS.indexOf(value);
+  const visible = open && !disabled;
 
   useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (hostRef.current && !hostRef.current.contains(e.target as Node)) {
+    if (!visible) return;
+    sliderRef.current?.focus();
+    const onDocClick = (event: MouseEvent) => {
+      if (hostRef.current && !hostRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
         setOpen(false);
+        hostRef.current?.querySelector<HTMLButtonElement>(".reasoning-effort-trigger")?.focus();
       }
     };
+    const onFocusOut = (event: FocusEvent) => {
+      if (hostRef.current && !hostRef.current.contains(event.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("focusin", onFocusOut);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("focusin", onFocusOut);
+    };
+  }, [visible]);
 
-  const handleSelect = (next: ReasoningEffort) => {
-    if (disabled) return;
-    if (next === value) {
-      setOpen(false);
-      return;
-    }
-    onChange(next);
-    setOpen(false);
+  const selectLevel = (position: number) => {
+    if (!disabled) onChange(LEVELS[position]);
   };
 
   return (
-    <div className="chat-mode-selector chat-mode-selector-icon" ref={hostRef}>
+    <div className="reasoning-effort-selector" ref={hostRef}>
       <Button
         type="text"
-        className={`chat-mode-trigger chat-tool-btn${open ? " active" : ""}`}
-        style={{
-          color: current.accent,
-          borderColor: open ? current.accent : "transparent",
-          background: open ? `${current.accent}1a` : "transparent",
-          boxShadow: open ? `0 0 0 1px ${current.accent}55 inset` : "none",
-        }}
-        onClick={() => !disabled && setOpen((v) => !v)}
+        size="small"
+        className={`reasoning-effort-trigger${visible ? " open" : ""}`}
+        onClick={() => setOpen((previous) => !previous)}
         disabled={disabled}
-        title={`思维链长度：${current.title}`}
+        title={`思考强度：${LABELS[value]}`}
+        aria-label={`思考强度：${LABELS[value]}`}
+        aria-haspopup="dialog"
+        aria-expanded={visible}
+        aria-controls={visible ? panelId : undefined}
       >
-        <EffortIcon />
+        {LABELS[value]}
       </Button>
-      {open && (
-        <div className="chat-mode-popover chat-mode-popover-up" role="menu">
-          <div className="chat-mode-popover-header">
-            <span>思维链长度</span>
+      {visible && (
+        <div id={panelId} className="reasoning-effort-panel" role="dialog" aria-label="思考强度">
+          <div className="reasoning-effort-panel-header">
+            <span>思考强度</span>
           </div>
-          <ul className="chat-mode-list">
-            {REASONING_EFFORT_CARDS.map((card: ReasoningEffortCard) => {
-              const active = card.value === value;
-              return (
-                <li key={card.value}>
-                  <Button
-                    type="text"
-                    role="menuitemradio"
-                    aria-checked={active}
-                    className={`chat-mode-item${active ? " active" : ""}`}
-                    onClick={() => handleSelect(card.value)}
-                  >
-                    <span
-                      className="chat-mode-item-icon"
-                      style={{ color: active ? "#fff" : card.accent }}
-                    >
-                      <EffortIcon />
-                    </span>
-                    <span className="chat-mode-item-body">
-                      <span
-                        className="chat-mode-item-title"
-                        style={{ color: active ? "#fff" : card.accent }}
-                      >
-                        {card.title}
-                      </span>
-                      <span className="chat-mode-item-desc">{card.description}</span>
-                    </span>
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
+          <input
+            ref={sliderRef}
+            className={`reasoning-effort-slider${isDefault ? " is-default" : ""}`}
+            type="range"
+            min={0}
+            max={3}
+            step={1}
+            value={index}
+            aria-label="思考强度"
+            aria-valuetext={isDefault ? "默认，跟随模型" : LABELS[value]}
+            onChange={(event) => selectLevel(Number(event.target.value))}
+          />
+          <div className="reasoning-effort-ticks" aria-hidden="true">
+            {LEVELS.map((level) => <span key={level} className={value === level ? "selected" : undefined}>{LABELS[level]}</span>)}
+          </div>
         </div>
       )}
     </div>
