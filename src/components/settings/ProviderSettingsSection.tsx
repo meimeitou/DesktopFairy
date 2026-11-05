@@ -1,4 +1,6 @@
-import { Button, Icon, Input, Notification, Switch } from "animal-island-ui";
+import { Button, Input, Switch, warning } from "@cherrystudio/ui";
+import { Eye, Trash2 } from "lucide-react";
+
 import { useConfirm } from "../../hooks/useConfirm";
 import { useEffect, useMemo, useState } from "react";
 import ManageModelsPanel from "../ManageModelsPanel";
@@ -121,7 +123,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     if (!id) return;
     const existingKind = findEnabledModelKind(selected, id);
     if (existingKind) {
-      Notification.warning(`模型「${id}」已在${MODEL_KIND_LABELS[existingKind]}列表中`);
+      warning(`模型「${id}」已在${MODEL_KIND_LABELS[existingKind]}列表中`);
       return;
     }
     patchProvider(selected.id, addModelToLists(selected, id, kind));
@@ -139,7 +141,6 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     // 切换 provider 时重新掩码，避免密钥在无关条目上保持明文
     setShowApiKey(false);
   }, [selected?.id, selected?.apiHost, selected?.apiKey, selected?.type]);
-
 
   const handleCheckConnection = async () => {
     if (!selected) return;
@@ -172,7 +173,6 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
     }
   };
 
-
   if (!selected) {
     return (
       <section className="settings-section provider-settings">
@@ -188,16 +188,8 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
       <div className="provider-settings-layout">
         <aside className="provider-list-pane">
           <div className="provider-list-toolbar">
-            <Input
-            shadow
-            placeholder="搜索…" value={search} onChange={(e) => setSearch(e.target.value)}
-            aria-label="搜索服务商" />
-            <Button
-              type="default"
-              size="small"
-              className="provider-add-btn"
-              onClick={() => setShowAddProvider(true)}
-            >
+            <Input placeholder="搜索…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="搜索服务商" />
+            <Button variant="outline" size="sm" className="provider-add-btn" onClick={() => setShowAddProvider(true)}>
               添加
             </Button>
           </div>
@@ -218,19 +210,10 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                       {!p.enabled ? " 停用" : ""}
                     </span>
                   </div>
-                  <Button
-                    type="default"
-                    size="small"
-                    danger
-                    className="provider-item-del"
-                    icon={<Icon name="Trash" size={12} />}
-                    title={`删除 ${p.name}`}
-                    aria-label={`删除 ${p.name}`}
-                    onClick={(e) => {
+                  <Button variant="outline" size="sm" className="provider-item-del" title={`删除 ${p.name}`} aria-label={`删除 ${p.name}`} onClick={(e) => {
                       e.stopPropagation();
                       void handleRemoveProvider(p);
-                    }}
-                  />
+                    }}><Trash2 size={12} /></Button>
                 </div>
               ))
             )}
@@ -250,13 +233,9 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                   >
                     服务商名称
                   </FieldHead>
-                  <Input
-                  className="provider-name-input"
-                  type="text"
-                  shadow value={selected.name} onChange={(e) =>
+                  <Input className="provider-name-input" type="text" value={selected.name} onChange={(e) =>
                     patchProvider(selected.id, { name: e.target.value })
-                  }
-                  aria-label="服务商名称" />
+                  } aria-label="服务商名称" />
                 </>
               )}
               <span className="provider-detail-type">
@@ -269,7 +248,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                 <HintTip tip="关闭后不会出现在模型选择器里。" />
                 <Switch
                   checked={selected.enabled}
-                  onChange={(checked) =>
+                  onCheckedChange={(checked) =>
                     patchProvider(selected.id, { enabled: checked })
                   }
                   aria-label="启用此服务商"
@@ -285,12 +264,9 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
             >
               API Host
             </FieldHead>
-            <Input
-            type="text"
-            shadow value={selected.apiHost} onChange={(e) =>
+            <Input type="text" value={selected.apiHost} onChange={(e) =>
               patchProvider(selected.id, { apiHost: e.target.value })
-            }
-            placeholder={
+            } placeholder={
               selected.type === "ollama"
                 ? "http://localhost:11434"
                 : selected.type === "anthropic"
@@ -311,34 +287,19 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                 API Key
               </FieldHead>
               <div className="provider-api-key-row">
-                <Input
-                  id="provider-api-key"
-                  type={showApiKey ? "text" : "password"}
-                  shadow
-                  value={selected.apiKey}
-                  onChange={(e) =>
+                <Input id="provider-api-key" type={showApiKey ? "text" : "password"} value={selected.apiKey} onChange={(e) =>
                     patchProvider(selected.id, { apiKey: e.target.value })
-                  }
-                  placeholder="sk-..."
-                  suffix={
-                    <button
-                      type="button"
-                      className="provider-api-key-toggle"
-                      onClick={() => setShowApiKey((v) => !v)}
-                      aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
-                      title={showApiKey ? "隐藏" : "显示"}
-                    >
-                      <Icon name="Eye" size={14} />
-                    </button>
-                  }
-                />
-                <Button
-                  type="default"
-                  size="small"
-                  className={`provider-check-btn${checkStatus === "success" ? " success" : ""}${checkStatus === "failed" ? " failed" : ""}`}
-                  onClick={() => void handleCheckConnection()}
-                  disabled={checkStatus === "checking"}
+                  } placeholder="sk-..." />
+                <button
+                  type="button"
+                  className="provider-api-key-toggle"
+                  onClick={() => setShowApiKey((v) => !v)}
+                  aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                  title={showApiKey ? "隐藏" : "显示"}
                 >
+                  <Eye size={14} />
+                </button>
+                <Button variant="outline" size="sm" className={`provider-check-btn${checkStatus === "success" ? " success" : ""}${checkStatus === "failed" ? " failed" : ""}`} onClick={() => void handleCheckConnection()} disabled={checkStatus === "checking"}>
                   {checkStatus === "checking" ? "检测中…" : "检测"}
                 </Button>
               </div>
@@ -351,13 +312,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                 连接
               </FieldHead>
               <div className="provider-check-row">
-                <Button
-                  type="default"
-                  size="small"
-                  className={`provider-check-btn${checkStatus === "success" ? " success" : ""}${checkStatus === "failed" ? " failed" : ""}`}
-                  onClick={() => void handleCheckConnection()}
-                  disabled={checkStatus === "checking"}
-                >
+                <Button variant="outline" size="sm" className={`provider-check-btn${checkStatus === "success" ? " success" : ""}${checkStatus === "failed" ? " failed" : ""}`} onClick={() => void handleCheckConnection()} disabled={checkStatus === "checking"}>
                   {checkStatus === "checking" ? "检测中…" : "检测连接"}
                 </Button>
 
@@ -382,11 +337,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                   onChange(updateProviderInSettings(settings, selected.id, lists))
                 }
               />
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setShowAddModel(true)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setShowAddModel(true)}>
                 手动添加
               </Button>
             </div>
@@ -403,11 +354,7 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                       {MODEL_KIND_LABELS[m.kind]}
                     </span>
                     {m.id}
-                    <Button
-                      type="text"
-                      onClick={() => handleRemoveModel(m.id)}
-                      title="移除"
-                    >
+                    <Button variant="ghost" onClick={() => handleRemoveModel(m.id)} title="移除">
                       ×
                     </Button>
                   </span>

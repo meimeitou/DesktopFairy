@@ -1,0 +1,37 @@
+.web-citations {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.web-citation {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--persimmon-bright);
+  font-size: 12px;
+  line-height: 1.45;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.web-citation:hover {
+  background: var(--persimmon-softer);
+}
+
+.web-citation-index {
+  flex-shrink: 0;
+  color: var(--bone-500);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-citation-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

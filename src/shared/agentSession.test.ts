@@ -106,6 +106,63 @@ describe("applyDone", () => {
     expect(meta.maxTurnsReached).toBe(false);
   });
 
+
+  it("attaches web citations from WebSearch tool snapshot to the last reply", () => {
+    const state = beginSend(emptyAgentSessionState(), {
+      requestId: "r1",
+      userText: "q",
+    });
+    const withAnswer = {
+      ...state,
+      messages: [...state.messages.slice(0, -1), assistantMsg("结果[1]")],
+    };
+    const { state: next } = applyDone(withAnswer, {
+      requestId: "r1",
+      tools: [
+        {
+          toolCallId: "t1",
+          toolName: "WebSearch",
+          status: "done",
+          resultPreview: JSON.stringify({
+            ok: true,
+            results: [{ id: 1, title: "A", url: "https://a.com", content: "x" }],
+          }),
+        },
+      ],
+    });
+    const last = next.messages[next.messages.length - 1];
+    expect(last.webCitations).toEqual([
+      { index: 1, title: "A", url: "https://a.com", source: "WebSearch" },
+    ]);
+  });
+
+  it("aborted turns do not attach web citations", () => {
+    const state = beginSend(emptyAgentSessionState(), {
+      requestId: "r1",
+      userText: "q",
+    });
+    const withAnswer = {
+      ...state,
+      messages: [...state.messages.slice(0, -1), assistantMsg("部分")],
+    };
+    const { state: next } = applyDone(withAnswer, {
+      requestId: "r1",
+      aborted: true,
+      tools: [
+        {
+          toolCallId: "t1",
+          toolName: "WebSearch",
+          status: "done",
+          resultPreview: JSON.stringify({
+            ok: true,
+            results: [{ id: 1, title: "A", url: "https://a.com", content: "x" }],
+          }),
+        },
+      ],
+    });
+    const last = next.messages[next.messages.length - 1];
+    expect(last.webCitations).toBeUndefined();
+  });
   it("compact done appends clear marker + summary and wipes usage", () => {
     const state = beginSend(emptyAgentSessionState(), {
       requestId: "r1",

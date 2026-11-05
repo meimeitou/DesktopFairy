@@ -29,13 +29,13 @@
 
 .settings-sidebar {
   flex-shrink: 0;
-  width: 196px;
+  width: 250px;
   display: flex;
   flex-direction: column;
   background: var(--animal-bg-color);
   overflow: hidden;
   user-select: none;
-  border-right: 1px solid rgba(139, 105, 70, 0.2);
+  border-right: 1px solid var(--hairline);
   border-radius: 12px 0 0 12px;
 }
 
@@ -51,15 +51,15 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 12px 10px 16px;
+  padding: 10px;
   overflow-y: auto;
 }
 
 .settings-menu-group-label {
-  padding: 14px 12px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--bone-600);
+  padding: 8px 10px 2px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--bone-500);
   letter-spacing: 0.01em;
   user-select: none;
 }
@@ -80,42 +80,28 @@
   justify-content: flex-start;
   gap: 10px;
   width: 100%;
-  height: 40px;
+  height: 32px;
   text-align: left;
-  color: #8a7b66;
+  color: var(--bone-400);
   font-size: 14px;
-  font-weight: 600;
-  border-radius: 12px;
+  font-weight: 400;
+  border-radius: 10px;
   border: 1px solid transparent;
   /* library Button has 3D shadow; flat pill like the demo nav */
   box-shadow: none;
 }
 
 .settings-menu-item:hover:not(:disabled):not(.active) {
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
-/* Active: mint soft bg + left-edge marker — same syntax as .topic-item.active (One Mint Rule). */
+/* Active: Cherry settings nav — muted fill, medium weight, no marker. */
 .settings-menu-item.active,
 .settings-menu-item.active:hover:not(:disabled) {
   color: var(--bone-100);
-  background: var(--persimmon-softer);
-  border-color: rgba(25, 200, 185, 0.28);
-}
-
-.settings-menu-item.active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 10px;
-  bottom: 10px;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--persimmon-bright);
-}
-
-.settings-menu-item.active .settings-menu-icon {
-  color: var(--persimmon-bright);
+  background: var(--ink-600);
+  border-color: transparent;
+  font-weight: 500;
 }
 
 .settings-menu-icon {
@@ -149,7 +135,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f5f5f5;
+  background: var(--animal-bg-color);
   border-radius: 0 12px 12px 0;
 }
 
@@ -238,8 +224,8 @@
   padding: 20px 22px;
   border: 1px solid var(--hairline);
   border-radius: 12px;
-  background: rgba(121, 79, 39, 0.07);
-  box-shadow: inset 0 1px 0 rgba(121, 79, 39, 0.03);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bone-400) 3%, transparent);
 }
 
 .settings-section.provider-settings,
@@ -334,31 +320,31 @@
 }
 
 /* 多行输入：库没有 Textarea 组件，按库 Input 的视觉规则重设计 ——
-   奶白底 + hairline 描边 + 3px 仿立体底边 + 圆角，聚焦底边变 mint。 */
+   深色底 + hairline 描边 + 3px 仿立体底边 + 圆角，聚焦底边变品牌绿。 */
 .field textarea {
   display: block;
   width: 100%;
   padding: 10px 14px;
-  background: #faf8f3;
+  background: var(--capsule-bg);
   border: 1px solid var(--hairline);
   border-radius: 12px;
-  box-shadow: 0 3px #d4c9b4;
+  box-shadow: 0 3px var(--field-shadow);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
   line-height: 1.55;
-  color: #794f3f;
+  color: var(--field-text);
   outline: none;
   resize: vertical;
 }
 .field textarea:focus {
   outline: none;
   border-color: var(--persimmon-focus);
-  box-shadow: 0 3px #19c8b9;
-  background: #faf8f3;
+  box-shadow: 0 3px var(--persimmon);
+  background: var(--capsule-bg);
 }
 .field textarea::placeholder {
-  color: #c4b89e;
+  color: var(--hairline-bold);
   font-weight: 400;
 }
 /* removed: legacy .toggle */
@@ -409,19 +395,19 @@
   gap: 2px;
   padding-top: 6px;
   padding-bottom: 4px;
-  background: #fff;
+  background: var(--field-bg);
   border: 1px solid var(--hairline);
   border-bottom: 3px solid var(--hairline-bold);
   color: var(--bone-200);
 }
 
 .size-preset-btn:hover:not(:disabled):not(.active) {
-  background: #fffdf7;
+  background: var(--ink-750);
   color: var(--bone-100);
 }
 
 .size-preset-btn.active {
-  background: #fdf3e0;
+  background: var(--ink-750);
   border-color: var(--amber);
   border-bottom-color: var(--amber);
   color: var(--bone-100);
@@ -474,7 +460,7 @@
   padding: 20px 22px;
   border: 1px solid var(--hairline);
   border-radius: 14px;
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
 }
 
 .about-version-name {
@@ -488,7 +474,7 @@
   padding: 2px 8px;
   border-radius: 5px;
   background: var(--persimmon-soft);
-  border: 1px solid rgba(25, 200, 185, 0.3);
+  border: 1px solid color-mix(in srgb, var(--persimmon) 30%, transparent);
   font-size: 11px;
   font-weight: 600;
   color: var(--persimmon-bright);
@@ -504,7 +490,7 @@
   gap: 0;
   border: 1px solid var(--hairline);
   border-radius: 12px;
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
   overflow: hidden;
 }
 
@@ -558,27 +544,27 @@
 }
 
 .model-picker-btn {
-  background: #fff;
+  background: var(--field-bg);
   border: 1px solid var(--hairline);
   border-bottom: 3px solid var(--hairline-bold);
   color: var(--bone-200);
 }
 
 .model-picker-btn:hover:not(:disabled):not(.active) {
-  background: #fffdf7;
+  background: var(--ink-750);
   color: var(--bone-100);
 }
 
 /* 选中模型：dots-teal 波点壁纸（官方 Background dots-teal 同款） */
 .model-picker-btn.active {
   background:
-    radial-gradient(circle, rgba(130, 213, 187, 0.18) 1.5px, transparent 1.5px)
+    radial-gradient(circle, color-mix(in srgb, var(--persimmon) 18%, transparent) 1.5px, transparent 1.5px)
       0 0 / 28px 28px,
-    radial-gradient(circle, rgba(170, 235, 210, 0.12) 1px, transparent 1px)
+    radial-gradient(circle, color-mix(in srgb, var(--persimmon) 12%, transparent) 1px, transparent 1px)
       7px 7px / 14px 14px,
-    #e8faf5;
-  border-color: rgba(130, 213, 187, 0.55);
-  border-bottom-color: rgba(130, 213, 187, 0.7);
+    var(--animal-primary-color-bg);
+  border-color: color-mix(in srgb, var(--persimmon) 55%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--persimmon) 70%, transparent);
   color: var(--bone-100);
   font-weight: 600;
 }
@@ -596,20 +582,8 @@
 }
 
 
-/* Live2D 设置：官方 Tabs（模型 / 动作对话 / 窗口）。
-   库 tabContent 默认 padding 24px + 20px 大字，比设置页其他区块松，
-   收紧到设置页密度；tabList 的米白底在面板上再压深一档。 */
-.live2d-tabs [class*="animal-tabContent"] {
-  padding: 16px 4px 4px;
-}
-
-.live2d-tabs [class*="animal-tabContentInner"] {
-  font-size: 13px;
-}
-
-.live2d-tabs [class*="animal-tabList"] {
-  padding: 8px;
-}
+/* Live2D 设置：工具配置同款下划线分区导航（agent-section-nav），
+   内容区由 .agent-section-body 承载，切换时淡入。 */
 .live2d-model-toolbar {
   display: flex;
   align-items: center;
@@ -635,7 +609,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: rgba(121, 79, 39, 0.05);
+  background: color-mix(in srgb, var(--bone-400) 5%, transparent);
   border: 1px solid var(--hairline);
   border-radius: 10px;
 }
@@ -713,7 +687,7 @@
 .live2d-cap-chips li {
   padding: 2px 9px;
   border-radius: 999px;
-  background: rgba(121, 79, 39, 0.05);
+  background: color-mix(in srgb, var(--bone-400) 5%, transparent);
   font-size: 11px;
   color: var(--bone-500);
 }
@@ -780,8 +754,8 @@
 }
 
 .model-picker-btn.active .model-picker-source {
-  background: rgba(130, 213, 187, 0.35);
-  color: #2f7d68;
+  background: color-mix(in srgb, var(--persimmon) 35%, transparent);
+  color: var(--animal-primary-color-active);
 }
 
 .error-text {
@@ -816,7 +790,7 @@
   padding: 10px 12px;
   border-radius: 10px;
   background: var(--amber-soft);
-  border: 1px solid rgba(245, 195, 28, 0.35);
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
 }
 
 .selection-accessibility-hint p {
@@ -876,7 +850,7 @@
 }
 
 .field-hint.warn {
-  color: #8a6a1f;
+  color: var(--amber);
 }
 
 .field-hint code {
@@ -1046,15 +1020,15 @@
   width: 100%;
   min-height: 200px;
   padding: 10px 14px;
-  background: #faf8f3;
+  background: var(--capsule-bg);
   border: 1px solid var(--hairline);
   transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s, border-color 0.15s;
   border-radius: 12px;
-  box-shadow: 0 3px #d4c9b4;
+  box-shadow: 0 3px var(--field-shadow);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.55;
-  color: #794f3f;
+  color: var(--field-text);
   outline: none;
   resize: vertical;
 }
@@ -1062,11 +1036,11 @@
 .agent-manuscript-body:focus {
   outline: none;
   border-color: var(--persimmon-focus);
-  box-shadow: 0 3px #19c8b9;
+  box-shadow: 0 3px var(--persimmon);
 }
 
 .agent-manuscript-body::placeholder {
-  color: #c4b89e;
+  color: var(--hairline-bold);
 }
 
 @media (max-width: 520px) {
@@ -1130,7 +1104,7 @@
 .agent-catalog-block {
   border: 1px solid var(--hairline);
   border-radius: 10px;
-  background: rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 8%, transparent);
   overflow: hidden;
 }
 
@@ -1167,7 +1141,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(121, 79, 39, 0.04);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 4%, transparent);
 }
 
 .agent-catalog-item:last-child {
@@ -1196,7 +1170,7 @@
   border-radius: 999px;
   font-size: 10px;
   font-weight: 500;
-  background: var(--animal-success-color-bg, rgba(111, 186, 44, 0.12));
+  background: var(--animal-success-color-bg);
   color: var(--animal-success-color-active);
 }
 
@@ -1243,9 +1217,9 @@
 .agent-mcp-editor {
   margin-top: 12px;
   padding: 14px;
-  border: 1px solid rgba(25, 200, 185, 0.25);
+  border: 1px solid color-mix(in srgb, var(--persimmon) 25%, transparent);
   border-radius: 10px;
-  background: rgba(121, 79, 39, 0.03);
+  background: color-mix(in srgb, var(--bone-400) 3%, transparent);
 }
 
 .agent-mcp-editor-head {
@@ -1270,12 +1244,12 @@
   width: 100%;
   min-height: 72px;
   padding: 8px 12px;
-  background: #faf8f3;
+  background: var(--capsule-bg);
   border: 1px solid var(--hairline);
   transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s, border-color 0.15s;
   border-radius: 12px;
-  box-shadow: 0 3px #d4c9b4;
-  color: #794f3f;
+  box-shadow: 0 3px var(--field-shadow);
+  color: var(--field-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.45;
@@ -1285,17 +1259,17 @@
 .agent-mcp-textarea:focus {
   outline: none;
   border-color: var(--persimmon-focus);
-  box-shadow: 0 3px #19c8b9;
+  box-shadow: 0 3px var(--persimmon);
 }
 .agent-mcp-textarea::placeholder {
-  color: #c4b89e;
+  color: var(--hairline-bold);
 }
 
 .agent-mcp-preview {
   margin-top: 10px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(121, 79, 39, 0.11);
+  background: color-mix(in srgb, var(--bone-400) 11%, transparent);
   border: 1px solid var(--hairline);
 }
 
@@ -1371,13 +1345,13 @@
   padding: 8px 12px;
   border: 1px solid var(--hairline);
   border-radius: 10px;
-  background: rgba(121, 79, 39, 0.03);
+  background: color-mix(in srgb, var(--bone-400) 3%, transparent);
   transition: all 0.15s var(--ease-island);
 }
 
 .agent-toggle-list-card .agent-toggle-item:hover {
   border-color: var(--hairline-strong);
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 .agent-toggle-list-card .agent-toggle-main p {
@@ -1392,7 +1366,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(121, 79, 39, 0.04);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 4%, transparent);
 }
 
 .agent-toggle-item:last-child {
@@ -1457,7 +1431,7 @@
   height: 72px;
   border-radius: 18px;
   border: 1px solid var(--hairline-strong);
-  background: rgba(121, 79, 39, 0.04);
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
   font-size: 36px;
   overflow: hidden;
   flex-shrink: 0;
@@ -1469,7 +1443,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  box-shadow: 0 0 0 2px rgba(121, 79, 39, 0.1);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bone-400) 10%, transparent);
 }
 
 .mcp-status-connecting {
@@ -1502,7 +1476,7 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-  background: rgba(121, 79, 39, 0.04);
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
   border: 1px solid var(--hairline);
   border-radius: 10px;
   overflow: hidden;
@@ -1515,12 +1489,12 @@
   justify-content: space-between;
   gap: 16px;
   padding: 10px 14px;
-  background: rgba(121, 79, 39, 0.03);
+  background: color-mix(in srgb, var(--bone-400) 3%, transparent);
 }
 
 .agent-contextual-tool-header {
   padding: 8px 14px;
-  background: rgba(121, 79, 39, 0.04);
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
   border-bottom: 1px solid var(--hairline);
   font-size: 12px;
   color: var(--bone-500);
@@ -1628,7 +1602,7 @@
   margin: 6px 0 0;
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 8%, transparent);
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -1649,7 +1623,7 @@
 .tools-mcp-logs {
   border: 1px solid var(--hairline);
   border-radius: 10px;
-  background: rgba(121, 79, 39, 0.04);
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
   padding: 8px 10px;
   max-height: 360px;
   overflow-y: auto;
@@ -1677,15 +1651,15 @@
 }
 
 .tools-mcp-log-level.error {
-  color: var(--rust, #e05a5a);
+  color: var(--rust);
 }
 
 .tools-mcp-log-level.warn {
-  color: #d97706;
+  color: var(--amber);
 }
 
 .tools-mcp-log-level.info {
-  color: var(--animal-success-color-active, #6fba2c);
+  color: var(--animal-success-color-active);
 }
 
 .tools-mcp-log-source {
@@ -1763,7 +1737,7 @@
   padding: 14px;
   border: 1px solid var(--hairline);
   border-radius: 10px;
-  background: rgba(121, 79, 39, 0.04);
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
 }
 
 .tools-mcp-general-fields {

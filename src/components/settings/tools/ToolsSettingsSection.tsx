@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { useState } from "react";
 import type { AppSettings } from "../../../shared/settings";
 import McpServersPanel from "./mcp/McpServersPanel";
@@ -22,13 +23,7 @@ export default function ToolsSettingsSection({ settings }: Props) {
     <div className="agent-settings">
       <nav className="agent-section-nav" aria-label="工具配置分区">
         {SECTIONS.map((item) => (
-          <Button
-            key={item.id}
-            type="text"
-            className={`agent-section-nav-item${section === item.id ? " active" : ""}`}
-            aria-current={section === item.id ? "page" : undefined}
-            onClick={() => setSection(item.id)}
-          >
+          <Button variant="ghost" key={item.id} className={`agent-section-nav-item${section === item.id ? " active" : ""}`} aria-current={section === item.id ? "page" : undefined} onClick={() => setSection(item.id)}>
             {item.label}
           </Button>
         ))}

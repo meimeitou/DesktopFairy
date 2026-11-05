@@ -80,7 +80,7 @@ html.browser-window-shell body {
 
 .browser-tab-close:hover {
   opacity: 1;
-  background: rgba(121, 79, 39, 0.1);
+  background: color-mix(in srgb, var(--bone-400) 10%, transparent);
 }
 
 /* .browser-tab-add: official Button skin, no overrides */
@@ -117,7 +117,7 @@ html.browser-window-shell body {
   padding: 0 10px;
   border: 1px solid var(--hairline, rgba(121, 79, 39, 0.08));
   border-radius: 6px;
-  background: rgba(121, 79, 39, 0.04);
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
   color: var(--bone-200);
   font-size: 12px;
   font-family: Menlo, Monaco, "Courier New", monospace;
@@ -151,7 +151,7 @@ html.browser-window-shell body {
   flex: 1;
   min-height: 0;
   position: relative;
-  background: #fff;
+  background: var(--field-bg);
 }
 
 .browser-webview {

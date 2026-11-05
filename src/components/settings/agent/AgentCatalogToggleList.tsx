@@ -1,5 +1,5 @@
+import { Switch } from "@cherrystudio/ui";
 import Select from "../../Select";
-import { Switch } from "animal-island-ui";
 
 interface CatalogItem {
   id: string;
@@ -80,7 +80,7 @@ export default function AgentCatalogToggleList({
             ) : (
               <Switch
                 checked={enabled}
-                onChange={(checked) => onToggle(item.id, checked)}
+                onCheckedChange={(checked) => onToggle(item.id, checked)}
                 aria-label={enabled ? "禁用" : "启用"}
               />
             )}

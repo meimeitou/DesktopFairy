@@ -25,7 +25,7 @@
   border-radius: 12px;
   background: var(--ink-800);
   border: 1px solid var(--hairline-strong);
-  box-shadow: 0 4px 16px rgba(121, 79, 39, 0.18);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--bone-400) 18%, transparent);
 }
 
 .reasoning-effort-panel-header {

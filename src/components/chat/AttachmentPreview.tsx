@@ -1,4 +1,7 @@
-import { Button, Icon } from "animal-island-ui";
+import { NamedIcon } from "../NamedIcon";
+import { Button } from "@cherrystudio/ui";
+import { X } from "lucide-react";
+
 import type { ChatAttachment } from "../../shared/chatAttachments";
 import { formatFileSize, isImageExt } from "../../shared/chatAttachments";
 import "./AttachmentPreview.css";
@@ -10,10 +13,7 @@ function truncateName(name: string, max = 18): string {
 
 function FileIcon({ ext }: { ext: string }) {
   return (
-    <Icon
-      name={isImageExt(ext) ? "Image" : "File"}
-      size={14}
-    />
+    <NamedIcon name={isImageExt(ext) ? "Image" : "File"} size={14} />
   );
 }
 
@@ -34,15 +34,7 @@ export default function AttachmentPreview({ files, onRemove }: Props) {
           </span>
           <span className="attachment-chip-name">{truncateName(file.name)}</span>
           <span className="attachment-chip-size">{formatFileSize(file.size)}</span>
-          <Button
-            type="text"
-            size="small"
-            className="attachment-chip-remove"
-            icon={<Icon name="Close" size={12} />}
-            onClick={() => onRemove(file.id)}
-            title="移除"
-            aria-label={`移除 ${file.name}`}
-          />
+          <Button variant="ghost" size="sm" className="attachment-chip-remove" onClick={() => onRemove(file.id)} title="移除" aria-label={`移除 ${file.name}`}><X size={12} /></Button>
         </div>
       ))}
     </div>

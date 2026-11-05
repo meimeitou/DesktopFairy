@@ -1,5 +1,5 @@
-import { Button, Icon } from "animal-island-ui";
-import { CopyIcon } from "../icons/naivePatch";
+import { Button } from "@cherrystudio/ui";
+import { Copy, MessageSquare } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 interface Props {
@@ -69,23 +69,13 @@ export default function TerminalSelectionTooltip({
       className="terminal-selection-tooltip"
       style={{ left: pos.left, top: pos.top }}
     >
-      <Button
-        type="text"
-        className="terminal-selection-tooltip-btn primary"
-        onClick={onAddToChat}
-        title="发送到 AI 助手输入框"
-      >
-        <Icon name="Chat" size={13} />
+      <Button variant="ghost" className="terminal-selection-tooltip-btn primary" onClick={onAddToChat} title="发送到 AI 助手输入框">
+        <MessageSquare size={13} />
         <span>Add to chat</span>
       </Button>
       <div className="terminal-selection-tooltip-divider" />
-      <Button
-        type="text"
-        className="terminal-selection-tooltip-btn"
-        onClick={handleCopy}
-        title="复制到剪贴板"
-      >
-        <Icon icon={CopyIcon} size={13} />
+      <Button variant="ghost" className="terminal-selection-tooltip-btn" onClick={handleCopy} title="复制到剪贴板">
+        <Copy size={16} />
         <span>Copy</span>
       </Button>
     </div>

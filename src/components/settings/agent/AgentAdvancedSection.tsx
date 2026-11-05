@@ -1,5 +1,6 @@
+import { Input } from "@cherrystudio/ui";
 import { FieldHead } from "../../HintTip";
-import { Input } from "animal-island-ui";
+
 import type { AgentConfig } from "../../../shared/agent";
 
 interface Props {
@@ -39,10 +40,7 @@ export default function AgentAdvancedSection({ agent, onChange, children }: Prop
           最大工具轮次
         </FieldHead>
         <div className="field-number-row">
-          <Input shadow id="agent-max-turns"
-          type="number"
-          min={1}
-          max={100} value={agent.maxTurns} onChange={(e) =>
+          <Input id="agent-max-turns" type="number" min={1} max={100} value={agent.maxTurns} onChange={(e) =>
             onChange({ maxTurns: Math.max(1, Number(e.target.value) || 30) })
           } />
           <span className="field-number-suffix">次</span>

@@ -20,7 +20,7 @@ html.chat-window-shell body {
   height: 44px;
   padding: 0 12px;
   border-bottom: 1px solid var(--hairline);
-  background: rgba(245, 248, 224, 0.75);
+  background: color-mix(in srgb, var(--ink-900) 75%, transparent);
   -webkit-app-region: drag;
 }
 

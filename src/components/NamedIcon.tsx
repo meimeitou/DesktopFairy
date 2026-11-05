@@ -1,0 +1,82 @@
+import {
+  Book,
+  Camera,
+  Cat,
+  Check,
+  Cloud,
+  Copy,
+  Eye,
+  File,
+  Flame,
+  Folder,
+  Globe,
+  House,
+  Image,
+  Lightbulb,
+  MessageSquare,
+  Monitor,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings,
+  Share2,
+  Smile,
+  Sparkles,
+  SquareTerminal,
+  Star,
+  Thermometer,
+  Trash2,
+  User,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+
+const ICONS: Record<string, LucideIcon> = {
+  Plus,
+  Book,
+  Trash: Trash2,
+  Close: X,
+  Chat: MessageSquare,
+  Edit: Pencil,
+  Refresh: RefreshCw,
+  Camera,
+  File,
+  Image,
+  Flame,
+  Check,
+  Play,
+  Bulb: Lightbulb,
+  Folder,
+  Eye,
+  Butterfly: Sparkles,
+  Video: Monitor,
+  Home: House,
+  Settings,
+  Search,
+  Share: Share2,
+  Code: SquareTerminal,
+  Globe,
+  Copy,
+  Cloud,
+  Pencil,
+  Cat,
+  Smile,
+  User,
+  Star,
+  Thermometer,
+};
+
+export function NamedIcon({
+  name,
+  size,
+  className,
+}: {
+  name?: string | null;
+  size?: number | string;
+  className?: string;
+}) {
+  const Icon = ICONS[name || ""] ?? MessageSquare;
+  return <Icon size={size} className={className} />;
+}

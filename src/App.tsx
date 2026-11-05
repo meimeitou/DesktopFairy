@@ -1,3 +1,4 @@
+import { ToastProvider, ToastViewport } from "@cherrystudio/ui";
 import { lazy, Suspense } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installSettingsSyncListener } from "./shared/settingsStore";
@@ -57,9 +58,12 @@ function App() {
   }
 
   return (
-    <ErrorBoundary>
-      <Suspense fallback={null}>{child}</Suspense>
-    </ErrorBoundary>
+    <ToastProvider>
+      <ErrorBoundary>
+        <Suspense fallback={null}>{child}</Suspense>
+      </ErrorBoundary>
+      <ToastViewport />
+    </ToastProvider>
   );
 }
 

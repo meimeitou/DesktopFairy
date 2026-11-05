@@ -19,7 +19,7 @@ button.df-select-trigger {
   width: 100%;
   text-align: left;
   padding: 8px 14px;
-  background: #faf8f3;
+  background: var(--capsule-bg);
   border: 1px solid var(--hairline-strong);
   border-radius: 12px;
   box-shadow: none;
@@ -36,7 +36,7 @@ button.df-select-trigger {
 }
 
 .df-select-trigger:hover:not(:disabled) {
-  background: #fdfcf9;
+  background: var(--capsule-hover);
 }
 
 
@@ -89,13 +89,13 @@ button.df-select-trigger {
   list-style: none;
   max-height: 240px;
   overflow-y: auto;
-  background: rgba(248, 244, 232, 0.98);
+  background: color-mix(in srgb, var(--ink-750) 98%, transparent);
   backdrop-filter: blur(14px);
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
   box-shadow:
-    0 12px 32px rgba(121, 79, 39, 0.23),
-    0 2px 6px rgba(121, 79, 39, 0.13);
+    0 12px 32px color-mix(in srgb, var(--bone-400) 23%, transparent),
+    0 2px 6px color-mix(in srgb, var(--bone-400) 13%, transparent);
   z-index: 1000;
   animation: df-select-in 0.12s ease;
 }

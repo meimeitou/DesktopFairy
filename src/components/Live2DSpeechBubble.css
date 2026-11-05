@@ -22,7 +22,7 @@
   max-width: min(var(--bubble-line-max-width, 320px), 100%);
   padding: 5px 10px;
   border-radius: 10px;
-  background: rgba(74, 54, 32, 0.82);
+  background: color-mix(in srgb, var(--bone-100) 82%, transparent);
 }
 
 .live2d-speech-bubble-tail {
@@ -31,7 +31,7 @@
   bottom: -3px;
   width: 7px;
   height: 7px;
-  background: rgba(74, 54, 32, 0.82);
+  background: color-mix(in srgb, var(--bone-100) 82%, transparent);
   transform: rotate(45deg);
   border-radius: 1px;
   pointer-events: none;
@@ -43,7 +43,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--bubble-max-lines, 8);
   overflow: hidden;
-  color: #fffbe7;
+  color: var(--ink-750);
   font-size: 11px;
   line-height: 1.35;
   text-align: left;

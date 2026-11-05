@@ -1,4 +1,5 @@
 import type { KeyboardEvent, ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import {
   getToolDisplayName,
   getToolIcon,
@@ -21,6 +22,8 @@ export default function ToolHeader({
   expanded = true,
   onToggle,
 }: Props) {
+  const Icon = getToolIcon(toolName);
+
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (!collapsible || !onToggle) return;
     if (e.key === "Enter" || e.key === " ") {
@@ -39,7 +42,7 @@ export default function ToolHeader({
       aria-expanded={collapsible ? expanded : undefined}
     >
       <span className="agent-tool-header-icon" aria-hidden>
-        {getToolIcon(toolName)}
+        <Icon size={14} />
       </span>
       <div className="agent-tool-header-main">
         <strong>{getToolDisplayName(toolName)}</strong>
@@ -51,7 +54,7 @@ export default function ToolHeader({
           className={`agent-tool-chevron${expanded ? " agent-tool-chevron-expanded" : ""}`}
           aria-hidden
         >
-          ›
+          <ChevronRight size={14} />
         </span>
       )}
     </div>

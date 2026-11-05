@@ -1,5 +1,6 @@
+import { Button, NormalTooltip } from "@cherrystudio/ui";
 import { useEffect, useRef, useState } from "react";
-import { Button, Tooltip } from "animal-island-ui";
+
 import type { ContextUsageResult } from "../../shared/contextUsage";
 import "./ContextUsageMeter.css";
 
@@ -55,15 +56,8 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
 
   return (
     <div className="context-usage-meter" ref={containerRef}>
-      <Tooltip title={tip} placement="top">
-        <Button
-          type="text"
-          className={`context-usage-btn${open ? " open" : ""}`}
-          onClick={() => !disabled && setOpen((v) => !v)}
-          disabled={disabled}
-          aria-label={tip}
-          aria-expanded={open}
-        >
+      <NormalTooltip content={tip} side="top">
+        <Button variant="ghost" className={`context-usage-btn${open ? " open" : ""}`} onClick={() => !disabled && setOpen((v) => !v)} disabled={disabled} aria-label={tip} aria-expanded={open}>
           <svg
             width="18"
             height="18"
@@ -92,7 +86,7 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
             />
           </svg>
         </Button>
-      </Tooltip>
+      </NormalTooltip>
 
       {open && (
         <div className="context-usage-panel" role="dialog" aria-label="上下文用量">

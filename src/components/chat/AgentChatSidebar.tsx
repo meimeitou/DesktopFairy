@@ -1,6 +1,7 @@
-import { Button, Icon } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import { ChevronDown, MessageSquare, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+
 import { useMemo, useState } from "react";
-import { ChevronDown } from "../icons/naivePatch";
 import type { AppSettings } from "../../shared/settings";
 import { getChatAgents } from "../../shared/settings";
 import type { AgentConfig } from "../../shared/agent";
@@ -80,15 +81,15 @@ export default function AgentChatSidebar({
   return (
     <aside className={`agent-chat-sidebar${collapsed ? " collapsed" : ""}`} aria-hidden={collapsed} {...(collapsed ? { inert: true } : {})}>
       <div className="agent-chat-sidebar-head">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           className="agent-group-add"
           onClick={onCreateAgent}
           title="新建智能体"
         >
-          <Icon name="Plus" size={14} />
+          <Plus size={16} />
           <span>新建智能体</span>
-        </button>
+        </Button>
       </div>
 
       <div className="agent-groups">
@@ -130,7 +131,7 @@ export default function AgentChatSidebar({
                     title="新对话"
                     onClick={() => onCreateTopic(agent.id)}
                   >
-                    <Icon name="Chat" size={13} />
+                    <MessageSquare size={13} />
                   </button>
                   <button
                     type="button"
@@ -142,27 +143,27 @@ export default function AgentChatSidebar({
                       setAgentMenu({ id: agent.id, x: r.right + 4, y: r.top });
                     }}
                   >
-                    <Icon name="Edit" size={13} />
+                    <Pencil size={13} />
                   </button>
                 </div>
                 <span className={`agent-group-chevron${isCollapsed ? " folded" : ""}`}>
-                  <Icon icon={ChevronDown} size={12} />
+                  <ChevronDown size={12} />
                 </span>
               </header>
 
               {!isCollapsed && (
                 <div className="agent-group-topics">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
                     className="topic-new-btn"
                     onClick={(e) => {
                       e.stopPropagation();
                       onCreateTopic(agent.id);
                     }}
                   >
-                    <Icon name="Plus" size={13} />
+                    <Plus size={16} />
                     <span>新增会话</span>
-                  </button>
+                  </Button>
                   {agentTopics.length === 0 ? (
                     <div className="topic-empty">
                       <span>暂无会话</span>
@@ -182,29 +183,21 @@ export default function AgentChatSidebar({
                         <div className="topic-item-main">
                           <span className="topic-item-icon">
                             {loadingTopicIds.has(topic.id) ? (
-                              <Icon name="Refresh" size={14} className="topic-loading-icon" />
+                              <RefreshCw size={14} className={"topic-loading-icon"} />
                             ) : (
-                              <Icon name="Chat" />
+                              <MessageSquare />
                             )}
                           </span>
                           <span className="topic-item-name">
                             {topic.name || "新对话"}
                           </span>
                           <div className="topic-item-actions">
-                            <Button
-                              type="default"
-                              size="small"
-                              danger
-                              className="topic-item-action-btn topic-item-action-btn-danger"
-                              icon={<Icon name="Trash" size={12} />}
-                              onClick={(e) => {
+                            <Button variant="outline" size="sm" className="topic-item-action-btn topic-item-action-btn-danger" onClick={(e) => {
                                 e.stopPropagation();
                                 if (confirmDeleteTopic?.id === topic.id) { setConfirmDeleteTopic(null); return; }
                                 const r = e.currentTarget.getBoundingClientRect();
                                 setConfirmDeleteTopic({ id: topic.id, x: r.right + 4, y: r.top });
-                              }}
-                              title="删除"
-                            />
+                              }} title="删除"><Trash2 size={12} /></Button>
                           </div>
                         </div>
                         <div className="topic-item-time">
@@ -262,23 +255,14 @@ export default function AgentChatSidebar({
           >
             <span>确定删除此会话？</span>
             <div className="topic-confirm-actions">
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setConfirmDeleteTopic(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setConfirmDeleteTopic(null)}>
                 取消
               </Button>
-              <Button
-                type="primary"
-                size="small"
-                danger
-                onClick={() => {
+              <Button variant="destructive" size="sm" onClick={() => {
                   const id = confirmDeleteTopic.id;
                   setConfirmDeleteTopic(null);
                   onDeleteTopic(id);
-                }}
-              >
+                }}>
                 删除
               </Button>
             </div>
@@ -300,22 +284,13 @@ export default function AgentChatSidebar({
               {confirmAgentTopics.length} 个会话。
             </span>
             <div className="topic-confirm-actions">
-              <Button
-                type="default"
-                size="small"
-                onClick={() => setConfirmDeleteAgentId(null)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setConfirmDeleteAgentId(null)}>
                 取消
               </Button>
-              <Button
-                type="primary"
-                size="small"
-                danger
-                onClick={() => {
+              <Button variant="destructive" size="sm" onClick={() => {
                   onDeleteAgent(confirmAgent);
                   setConfirmDeleteAgentId(null);
-                }}
-              >
+                }}>
                 删除
               </Button>
             </div>

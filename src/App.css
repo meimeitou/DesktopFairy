@@ -8,12 +8,12 @@
 .window-frame {
   width: 380px;
   height: 600px;
-  background: rgba(248, 244, 232, 0.92);
+  background: color-mix(in srgb, var(--ink-750) 92%, transparent);
   border-radius: 16px;
-  border: 1px solid rgba(196, 184, 158, 0.6);
+  border: 1px solid color-mix(in srgb, var(--hairline-bold) 60%, transparent);
   box-shadow:
-    0 8px 40px rgba(61, 52, 40, 0.18),
-    0 0 0 0.5px rgba(196, 184, 158, 0.25);
+    0 8px 40px color-mix(in srgb, var(--shadow-ink) 18%, transparent),
+    0 0 0 0.5px color-mix(in srgb, var(--hairline-bold) 25%, transparent);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   display: flex;
@@ -64,15 +64,15 @@
   gap: 6px;
   align-items: flex-start;
   justify-content: center;
-  background: var(--animal-bg-color, #f5f8e0);
-  color: var(--bone-200, #4a3620);
+  background: var(--ink-900);
+  color: var(--bone-200);
   font-size: 12px;
   overflow: auto;
 }
 
 .app-error-fallback strong {
   font-size: 13px;
-  color: var(--rust-bright, #c0553a);
+  color: var(--rust-bright);
 }
 
 .app-error-fallback p {
@@ -84,7 +84,7 @@
 .app-error-fallback button {
   margin-top: 4px;
   padding: 4px 10px;
-  border: 1px solid var(--hairline, rgba(74, 54, 32, 0.2));
+  border: 1px solid var(--hairline);
   border-radius: 6px;
   background: transparent;
   color: inherit;

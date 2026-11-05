@@ -1,5 +1,7 @@
+import { Button } from "@cherrystudio/ui";
+import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button, Icon } from "animal-island-ui";
+
 import Live2DCanvas from "../components/Live2DCanvas";
 import {
   normalizeSpeechBubbleMaxChars,
@@ -120,21 +122,14 @@ export default function MainView() {
           />
         ) : (
           <div className="char-default">
-            <span className="char-emoji"><Icon name="Butterfly" size={72} /></span>
+            <span className="char-emoji"><Sparkles size={72} /></span>
           </div>
         )}
       </div>
 
       {isHovered && (
         <div className="hover-overlay">
-          <Button
-            type="primary"
-            size="small"
-            className="hover-chat-btn"
-            icon={<Icon name="Chat" size={12} />}
-            title="开始聊天"
-            onClick={() => api.invoke("open_chat_window")}
-          >
+          <Button variant="default" size="sm" className="hover-chat-btn" title="开始聊天" onClick={() => api.invoke("open_chat_window")}><MessageSquare size={12} />
             开始聊天
           </Button>
         </div>

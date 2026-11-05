@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 interface Props {
   maxTurns: number;
   onContinue: () => void;
@@ -17,18 +18,10 @@ export default function MaxTurnsCard({
         <span className="max-turns-card-badge">{maxTurns} 轮</span>
       </div>
       <div className="max-turns-card-actions">
-        <Button
-          type="default"
-          size="small"
-          onClick={onCancel}
-        >
+        <Button variant="outline" size="sm" onClick={onCancel}>
           取消
         </Button>
-        <Button
-          type="primary"
-          size="small"
-          onClick={onContinue}
-        >
+        <Button variant="default" size="sm" onClick={onContinue}>
           继续执行
         </Button>
       </div>

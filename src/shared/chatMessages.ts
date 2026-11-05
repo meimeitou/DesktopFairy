@@ -4,6 +4,7 @@ import type { ToolTerminalState } from "./ai/stream";
 import { estimateMessageTokens } from "./contextUsage";
 import { formatToolEvidenceForApi } from "./toolEvidence";
 import type { KnowledgeCitation } from "./knowledge";
+import type { WebCitation } from "./webCitation";
 
 export type ChatRole = "user" | "assistant";
 
@@ -40,6 +41,8 @@ export interface ChatMsg {
   toolForce?: boolean;
   /** Display-only knowledge citations for plain-chat RAG. Not replayed to the model. */
   knowledgeCitations?: KnowledgeCitation[];
+  /** Display-only web-search citations collected from this turn's WebSearch/WebFetch calls. Not replayed to the model. */
+  webCitations?: WebCitation[];
   /** Display-only warning shown when knowledge pre-injection failed. Not replayed. */
   knowledgeWarning?: string;
 }

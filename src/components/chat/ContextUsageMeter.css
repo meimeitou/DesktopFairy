@@ -50,8 +50,8 @@
   background: var(--ink-800);
   border: 0.5px solid var(--hairline-strong);
   box-shadow:
-    0 4px 16px rgba(121, 79, 39, 0.18),
-    inset 0 1px 0 rgba(121, 79, 39, 0.04);
+    0 4px 16px color-mix(in srgb, var(--bone-400) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--bone-400) 4%, transparent);
 }
 
 .context-usage-panel-header {

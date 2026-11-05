@@ -1,5 +1,5 @@
-import { Button, Icon } from "animal-island-ui";
-import { ChevronDown, ChevronUp } from "../icons/naivePatch";
+import { Button } from "@cherrystudio/ui";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -10,16 +10,26 @@ interface Props {
   onClose: () => void;
 }
 
-// 装饰颜色必须用 #RRGGBB 字面值（SearchAddon 类型要求），不能用 CSS 变量。
-// ink-600 用于所有匹配项的淡底；品牌绿用于当前活跃匹配。
-const DECORATIONS = {
-  matchBackground: "#d8c9ae",
-  matchBorder: "#c4b89e",
-  matchOverviewRuler: "#d8c9ae",
-  activeMatchBackground: "#19c8b9",
-  activeMatchBorder: "#22d17a",
-  activeMatchColorOverviewRuler: "#19c8b9",
-};
+// xterm css.toColor 只认 #RRGGBB / rgb()。var() 会在绘制装饰时抛错。
+// 指定值若是 var(--animal-*)，再解一层。读不到就用 theme.css 的原值。
+function readHex(css: CSSStyleDeclaration, name: string, fallback: string): string {
+  let raw = css.getPropertyValue(name).trim();
+  const nested = /^var\((--[A-Za-z0-9-]+)\)$/.exec(raw);
+  if (nested) raw = css.getPropertyValue(nested[1]).trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
+}
+
+function searchDecorations() {
+  const css = getComputedStyle(document.documentElement);
+  return {
+    matchBackground: readHex(css, "--hairline-strong", "#575757"),
+    matchBorder: readHex(css, "--hairline-bold", "#6e6e6e"),
+    matchOverviewRuler: readHex(css, "--hairline-strong", "#575757"),
+    activeMatchBackground: readHex(css, "--animal-primary-color", "#1fd584"),
+    activeMatchBorder: readHex(css, "--animal-success-color", "#2fd565"),
+    activeMatchColorOverviewRuler: readHex(css, "--animal-primary-color", "#1fd584"),
+  };
+}
 
 export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +62,7 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
   const buildOptions = (incremental: boolean) => ({
     caseSensitive,
     incremental,
-    decorations: DECORATIONS,
+    decorations: searchDecorations(),
   });
 
   // 输入或选项变化时执行增量搜索：扩展当前选中匹配而非重新定位，
@@ -104,13 +114,7 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
 
   return (
     <div className="terminal-search-bar">
-      <Button
-        type="text"
-        size="small"
-        className={`terminal-search-toggle${caseSensitive ? " active" : ""}`}
-        onClick={() => setCaseSensitive((v) => !v)}
-        title="区分大小写"
-      >
+      <Button variant="ghost" size="sm" className={`terminal-search-toggle${caseSensitive ? " active" : ""}`} onClick={() => setCaseSensitive((v) => !v)} title="区分大小写">
         Aa
       </Button>
       <input
@@ -126,32 +130,9 @@ export default function TerminalSearchBar({ xterm, searchAddon, onClose }: Props
       />
       <span className="terminal-search-count">{countLabel}</span>
       <div className="terminal-search-divider" />
-      <Button
-        type="text"
-        size="small"
-        className="terminal-search-btn"
-        icon={<Icon icon={ChevronUp} size={12} />}
-        onClick={findPrevious}
-        title="上一个匹配 (Shift+Enter)"
-        disabled={!query}
-      />
-      <Button
-        type="text"
-        size="small"
-        className="terminal-search-btn"
-        icon={<Icon icon={ChevronDown} size={12} />}
-        onClick={findNext}
-        title="下一个匹配 (Enter)"
-        disabled={!query}
-      />
-      <Button
-        type="text"
-        size="small"
-        className="terminal-search-btn"
-        icon={<Icon name="Close" size={12} />}
-        onClick={handleClose}
-        title="关闭 (Esc)"
-      />
+      <Button variant="ghost" size="sm" className="terminal-search-btn" onClick={findPrevious} title="上一个匹配 (Shift+Enter)" disabled={!query}><ChevronUp size={12} /></Button>
+      <Button variant="ghost" size="sm" className="terminal-search-btn" onClick={findNext} title="下一个匹配 (Enter)" disabled={!query}><ChevronDown size={12} /></Button>
+      <Button variant="ghost" size="sm" className="terminal-search-btn" onClick={handleClose} title="关闭 (Esc)"><X size={12} /></Button>
     </div>
   );
 }

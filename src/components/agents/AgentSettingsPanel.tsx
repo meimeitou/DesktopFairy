@@ -1,4 +1,16 @@
-import { Button, Icon, type IconName } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import {
+  Book,
+  Folder,
+  Lightbulb,
+  Settings,
+  Share2,
+  Star,
+  User,
+  X,
+  type LucideIcon,
+} from "lucide-react";
+
 import { useState } from "react";
 import { useSettings } from "../../shared/settingsStore";
 import type { AgentConfig } from "../../shared/agent";
@@ -18,14 +30,14 @@ import AgentAdvancedSection from "../settings/agent/AgentAdvancedSection";
 import "../../pages/SettingsPage.css";
 import "./AgentSettingsModal.css";
 
-const sectionIcons: Record<AgentConfigSection, IconName> = {
-  basic: "User",
-  prompt: "Book",
-  builtin: "Settings",
-  mcp: "Share",
-  skills: "Star",
-  knowledge: "Folder",
-  advanced: "Bulb",
+const sectionIcons: Record<AgentConfigSection, LucideIcon> = {
+  basic: User,
+  prompt: Book,
+  builtin: Settings,
+  mcp: Share2,
+  skills: Star,
+  knowledge: Folder,
+  advanced: Lightbulb,
 };
 
 export default function AgentSettingsPanel({
@@ -126,8 +138,8 @@ export default function AgentSettingsPanel({
           )}
         </div>
         {onClose && (
-          <Button type="text" onClick={onClose} aria-label="关闭">
-            <Icon name="Close" size={16} />
+          <Button variant="ghost" onClick={onClose} aria-label="关闭">
+            <X size={16} />
           </Button>
         )}
       </header>
@@ -143,7 +155,10 @@ export default function AgentSettingsPanel({
               onClick={() => setSection(item.id)}
             >
               <span className="agent-settings-nav-icon">
-                <Icon name={sectionIcons[item.id]} size={16} />
+                {(() => {
+                  const SectionIcon = sectionIcons[item.id];
+                  return <SectionIcon size={16} />;
+                })()}
               </span>
               <span>{item.label}</span>
             </button>

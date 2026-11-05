@@ -1,13 +1,13 @@
-import { Button, Icon } from "animal-island-ui";
-import { CopyIcon, ForkIcon } from "../icons/naivePatch";
+import { Button } from "@cherrystudio/ui";
+import { Check, Copy, File, Flame, GitFork, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
 import ChatMarkdown from "./ChatMarkdown";
 import ThinkingBlock from "./ThinkingBlock";
 import { KnowledgeCitations } from "../knowledge/KnowledgeCitations";
+import { WebCitations } from "./WebCitations";
 import type { KnowledgeCitation } from "../../shared/knowledge";
-
 
 export interface MessageBubbleProps {
   msg: ChatMsg;
@@ -116,9 +116,9 @@ function MessageBubble({
                 className={`msg-attachment-tag${invalidAttachmentPaths.has(a.path) ? " msg-attachment-missing" : ""}`}
               >
                 {invalidAttachmentPaths.has(a.path) ? (
-                  <Icon name="Flame" size={12} />
+                  <Flame size={12} />
                 ) : (
-                  <Icon name="File" size={12} />
+                  <File size={12} />
                 )}{" "}
                 {a.name}
               </span>
@@ -167,90 +167,40 @@ function MessageBubble({
                   marginTop: 4,
                   padding: "2px 6px",
                   borderRadius: 4,
-                  background: "rgba(245, 195, 28, 0.15)",
+                  background: "var(--amber-soft)",
                   color: "var(--amber)",
                 }}
                 title={msg.knowledgeWarning}
               >
-                <Icon name="Flame" size={13} /> {msg.knowledgeWarning}
+                <Flame size={13} /> {msg.knowledgeWarning}
               </div>
             )}
             <KnowledgeCitations
               citations={msg.knowledgeCitations}
               onOpen={onOpenCitation}
             />
+            <WebCitations citations={msg.webCitations} />
           </>
         )}
         {isEditing ? (
           <div className="msg-actions msg-actions-visible">
-            <Button
-              type="text"
-              size="small"
-              className="msg-action-btn msg-action-confirm"
-              icon={<Icon name="Check" size={13} />}
-              onClick={() => onConfirmEdit?.(msg.id, editDraft)}
-              disabled={!canConfirmEdit}
-              title="确认"
-            />
-            <Button
-              type="text"
-              size="small"
-              className="msg-action-btn"
-              icon={<Icon name="Close" size={13} />}
-              onClick={() => onCancelEdit?.()}
-              title="取消"
-            />
+            <Button variant="ghost" size="sm" className="msg-action-btn msg-action-confirm" onClick={() => onConfirmEdit?.(msg.id, editDraft)} disabled={!canConfirmEdit} title="确认"><Check size={13} /></Button>
+            <Button variant="ghost" size="sm" className="msg-action-btn" onClick={() => onCancelEdit?.()} title="取消"><X size={13} /></Button>
           </div>
         ) : (showUserActions || showAssistantActions) ? (
           <div className="msg-actions">
-            <Button
-              type="text"
-              size="small"
-              className="msg-action-btn"
-              icon={copied ? <Icon name="Check" size={13} /> : <Icon icon={CopyIcon} size={13} />}
-              onClick={handleCopy}
-              title="复制"
-            />
+            <Button variant="ghost" size="sm" className="msg-action-btn" onClick={handleCopy} title="复制">{copied ? <Check size={16} /> : <Copy size={16} />}</Button>
             {onFork && (
-              <Button
-                type="text"
-                size="small"
-                className="msg-action-btn"
-                icon={<Icon icon={ForkIcon} size={13} />}
-                onClick={() => onFork(msg.id)}
-                title="从此处分叉新对话"
-              />
+              <Button variant="ghost" size="sm" className="msg-action-btn" onClick={() => onFork(msg.id)} title="从此处分叉新对话"><GitFork size={16} /></Button>
             )}
             {isUser && onRetry && (
-            <Button
-              type="text"
-              size="small"
-              className="msg-action-btn"
-              icon={<Icon name="Refresh" size={13} />}
-              onClick={() => onRetry(msg.id)}
-              title="重试"
-            />
+            <Button variant="ghost" size="sm" className="msg-action-btn" onClick={() => onRetry(msg.id)} title="重试"><RefreshCw size={13} /></Button>
             )}
             {isUser && onStartEdit && (
-              <Button
-                type="text"
-                size="small"
-                className="msg-action-btn"
-                icon={<Icon name="Edit" size={13} />}
-                onClick={beginEdit}
-                title="重新编辑"
-              />
+              <Button variant="ghost" size="sm" className="msg-action-btn" onClick={beginEdit} title="重新编辑"><Pencil size={13} /></Button>
             )}
             {onDelete && (
-              <Button
-                type="default"
-                size="small"
-                danger
-                className="msg-action-btn msg-action-delete"
-                icon={<Icon name="Trash" size={13} />}
-                onClick={() => onDelete(msg.id)}
-                title="删除"
-              />
+              <Button variant="outline" size="sm" className="msg-action-btn msg-action-delete" onClick={() => onDelete(msg.id)} title="删除"><Trash2 size={13} /></Button>
             )}
           </div>
         ) : null}

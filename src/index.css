@@ -1,67 +1,29 @@
-:root {
-  /* ============ animal-island-ui alias layer ============
-     Legacy Cherry-dark token names remapped to warm parchment
-     values so all 30 CSS files' existing var() references flip
-     without touching each file. Real animal tokens come from
-     'animal-island-ui/style' (imported once in src/main.tsx). */
+@import "tailwindcss";
+@import "tw-animate-css";
+@source "../vendor/cherrystudio-ui/dist";
+/* streamdown ships Tailwind `dark:` utilities in its JS (shiki dark-theme flip,
+   table/code dark surfaces). Source them so our .dark-class variant generates
+   those rules — same list as cherry-studio's tailwind.css. */
+@source "../node_modules/streamdown/dist";
+@source "../node_modules/@streamdown/code/dist";
+@source "../node_modules/@streamdown/cjk/dist";
+@import "@cherrystudio/ui/styles/theme.css";
 
-  /* Surfaces — parchment hierarchy (light, warm) */
-  --ink-900: #f5f8e0;
-  --ink-850: #f7f3df;
-  --ink-800: #f0ece2;
-  --ink-750: #f8f4e8;
-  --ink-700: #f0ebdd;
-  --ink-600: #e8e2d2;
-  --ink-500: #ddd5c2;
+/* Cherry components use the `dark:` variant. Match the class on <html>, not the OS theme. */
+@custom-variant dark (&:where(.dark, .dark *));
 
-  /* Text — warm brown scale (no pure black) */
-  --bone-100: #4a3620;
-  --bone-200: #5a442c;
-  --bone-300: #6d5436;
-  --bone-400: #794f27;
-  --bone-500: #725d42;
-  --bone-600: #7d6448; /* a11y: >=4.5:1 on all parchment surfaces (placeholder/hint text) */
+/* Resets stay in base so Cherry button utilities (padding, radius, 13px type, 16px icons) win. */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 
-  /* Signature: animal primary — mint green */
-  --persimmon: var(--animal-primary-color);
-  --persimmon-bright: var(--animal-primary-color-hover);
-  --persimmon-soft: rgba(25, 200, 185, 0.14);
-  --persimmon-softer: rgba(25, 200, 185, 0.09);
-  --persimmon-focus: rgba(25, 200, 185, 0.45);
-
-  /* Supporting: animal warning amber */
-  --amber: var(--animal-warning-color);
-  --amber-soft: rgba(245, 195, 28, 0.15);
-
-  /* Hairlines — warm brown strokes (visible on parchment) */
-  --hairline: #e8dcc8;
-  --hairline-strong: #d8c9ae;
-  --hairline-bold: #c4b89e;
-
-  /* Destructive — animal error */
-  --rust: var(--animal-error-color);
-  --rust-bright: var(--animal-error-color-hover);
-  --rust-soft: rgba(224, 90, 90, 0.14);
-
-  /* Motion & shape — animal library tokens */
-  --motion-fast: var(--animal-motion-duration-fast);   /* .15s */
-  --motion-base: var(--animal-motion-duration-base);   /* .25s */
-  --motion-slow: var(--animal-motion-duration-slow);   /* .35s */
-  --ease-island: var(--animal-motion-ease);            /* cubic-bezier(.4,0,.2,1) */
-  --radius-sm: var(--animal-border-radius-sm);         /* 16px */
-  --radius-base: var(--animal-border-radius-base);     /* 18px */
-  --radius-lg: var(--animal-border-radius-lg);         /* 24px */
-  --shadow-sm: var(--animal-shadow-sm);
-  --shadow-base: var(--animal-shadow-base);
-  --shadow-lg: var(--animal-shadow-lg);
-
-  /* Type */
-}
-
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 html, body {
@@ -69,22 +31,26 @@ html, body {
   height: 100%;
   background: transparent;
   overflow: hidden;
-  font-family: var(--animal-font-family);
+  /* Same stack as cherry-studio src/renderer/assets/styles/font.css + index.css body. */
+  font-family: Ubuntu, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
+  line-height: 1.6;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
   color: var(--bone-200);
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 ::selection {
-  background: rgba(25, 200, 185, 0.30);
-  color: #4a3620;
+  background: color-mix(in srgb, var(--persimmon) 30%, transparent);
+  color: var(--bone-100);
 }
 
 input,
 textarea,
 select {
-  color-scheme: light;
-  caret-color: var(--persimmon-bright);
+  color-scheme: dark;
+  caret-color: var(--persimmon);
 }
 
 input[type="search"] {
@@ -103,7 +69,7 @@ select:-webkit-autofill,
 select:-webkit-autofill:hover,
 select:-webkit-autofill:focus {
   -webkit-text-fill-color: var(--bone-100);
-  caret-color: var(--persimmon-bright);
+  caret-color: var(--persimmon);
   border-color: var(--persimmon-focus);
   box-shadow: 0 0 0 1000px var(--ink-800) inset;
   -webkit-box-shadow: 0 0 0 1000px var(--ink-800) inset;
@@ -113,8 +79,8 @@ select:-webkit-autofill:focus {
 input:-webkit-autofill:focus,
 textarea:-webkit-autofill:focus,
 select:-webkit-autofill:focus {
-  box-shadow: 0 0 0 1000px #f0ece2 inset;
-  -webkit-box-shadow: 0 0 0 1000px #f0ece2 inset;
+  box-shadow: 0 0 0 1000px var(--ink-800) inset;
+  -webkit-box-shadow: 0 0 0 1000px var(--ink-800) inset;
 }
 
 
@@ -130,28 +96,28 @@ select:-webkit-autofill:focus {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(121, 79, 39, 0.25);
+  background: color-mix(in srgb, var(--bone-400) 25%, transparent);
   border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(121, 79, 39, 0.4);
+  background: color-mix(in srgb, var(--bone-400) 40%, transparent);
 }
 
 /* Tactile press feedback — skill 4.5: physical push on :active.
    Only transform/opacity; gated behind reduced-motion. */
 @media (prefers-reduced-motion: no-preference) {
-  button:not([class^="animal-"]):not(.animal-no-press):active,
+  button:not([data-slot]):active,
   .press:active {
     transform: translateY(1px) scale(0.98);
   }
-  button:not([class^="animal-"]):not(.animal-no-press):active,
+  button:not([data-slot]):active,
   .press:active {
     transition: transform var(--motion-fast) var(--ease-island);
   }
 }
 
-/* Bare-button reset only for non-library buttons; library <Button> owns its own skin */
-button:not([class^="animal-"]) {
+/* Bare buttons only. Library buttons own their skin via data-slot. */
+button:not([data-slot]) {
   cursor: pointer;
   border: none;
   background: none;
@@ -159,84 +125,7 @@ button:not([class^="animal-"]) {
   color: inherit;
 }
 
-/* 弹窗遮罩统一改淡：库 Modal 遮罩默认黑色 18%（#0000002e）偏深偏冷，
-   覆盖为系统暖棕的更淡档（与手写 kb-modal / ssh-modal-overlay 同值） */
-body [class^="animal-mask-"] {
-  background: rgba(73, 54, 32, 0.14);
-}
-
-/* 库 Input 全局统一皮肤：胶囊底 #faf8f3 与米白卡底近同色（弹窗/表单上
-   「白色一片不显眼」），统一白底 + 1px hairline，聚焦变 mint。
-   各文件对 wrapper 的局部边框覆盖（settings-content/provider-form-modal/
-   mcp-edit-modal/ssh-form-modal）由本规则取代。特异性 body 前缀 (0,1,1)
-   压过库皮肤 (0,1,0)，不受加载顺序影响。 */
-body [class^="animal-wrapper"] {
-  background: #fff;
-  border: 1px solid var(--hairline);
-}
-
-body [class^="animal-wrapper"]:focus-within {
-  border-color: var(--persimmon-focus);
-}
 input {
   font: inherit;
   color: inherit;
-}
-
-/* 按钮统一扁平无阴影：覆盖库 Button 的 box-shadow-sm 底影与 primary 变体的
-   5px 硬偏移（含 hover/active 态）。与输入框的硬偏移底边无关——那是输入控件语法。 */
-button[class^="animal-btn"] {
-  box-shadow: none !important;
-}
-
-/* 动作按钮统一带 1px 暖棕发丝线描边——仅库 Button 的填充式变体（default/
-   primary/danger）。text/link/ghost 变体是无边框导航语法（Tab、菜单、工具行），
-   不加框，避免波及列表与 Tabs。 */
-button[class*="animal-btn-primary"],
-button[class*="animal-btn-default"],
-button[class*="animal-btn-danger"] {
-  border-width: 1px !important;
-  border-style: solid !important;
-  border-color: var(--hairline-strong) !important;
-}
-
-/* 库 Form label 默认冷黑 rgba(0,0,0,.85)，全局对齐暖棕文本令牌 */
-[class*="animal-island-form"] label[class*="form-item-label"] {
-  color: var(--animal-text-color) !important;
-}
-
-[class*="animal-island-form"] [class*="form-item-explain"]:not([class*="explain-error"]) {
-  color: var(--animal-text-color-secondary) !important;
-}
-
-/* ── 弹窗密度（全局）──────────────────────────────────────────────
-   库 Modal 硬编码标题 28px/700、modalClipped 内边距 40px 35px 25px、
-   body 20px/600——对 14px 紧凑系统过大过松。全部 Modal 统一收窄。
-   注意：main.tsx 里库 style 后于本文件加载，平级特异性会输——所以这里
-   叠加 [class*="animal-mask"] 祖先选择器提到 (0,2,0)，稳定压过库皮肤。
-   滚动条贴边的局部方案见 TerminalPage.css ssh-form-modal 注释。 */
-[class*="animal-mask"] [class*="animal-modalClipped"] {
-  padding: 16px 18px 14px;
-  background: var(--animal-bg-color); /* 卡底改淡：库默认 #f7f3df 偏黄偏深，统一近白米色 */
-}
-
-[class*="animal-mask"] [class*="animal-title"] {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-}
-
-[class*="animal-mask"] [class*="animal-header"] {
-  padding-bottom: 10px;
-}
-
-[class*="animal-mask"] [class*="animal-body"] {
-  padding-bottom: 12px;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.62;
-}
-
-[class*="animal-mask"] [class*="animal-footer"] {
-  padding-top: 12px;
 }

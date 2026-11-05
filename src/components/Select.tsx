@@ -6,8 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Icon } from "animal-island-ui";
-import { ChevronDown } from "./icons/naivePatch";
+
+import { ChevronDown } from "lucide-react";
 import "./Select.css";
 
 export interface SelectOption {
@@ -28,9 +28,8 @@ export interface SelectProps {
 }
 
 /**
- * 自建下拉框：与 animal-island-ui Select 同 API，但选项面板
- * 向上/向下展开（库版本向右弹出，在 Modal 里会被裁切）。
- * 视觉沿用 ModelSelector 面板语言：奶白毛玻璃 + hairline 边框。
+ * 自建下拉框：选项面板向上/向下展开，随触发器宽度。
+ * 视觉沿用 ModelSelector 面板语言。
  */
 export default function Select({
   options,
@@ -63,20 +62,28 @@ export default function Select({
     [onChange],
   );
 
-  // Close on outside click / Escape.
+  // Close on outside click / Escape / ancestor scroll (panel is absolutely
+  // positioned; a scrolling ancestor would detach it from the trigger).
   useEffect(() => {
     if (!open) return;
+    const openedAt = Date.now();
     const onDocClick = (e: MouseEvent) => {
       if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    const onScroll = (e: Event) => {
+      if (Date.now() - openedAt < 150) return;
+      if (!listRef.current?.contains(e.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
@@ -164,7 +171,7 @@ export default function Select({
           {selectedLabel}
         </span>
         <span className="df-select-caret" aria-hidden="true">
-          <Icon icon={ChevronDown} size={10} />
+          <ChevronDown size={10} />
         </span>
       </button>
       {open && (

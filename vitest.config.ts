@@ -17,12 +17,5 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'electron/**/*.test.cjs'],
     css: false,
-    // let vite transform animal-island-ui so its .module.css imports
-    // are stubbed instead of hitting node's require (which rejects css)
-    server: {
-      deps: {
-        inline: ['animal-island-ui'],
-      },
-    },
   },
 })

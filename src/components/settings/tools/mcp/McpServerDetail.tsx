@@ -1,4 +1,5 @@
-import { Button, Switch } from "animal-island-ui";
+import { Button, Switch } from "@cherrystudio/ui";
+
 import { useCallback, useEffect, useState } from "react";
 import type {
   McpServer,
@@ -161,7 +162,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
   return (
     <section className="settings-section agent-subsection">
       <div className="tools-mcp-detail-head">
-        <Button type="text" size="small" onClick={onBack}>
+        <Button variant="ghost" size="sm" onClick={onBack}>
           ← 返回列表
         </Button>
         <div className="agent-toggle-title-row">
@@ -172,12 +173,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
           <strong>{server.name}</strong>
         </div>
         <div className="agent-catalog-actions">
-          <Button
-            type="default"
-            size="small"
-            disabled={testing}
-            onClick={() => void handleTest()}
-          >
+          <Button variant="outline" size="sm" disabled={testing} onClick={() => void handleTest()}>
             {testing ? "测试中…" : "测试连接"}
           </Button>
         </div>
@@ -196,13 +192,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
 
       <nav className="agent-section-nav" aria-label="MCP 服务器详情">
         {TABS.map((t) => (
-          <Button
-            key={t.id}
-            type="text"
-            className={`agent-section-nav-item${tab === t.id ? " active" : ""}`}
-            aria-current={tab === t.id ? "page" : undefined}
-            onClick={() => setTab(t.id)}
-          >
+          <Button variant="ghost" key={t.id} className={`agent-section-nav-item${tab === t.id ? " active" : ""}`} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
             {t.label}
           </Button>
         ))}
@@ -265,11 +255,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
               <span>{server.longRunning ? "开启" : "关闭"}</span>
             </div>
           </div>
-          <Button
-            type="primary"
-            size="small"
-            onClick={() => setEditing(true)}
-          >
+          <Button variant="default" size="sm" onClick={() => setEditing(true)}>
             编辑服务器信息
           </Button>
         </div>
@@ -329,7 +315,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
                     </div>
                     <Switch
                       checked={!disabled}
-                      onChange={(checked) => void toggleTool(tool.name, checked)}
+                      onCheckedChange={(checked) => void toggleTool(tool.name, checked)}
                       aria-label={disabled ? "启用工具" : "禁用工具"}
                     />
                   </li>

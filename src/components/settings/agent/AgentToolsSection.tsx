@@ -1,5 +1,6 @@
+import { Input } from "@cherrystudio/ui";
 import Select from "../../Select";
-import { Input } from "animal-island-ui";
+
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import HintTip from "../../HintTip";
 import {
@@ -70,7 +71,6 @@ export default function AgentToolsSection({
     () => new Set(agent.mcpServerIds),
     [agent.mcpServerIds]
   );
-
 
   const loadMcp = useCallback(async () => {
     setLoadingMcp(true);
@@ -165,9 +165,7 @@ export default function AgentToolsSection({
           )}
           <div className="agent-tool-search-row">
             <div className="field agent-tool-search">
-              <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索…"
-              aria-label="搜索内置工具" />
+              <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索…" aria-label="搜索内置工具" />
             </div>
             <HintTip
               tip={

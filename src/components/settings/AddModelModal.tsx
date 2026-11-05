@@ -1,4 +1,7 @@
-import { Form, FormItem, Button, Input, Modal, Radio } from "animal-island-ui";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input } from "@cherrystudio/ui";
+import { Form, FormItem, useForm } from "../Form";
+import { Checkbox, Radio } from "../Choice";
+
 import type { CuratedModelKind } from "../../shared/modelKind";
 import { MODEL_KIND_LABELS } from "../../shared/modelKind";
 
@@ -10,15 +13,10 @@ interface Props {
 
 export default function AddModelModal({ providerName, onClose, onConfirm }: Props) {
   return (
-    <Modal
-      open
-      title="添加模型"
-      onClose={onClose}
-      width={420}
-      className="provider-form-modal"
-      footer={null}
-      typewriter={false}
-    >
+    <Dialog open={true} onOpenChange={(next) => { if (!next) (onClose)(); }}>
+      <DialogContent className={"provider-form-modal"} style={{ maxWidth: 420 }}>
+        <DialogHeader><DialogTitle>{"添加模型"}</DialogTitle></DialogHeader>
+        
       <Form
         layout="vertical"
         colon={false}
@@ -37,12 +35,7 @@ export default function AddModelModal({ providerName, onClose, onConfirm }: Prop
             { required: true, whitespace: true, message: "请输入模型 ID" },
           ]}
         >
-          <Input
-            type="text"
-            shadow
-            placeholder="gpt-4o-mini / text-embedding-3-small"
-            autoFocus
-          />
+          <Input type="text" placeholder="gpt-4o-mini / text-embedding-3-small" autoFocus />
         </FormItem>
         <FormItem label="类型" name="kind">
           <Radio
@@ -55,14 +48,17 @@ export default function AddModelModal({ providerName, onClose, onConfirm }: Prop
           />
         </FormItem>
         <div className="provider-modal-footer">
-          <Button type="primary" htmlType="button" onClick={onClose}>
+          <Button variant="default" type="button" onClick={onClose}>
             取消
           </Button>
-          <Button type="primary" htmlType="submit">
+          <Button variant="default" type="submit">
             添加
           </Button>
         </div>
       </Form>
-    </Modal>
+    
+        
+      </DialogContent>
+    </Dialog>
   );
 }

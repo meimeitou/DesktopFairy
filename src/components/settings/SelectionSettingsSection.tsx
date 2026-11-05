@@ -1,4 +1,7 @@
-import { Button, Checkbox, Icon, Input, Radio, Switch } from "animal-island-ui";
+import { NamedIcon } from "../NamedIcon";
+import { Button, Input, Switch } from "@cherrystudio/ui";
+import { Checkbox, Radio } from "../Choice";
+
 import { useEffect, useState } from "react";
 import HintTip, { FieldHead } from "../HintTip";
 import {
@@ -124,15 +127,11 @@ export default function SelectionSettingsSection({
               需要辅助功能权限才能读取选中文本。若已开启仍无效，删掉列表里的
               DesktopFairy / Electron 后重新勾选应用，再完全退出后打开。
             </p>
-            <Button
-              type="default"
-              size="small"
-              onClick={() => {
+            <Button variant="outline" size="sm" onClick={() => {
                 api.invoke("selection:prompt_accessibility").then(() => {
                   setTimeout(refreshAccessibility, 500);
                 });
-              }}
-            >
+              }}>
               打开辅助功能设置
             </Button>
           </div>
@@ -156,15 +155,11 @@ export default function SelectionSettingsSection({
                   ? "没收到鼠标事件，多半是辅助功能授权失效。关掉再打开 DesktopFairy 的权限，然后完全退出应用再打开。"
                   : "已收到鼠标，但没识别到划词。试着在文本里拖选，或双击选词。"}
               </p>
-              <Button
-                type="default"
-                size="small"
-                onClick={() => {
+              <Button variant="outline" size="sm" onClick={() => {
                   api.invoke("selection:prompt_accessibility").then(() => {
                     setTimeout(refreshAccessibility, 500);
                   });
-                }}
-              >
+                }}>
                 打开辅助功能设置
               </Button>
             </div>
@@ -176,7 +171,7 @@ export default function SelectionSettingsSection({
         <HintTip tip="点工具栏动作后，直接把内容发到对话。" />
         <Switch
           checked={settings.selectionAutoSend}
-          onChange={(checked) => onChange({ selectionAutoSend: checked })}
+          onCheckedChange={(checked) => onChange({ selectionAutoSend: checked })}
           disabled={!settings.selectionEnabled}
           aria-label="选中后自动发送"
         />
@@ -189,23 +184,17 @@ export default function SelectionSettingsSection({
         >
           最大选词长度
         </FieldHead>
-        <Input shadow id="selection-max-length"
-        type="number"
-        min={50}
-        max={5000} value={normalizeSelectionMaxLength(settings.selectionMaxLength)} onChange={(e) => {
+        <Input id="selection-max-length" type="number" min={50} max={5000} value={normalizeSelectionMaxLength(settings.selectionMaxLength)} onChange={(e) => {
           const raw = e.target.value;
           if (raw === "") return;
           onChange({
             selectionMaxLength: normalizeSelectionMaxLength(raw),
           });
-        }}
-        onBlur={(e) => {
+        }} onBlur={(e) => {
           onChange({
             selectionMaxLength: normalizeSelectionMaxLength(e.target.value),
           });
-        }}
-        placeholder="500"
-        disabled={!settings.selectionEnabled} />
+        }} placeholder="500" disabled={!settings.selectionEnabled} />
       </div>
 
       <div className="field">
@@ -215,10 +204,7 @@ export default function SelectionSettingsSection({
         >
           搜索引擎
         </FieldHead>
-        <Input shadow id="selection-search-engine"
-        type="text" value={settings.searchEngine} onChange={(e) => onChange({ searchEngine: e.target.value })}
-        placeholder="Google|https://www.google.com/search?q={{queryString}}"
-        disabled={!settings.selectionEnabled} />
+        <Input id="selection-search-engine" type="text" value={settings.searchEngine} onChange={(e) => onChange({ searchEngine: e.target.value })} placeholder="Google|https://www.google.com/search?q={{queryString}}" disabled={!settings.selectionEnabled} />
       </div>
 
       <div className="field">
@@ -226,12 +212,7 @@ export default function SelectionSettingsSection({
           <FieldHead hint="工具栏上显示的动作。可改名称对应的提示词，或单独覆盖搜索引擎。">
             工具栏动作
           </FieldHead>
-          <Button
-            type="default"
-            size="small"
-            className="selection-actions-reset"
-            onClick={resetActions}
-          >
+          <Button variant="outline" size="sm" className="selection-actions-reset" onClick={resetActions}>
             恢复默认
           </Button>
         </div>
@@ -250,34 +231,20 @@ export default function SelectionSettingsSection({
                     value: action.id,
                     label: (
                       <>
-                        <Icon name={action.icon as never} size={14} /> {action.name}
+                        <NamedIcon name={action.icon as never} size={14} /> {action.name}
                       </>
                     ),
                   },
                 ]}
               />
               {action.id === "search" ? (
-                <Input
-                  className="selection-action-extra"
-                  size="small"
-                  value={action.searchEngine || settings.searchEngine}
-                  onChange={(e) =>
+                <Input className="selection-action-extra" value={action.searchEngine || settings.searchEngine} onChange={(e) =>
                     updateAction(action.id, { searchEngine: e.target.value })
-                  }
-                  placeholder="搜索引擎 URL"
-                  disabled={!settings.selectionEnabled || !action.enabled}
-                />
+                  } placeholder="搜索引擎 URL" disabled={!settings.selectionEnabled || !action.enabled} />
               ) : action.prompt !== undefined ? (
-                <Input
-                  className="selection-action-extra"
-                  size="small"
-                  value={action.prompt}
-                  onChange={(e) =>
+                <Input className="selection-action-extra" value={action.prompt} onChange={(e) =>
                     updateAction(action.id, { prompt: e.target.value })
-                  }
-                  placeholder="Prompt（{{text}}）"
-                  disabled={!settings.selectionEnabled || !action.enabled}
-                />
+                  } placeholder="Prompt（{{text}}）" disabled={!settings.selectionEnabled || !action.enabled} />
               ) : null}
             </li>
           ))}

@@ -1,4 +1,5 @@
-import { Icon } from "animal-island-ui";
+import { NamedIcon } from "../NamedIcon";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MessageList, {
   type MessageListHandle,
@@ -68,7 +69,6 @@ import "../../pages/ChatPage.css";
 import "./HostChatPanel.css";
 
 const api = window.electronAPI;
-
 
 export default function HostChatPanel({
   topicId,
@@ -251,7 +251,6 @@ export default function HostChatPanel({
     // attachManually 与 patchState 恒稳定。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicId]);
-
 
   // topic.chatMode 被外部改动（设置页 / 其他窗口）时回灌到面板；
   // 本地切换过的值已经写回 ref，父级刷新回同值时不会触发。
@@ -437,7 +436,6 @@ export default function HostChatPanel({
         }),
       );
       scrollToBottom();
-
 
       // First user message → derive topic title.
       if (!topic.name) {
@@ -707,7 +705,7 @@ export default function HostChatPanel({
       <div className="host-chat-main">
         <header className="host-chat-header">
           <span className="host-chat-header-title">
-            <Icon name={host ? "Video" : "Home"} size={14} />
+            <NamedIcon name={host ? "Video" : "Home"} size={14} />
             {host ? `${host.name} · ${host.user}@${host.host}` : (agent?.name || "小雅")}
           </span>
           <span className="host-chat-header-topic">
@@ -723,7 +721,7 @@ export default function HostChatPanel({
             emptyContent={
               sessionReady ? (
                 <div className="host-chat-empty">
-                  <Icon name={host ? "Video" : "Home"} size={44} />
+                  <NamedIcon name={host ? "Video" : "Home"} size={44} />
                   <p>和 {agent?.name || "智能体"} 开始对话</p>
                   <small>
                     {host

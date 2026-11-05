@@ -1,3 +1,5 @@
+import { Button, NormalTooltip, error, warning } from "@cherrystudio/ui";
+import { Camera, CircleStop, Eraser, FoldVertical, MessageSquare, Send, Trash2, Upload } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -10,8 +12,7 @@ import {
 } from "react";
 import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
-import { Button, Icon, Notification, Tooltip } from "animal-island-ui";
-import { CompactIcon, EraserIcon, SendIcon, StopIcon, UploadIcon } from "../icons/naivePatch";
+
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
 import ContextUsageMeter from "./ContextUsageMeter";
@@ -147,7 +148,7 @@ function ChatInputBar({
       if (!attachmentsEnabled || files.length === 0) return;
       const supported = files.filter((f) => f.kind !== "other");
       if (supported.length < files.length) {
-        Notification.warning(UNSUPPORTED_FILES_HINT);
+        warning(UNSUPPORTED_FILES_HINT);
       }
       if (supported.length === 0) return;
       const existing = new Set(attachments.map((f) => f.path));
@@ -175,11 +176,11 @@ function ChatInputBar({
       isSupportedFileName(guessAttachmentFileName(file)),
     );
     if (files.length > 0 && attachable.length === 0) {
-      Notification.warning(UNSUPPORTED_FILES_HINT);
+      warning(UNSUPPORTED_FILES_HINT);
       return [];
     }
     if (attachable.length < files.length) {
-      Notification.warning(UNSUPPORTED_FILES_HINT);
+      warning(UNSUPPORTED_FILES_HINT);
     }
 
     return Promise.all(
@@ -241,7 +242,7 @@ function ChatInputBar({
         const loaded = await attachmentsFromFiles(files);
         addAttachments(loaded);
       } catch (err) {
-        Notification.error(
+        error(
           err instanceof Error ? err.message : "无法读取粘贴的文件",
         );
       }
@@ -292,7 +293,7 @@ function ChatInputBar({
         const loaded = await attachmentsFromFiles(files);
         addAttachments(loaded);
       } catch (err) {
-        Notification.error(
+        error(
           err instanceof Error ? err.message : "无法读取拖拽的文件",
         );
       }
@@ -376,29 +377,14 @@ function ChatInputBar({
       <div className="chat-input-toolbar">
         <div className="chat-input-tools-left">
           {onNewConversation && (
-            <Tooltip title="新建对话">
-              <Button
-                type="text"
-                size="small"
-                className="chat-tool-btn"
-                icon={<Icon name="Chat" size={16} />}
-                onClick={onNewConversation}
-                disabled={composerDisabled}
-                aria-label="新建对话"
-              />
-            </Tooltip>
+            <NormalTooltip content="新建对话">
+              <Button variant="ghost" size="sm" className="chat-tool-btn" onClick={onNewConversation} disabled={composerDisabled} aria-label="新建对话"><MessageSquare size={16} /></Button>
+            </NormalTooltip>
           )}
           {onClearContext && (
-            <Tooltip title={"清除上下文"}>
-              <Button
-                type="text"
-                size="small"
-                className="chat-tool-btn"
-                icon={<Icon icon={EraserIcon} size={16} />}
-                onClick={onClearContext}
-                disabled={composerDisabled || !hasMessages}
-              />
-            </Tooltip>
+            <NormalTooltip content="清除上下文">
+              <Button variant="ghost" size="sm" className="chat-tool-btn" onClick={onClearContext} disabled={composerDisabled || !hasMessages}><Eraser size={16} /></Button>
+            </NormalTooltip>
           )}
           {showModeSelector && (
             <ChatModeSelector
@@ -415,14 +401,14 @@ function ChatInputBar({
                     {
                       key: "upload",
                       label: "上传文件",
-                      icon: <Icon icon={UploadIcon} size={16} />,
+                      icon: <Upload size={16} />,
                       disabled: composerDisabled,
                       onSelect: () => void handleSelectFiles(),
                     },
                     {
                       key: "screenshot",
                       label: "区域截图",
-                      icon: <Icon name="Camera" size={16} />,
+                      icon: <Camera size={16} />,
                       disabled: composerDisabled,
                       onSelect: () => void handleScreenshot(),
                     },
@@ -433,7 +419,7 @@ function ChatInputBar({
                     {
                       key: "compact",
                       label: "压缩上下文",
-                      icon: <Icon icon={CompactIcon} size={16} />,
+                      icon: <FoldVertical size={16} />,
                       disabled: composerDisabled || !hasMessages,
                       onSelect: onCompact,
                     },
@@ -444,7 +430,7 @@ function ChatInputBar({
                     {
                       key: "clear",
                       label: "清空消息",
-                      icon: <Icon name="Trash" size={16} />,
+                      icon: <Trash2 size={16} />,
                       disabled: composerDisabled || !hasMessages,
                       danger: true,
                       onSelect: onClearMessages,
@@ -478,26 +464,13 @@ function ChatInputBar({
             />
           )}
           {streaming ? (
-            <Tooltip title="停止生成" placement="top">
-              <Button
-                type="text"
-                className="chat-send-btn chat-stop-btn"
-                icon={<Icon icon={StopIcon} size={16} />}
-                onClick={onStop}
-                aria-label="停止生成"
-              />
-            </Tooltip>
+            <NormalTooltip content="停止生成" side="top">
+              <Button variant="ghost" className="chat-send-btn chat-stop-btn" onClick={onStop} aria-label="停止生成"><CircleStop size={16} /></Button>
+            </NormalTooltip>
           ) : (
-            <Tooltip title="发送消息 (Enter)" placement="top">
-              <Button
-                type="text"
-                className="chat-send-btn"
-                icon={<Icon icon={SendIcon} size={16} />}
-                onClick={onSend}
-                disabled={!canSend}
-                aria-label="发送消息"
-              />
-            </Tooltip>
+            <NormalTooltip content="发送消息 (Enter)" side="top">
+              <Button variant="ghost" className="chat-send-btn" onClick={onSend} disabled={!canSend} aria-label="发送消息"><Send size={16} /></Button>
+            </NormalTooltip>
           )}
         </div>
       </div>

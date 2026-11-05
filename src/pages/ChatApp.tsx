@@ -1,5 +1,7 @@
+import { Button } from "@cherrystudio/ui";
+import { Book, MessageSquare, Settings, SquareTerminal, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { Background, Button, Icon } from "animal-island-ui";
+
 import "./ChatApp.css";
 
 const ChatPage = lazy(() => import("./ChatPage"));
@@ -26,23 +28,23 @@ const initialView: AppView =
         : "chat";
 
 function ChatIcon() {
-  return <Icon name="Chat" size={14} />;
+  return <MessageSquare size={14} />;
 }
 
 function TerminalIcon() {
-  return <Icon name="Code" size={14} />;
+  return <SquareTerminal size={14} />;
 }
 
 function KnowledgeIcon() {
-  return <Icon name="Book" size={14} />;
+  return <Book size={14} />;
 }
 
 function SettingsIcon() {
-  return <Icon name="Settings" size={14} />;
+  return <Settings size={14} />;
 }
 
 function CloseIcon() {
-  return <Icon name="Close" size={12} />;
+  return <X size={12} />;
 }
 
 export default function ChatApp() {
@@ -105,41 +107,24 @@ export default function ChatApp() {
   }, []);
 
   return (
-    <Background
-      type="dots-dark-green"
+    <div
       className={`chat-app${isMac ? " chat-app-mac" : " chat-app-frameless"}${isFullscreen ? " chat-app-fullscreen" : ""}`}
     >
       <header className="chat-app-topbar">
         <nav className="chat-app-tabs">
-          <Button
-            type="text"
-            className={`chat-tab${view === "chat" ? " active" : ""}`}
-            onClick={() => setView("chat")}
-          >
+          <Button variant="ghost" className={`chat-tab${view === "chat" ? " active" : ""}`} onClick={() => setView("chat")}>
             <ChatIcon />
             <span>智能体</span>
           </Button>
-          <Button
-            type="text"
-            className={`chat-tab${view === "terminal" ? " active" : ""}`}
-            onClick={() => setView("terminal")}
-          >
+          <Button variant="ghost" className={`chat-tab${view === "terminal" ? " active" : ""}`} onClick={() => setView("terminal")}>
             <TerminalIcon />
             <span>终端</span>
           </Button>
-          <Button
-            type="text"
-            className={`chat-tab${view === "knowledge" ? " active" : ""}`}
-            onClick={() => setView("knowledge")}
-          >
+          <Button variant="ghost" className={`chat-tab${view === "knowledge" ? " active" : ""}`} onClick={() => setView("knowledge")}>
             <KnowledgeIcon />
             <span>知识库</span>
           </Button>
-          <Button
-            type="text"
-            className={`chat-tab${view === "settings" ? " active" : ""}`}
-            onClick={() => setView("settings")}
-          >
+          <Button variant="ghost" className={`chat-tab${view === "settings" ? " active" : ""}`} onClick={() => setView("settings")}>
             <SettingsIcon />
             <span>设置</span>
           </Button>
@@ -148,12 +133,7 @@ export default function ChatApp() {
         <div className="chat-app-topbar-drag" aria-hidden />
 
         {!isMac && (
-          <Button
-            type="text"
-            className="chat-window-close"
-            onClick={() => window.close()}
-            title="关闭"
-          >
+          <Button variant="ghost" className="chat-window-close" onClick={() => window.close()} title="关闭">
             <CloseIcon />
           </Button>
         )}
@@ -201,6 +181,6 @@ export default function ChatApp() {
           </div>
         )}
       </main>
-    </Background>
+    </div>
   );
 }

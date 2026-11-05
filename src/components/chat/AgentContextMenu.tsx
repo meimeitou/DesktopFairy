@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import type { AgentConfig } from "../../shared/agent";
 
 interface Props {
@@ -24,23 +25,15 @@ export default function AgentContextMenu({
   const isTerminal = agent.builtinRole === "terminal-assistant";
   return (
     <div className="agent-context-menu" style={{ left: x, top: y }}>
-      <Button type="text" size="small" onClick={() => onEdit(agent.id)}>
+      <Button variant="ghost" size="sm" onClick={() => onEdit(agent.id)}>
         编辑
       </Button>
-      <Button type="text" size="small" onClick={() => onDuplicate(agent)}>
+      <Button variant="ghost" size="sm" onClick={() => onDuplicate(agent)}>
         复制
       </Button>
-      <Button
-        type="text"
-        size="small"
-        className="agent-menu-delete-btn"
-        danger
-        disabled={isTerminal}
-        title={isTerminal ? "终端页依赖此智能体，不可删除" : undefined}
-        onClick={() => {
+      <Button variant="ghost" size="sm" className="agent-menu-delete-btn" disabled={isTerminal} title={isTerminal ? "终端页依赖此智能体，不可删除" : undefined} onClick={() => {
           if (!isTerminal) onRequestDelete(agent.id);
-        }}
-      >
+        }}>
         删除
       </Button>
     </div>

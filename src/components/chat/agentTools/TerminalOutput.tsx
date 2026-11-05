@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { memo, useState } from "react";
 
 interface Props {
@@ -37,12 +38,7 @@ function TerminalOutput({
         {truncated ? "…" : ""}
       </pre>
       {needsTruncate && (
-        <Button
-          type="link"
-          size="small"
-          className="agent-tool-terminal-expand"
-          onClick={() => setExpanded((v) => !v)}
-        >
+        <Button variant="link" size="sm" className="agent-tool-terminal-expand" onClick={() => setExpanded((v) => !v)}>
           {expanded ? "收起" : `展开全部（${content.length.toLocaleString()} 字符）`}
         </Button>
       )}

@@ -8,8 +8,8 @@
   overflow: hidden;
   user-select: none;
   position: relative;
-  background: var(--animal-bg-color, #f8f8f0); /* 与设置/知识库侧栏同底色 */
-  border-right: 1px solid rgba(139, 105, 70, 0.2);
+  background: var(--ink-900); /* 与设置/知识库侧栏同底色 */
+  border-right: 1px solid color-mix(in srgb, var(--bone-400) 20%, transparent);
   /* cherry PageSidebar：宽度滑动 + 内容淡出，不卸载组件 */
   transition: width 0.3s ease-in-out, opacity 0.3s ease-in-out,
     margin-right 0.3s ease-in-out;
@@ -45,25 +45,22 @@
   padding: 6px 8px 6px 10px;
 }
 
+/* 新建智能体：Cherry HeaderItem 同款 — 官方 ghost Button（hover bg-accent），
+   这里只补布局：占满头部行、图标 16px、文字 13px。 */
 .agent-chat-sidebar .agent-group-add {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: center;
+  justify-content: flex-start;
   gap: 6px;
-  padding: 6px 8px;
-  border-radius: 12px;
-  border: 1px dashed rgba(139, 105, 70, 0.35);
-  background: transparent;
-  color: #8a7a66;
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  min-height: 32px;
+  border-radius: var(--radius-lg, 12px);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--bone-200);
 }
 
 .agent-chat-sidebar .agent-group-add:hover {
-  border-color: rgba(184, 137, 90, 0.6);
-  color: #4a3f33;
+  color: var(--bone-100);
 }
 
 
@@ -95,12 +92,12 @@
 }
 
 .topic-item:hover {
-  background: rgba(121, 79, 39, 0.05);
+  background: color-mix(in srgb, var(--bone-400) 5%, transparent);
 }
 
 .topic-item.active {
   background: var(--persimmon-softer);
-  border-color: rgba(25, 200, 185, 0.28);
+  border-color: color-mix(in srgb, var(--persimmon) 28%, transparent);
 }
 
 .topic-item.active::before {
@@ -177,29 +174,21 @@
   color: var(--bone-600);
   font-size: 12px;
 }
-/* 分组会话列表首项「新增会话」：库语义绿（success）虚线描边 + 绿字，
-   与选中会话（青实底）、普通会话项（棕灰）拉开色相。
-   选择器带 .agent-chat-sidebar 前缀压过 index.css 的全局 button 重置 (0,1,1) */
+/* 分组会话列表首项「新增会话」：官方 ghost Button（hover bg-accent），
+   只补布局：整行宽、左对齐、与会话项同密度。 */
 .agent-chat-sidebar .topic-new-btn {
-  display: flex;
-  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
   margin-bottom: 4px;
-  padding: 5px 12px;
-  border: 1px dashed rgba(111, 188, 44, 0.65);
-  border-radius: 10px;
-  background: none;
-  color: var(--animal-success-color, #6fba2c);
+  min-height: 30px;
   font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  font-weight: 400;
+  color: var(--bone-400);
 }
 
 .agent-chat-sidebar .topic-new-btn:hover {
-  background: rgba(111, 188, 44, 0.1);
-  border-color: var(--animal-success-color-hover, #85cc45);
+  color: var(--bone-100);
 }
 
 .topic-menu-backdrop {
@@ -220,17 +209,17 @@
   /* Backdrop is a sibling at z-index 5 — without this the popup paints under
      it, so every click hit the backdrop and just dismissed the prompt. */
   z-index: 6;
-  background: rgba(248, 244, 232, 0.98);
-  border: 1px solid rgba(199, 90, 79, 0.45);
+  background: color-mix(in srgb, var(--ink-750) 98%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rust) 45%, transparent);
   border-radius: 10px;
   padding: 10px 12px;
-  box-shadow: 0 8px 22px rgba(121, 79, 39, 0.25);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--bone-400) 25%, transparent);
   min-width: 160px;
 }
 .topic-confirm-delete > span {
   display: block;
   font-size: 12px;
-  color: #f0c4bf;
+  color: var(--rust);
   margin-bottom: 8px;
 }
 
@@ -286,16 +275,16 @@
   cursor: pointer;
   min-width: 0;
   /* 不透明实色（原 rgba 在滚动时透出会话内容；值为原色叠 #f5f5f5 面板底的混合结果） */
-  background: #f5f5f5;
+  background: var(--ink-900);
   transition: background 0.15s ease;
 }
 
 .agent-group-head:hover {
-  background: #edeae7;
+  background: var(--ink-800);
 }
 
 .agent-group-head.active {
-  background: #ece6df;
+  background: var(--ink-800);
 }
 
 .agent-group-topics {
@@ -315,7 +304,7 @@
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
-  color: #4a3f33;
+  color: var(--bone-100);
 }
 
 .agent-group-count {
@@ -344,14 +333,14 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #8a7a66;
+  color: var(--bone-500);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
 .agent-group-action:hover {
-  background: rgba(139, 105, 70, 0.14);
-  color: #4a3f33;
+  background: color-mix(in srgb, var(--bone-400) 14%, transparent);
+  color: var(--bone-100);
 }
 
 .agent-group-chevron {
@@ -392,19 +381,19 @@
   gap: 2px;
   min-width: 120px;
   padding: 6px;
-  background: rgba(248, 244, 232, 0.98);
-  border: 1px solid rgba(139, 105, 70, 0.25);
+  background: color-mix(in srgb, var(--ink-750) 98%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bone-400) 25%, transparent);
   border-radius: 12px;
-  box-shadow: 0 8px 22px rgba(121, 79, 39, 0.2);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--bone-400) 20%, transparent);
 }
 
 /* 库 danger+text 组合是白字（不可见）——覆盖为可读红字 */
 .agent-context-menu .agent-menu-delete-btn:not(:disabled) {
-  color: #c9564a;
+  color: var(--rust);
 }
 
 .agent-context-menu .agent-menu-delete-btn:not(:disabled):hover {
-  background: rgba(201, 86, 74, 0.1);
+  background: color-mix(in srgb, var(--rust) 10%, transparent);
 }
 
 .agent-confirm-delete {
@@ -412,12 +401,12 @@
   left: 50%;
   top: 40%;
   transform: translate(-50%, -50%);
-  background: rgba(248, 244, 232, 0.98);
-  border: 1px solid rgba(199, 90, 79, 0.45);
+  background: color-mix(in srgb, var(--ink-750) 98%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rust) 45%, transparent);
   border-radius: 12px;
   padding: 12px 14px;
   z-index: 30;
-  box-shadow: 0 8px 22px rgba(121, 79, 39, 0.25);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--bone-400) 25%, transparent);
   width: min(220px, 80%);
   font-size: 12px;
 }

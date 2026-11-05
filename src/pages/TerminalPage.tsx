@@ -1,4 +1,6 @@
-import { Button, Icon } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import { Smile } from "lucide-react";
+
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Terminal } from "@xterm/xterm";
 import type { Terminal as TerminalType } from "@xterm/xterm";
@@ -122,6 +124,8 @@ function TerminalInstance({
     const isSsh = !!sshHost;
     const ts = settingsRef.current;
 
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string) => css.getPropertyValue(name).trim();
     const xterm = new Terminal({
       cursorBlink: true,
       fontSize: ts.fontSize,
@@ -133,11 +137,10 @@ function TerminalInstance({
       // horizontal rescale for GB18030-style column alignment.
       rescaleOverlappingGlyphs: true,
       theme: {
-        // 官方 CodeBlock 配色：暖深棕底 + 奶油字（animal-island-ui demo）
-        background: "#2b2118",
-        foreground: "#e8d5bc",
-        cursor: "#a8d4a0",
-        selectionBackground: "rgba(25, 200, 185, 0.30)",
+        background: token("--code-bg") || "#323232",
+        foreground: token("--code-fg") || "#ededed",
+        cursor: token("--code-cursor") || "#3ecf8e",
+        selectionBackground: "rgba(62, 207, 142, 0.45)",
       },
     });
 
@@ -1339,13 +1342,8 @@ export default function TerminalPage({
       )}
 
       {activeIsSession && !drawerOpen && (
-        <Button
-          type="default"
-          className="terminal-agent-toggle"
-          onClick={() => setDrawerOpen(true)}
-          title="AI 助手"
-        >
-          <Icon name="Smile" size={18} />
+        <Button variant="outline" className="terminal-agent-toggle" onClick={() => setDrawerOpen(true)} title="AI 助手">
+          <Smile size={18} />
         </Button>
       )}
       {confirmDialog}

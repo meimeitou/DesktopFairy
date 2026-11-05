@@ -1,4 +1,6 @@
-import { Button, Icon, Input } from "animal-island-ui";
+import { Button, Input } from "@cherrystudio/ui";
+import { Sparkles } from "lucide-react";
+
 import { useEffect, useMemo, useState } from "react";
 import { FieldHead } from "../../HintTip";
 import ModelSelector from "../../ModelSelector";
@@ -99,16 +101,10 @@ export default function AgentBasicSection({
             {imageAvatar && avatarSrc ? (
               <img src={avatarSrc} alt="" />
             ) : (
-              <Icon name="Butterfly" size={40} />
+              <Sparkles size={40} />
             )}
           </span>
-          <Button
-            type="default"
-            size="small"
-            disabled={!agent.id}
-            title={agent.id ? undefined : "先输入名称创建智能体后再上传头像"}
-            onClick={() => void selectAvatarImage()}
-          >
+          <Button variant="outline" size="sm" disabled={!agent.id} title={agent.id ? undefined : "先输入名称创建智能体后再上传头像"} onClick={() => void selectAvatarImage()}>
             更换头像
           </Button>
         </div>
@@ -116,9 +112,7 @@ export default function AgentBasicSection({
         <div className="agent-identity-fields">
           <div className="field">
             <FieldHead htmlFor="agent-name">名称</FieldHead>
-            <Input shadow id="agent-name"
-            type="text" value={agent.name} onChange={(e) => onChange({ name: e.target.value })}
-            placeholder="个人助手" />
+            <Input id="agent-name" type="text" value={agent.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="个人助手" />
           </div>
 
           <div className="field">

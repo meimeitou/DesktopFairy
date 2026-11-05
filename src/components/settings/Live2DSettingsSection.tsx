@@ -1,4 +1,4 @@
-import { Button, Input, Switch, Tabs } from "animal-island-ui";
+import { Button, Input, Switch } from "@cherrystudio/ui";
 import Select from "../Select";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -101,12 +101,7 @@ function SizeNumberInput({
   };
 
   return (
-    <Input
-      shadow
-      type="text"
-      inputMode="numeric"
-      value={draft}
-      onChange={(e) => {
+    <Input type="text" inputMode="numeric" value={draft} onChange={(e) => {
         const raw = e.target.value.trim();
         if (!SIZE_INPUT_PATTERN.test(raw)) return;
         setDraft(raw);
@@ -114,14 +109,11 @@ function SizeNumberInput({
           const n = Number(raw);
           if (Number.isFinite(n)) onChange(n);
         }
-      }}
-      onBlur={() => commit(draft)}
-      onKeyDown={(e) => {
+      }} onBlur={() => commit(draft)} onKeyDown={(e) => {
         if (e.key === "Enter") {
           e.currentTarget.blur();
         }
-      }}
-    />
+      }} />
   );
 }
 
@@ -157,26 +149,18 @@ function OffsetNumberInput({
   }, [value]);
 
   return (
-    <Input
-      shadow
-      type="text"
-      inputMode="numeric"
-      placeholder={placeholder}
-      value={draft}
-      onChange={(e) => {
+    <Input type="text" inputMode="numeric" placeholder={placeholder} value={draft} onChange={(e) => {
         const raw = e.target.value.trim();
         if (!OFFSET_INPUT_PATTERN.test(raw)) return;
         setDraft(raw);
         if (raw !== "" && raw !== "-") {
           onChange(parseOffsetInput(raw));
         }
-      }}
-      onBlur={() => {
+      }} onBlur={() => {
         const next = parseOffsetInput(draft);
         onChange(next);
         setDraft(formatOffsetDisplay(next));
-      }}
-    />
+      }} />
   );
 }
 export default function Live2DSettingsSection({ settings, onChange }: Props) {
@@ -385,11 +369,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               <FieldHead hint="选择桌面上的角色。本地模型请选 .model3.json，或包含它的目录。">
                 模型
               </FieldHead>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => void browseLocalModel()}
-              >
+              <Button variant="default" size="sm" onClick={() => void browseLocalModel()}>
                 浏览本地
               </Button>
             </div>
@@ -403,13 +383,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               <div className="model-picker">
                 {displayModels.map((model) => (
                   <div key={model.path} className="model-picker-item">
-                    <Button
-                      type="text"
-                      className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}${model.missing ? " missing" : ""}`}
-                      onClick={() => selectModel(model)}
-                      title={model.path}
-                      disabled={model.missing}
-                    >
+                    <Button variant="ghost" className={`model-picker-btn${settings.modelPath === model.path ? " active" : ""}${model.missing ? " missing" : ""}`} onClick={() => selectModel(model)} title={model.path} disabled={model.missing}>
                       {model.name}
                       <span className="model-picker-source">
                         {model.missing
@@ -420,20 +394,13 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
                       </span>
                     </Button>
                     {model.source === "local" && (
-                      <Button
-                        type="text"
-                        size="small"
-                        className="model-picker-remove-btn"
-                        onMouseDown={(e) => {
+                      <Button variant="ghost" size="sm" className="model-picker-remove-btn" onMouseDown={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                        }}
-                        onClick={(e) => {
+                        }} onClick={(e) => {
                           e.stopPropagation();
                           void unlistLocalModel(model);
-                        }}
-                        aria-label={`从应用列表移除 ${model.name}`}
-                      >
+                        }} aria-label={`从应用列表移除 ${model.name}`}>
                         ×
                       </Button>
                     )}
@@ -455,12 +422,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               <code className="live2d-path-text" title={settings.modelPath}>
                 {settings.modelPath || "未选择模型"}
               </code>
-              <Button
-                type="text"
-                size="small"
-                disabled={!settings.modelPath}
-                onClick={() => void copyModelPath()}
-              >
+              <Button variant="ghost" size="sm" disabled={!settings.modelPath} onClick={() => void copyModelPath()}>
                 {pathCopied ? "已复制" : "复制"}
               </Button>
             </div>
@@ -471,26 +433,14 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               试演
             </FieldHead>
             <div className="live2d-action-row">
-              <Button
-                type="default"
-                size="small"
-                onClick={() => sendCommand("random_motion")}
-                disabled={!hasMotions}
-                title={hasMotions ? "随机播放动作" : "当前模型未配置动作"}
-              >
+              <Button variant="outline" size="sm" onClick={() => sendCommand("random_motion")} disabled={!hasMotions} title={hasMotions ? "随机播放动作" : "当前模型未配置动作"}>
                 切换动作
               </Button>
-              <Button
-                type="default"
-                size="small"
-                onClick={() => sendCommand("next_expression")}
-                disabled={!hasExpressions}
-                title={
+              <Button variant="outline" size="sm" onClick={() => sendCommand("next_expression")} disabled={!hasExpressions} title={
                   hasExpressions
                     ? `依次切换表情（共 ${caps.expressions.length} 个）`
                     : "当前模型未配置表情"
-                }
-              >
+                }>
                 下一个表情
               </Button>
             </div>
@@ -519,7 +469,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               </FieldHead>
               <Switch
                 checked={settings.live2dReactive}
-                onChange={(live2dReactive) => onChange({ live2dReactive })}
+                onCheckedChange={(live2dReactive) => onChange({ live2dReactive })}
                 aria-label="拟人化反应"
               />
             </div>
@@ -529,7 +479,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               </FieldHead>
               <Switch
                 checked={settings.live2dSpeechBubble}
-                onChange={(live2dSpeechBubble) =>
+                onCheckedChange={(live2dSpeechBubble) =>
                   onChange({ live2dSpeechBubble })
                 }
                 aria-label="头顶对话框"
@@ -547,43 +497,26 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
                   最大字数
                 </FieldHead>
                 <div className="field-number-row">
-                  <Input
-                    shadow
-                    id="live2d-bubble-max"
-                    type="number"
-                    min={20}
-                    max={120}
-                    value={settings.live2dSpeechBubbleMaxChars}
-                    onChange={(e) => {
+                  <Input id="live2d-bubble-max" type="number" min={20} max={120} value={settings.live2dSpeechBubbleMaxChars} onChange={(e) => {
                       const raw = e.target.value;
                       if (raw === "") return;
                       onChange({
                         live2dSpeechBubbleMaxChars:
                           normalizeSpeechBubbleMaxChars(Number(raw)),
                       });
-                    }}
-                    onBlur={(e) => {
+                    }} onBlur={(e) => {
                       onChange({
                         live2dSpeechBubbleMaxChars:
                           normalizeSpeechBubbleMaxChars(Number(e.target.value)),
                       });
-                    }}
-                  />
+                    }} />
                 </div>
               </div>
               <div className="live2d-bubble-test">
-                <Input
-                  shadow
-                  type="text"
-                  value={bubbleTestText}
-                  onChange={(e) => setBubbleTestText(e.target.value)}
-                  onKeyDown={(e) => {
+                <Input type="text" value={bubbleTestText} onChange={(e) => setBubbleTestText(e.target.value)} onKeyDown={(e) => {
                     if (e.key === "Enter") testSpeechBubble();
-                  }}
-                  placeholder={DEFAULT_SPEECH_BUBBLE_TEST_TEXT}
-                  aria-label="对话框测试文字"
-                />
-                <Button type="default" size="small" onClick={testSpeechBubble}>
+                  }} placeholder={DEFAULT_SPEECH_BUBBLE_TEST_TEXT} aria-label="对话框测试文字" />
+                <Button variant="outline" size="sm" onClick={testSpeechBubble}>
                   测试
                 </Button>
               </div>
@@ -604,11 +537,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
               </FieldHead>
               <div className="size-presets">
                 {SIZE_PRESETS.map((p) => (
-                  <Button
-                    key={p.label}
-                    type="text"
-                    className={`size-preset-btn${settings.windowWidth === p.width && settings.windowHeight === p.height ? " active" : ""}`}
-                    onClick={() => {
+                  <Button variant="ghost" key={p.label} className={`size-preset-btn${settings.windowWidth === p.width && settings.windowHeight === p.height ? " active" : ""}`} onClick={() => {
                       onChange({
                         windowWidth: p.width,
                         windowHeight: p.height,
@@ -617,8 +546,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
                         width: p.width,
                         height: p.height,
                       });
-                    }}
-                  >
+                    }}>
                     {p.label}
                     <span className="size-hint">
                       {p.width}×{p.height}
@@ -706,12 +634,7 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
                 <FieldHead hint="相对窗口中心微调，单位像素。负值向左 / 向上，正值向右 / 向下。">
                   位置
                 </FieldHead>
-                <Button
-                  type="default"
-                  size="small"
-                  className="live2d-offset-reset"
-                  onClick={() => onChange({ modelOffsetX: 0, modelOffsetY: 0 })}
-                >
+                <Button variant="outline" size="sm" className="live2d-offset-reset" onClick={() => onChange({ modelOffsetX: 0, modelOffsetY: 0 })}>
                   重置
                 </Button>
               </div>
@@ -738,15 +661,20 @@ export default function Live2DSettingsSection({ settings, onChange }: Props) {
     },
   ];
 
+  const activeItem = tabItems.find((t) => t.key === activeTab) ?? tabItems[0];
+
   return (
     <section className="settings-section live2d-settings">
-      <Tabs
-        items={tabItems}
-        activeKey={activeTab}
-        onChange={(key) => setActiveTab(key as Live2DSettingsTab)}
-        className="live2d-tabs"
-        aria-label="Live2D 设置分区"
-      />
+      <nav className="agent-section-nav" aria-label="Live2D 设置分区">
+        {tabItems.map((item) => (
+          <Button variant="ghost" key={item.key} className={`agent-section-nav-item${activeTab === item.key ? " active" : ""}`} aria-current={activeTab === item.key ? "page" : undefined} onClick={() => setActiveTab(item.key)}>
+            {item.label}
+          </Button>
+        ))}
+      </nav>
+      <div className="agent-section-body" key={activeTab}>
+        {activeItem?.children}
+      </div>
       {confirmDialog}
     </section>
   );

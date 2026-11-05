@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { FieldHead } from "../../HintTip";
 import {
   DEFAULT_SOUL,
@@ -34,12 +35,7 @@ export default function AgentPromptSection({ agent, onChange, isTerminal = agent
               SOUL.md
             </FieldHead>
             <div className="agent-manuscript-actions">
-              <Button
-                type="default"
-                size="small"
-                disabled={isDefaultSoul}
-                onClick={() => onChange({ soul: defaultSoul })}
-              >
+              <Button variant="outline" size="sm" disabled={isDefaultSoul} onClick={() => onChange({ soul: defaultSoul })}>
                 恢复默认
               </Button>
             </div>
@@ -65,20 +61,10 @@ export default function AgentPromptSection({ agent, onChange, isTerminal = agent
               USER.md
             </FieldHead>
             <div className="agent-manuscript-actions">
-              <Button
-                type="default"
-                size="small"
-                disabled={!!agent.user.trim()}
-                onClick={() => onChange({ user: userTemplate })}
-              >
+              <Button variant="outline" size="sm" disabled={!!agent.user.trim()} onClick={() => onChange({ user: userTemplate })}>
                 载入模板
               </Button>
-              <Button
-                type="default"
-                size="small"
-                disabled={!agent.user.trim()}
-                onClick={() => onChange({ user: "" })}
-              >
+              <Button variant="outline" size="sm" disabled={!agent.user.trim()} onClick={() => onChange({ user: "" })}>
                 清空
               </Button>
             </div>

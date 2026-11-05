@@ -13,25 +13,25 @@ export const REASONING_EFFORT_CARDS: ReasoningEffortCard[] = [
     value: "default",
     title: "默认",
     description: "不发送参数，依赖模型默认行为。",
-    accent: "#7d6448",
+    accent: "var(--bone-600)",
   },
   {
     value: "low",
     title: "浅思",
     description: "低强度推理，更快更省。",
-    accent: "#19c8b9",
+    accent: "var(--persimmon)",
   },
   {
     value: "medium",
     title: "斟酌",
     description: "中强度推理，兼顾深度与速度。",
-    accent: "#f5c31c",
+    accent: "var(--amber)",
   },
   {
     value: "high",
     title: "沉思",
     description: "高强度推理，更深入但更慢。",
-    accent: "#e05a5a",
+    accent: "var(--rust)",
   },
 ];
 

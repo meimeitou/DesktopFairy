@@ -1,4 +1,7 @@
-import { Button, Icon, Input } from "animal-island-ui";
+import { NamedIcon } from "../NamedIcon";
+import { Button, Input } from "@cherrystudio/ui";
+import { X } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 import "../Select.css";
 import "./VaultDirectorySelect.css";
@@ -68,19 +71,16 @@ export default function VaultDirectorySelect({ baseId, value, onChange, disabled
       aria-expanded={open} aria-controls={open ? "vault-directory-options" : undefined}
       onClick={() => { if (!open) setPage(0); setOpen((previous) => !previous); }}>
       <span id="vault-directory-value">{value.length ? `已选择 ${value.length} 个子目录` : "选择要排除的子目录"}</span>
-      <Icon name={open ? "Close" : "Folder"} size={14} />
+      <NamedIcon name={open ? "Close" : "Folder"} size={14} />
     </button>
     {value.length > 0 && <div className="vault-directory-selected" aria-label="已排除的子目录">
       {value.map((directory) => <span key={directory} className="vault-directory-tag"><span title={directory}>{directory}</span>
-        <Button type="text" size="small" htmlType="button" disabled={disabled} aria-label={`取消排除 ${directory}`}
-          icon={<Icon name="Close" size={10} />} onClick={() => toggle(directory)} /></span>)}
+        <Button variant="ghost" size="sm" type="button" disabled={disabled} aria-label={`取消排除 ${directory}`} onClick={() => toggle(directory)}><X size={10} /></Button></span>)}
     </div>}
     {open && <div className="vault-directory-dropdown" id="vault-directory-options">
-      <Input shadow autoFocus aria-label="搜索子目录" placeholder="搜索子目录名称或路径…" value={search} disabled={disabled}
-        onChange={(event) => { setSearch(event.target.value); setPage(0); setDirectories([]); setHasMore(false); }}
-        onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
+      <Input autoFocus aria-label="搜索子目录" placeholder="搜索子目录名称或路径…" value={search} disabled={disabled} onChange={(event) => { setSearch(event.target.value); setPage(0); setDirectories([]); setHasMore(false); }} onKeyDown={(event) => { if (event.key === "Enter") event.preventDefault(); }} />
       {error ? <div className="vault-directory-message" role="alert"><span>无法读取子目录：{error}</span>
-        <Button type="text" size="small" htmlType="button" onClick={() => setRetry((previous) => previous + 1)}>重试</Button></div> : null}
+        <Button variant="ghost" size="sm" type="button" onClick={() => setRetry((previous) => previous + 1)}>重试</Button></div> : null}
       <div className="vault-directory-options" role="group" aria-label="选择排除的子目录" aria-busy={pending}>
         {options.map((directory) => {
           const selected = value.includes(directory);
@@ -91,9 +91,9 @@ export default function VaultDirectorySelect({ baseId, value, onChange, disabled
         {pending && <p className="vault-directory-message" role="status">正在加载子目录…</p>}
         {!pending && !error && !options.length && <p className="vault-directory-message">{search.trim() ? "没有匹配的子目录" : "此 vault 没有可选择的子目录"}</p>}
       </div>
-      {hasMore && !error && <Button type="text" size="small" htmlType="button" disabled={pending} onClick={() => setPage((previous) => previous + 1)}>加载更多目录</Button>}
+      {hasMore && !error && <Button variant="ghost" size="sm" type="button" disabled={pending} onClick={() => setPage((previous) => previous + 1)}>加载更多目录</Button>}
       <div className="vault-directory-footer"><span>{value.length ? `已选择 ${value.length} 项` : "可选择多个目录"}</span>
-        <Button type="text" size="small" htmlType="button" onClick={() => { setOpen(false); trigger.current?.focus(); }}>完成选择</Button></div>
+        <Button variant="ghost" size="sm" type="button" onClick={() => { setOpen(false); trigger.current?.focus(); }}>完成选择</Button></div>
     </div>}
   </div>;
 }

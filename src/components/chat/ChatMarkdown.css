@@ -1,6 +1,6 @@
 .chat-markdown {
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.65;
   word-break: break-word;
   min-width: 0;
   max-width: 100%;
@@ -71,14 +71,14 @@
   text-underline-offset: 2px;
 }
 .chat-markdown a:hover {
-  color: var(--persimmon-hover, #3dd4c6);
+  color: var(--persimmon-bright);
 }
 
 .chat-markdown [data-streamdown="inline-code"] {
   padding: 0.1em 0.35em;
   border-radius: 4px;
-  background: rgba(121, 79, 39, 0.18);
-  border: 1px solid rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--bone-400) 8%, transparent);
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
@@ -106,24 +106,28 @@
 /* Code blocks — layout utilities are Tailwind classes compiled into JS and
  * inert without Tailwind; layout comes from these attribute selectors. */
 .chat-markdown [data-streamdown="code-block"] {
-  margin: 0.6em 0;
-  border-radius: 8px;
+  /* Cherry structure: ONE outer card (subtle surface), inner body panel
+   * carries the code background. No border on the wrapper itself. */
+  margin: 1em 0;
+  gap: 0.5em;
+  padding: 0.5em;
   overflow: hidden;
-  /* gruvbox-dark-soft: match the shiki bg the body will carry */
-  border: 1px solid #45403d;
-  background: #32302f;
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
+  border: 0.5px solid var(--hairline);
+  border-radius: 10px;
 }
 .chat-markdown [data-streamdown="code-block-header"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px;
-  background: rgba(235, 219, 178, 0.06);
-  border-bottom: 1px solid #45403d;
+  height: 1.75rem;
+  padding: 0 6px;
+  color: var(--bone-500);
+  font-size: 0.78em;
 }
 .chat-markdown [data-streamdown="code-block-header"] span {
-  font-size: 11px;
-  color: #a89984;
+  font-size: inherit;
+  color: inherit;
   text-transform: lowercase;
   font-family: var(--font-mono);
 }
@@ -139,10 +143,10 @@
   gap: 3px;
   padding: 2px 8px;
   background: transparent;
-  border: 1px solid rgba(235, 219, 178, 0.2);
+  border: 1px solid color-mix(in srgb, var(--code-fg) 20%, transparent);
   border-radius: 4px;
   font-size: 11px;
-  color: #a89984;
+  color: color-mix(in srgb, var(--code-fg) 72%, var(--code-bg));
   cursor: pointer;
   transition:
     background 0.15s,
@@ -151,20 +155,22 @@
 }
 .chat-markdown [data-streamdown="code-block-copy-button"]:hover,
 .chat-markdown [data-streamdown="code-block-download-button"]:hover {
-  background: rgba(235, 219, 178, 0.08);
-  color: #ebdbb2;
+  background: color-mix(in srgb, var(--code-fg) 8%, transparent);
+  color: var(--code-fg);
 }
 .chat-markdown [data-streamdown="code-block-body"] {
+  /* Cherry: the body is the inner panel with the code surface + its own
+   * subtle border, sitting inside the outer card. */
   margin: 0;
-  padding: 10px 12px;
+  padding: 0.8em 1em;
   overflow-x: auto;
   font-size: 12px;
   line-height: 1.5;
-  /* shiki writes --sdm-bg/--sdm-fg inline on the inner <pre>, which does not
-   * cascade up to this div — pin the gruvbox palette here directly. */
-  background: #32302f;
-  color: #ebdbb2;
+  background: var(--code-bg);
+  color: var(--code-fg);
   font-family: var(--font-mono);
+  border: 0.5px solid var(--hairline);
+  border-radius: var(--radius-base, 8px);
 }
 .chat-markdown [data-streamdown="code-block-body"] pre {
   margin: 0;
@@ -177,11 +183,12 @@
   border: none;
   padding: 0;
 }
-/* Shiki tokens set inline CSS vars (--sdm-c/--sdm-tbg); the Tailwind
- * utilities that consume them are inert without Tailwind, so map here. */
+/* Shiki tokens set inline CSS vars (--sdm-c/--sdm-tbg light, --shiki-dark* dark).
+ * Consume the same fallback chain as streamdown's dark: utilities — we are a
+ * fixed dark UI, so prefer the dark token first. */
 .chat-markdown [data-streamdown="code-block-body"] span {
-  color: var(--sdm-c, inherit);
-  background-color: var(--sdm-tbg, transparent);
+  color: var(--shiki-dark, var(--sdm-c, inherit));
+  background-color: var(--shiki-dark-bg, var(--sdm-tbg, transparent));
 }
 /* Line spans rely on Tailwind's `block` class (display:block) for line
  * breaks — inert without Tailwind; non-empty lines carry no "\n" text. */
@@ -190,26 +197,30 @@
 }
 
 /* Shell code block with "在终端运行" — replaces the deleted CodeBlock.tsx */
-/* Shell block rides shiki gruvbox-dark-soft: wrapper + header follow the
- * theme's dark warm palette (#32302f bg, #ebdbb2 fg family). */
+/* Shell block: same single-card structure; the body panel carries the
+ * code surface (#323232 bg, #ededed fg family). */
 .sd-shell-block {
-  margin: 0.6em 0;
-  border-radius: 8px;
+  /* Same Cherry single-card structure as generic code blocks. */
+  margin: 1em 0;
+  gap: 0.5em;
+  padding: 0.5em;
   overflow: hidden;
-  border: 1px solid #45403d;
-  background: #32302f;
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
+  border: 0.5px solid var(--hairline);
+  border-radius: 10px;
 }
 .sd-shell-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 10px;
-  background: rgba(235, 219, 178, 0.06);
-  border-bottom: 1px solid #45403d;
+  height: 1.75rem;
+  padding: 0 6px;
+  color: var(--bone-500);
+  font-size: 0.78em;
 }
 .sd-shell-lang {
-  font-size: 11px;
-  color: #a89984;
+  font-size: inherit;
+  color: inherit;
   text-transform: lowercase;
   font-family: var(--font-mono);
 }
@@ -221,6 +232,9 @@
 /* .sd-shell-run: official Button skin, no overrides */
 .sd-shell-block [data-streamdown="code-block"] {
   margin: 0;
+  padding: 0;
+  gap: 0;
+  background: transparent;
   border: none;
   border-radius: 0;
 }
@@ -228,8 +242,8 @@
  * not bubble to this div, so its var() falls back to the cream token. Paint
  * the gruvbox bg here directly. */
 .sd-shell-block [data-streamdown="code-block-body"] {
-  background: #32302f;
-  color: #ebdbb2;
+  background: var(--code-bg);
+  color: var(--code-fg);
 }
 .sd-shell-block [data-streamdown="code-block-header"] {
   display: none; /* shell header row replaces streamdown's own */
@@ -239,20 +253,21 @@
   margin: 0.5em 0;
   padding: 0.2em 0 0.2em 0.8em;
   border-left: 3px solid var(--persimmon-focus);
-  color: rgba(121, 79, 39, 0.75);
+  color: color-mix(in srgb, var(--bone-400) 75%, transparent);
 }
 
 /* Tables */
 .chat-markdown [data-streamdown="table-wrapper"] {
-  margin: 0.6em 0;
+  /* Cherry structure: ONE card. The table sits directly on it — no extra
+   * border/background on the table itself. */
+  margin: 1em 0;
+  gap: 0.5em;
+  padding: 0.5em;
   max-width: 100%;
   min-width: 0;
-  /* no inner scrollbar: the table wraps to the bubble and the message list scrolls */
-  overflow: visible;
-  border-radius: 6px;
-  border: 1px solid #45403d;
-  /* gruvbox base so the controls row tint composites like code-block-header */
-  background: #32302f;
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
+  border: 0.5px solid var(--hairline);
+  border-radius: 10px;
 }
 /* streamdown's scroll div sits between the controls row and the table.
  * Drop its default max-height so rows grow the message instead of painting over it. */
@@ -261,14 +276,10 @@
   max-height: none !important;
   height: auto;
   overflow: visible;
-  background: #32302f;
 }
 
 /* Table controls row (copy / download / fullscreen) — streamdown gives it
- * only Tailwind classes (flex items-center justify-end gap-1); inert here.
- * It is the first child div of table-wrapper when controls are enabled. */
-/* Controls row styled like code-block-header: a full-width bar with its own
- * background + bottom border, buttons right-aligned — not floating icons. */
+ * only Tailwind classes (flex items-center justify-end gap-1); inert here. */
 .chat-markdown [data-streamdown="table-wrapper"] > div:first-child,
 [data-streamdown="table-fullscreen"]
   [data-streamdown="table-wrapper"]
@@ -277,9 +288,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  padding: 4px 10px;
-  background: rgba(235, 219, 178, 0.06);
-  border-bottom: 1px solid #45403d;
+  padding: 2px 4px;
 }
 /* Dropdown anchors (copy/download format menus wrap button + menu in a
  * div.relative — also a Tailwind-only class). */
@@ -296,9 +305,9 @@
   min-width: 120px;
   overflow: hidden;
   border-radius: 6px;
-  border: 1px solid #45403d;
-  background: #3c3836;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  border: 1px solid color-mix(in srgb, var(--code-fg) 22%, var(--code-bg));
+  background: var(--code-bg);
+  box-shadow: 0 4px 12px var(--overlay);
 }
 .chat-markdown [data-streamdown="table-wrapper"] [class*="absolute"] button {
   display: block;
@@ -315,7 +324,7 @@
   [data-streamdown="table-wrapper"]
   [class*="absolute"]
   button:hover {
-  background: rgba(235, 219, 178, 0.08);
+  background: color-mix(in srgb, var(--code-fg) 8%, transparent);
 }
 /* Icon buttons in the controls row (svg-only, p-1). */
 .chat-markdown [data-streamdown="table-wrapper"] > div:first-child button {
@@ -324,9 +333,9 @@
   justify-content: center;
   padding: 2px 8px;
   background: transparent;
-  border: 1px solid rgba(235, 219, 178, 0.25);
+  border: 1px solid color-mix(in srgb, var(--code-fg) 25%, transparent);
   border-radius: 4px;
-  color: #bdae93;
+  color: color-mix(in srgb, var(--code-fg) 72%, var(--code-bg));
   cursor: pointer;
   transition:
     background 0.15s,
@@ -337,39 +346,37 @@
   [data-streamdown="table-wrapper"]
   > div:first-child
   button:hover {
-  background: rgba(235, 219, 178, 0.1);
-  color: #ebdbb2;
+  background: color-mix(in srgb, var(--code-fg) 10%, transparent);
+  color: var(--code-fg);
 }
 
 .chat-markdown [data-streamdown="table"] {
+  /* Cherry: the table is transparent on the wrapper card — no own bg/border. */
   width: 100%;
   max-width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
+  margin: 0;
   font-size: 12px;
-  background: #32302f;
-}
-.chat-markdown [data-streamdown="table-header-cell"] {
-  background: #3c3836;
 }
 .chat-markdown [data-streamdown="table-cell"],
 .chat-markdown [data-streamdown="table-header-cell"] {
   padding: 6px 10px;
-  border-bottom: 1px solid #45403d;
+  border-bottom: 0.5px solid var(--hairline);
   text-align: left;
-  /* same fg as ```text / code-block-body */
-  color: #ebdbb2;
-  font-weight: 600;
+  color: var(--bone-200);
+  font-weight: 400;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-/* gruvbox zebra: even body rows on bg1. Opaque so the cream bubble cannot show through. */
-.chat-markdown [data-streamdown="table-cell"] {
-  background: #32302f;
+.chat-markdown [data-streamdown="table-header-cell"] {
+  color: var(--bone-100);
+  font-weight: 600;
 }
+/* Zebra rows on the card surface, like Cherry's muted striping. */
 .chat-markdown [data-streamdown="table-body"] [data-streamdown="table-row"]:nth-child(even) [data-streamdown="table-cell"] {
-  background: #3c3836;
+  background: color-mix(in srgb, var(--bone-400) 4%, transparent);
 }
 
 /* Mermaid controls row — has the attribute but flex classes are inert. */
@@ -416,8 +423,8 @@
   z-index: 50;
   display: flex;
   flex-direction: column;
-  background: #32302f;
-  color: #ebdbb2;
+  background: var(--code-bg);
+  color: var(--code-fg);
   -webkit-app-region: no-drag;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table-wrapper"] {
@@ -440,7 +447,7 @@
   > div:nth-child(2) {
   flex: 1;
   overflow: auto;
-  border: 1px solid #45403d;
+  border: 1px solid color-mix(in srgb, var(--code-fg) 22%, var(--code-bg));
   border-radius: 6px;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table"] {
@@ -448,22 +455,22 @@
   table-layout: fixed;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table-header-cell"] {
-  background: #3c3836;
+  background: var(--code-bg);
   font-weight: 600;
-  color: #ebdbb2;
+  color: var(--code-fg);
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table-cell"] {
-  background: #32302f;
-  color: #ebdbb2;
+  background: var(--code-bg);
+  color: var(--code-fg);
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 [data-streamdown="table-fullscreen"] [data-streamdown="table-body"] [data-streamdown="table-row"]:nth-child(even) [data-streamdown="table-cell"] {
-  background: #3c3836;
+  background: var(--code-bg);
 }
 
 /* Portal renders into <body>, outside .chat-markdown — dropdown menus and
@@ -479,9 +486,9 @@
   min-width: 120px;
   overflow: hidden;
   border-radius: 6px;
-  border: 1px solid #45403d;
-  background: #3c3836;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  border: 1px solid color-mix(in srgb, var(--code-fg) 22%, var(--code-bg));
+  background: var(--code-bg);
+  box-shadow: 0 4px 12px var(--overlay);
 }
 [data-streamdown="table-fullscreen"]
   [data-streamdown="table-wrapper"]
@@ -501,7 +508,7 @@
   [data-streamdown="table-wrapper"]
   [class*="absolute"]
   button:hover {
-  background: rgba(235, 219, 178, 0.08);
+  background: color-mix(in srgb, var(--code-fg) 8%, transparent);
 }
 
 /* Mermaid fullscreen: center diagram; controls pinned top-right. */
@@ -565,9 +572,9 @@
   color: var(--bone-100);
 }
 .msg-user .chat-markdown a {
-  color: #0e7a70;
+  color: var(--cs-success);
 }
 .msg-user .chat-markdown [data-streamdown="inline-code"] {
-  background: rgba(121, 79, 39, 0.13);
-  border-color: rgba(121, 79, 39, 0.15);
+  background: color-mix(in srgb, var(--bone-400) 13%, transparent);
+  border-color: color-mix(in srgb, var(--bone-400) 15%, transparent);
 }

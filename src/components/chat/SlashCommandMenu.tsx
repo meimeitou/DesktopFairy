@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { useEffect, useRef, useState } from "react";
 import type { SlashCommand } from "../../shared/slashCommands";
 import "./SlashCommandMenu.css";
@@ -93,17 +94,10 @@ export default function SlashCommandMenu({ commands, query, onSelect, onClose }:
                 {GROUP_LABELS[cmd.group]}
               </div>
             )}
-            <Button
-              type="text"
-              role="menuitem"
-              data-idx={i}
-              className={`slash-menu-item${i === safeActiveIndex ? " active" : ""}`}
-              onMouseEnter={() => setActiveIndex(i)}
-              onMouseDown={(e) => {
+            <Button variant="ghost" role="menuitem" data-idx={i} className={`slash-menu-item${i === safeActiveIndex ? " active" : ""}`} onMouseEnter={() => setActiveIndex(i)} onMouseDown={(e) => {
                 e.preventDefault();
                 onSelect(cmd);
-              }}
-            >
+              }}>
               <span className="slash-menu-item-label">{cmd.label}</span>
               <span className="slash-menu-item-desc">{cmd.description}</span>
             </Button>

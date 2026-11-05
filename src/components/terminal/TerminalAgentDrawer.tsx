@@ -1,3 +1,5 @@
+import { Button, NormalTooltip, warning } from "@cherrystudio/ui";
+import { CircleStop, Eraser, FoldVertical, Send, Settings, Sparkles, Trash2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -67,18 +69,7 @@ import {
   withEnabledSkillId,
   type SlashCommand,
 } from "../../shared/slashCommands";
-import {
-  Button,
-  Icon,
-  Notification as AnimalNotification,
-  Tooltip,
-} from "animal-island-ui";
-import {
-  CompactIcon as CompactGlyph,
-  EraserIcon as EraserGlyph,
-  SendIcon as SendGlyph,
-  StopIcon as StopGlyph,
-} from "../icons/naivePatch";
+
 import {
   detachTopicStream,
   abortTopicStream,
@@ -101,23 +92,23 @@ function clampDrawerWidth(width: number): number {
 const api = window.electronAPI;
 
 function EraserIcon() {
-  return <Icon icon={EraserGlyph} size={16} />;
+  return <Eraser size={16} />;
 }
 
 function CompactIcon() {
-  return <Icon icon={CompactGlyph} size={16} />;
+  return <FoldVertical size={16} />;
 }
 
 function TrashIcon() {
-  return <Icon name="Trash" size={16} />;
+  return <Trash2 size={16} />;
 }
 
 function SendIcon() {
-  return <Icon icon={SendGlyph} size={16} />;
+  return <Send size={16} />;
 }
 
 function StopIcon() {
-  return <Icon icon={StopGlyph} size={14} />;
+  return <CircleStop size={16} />;
 }
 
 interface TerminalAgentDrawerProps {
@@ -482,7 +473,7 @@ export default function TerminalAgentDrawer({
       // Capture the session before awaiting settings; switching tabs must not retarget this request.
       const sessionId = getActiveSessionId();
       if (!sessionId) {
-        AnimalNotification.warning("终端已断开，请重新连接后再发送。");
+        warning("终端已断开，请重新连接后再发送。");
         return;
       }
       agentSendLockRef.current.add(activeTabId);
@@ -526,7 +517,7 @@ export default function TerminalAgentDrawer({
 
         const apiConfig = getChatApiConfig(currentSettings, agent);
         if (!apiConfig?.apiHost || !apiConfig.modelName) {
-          AnimalNotification.warning(
+          warning(
             "请先在智能体弹窗中配置终端助手的后端 Provider 与模型。",
           );
           return;
@@ -816,7 +807,7 @@ export default function TerminalAgentDrawer({
     () => (
       <div className="terminal-agent-empty">
         <span className="terminal-agent-empty-icon">
-          <Icon name="Butterfly" size={36} />
+          <Sparkles size={36} />
         </span>
         <p>开始和终端 Agent 对话</p>
         <small>Agent 可以发送命令到当前终端并读取结果</small>
@@ -854,22 +845,8 @@ export default function TerminalAgentDrawer({
             </span>
           </div>
           <div className="terminal-agent-header-actions">
-            <Button
-              type="text"
-              size="small"
-              className="terminal-agent-header-btn"
-              icon={<Icon name="Settings" size={14} />}
-              onClick={onOpenSettings}
-              title="AI 助手设置"
-            />
-            <Button
-              type="text"
-              size="small"
-              className="terminal-agent-header-btn"
-              icon={<Icon name="Close" size={14} />}
-              onClick={onToggle}
-              title="关闭抽屉"
-            />
+            <Button variant="ghost" size="sm" className="terminal-agent-header-btn" onClick={onOpenSettings} title="AI 助手设置"><Settings size={14} /></Button>
+            <Button variant="ghost" size="sm" className="terminal-agent-header-btn" onClick={onToggle} title="关闭抽屉"><X size={14} /></Button>
           </div>
         </div>
         <ToolCancelContext.Provider value={handleCancelTool}>
@@ -926,18 +903,11 @@ export default function TerminalAgentDrawer({
           </div>
           <div className="chat-input-toolbar">
             <div className="chat-input-tools-left">
-              <Tooltip title={"清除上下文"}>
-                <Button
-                  type="text"
-                  size="small"
-                  className="chat-tool-btn"
-                  icon={<EraserIcon />}
-                  onClick={handleClearContext}
-                  disabled={
+              <NormalTooltip content="清除上下文">
+                <Button variant="ghost" size="sm" className="chat-tool-btn" onClick={handleClearContext} disabled={
                     composerDisabled || activeState.messages.length === 0
-                  }
-                />
-              </Tooltip>
+                  }><EraserIcon /></Button>
+              </NormalTooltip>
               <ChatModeSelector
                 mode={chatMode}
                 onChange={setChatMode}
@@ -983,26 +953,9 @@ export default function TerminalAgentDrawer({
                 disabled={composerDisabled}
               />
               {activeState.streaming ? (
-                <Button
-                  type="text"
-                  size="small"
-                  className="chat-send-btn chat-stop-btn"
-                  icon={<StopIcon />}
-                  onClick={handleStop}
-                  aria-label="停止生成"
-                  title="停止生成"
-                />
+                <Button variant="ghost" size="sm" className="chat-send-btn chat-stop-btn" onClick={handleStop} aria-label="停止生成" title="停止生成"><StopIcon /></Button>
               ) : (
-                <Button
-                  type="text"
-                  size="small"
-                  className="chat-send-btn"
-                  icon={<SendIcon />}
-                  onClick={() => void handleSend()}
-                  disabled={composerDisabled || !activeState.input.trim()}
-                  aria-label="发送消息"
-                  title="发送消息 (Enter)"
-                />
+                <Button variant="ghost" size="sm" className="chat-send-btn" onClick={() => void handleSend()} disabled={composerDisabled || !activeState.input.trim()} aria-label="发送消息" title="发送消息 (Enter)"><SendIcon /></Button>
               )}
             </div>
           </div>

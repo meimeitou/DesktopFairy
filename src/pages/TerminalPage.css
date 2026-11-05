@@ -64,9 +64,18 @@
   align-items: center;
 }
 
+/* 新建终端/新建对话：Cherry 侧栏同款 ghost 行（hover bg-accent），
+   只补布局：整行宽、左对齐、13px 字。 */
 .terminal-sidebar .terminal-sidebar-action {
   width: 100%;
   justify-content: flex-start;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--bone-200);
+}
+
+.terminal-sidebar .terminal-sidebar-action:hover {
+  color: var(--bone-100);
 }
 
 .terminal-sidebar.collapsed .terminal-sidebar-action {
@@ -190,7 +199,7 @@
 }
 
 .terminal-sidebar-group-btn:hover {
-  background: rgba(121, 79, 39, 0.1);
+  background: color-mix(in srgb, var(--bone-400) 10%, transparent);
   color: var(--bone-200);
 }
 
@@ -202,7 +211,7 @@
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
   background: var(--ink-750);
-  box-shadow: 0 10px 28px rgba(74, 54, 32, 0.16);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--bone-100) 16%, transparent);
 }
 
 .terminal-group-menu-item {
@@ -221,7 +230,7 @@
 }
 
 .terminal-group-menu-item:hover {
-  background: rgba(121, 79, 39, 0.12);
+  background: color-mix(in srgb, var(--bone-400) 12%, transparent);
   color: var(--bone-100);
 }
 
@@ -242,7 +251,7 @@
 }
 
 .terminal-sidebar-item:hover {
-  background: rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 8%, transparent);
   color: var(--bone-200);
 }
 
@@ -343,7 +352,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  background: var(--animal-bg-color);
   border-radius: 0 16px 16px 0;
   overflow: hidden;
 }
@@ -390,7 +399,7 @@
   border: none;
   border-radius: 8px;
   background: var(--animal-primary-color);
-  color: #fff;
+  color: var(--field-bg);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
@@ -409,7 +418,7 @@
   flex: 0 0 7px;
   width: 7px;
   height: 13px;
-  background: #fff;
+  background: var(--field-bg);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -495,7 +504,7 @@
   width: 100%;
   height: 100%;
   padding: 8px 12px;
-  background: #2b2118;
+  background: var(--code-bg);
   visibility: hidden;
   pointer-events: none;
   z-index: -1;
@@ -519,7 +528,7 @@
 .terminal-instance .xterm {
   width: 100%;
   height: 100%;
-  background: #2b2118;
+  background: var(--code-bg);
 }
 
 /* 字符网格高度是「行数 × 行高」，比容器矮不到一行。
@@ -587,7 +596,7 @@
   width: 100%;
   height: 32px;
   padding: 0 10px 0 30px;
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   color: var(--bone-100);
@@ -610,6 +619,9 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* 禁止左右滑动：内容超宽一律截断省略，不产生横向滚动 */
+  overflow-x: hidden;
+  overscroll-behavior-x: contain;
   padding: 4px 0;
 }
 
@@ -646,14 +658,18 @@
   transition: background 0.1s;
 }
 
-.ssh-picker .ssh-picker-item > span {
+/* 只约束文字列；icon span 不能吃 width:100%（会把 main 压成 0 宽） */
+.ssh-picker .ssh-picker-item > span.ssh-picker-item-main {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 1px;
+  flex: 1 1 auto;
   min-width: 0;
   text-align: left;
 }
+
 
 .ssh-picker-item:hover,
 .ssh-picker-item.active {
@@ -668,12 +684,6 @@
   text-align: center;
 }
 
-.ssh-picker-item-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
 
 .ssh-picker-item-name {
   font-size: 13px;
@@ -715,7 +725,7 @@
   border: none;
   border-radius: 0;
   border-top: 1px solid var(--hairline);
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
   box-shadow: none;
   color: var(--persimmon-bright);
   font-size: 12px;
@@ -869,7 +879,7 @@
 }
 
 .terminal-selection-tooltip-btn.primary:hover {
-  background: rgba(25, 200, 185, 0.28);
+  background: color-mix(in srgb, var(--persimmon) 28%, transparent);
 }
 
 .terminal-selection-tooltip-divider {
@@ -1113,7 +1123,7 @@ button.terminal-context-menu-item {
   flex-direction: column;
   overflow: hidden;
   color: var(--bone-300);
-  background: #f5f5f5;
+  background: var(--animal-bg-color);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   visibility: hidden;
@@ -1136,7 +1146,7 @@ button.terminal-context-menu-item {
   gap: 2px;
   padding: 10px 20px 0;
   border-bottom: 1px solid var(--hairline);
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 .terminal-tabstrip-btn {
@@ -1208,7 +1218,7 @@ button.terminal-context-menu-item {
 }
 
 /* 外观区四个字段全部是库控件（Input 胶囊 / df-select）。
-   库 Input 的皮肤在外层 wrapper（40px 胶囊 #faf8f3），内层 input 保持透明；
+   库 Input 的皮肤在外层 wrapper（40px 深色胶囊），内层 input 保持透明；
    df-select trigger 在 Select.css 已带完整皮肤，这里只做行内布局。 */
 .terminal-settings-tab .field-row input {
   flex: 1;
@@ -1266,7 +1276,7 @@ button.terminal-context-menu-item {
   gap: 12px;
   padding: 10px 12px;
   margin-bottom: 0;
-  background: #fffdf8;
+  background: var(--ink-750);
   border: none;
   border-radius: 10px;
   box-shadow: none;
@@ -1304,7 +1314,7 @@ button.terminal-context-menu-item {
 
 .ssh-host-connect-btn {
   padding: 4px 12px;
-  border: 1px solid rgba(25, 200, 185, 0.4);
+  border: 1px solid color-mix(in srgb, var(--persimmon) 40%, transparent);
   border-radius: 6px;
   background: var(--persimmon-soft);
   color: var(--persimmon-bright);
@@ -1317,8 +1327,8 @@ button.terminal-context-menu-item {
 }
 
 .ssh-host-connect-btn:hover {
-  background: rgba(25, 200, 185, 0.22);
-  border-color: rgba(25, 200, 185, 0.6);
+  background: color-mix(in srgb, var(--persimmon) 22%, transparent);
+  border-color: color-mix(in srgb, var(--persimmon) 60%, transparent);
 }
 
 .ssh-host-icon-btn {
@@ -1349,7 +1359,7 @@ button.terminal-context-menu-item {
 }
 
 .ssh-host-icon-btn.test-btn.ok {
-  color: #7cb874;
+  color: var(--animal-success-color);
 }
 
 .ssh-host-icon-btn.test-btn.fail {
@@ -1365,7 +1375,7 @@ button.terminal-context-menu-item {
 .ssh-modal-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(73, 54, 32, 0.14); /* 与全局弹窗遮罩同值 */
+  background: var(--overlay); /* 与全局弹窗遮罩同值 */
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   display: flex;
@@ -1524,7 +1534,7 @@ button.terminal-context-menu-item {
   flex: 1;
   height: 22px;
   padding: 0 6px;
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
   border: 1px solid var(--persimmon-focus);
   border-radius: 4px;
   color: var(--bone-100);
@@ -1583,7 +1593,7 @@ button.terminal-context-menu-item {
 }
 
 .link-btn.test-btn.ok {
-  color: #7cb874;
+  color: var(--animal-success-color);
 }
 
 .link-btn.test-btn.fail {
@@ -1621,7 +1631,7 @@ button.terminal-context-menu-item {
 /* SSH 主操作按钮(添加主机) */
 .ssh-primary-btn {
   padding: 6px 14px;
-  border: 1px solid rgba(25, 200, 185, 0.4);
+  border: 1px solid color-mix(in srgb, var(--persimmon) 40%, transparent);
   border-radius: 7px;
   background: var(--persimmon-soft);
   color: var(--persimmon-bright);
@@ -1633,32 +1643,29 @@ button.terminal-context-menu-item {
 }
 
 .ssh-primary-btn:hover {
-  background: rgba(25, 200, 185, 0.22);
-  border-color: rgba(25, 200, 185, 0.6);
+  background: color-mix(in srgb, var(--persimmon) 22%, transparent);
+  border-color: color-mix(in srgb, var(--persimmon) 60%, transparent);
 }
 
-/* SSH 表单弹窗:分组 + 主机/端口并排 */
-/* 库 Modal body 是 flex column + align-items:flex-start，表单按内容收缩，
-   右侧会空出一截。拉满弹窗宽度。 */
-.ssh-form-modal [class*="animal-body"] {
-  align-items: stretch;
-  padding-right: 18px;
-}
-
+/* SSH 表单弹窗（Cherry Dialog 渲染）：表单拉满卡片宽度；
+   高度封顶 —— 窗口矮时表单在卡片内滚动，不再把弹窗撑到贴边。 */
 .ssh-form-modal form {
   width: 100%;
 }
 
-/* 滚动条贴弹窗最缘：库 Modal 的滚动容器是 animal-body（在 modalClipped
-   的 18px 右 padding 内），窗口矮时滚动条会紧贴输入框。把 clipped 的右侧
-   padding 挪给 header/body 自身，滚动条就落在弹窗卡片右边缘，
-   内容与滚动条之间保持原有间距。 */
-.ssh-form-modal [class*="animal-modalClipped"] {
-  padding-right: 0;
+.ssh-form-modal {
+  max-height: min(85vh, 640px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-.ssh-form-modal [class*="animal-header"] {
-  padding-right: 18px;
+/* 表单区成为滚动容器：header 固定，按钮随表单内容收在末尾。 */
+.ssh-form-modal form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* 库 Input wrapper 白底+hairline 已上移 index.css 全局（body 前缀），
@@ -1739,7 +1746,7 @@ button.terminal-context-menu-item {
   padding: 10px 12px;
   border: none;
   border-radius: 10px;
-  background: #fffdf8;
+  background: var(--ink-750);
   box-shadow: none;
   transition: background 0.12s;
 }
@@ -1848,7 +1855,7 @@ button.terminal-context-menu-item {
 }
 
 .ssh-form-hint.ssh-form-error {
-  color: #e05252;
+  color: var(--rust);
 }
 
 .ssh-modal-card--compact {

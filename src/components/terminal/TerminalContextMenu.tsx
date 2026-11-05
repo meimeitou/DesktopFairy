@@ -1,4 +1,5 @@
-import { Icon } from "animal-island-ui";
+import { Search, Share2 } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 import type { SshCredential } from "../../shared/settings";
 
@@ -84,12 +85,12 @@ export default function TerminalContextMenu({
           onClose();
         }}
       >
-        <Icon name="Search" size={13} />
+        <Search size={13} />
         <span>搜索</span>
       </button>
       <div className="terminal-context-menu-divider" />
       <div className="terminal-context-menu-item terminal-context-menu-item--has-sub">
-        <Icon name="Share" size={13} />
+        <Share2 size={13} />
         <span>密码凭证</span>
         <span className="terminal-context-menu-arrow">▸</span>
         <div className={`terminal-context-submenu terminal-context-submenu--${submenuSide}`}>

@@ -1,5 +1,8 @@
+import { Button, Input } from "@cherrystudio/ui";
+import { Checkbox, Radio } from "../Choice";
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Button, Icon, Input, Radio } from "animal-island-ui";
+
 import {
   WEB_SEARCH_PROVIDERS,
   getWebSearchProviderMeta,
@@ -8,7 +11,7 @@ import {
 } from "../../shared/webSearch";
 import type { AppSettings } from "../../shared/settings";
 
-const RESET_ICON = <Icon name="Refresh" size={12} />;
+const RESET_ICON = <RefreshCw size={12} />;
 
 type TestResult =
   | { status: "idle" }
@@ -110,21 +113,12 @@ export default function WebSearchSettingsSection({
         <div className="field">
           <label>{meta.apiKeyLabel}</label>
           <div className="field-with-action">
-            <Input shadow type="password" value={cfg[getApiKeyFieldName(cfg.provider)] || ""} onChange={(e) =>
+            <Input type="password" value={cfg[getApiKeyFieldName(cfg.provider)] || ""} onChange={(e) =>
               updateCfg({
                 [getApiKeyFieldName(cfg.provider)]: e.target.value,
               } as Partial<WebSearchConfig>)
-            }
-            placeholder={meta.apiKeyPlaceholder}
-            autoComplete="off" />
-            <Button
-              type="default"
-              size="small"
-              className={`settings-check-btn${testResult.status === "success" ? " success" : ""}${testResult.status === "error" ? " failed" : ""}`}
-              onClick={() => void handleTest()}
-              disabled={!isTestable || testResult.status === "loading"}
-              title="检测 API Key 是否可用"
-            >
+            } placeholder={meta.apiKeyPlaceholder} autoComplete="off" />
+            <Button variant="outline" size="sm" className={`settings-check-btn${testResult.status === "success" ? " success" : ""}${testResult.status === "error" ? " failed" : ""}`} onClick={() => void handleTest()} disabled={!isTestable || testResult.status === "loading"} title="检测 API Key 是否可用">
               {testResult.status === "loading" ? "检测中…" : "检测"}
             </Button>
           </div>
@@ -153,7 +147,7 @@ export default function WebSearchSettingsSection({
           {testResult.status === "error" && (
             <div
               className="field-hint"
-              style={{ color: "#e05a5a", marginTop: 6 }}
+              style={{ color: "var(--rust)", marginTop: 6 }}
             >
               ✗ 检测失败：{testResult.error}
             </div>
@@ -229,25 +223,15 @@ function ApiUrlField({ label, value, defaultValue, placeholder, onChange, onRese
         {isCustom && (
           <span
             className="field-hint"
-            style={{ marginLeft: 8, color: "#faad14", fontWeight: 400 }}
+            style={{ marginLeft: 8, color: "var(--amber)", fontWeight: 400 }}
           >
             （已自定义）
           </span>
         )}
       </label>
       <div className="field-with-action">
-        <Input shadow type="url" value={value || ""} onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder} />
-        <Button
-          type="text"
-          size="small"
-          className="field-icon-btn"
-          icon={RESET_ICON}
-          onClick={onReset}
-          title={`恢复默认值 ${defaultValue}`}
-          disabled={!isCustom}
-          aria-label="恢复默认 URL"
-        />
+        <Input type="url" value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+        <Button variant="ghost" size="sm" className="field-icon-btn" onClick={onReset} title={`恢复默认值 ${defaultValue}`} disabled={!isCustom} aria-label="恢复默认 URL">{RESET_ICON}</Button>
       </div>
       <p className="field-hint">
         默认：<code>{defaultValue}</code>

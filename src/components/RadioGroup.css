@@ -56,7 +56,7 @@
   margin-top: 1px;
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px var(--bone-500);
-  background: rgba(121, 79, 39, 0.22);
+  background: color-mix(in srgb, var(--bone-400) 22%, transparent);
   transition: box-shadow 0.16s ease;
 }
 
@@ -72,7 +72,7 @@
   height: var(--df-radio-well);
   border-radius: 50%;
   background: var(--persimmon);
-  box-shadow: inset 1px 1px 0 rgba(245, 248, 224, 0.45);
+  box-shadow: inset 1px 1px 0 color-mix(in srgb, var(--ink-900) 45%, transparent);
   transform: translate(-50%, -50%) scale(0);
   opacity: 0;
   transition:

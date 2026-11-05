@@ -1,5 +1,5 @@
-import { Button, Icon, Switch } from "animal-island-ui";
-import { InfoIcon, KeyboardIcon } from "../components/icons/naivePatch";
+import { Button, Switch } from "@cherrystudio/ui";
+import { Cat, Cloud, Globe, Info, Keyboard, Pencil, Settings, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import ProviderSettingsSection from "../components/settings/ProviderSettingsSection";
 import SelectionSettingsSection from "../components/settings/SelectionSettingsSection";
@@ -33,16 +33,16 @@ interface MenuItem {
 }
 
 const MENU_PRIMARY: MenuItem[] = [
-  { id: "model", label: "AI 模型", icon: <Icon name="Cloud" size={16} /> },
-  { id: "tools", label: "工具", icon: <Icon name="Settings" size={16} /> },
-  { id: "websearch", label: "网络搜索", icon: <Icon name="Globe" size={16} /> },
-  { id: "selection", label: "划词助手", icon: <Icon name="Pencil" size={16} /> },
+  { id: "model", label: "AI 模型", icon: <Cloud size={16} /> },
+  { id: "tools", label: "工具", icon: <Settings size={16} /> },
+  { id: "websearch", label: "网络搜索", icon: <Globe size={16} /> },
+  { id: "selection", label: "划词助手", icon: <Pencil size={16} /> },
 ];
 
 const MENU_SECONDARY: MenuItem[] = [
-  { id: "character", label: "Live2D 配置", icon: <Icon name="Cat" size={16} /> },
-  { id: "shortcut", label: "快捷键", icon: <Icon icon={KeyboardIcon} size={16} /> },
-  { id: "about", label: "关于", icon: <Icon icon={InfoIcon} size={16} /> },
+  { id: "character", label: "Live2D 配置", icon: <Cat size={16} /> },
+  { id: "shortcut", label: "快捷键", icon: <Keyboard size={16} /> },
+  { id: "about", label: "关于", icon: <Info size={16} /> },
 ];
 
 const TAB_META: Record<SettingsTab, { title: string; desc: string }> = {
@@ -69,12 +69,7 @@ function SettingsSidebar({
   onSelect: (tab: SettingsTab) => void;
 }) {
   const renderItem = (item: MenuItem) => (
-    <Button
-      key={item.id}
-      type="text"
-      className={`settings-menu-item${active === item.id ? " active" : ""}`}
-      onClick={() => onSelect(item.id)}
-    >
+    <Button variant="ghost" key={item.id} className={`settings-menu-item${active === item.id ? " active" : ""}`} onClick={() => onSelect(item.id)}>
       <span className="settings-menu-icon">{item.icon}</span>
       <span className="settings-menu-label">{item.label}</span>
     </Button>
@@ -181,7 +176,7 @@ export default function SettingsPage({
             {activeTab === "selection" && (
               <Switch
                 checked={settings.selectionEnabled}
-                onChange={(checked) => update({ selectionEnabled: checked })}
+                onCheckedChange={(checked) => update({ selectionEnabled: checked })}
                 aria-label="启用划词助手"
               />
             )}
@@ -214,14 +209,7 @@ export default function SettingsPage({
         <span className="app-name" data-tauri-drag-region>
           设置
         </span>
-        <Button
-          type="text"
-          size="small"
-          className="icon-btn close-btn"
-          icon={<Icon name="Close" size={14} />}
-          onClick={onClose ?? (() => window.close())}
-          title="关闭"
-        />
+        <Button variant="ghost" size="sm" className="icon-btn close-btn" onClick={onClose ?? (() => window.close())} title="关闭"><X size={14} /></Button>
       </div>
       {layout}
     </div>

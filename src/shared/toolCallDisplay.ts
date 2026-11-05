@@ -1,3 +1,19 @@
+import {
+  Bot,
+  File,
+  Folder,
+  Globe,
+  Library,
+  ListTodo,
+  Monitor,
+  Pencil,
+  Search,
+  SquareTerminal,
+  Target,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
+
 const TOOL_LABELS: Record<string, string> = {
   bash: "执行命令",
   read: "读取文件",
@@ -22,27 +38,28 @@ const TOOL_LABELS: Record<string, string> = {
   ssh_cwd: "SSH 切换目录",
 };
 
-const TOOL_ICONS: Record<string, string> = {
-  bash: "⌘",
-  read: "📄",
-  write: "✎",
-  edit: "✎",
-  glob: "🔍",
-  grep: "🔎",
-  WebFetch: "🌐",
-  WebSearch: "🌐",
-  Task: "🤖",
-  TodoWrite: "☑",
-  Skill: "🎯",
-  Skills: "📚",
-  ssh_exec: "⌘",
-  ssh_hosts: "🖥",
-  ssh_read: "📄",
-  ssh_write: "✎",
-  ssh_edit: "✎",
-  ssh_glob: "🔍",
-  ssh_grep: "🔎",
-  ssh_cwd: "📁",
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  bash: SquareTerminal,
+  read: File,
+  write: Pencil,
+  edit: Pencil,
+  glob: Search,
+  grep: Search,
+  WebFetch: Globe,
+  WebSearch: Globe,
+  Task: Bot,
+  TodoWrite: ListTodo,
+  Skill: Target,
+  Skills: Library,
+  McpManager: Wrench,
+  ssh_exec: SquareTerminal,
+  ssh_hosts: Monitor,
+  ssh_read: File,
+  ssh_write: Pencil,
+  ssh_edit: Pencil,
+  ssh_glob: Search,
+  ssh_grep: Search,
+  ssh_cwd: Folder,
 };
 
 type ToolCategory = "shell" | "file" | "search" | "web" | "other";
@@ -173,15 +190,16 @@ export function getToolDisplayName(toolName: string): string {
   return raw.replace(/_/g, " ");
 }
 
-export function getToolIcon(toolName: string): string {
+export function getToolIcon(toolName: string): LucideIcon {
   const raw = toolName?.trim() || "";
-  if (TOOL_ICONS[raw]) return TOOL_ICONS[raw];
+  const named = TOOL_ICONS[raw] ?? TOOL_ICONS[normalizeToolName(raw)];
+  if (named) return named;
   const category = getToolCategory(raw);
-  if (category === "shell") return "⌘";
-  if (category === "file") return "📄";
-  if (category === "search") return "🔍";
-  if (category === "web") return "🌐";
-  return "🛠";
+  if (category === "shell") return SquareTerminal;
+  if (category === "file") return Pencil;
+  if (category === "search") return Search;
+  if (category === "web") return Globe;
+  return Wrench;
 }
 
 export function formatToolSummary(toolName: string, argsJson?: string): string {

@@ -20,6 +20,7 @@ import {
 } from "./chatMessages";
 import type { ToolTerminalState } from "./ai/stream";
 import type { KnowledgeCitation } from "./knowledge";
+import { extractWebCitations } from "./webCitation";
 
 export type { ToolTerminalState };
 
@@ -218,6 +219,12 @@ export function applyDone(
   const messages = pruneEmptyAssistantMessages(
     reconcileToolMessages(state.messages, event.tools, Boolean(event.aborted)),
   );
+  // Web-search citations: hang the turn's source links under the final reply.
+  const webCitations = event.aborted ? [] : extractWebCitations(event.tools);
+  if (webCitations.length > 0) {
+    const idx = findLastAssistantReplyIndex(messages);
+    if (idx >= 0) messages[idx] = { ...messages[idx], webCitations };
+  }
   const base: AgentSessionState = {
     ...state,
     messages,

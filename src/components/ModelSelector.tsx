@@ -1,5 +1,6 @@
-import { Button, Icon, Input } from "animal-island-ui";
-import { ChevronDown } from "./icons/naivePatch";
+import { Button, Input } from "@cherrystudio/ui";
+
+import { ChevronDown } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./ModelSelector.css";
 
@@ -78,11 +79,21 @@ export default function ModelSelector({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // Panel is absolutely positioned; a scrolling ancestor (settings body,
+    // modal body) would detach it from the trigger — close instead. Skip the
+    // programmatic scrolls triggered by focusing the search input on open.
+    const openedAt = Date.now();
+    const onScroll = (e: Event) => {
+      if (Date.now() - openedAt < 150) return;
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", onScroll, true);
     };
   }, [open]);
 
@@ -107,22 +118,9 @@ export default function ModelSelector({
     return (
       <div className="model-selector">
         <div className="model-selector-row">
-          <Input
-            type="text"
-            shadow
-            className="model-selector-input"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder={placeholder}
-            disabled={disabled}
-          />
+          <Input type="text" className="model-selector-input" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} disabled={disabled} />
           {models.length > 0 && (
-            <Button
-              type="text"
-              size="small"
-              className="model-selector-mode-btn"
-              onClick={() => setModeOverride("list")}
-            >
+            <Button variant="ghost" size="sm" className="model-selector-mode-btn" onClick={() => setModeOverride("list")}>
               从列表选择
             </Button>
           )}
@@ -156,12 +154,7 @@ export default function ModelSelector({
           }${panelDirection === "up-left" || alignEnd ? " align-end" : ""}`}
           ref={containerRef}
         >
-          <Button
-            type="text"
-            className={`model-selector-trigger variant-${variant}`}
-            onClick={() => !disabled && setOpen((o) => !o)}
-            disabled={disabled}
-          >
+          <Button variant="ghost" className={`model-selector-trigger variant-${variant}`} onClick={() => !disabled && setOpen((o) => !o)} disabled={disabled}>
             <span
               className={`model-selector-value${
                 effectiveValue ? "" : " placeholder"
@@ -171,34 +164,20 @@ export default function ModelSelector({
               {selectedLabel}
             </span>
             <span className="model-selector-caret" aria-hidden="true">
-              <Icon icon={ChevronDown} size={10} />
+              <ChevronDown size={10} />
             </span>
           </Button>
           {open && (
             <div className="model-selector-panel" role="listbox">
               <div className="model-selector-search-wrap">
-                <Input
-                  type="search"
-                  shadow
-                  allowClear
-                  placeholder="搜索模型…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                />
+                <Input type="search" placeholder="搜索模型…" value={query} onChange={(e) => setQuery(e.target.value)} />
               </div>
               <div className="model-selector-list">
                 {showCustomEntry && customLabel && customValue && (
-                  <Button
-                    type="text"
-                    role="option"
-                    aria-selected
-                    className="model-selector-option selected"
-                    title={customLabel}
-                    onClick={() => {
+                  <Button variant="ghost" role="option" aria-selected className="model-selector-option selected" title={customLabel} onClick={() => {
                       onChange(customValue);
                       setOpen(false);
-                    }}
-                  >
+                    }}>
                     {customLabel}
                   </Button>
                 )}
@@ -206,21 +185,13 @@ export default function ModelSelector({
                   <div className="model-selector-empty">无匹配模型</div>
                 ) : (
                   filtered.map((m) => (
-                    <Button
-                      key={m}
-                      type="text"
-                      role="option"
-                      aria-selected={m === effectiveValue}
-                      className={`model-selector-option${
+                    <Button variant="ghost" key={m} role="option" aria-selected={m === effectiveValue} className={`model-selector-option${
                         m === effectiveValue ? " selected" : ""
-                      }`}
-                      title={modelLabels?.[m] ?? m}
-                      onClick={() => {
+                      }`} title={modelLabels?.[m] ?? m} onClick={() => {
                         onChange(m);
                         setModeOverride(null);
                         setOpen(false);
-                      }}
-                    >
+                      }}>
                       {modelLabels?.[m] ?? m}
                     </Button>
                   ))
@@ -230,12 +201,7 @@ export default function ModelSelector({
           )}
         </div>
         {allowCustom && (
-          <Button
-            type="text"
-            size="small"
-            className="model-selector-mode-btn"
-            onClick={() => setModeOverride("custom")}
-          >
+          <Button variant="ghost" size="sm" className="model-selector-mode-btn" onClick={() => setModeOverride("custom")}>
             自定义
           </Button>
         )}

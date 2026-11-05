@@ -26,7 +26,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
     promptSuffix: "",
     readOnly: false,
     toolApprovalOverride: undefined,
-    accent: "#19c8b9",
+    accent: "var(--persimmon)",
   },
   {
     mode: "plan",
@@ -36,7 +36,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
     promptSuffix: environmentPolicy.chatModeSuffixes.plan,
     readOnly: true,
     toolApprovalOverride: "confirm",
-    accent: "#f5c31c",
+    accent: "var(--amber)",
   },
   {
     mode: "auto-edit",
@@ -46,7 +46,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
     promptSuffix: environmentPolicy.chatModeSuffixes["auto-edit"],
     readOnly: false,
     toolApprovalOverride: "auto",
-    accent: "#6fba2c",
+    accent: "var(--animal-success-color)",
   },
   {
     mode: "full-auto",
@@ -56,7 +56,7 @@ export const CHAT_MODE_CARDS: ChatModeCard[] = [
     promptSuffix: environmentPolicy.chatModeSuffixes["full-auto"],
     readOnly: false,
     toolApprovalOverride: "auto",
-    accent: "#e05a5a",
+    accent: "var(--rust)",
   },
 ];
 

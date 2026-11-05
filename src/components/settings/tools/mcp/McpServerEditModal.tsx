@@ -1,4 +1,6 @@
-import { Button, Form, FormItem, Input, Modal, Switch } from "animal-island-ui";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Switch } from "@cherrystudio/ui";
+import { Form, FormItem, useForm } from "../../../Form";
+
 import { useEffect, useState } from "react";
 import Select from "../../../Select";
 import HintTip from "../../../HintTip";
@@ -25,7 +27,6 @@ interface Props {
   onSave: (server: McpServer) => void | Promise<void>;
 }
 
-
 export default function McpServerEditModal({
   open,
   server,
@@ -33,7 +34,7 @@ export default function McpServerEditModal({
   onClose,
   onSave,
 }: Props) {
-  const [form] = Form.useForm<McpFormValues>();
+  const [form] = Form.useForm();
   const [type, setType] = useState<McpServerType>(server.type || "stdio");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -49,7 +50,7 @@ export default function McpServerEditModal({
       setFormKey((k) => k + 1);
     }
   }, [open, server]);
-  const values = form.getFieldsValue(true) as McpFormValues;
+  const values = form.getFieldsValue(true) as unknown as McpFormValues;
   const preview = getMcpCommandPreview({
     ...server,
     type: values.type || "stdio",
@@ -109,15 +110,10 @@ export default function McpServerEditModal({
   };
 
   return (
-    <Modal
-      open={open}
-      title={title}
-      onClose={onClose}
-      footer={null}
-      typewriter={false}
-      width={560}
-      className="ssh-form-modal mcp-edit-modal"
-    >
+    <Dialog open={open} onOpenChange={(next) => { if (!next) (onClose)(); }}>
+      <DialogContent className={"ssh-form-modal mcp-edit-modal"} style={{ maxWidth: 560 }}>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        
       <Form
         key={formKey}
         form={form as unknown as never}
@@ -189,12 +185,7 @@ export default function McpServerEditModal({
                 />
               </FormItem>
               <div className="mcp-form-inline-action">
-                <Button
-                  type="link"
-                  size="small"
-                  htmlType="button"
-                  onClick={() => void pickDirectoryForArgs()}
-                >
+                <Button variant="link" size="sm" type="button" onClick={() => void pickDirectoryForArgs()}>
                   选择目录（写入最后一行参数）
                 </Button>
               </div>
@@ -208,14 +199,11 @@ export default function McpServerEditModal({
                   { required: true, whitespace: true, message: "请输入 URL" },
                 ]}
               >
-                <Input
-                  type="text"
-                  placeholder={
+                <Input type="text" placeholder={
                     type === "sse"
                       ? "http://localhost:3000/sse"
                       : "http://localhost:3000/mcp"
-                  }
-                />
+                  } />
               </FormItem>
               <p className="field-hint field-hint--after warn">
                 远程 MCP 暂不支持智能体运行时，请优先使用 stdio。
@@ -320,28 +308,21 @@ export default function McpServerEditModal({
         )}
 
         <div className="agent-mcp-form-actions">
-          <Button
-            type="primary"
-            size="small"
-            disabled={saving}
-            onClick={() => void handleTest()}
-          >
+          <Button variant="default" size="sm" type="button" disabled={saving} onClick={() => void handleTest()}>
             {testing ? "测试中…" : "测试连接"}
           </Button>
           <div className="agent-mcp-form-actions-spacer" />
-          <Button size="small" onClick={onClose}>
+          <Button variant="outline" size="sm" type="button" onClick={onClose}>
             取消
           </Button>
-          <Button
-            type="primary"
-            size="small"
-            loading={saving}
-            onClick={() => form.submit()}
-          >
+          <Button variant="default" size="sm" type="submit" loading={saving}>
             保存
           </Button>
         </div>
       </Form>
-    </Modal>
+    
+        
+      </DialogContent>
+    </Dialog>
   );
 }

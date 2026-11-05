@@ -3,7 +3,7 @@
   height: 100%;
   display: flex;
   flex-direction: row;
-  background: #f5f5f5;
+  background: var(--ink-900);
   border-radius: 12px;
   overflow: hidden;
   color: var(--bone-200);
@@ -35,7 +35,7 @@
   gap: 8px;
   min-height: 40px;
   padding: 2px 8px 2px 4px;
-  border-bottom: 1px solid rgba(139, 105, 70, 0.12);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 12%, transparent);
   flex-shrink: 0;
 }
 
@@ -63,12 +63,12 @@
 
 .chat-agent-header-main strong {
   font-size: 13px;
-  color: #4a3f33;
+  color: var(--bone-100);
 }
 
 .chat-agent-header-main small {
   font-size: 11px;
-  color: #8a7a66;
+  color: var(--bone-500);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -83,11 +83,6 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: radial-gradient(
-    ellipse 80% 40% at 50% -10%,
-    rgba(25, 200, 185, 0.05),
-    transparent 55%
-  );
 }
 .chat-messages.is-virtualized,
 .terminal-agent-messages.is-virtualized {
@@ -157,10 +152,10 @@
 
 .msg-bubble {
   position: relative;
-  padding: 8px 12px;
-  border-radius: 14px;
-  font-size: 13.5px;
-  line-height: 1.62;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.65;
   word-break: break-word;
   max-width: 88%;
   min-height: 20px;
@@ -169,27 +164,21 @@
   white-space: pre-wrap;
 }
 .msg-user .msg-bubble {
-  background: var(--persimmon-soft);
-  border: 1px solid rgba(25, 200, 185, 0.35);
+  /* Cherry `--chat-user`: solid neutral block floating above the message well. */
+  background: var(--chat-user, var(--ink-750));
   color: var(--bone-100);
   max-width: 78%;
 }
 .msg-assistant .msg-bubble {
-  /* default cream dots wallpaper (official Background default values) */
-  background:
-    radial-gradient(circle, rgba(196, 184, 158, 0.15) 1.5px, transparent 1.5px)
-      0 0 / 28px 28px,
-    radial-gradient(circle, rgba(196, 184, 158, 0.1) 1px, transparent 1px) 7px
-      7px / 14px 14px,
-    #f7f3df;
-  border-radius: 14px;
-  padding: 10px 14px;
+  /* Cherry assistant messages sit directly on the message well: no fill, no border. */
+  background: transparent;
+  padding: 0;
   color: var(--bone-100);
   max-width: min(92%, 720px);
 }
 .msg-error .msg-bubble {
-  background: rgba(199, 90, 79, 0.12);
-  color: #b0685f;
+  background: color-mix(in srgb, var(--rust) 12%, transparent);
+  color: var(--rust);
 }
 
 /* Message header: timestamp only */
@@ -206,7 +195,7 @@
   letter-spacing: 0.02em;
 }
 .msg-user .msg-header-time {
-  color: rgba(121, 79, 39, 0.72);
+  color: color-mix(in srgb, var(--bone-400) 72%, transparent);
 }
 .msg-assistant .msg-header-time {
   color: var(--bone-600);
@@ -234,7 +223,7 @@
   transform: translateY(0);
 }
 .msg-user.msg-editing .msg-bubble {
-  background: rgba(25, 200, 185, 0.3);
+  background: color-mix(in srgb, var(--persimmon) 30%, transparent);
   width: min(92%, 680px);
   min-width: min(92%, 420px);
   max-width: 92%;
@@ -257,7 +246,7 @@
   box-sizing: border-box;
 }
 .msg-user.msg-editing .msg-edit-textarea {
-  background: rgba(121, 79, 39, 0.11);
+  background: color-mix(in srgb, var(--bone-400) 11%, transparent);
   color: var(--bone-100);
 }
 
@@ -309,7 +298,7 @@
   background: linear-gradient(
     to right,
     transparent,
-    rgba(232, 184, 74, 0.45),
+    color-mix(in srgb, var(--amber) 45%, transparent),
     transparent
   );
 }
@@ -321,8 +310,8 @@
   padding: 4px 12px;
   border-radius: 999px;
   background: var(--amber-soft);
-  border: 1px solid rgba(232, 184, 74, 0.4);
-  color: #f0d48a;
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
+  color: var(--code-fg);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.2px;
@@ -344,7 +333,7 @@
 .msg-attachment-tag {
   display: inline-block;
   padding: 2px 6px;
-  background: rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 8%, transparent);
   border-radius: 4px;
   font-size: 11px;
   opacity: 0.85;
@@ -352,7 +341,7 @@
 
 .msg-attachment-missing {
   opacity: 0.65;
-  color: rgba(255, 180, 120, 0.95);
+  color: color-mix(in srgb, var(--amber) 95%, transparent);
 }
 
 /* Inline message editing (legacy action buttons — kept for specificity) */
@@ -383,7 +372,7 @@
   color: var(--bone-500);
 }
 .msg-edit-cancel:hover {
-  background: rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 8%, transparent);
   color: var(--bone-100);
 }
 .msg-edit-save {
@@ -414,7 +403,7 @@
 .msg-tool-step {
   padding: 8px 10px;
   border-radius: 8px;
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 .msg-tool-step-running {
@@ -439,7 +428,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
   font-size: 13px;
 }
 
@@ -457,7 +446,7 @@
 .msg-tool-step-name {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(121, 79, 39, 0.88);
+  color: color-mix(in srgb, var(--bone-400) 88%, transparent);
 }
 
 .msg-tool-step-status {
@@ -478,19 +467,19 @@
 }
 
 .msg-tool-step-status-done {
-  background: rgba(111, 186, 44, 0.15);
-  color: var(--animal-success-color);
+  background: color-mix(in srgb, var(--cs-success) 15%, transparent);
+  color: var(--cs-success);
 }
 
 .msg-tool-step-status-error {
-  background: rgba(224, 90, 90, 0.15);
+  background: color-mix(in srgb, var(--rust) 15%, transparent);
   color: var(--rust-bright);
 }
 
 .msg-tool-spinner {
   width: 10px;
   height: 10px;
-  border: 1.5px solid rgba(25, 200, 185, 0.25);
+  border: 1.5px solid color-mix(in srgb, var(--persimmon) 25%, transparent);
   border-top-color: var(--persimmon-bright);
   border-radius: 50%;
   animation: msg-tool-spin 0.8s linear infinite;
@@ -506,7 +495,7 @@
   margin: 4px 0 0;
   font-size: 11px;
   line-height: 1.45;
-  color: rgba(121, 79, 39, 0.52);
+  color: color-mix(in srgb, var(--bone-400) 52%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   word-break: break-all;
 }
@@ -530,10 +519,10 @@
   margin: 6px 0 0;
   padding: 8px;
   border-radius: 6px;
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
   font-size: 11px;
   line-height: 1.45;
-  color: rgba(121, 79, 39, 0.62);
+  color: color-mix(in srgb, var(--bone-400) 62%, transparent);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 160px;
@@ -542,11 +531,11 @@
 .msg-tool-bubble {
   padding: 8px 12px;
   background:
-    radial-gradient(circle, rgba(196, 184, 158, 0.15) 1.5px, transparent 1.5px)
+    radial-gradient(circle, color-mix(in srgb, var(--hairline-bold) 15%, transparent) 1.5px, transparent 1.5px)
       0 0 / 28px 28px,
-    radial-gradient(circle, rgba(196, 184, 158, 0.1) 1px, transparent 1px) 7px
+    radial-gradient(circle, color-mix(in srgb, var(--hairline-bold) 10%, transparent) 1px, transparent 1px) 7px
       7px / 14px 14px,
-    #f7f3df;
+    var(--ink-850);
   border-radius: 10px;
 }
 .msg-tool-head {
@@ -562,7 +551,7 @@
 
 .msg-tool-name {
   font-weight: 600;
-  color: rgba(121, 79, 39, 0.85);
+  color: color-mix(in srgb, var(--bone-400) 85%, transparent);
 }
 
 .msg-tool-status {
@@ -578,8 +567,8 @@
 }
 
 .msg-tool-status-done {
-  background: rgba(111, 186, 44, 0.15);
-  color: var(--animal-success-color);
+  background: color-mix(in srgb, var(--cs-success) 15%, transparent);
+  color: var(--cs-success);
 }
 
 .msg-tool-status-error {
@@ -590,7 +579,7 @@
 .msg-tool-detail {
   margin: 6px 0 0;
   font-size: 11px;
-  color: rgba(121, 79, 39, 0.5);
+  color: color-mix(in srgb, var(--bone-400) 50%, transparent);
 }
 
 .agent-tool-steps {
@@ -611,29 +600,29 @@
   min-width: 0;
   border-radius: 8px;
   background: var(--ink-800);
-  border: 1px solid rgba(121, 79, 39, 0.12);
+  border: 1px solid color-mix(in srgb, var(--bone-400) 12%, transparent);
   overflow: hidden;
 }
 
 .agent-tool-card-running,
 .agent-tool-card-streaming {
-  border-left-color: rgba(25, 200, 185, 0.55);
+  border-left-color: color-mix(in srgb, var(--persimmon) 55%, transparent);
 }
 
 .agent-tool-card-done {
-  border-left-color: rgba(111, 186, 44, 0.5);
+  border-left-color: color-mix(in srgb, var(--cs-success) 50%, transparent);
 }
 
 .agent-tool-card-error,
 .agent-tool-card-denied {
-  border-left-color: rgba(224, 90, 90, 0.55);
+  border-left-color: color-mix(in srgb, var(--rust) 55%, transparent);
 }
 
 .agent-tool-header {
   display: flex;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(121, 79, 39, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 .agent-tool-header-collapsible {
@@ -642,7 +631,7 @@
 }
 
 .agent-tool-header-collapsible:hover {
-  background: rgba(121, 79, 39, 0.03);
+  background: color-mix(in srgb, var(--bone-400) 3%, transparent);
 }
 
 .agent-tool-header-collapsible:focus-visible {
@@ -655,14 +644,14 @@
   align-self: center;
   font-size: 14px;
   line-height: 1;
-  color: rgba(121, 79, 39, 0.35);
+  color: color-mix(in srgb, var(--bone-400) 35%, transparent);
   transition:
     transform var(--motion-fast) var(--ease-island),
     color 0.15s ease;
 }
 
 .agent-tool-header-collapsible:hover .agent-tool-chevron {
-  color: rgba(121, 79, 39, 0.55);
+  color: color-mix(in srgb, var(--bone-400) 55%, transparent);
 }
 
 .agent-tool-chevron-expanded {
@@ -684,7 +673,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
   flex-shrink: 0;
 }
 
@@ -697,7 +686,7 @@
 .agent-tool-inline-param {
   margin-top: 4px;
   font-size: 11px;
-  color: rgba(121, 79, 39, 0.55);
+  color: color-mix(in srgb, var(--bone-400) 55%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   word-break: break-all;
 }
@@ -720,8 +709,8 @@
 }
 
 .agent-tool-status-done {
-  background: rgba(111, 186, 44, 0.15);
-  color: #4a8318;
+  background: color-mix(in srgb, var(--cs-success) 15%, transparent);
+  color: var(--cs-success);
 }
 
 .agent-tool-status-error,
@@ -759,8 +748,8 @@
   margin: 0;
   padding: 8px 10px;
   border-radius: 6px;
-  background: #1f1b16;
-  color: #efe6d4;
+  background: var(--code-bg);
+  color: var(--ink-750);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -805,8 +794,8 @@
 }
 
 .agent-tool-exit-ok {
-  background: rgba(111, 186, 44, 0.15);
-  color: var(--animal-success-color);
+  background: color-mix(in srgb, var(--cs-success) 15%, transparent);
+  color: var(--cs-success);
 }
 
 .agent-tool-exit-err {
@@ -821,7 +810,7 @@
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--hairline);
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
 }
 
 .agent-tool-cancel-btn {
@@ -836,7 +825,7 @@
 }
 
 .agent-tool-permission {
-  border: 1px solid rgba(232, 184, 74, 0.35);
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
   border-radius: 10px;
   background: var(--amber-soft);
   overflow: hidden;
@@ -849,7 +838,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(121, 79, 39, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 .agent-tool-permission-title {
@@ -862,7 +851,7 @@
   border-radius: 999px;
   font-size: 11px;
   background: var(--amber-soft);
-  border: 1px solid rgba(232, 184, 74, 0.4);
+  border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
   color: var(--amber);
 }
 
@@ -873,7 +862,7 @@
 .agent-tool-permission-empty {
   margin: 0;
   font-size: 11px;
-  color: rgba(121, 79, 39, 0.45);
+  color: color-mix(in srgb, var(--bone-400) 45%, transparent);
 }
 
 .agent-tool-permission-actions {
@@ -882,10 +871,10 @@
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--hairline);
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
 }
 .agent-tool-ask {
-  border: 1px solid rgba(25, 200, 185, 0.35);
+  border: 1px solid color-mix(in srgb, var(--persimmon) 35%, transparent);
   border-radius: 10px;
   background: var(--persimmon-softer);
   overflow: hidden;
@@ -898,7 +887,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(121, 79, 39, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 .agent-tool-ask-title {
@@ -923,7 +912,7 @@
 
 .agent-tool-ask-question-header {
   font-size: 11px;
-  color: rgba(121, 79, 39, 0.45);
+  color: color-mix(in srgb, var(--bone-400) 45%, transparent);
   margin-bottom: 4px;
 }
 
@@ -949,7 +938,7 @@
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--hairline);
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
 }
 
 .agent-tool-ask-result-list {
@@ -975,7 +964,7 @@
 .agent-tool-ask-result-options {
   margin-top: 2px;
   font-size: 11px;
-  color: rgba(121, 79, 39, 0.45);
+  color: color-mix(in srgb, var(--bone-400) 45%, transparent);
 }
 
 .chat-input-area {
@@ -986,9 +975,9 @@
   margin: 0 16px calc(var(--chat-composer-height, 96px) + 20px);
   position: relative;
   z-index: 5;
-  border: 1.5px solid rgba(232, 184, 74, 0.8);
+  border: 1.5px solid color-mix(in srgb, var(--amber) 80%, transparent);
   border-radius: 10px;
-  background: rgba(245, 195, 28, 0.28);
+  background: color-mix(in srgb, var(--amber) 28%, transparent);
   overflow: hidden;
 }
 
@@ -1021,7 +1010,7 @@
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--hairline);
-  background: rgba(121, 79, 39, 0.07);
+  background: color-mix(in srgb, var(--bone-400) 7%, transparent);
 }
 
 /* Each invocation is an independent compact row; details are opt-in. */

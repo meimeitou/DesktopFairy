@@ -1,6 +1,7 @@
-import { Button, Icon, Notification } from "animal-island-ui";
+import { Button, error, warning } from "@cherrystudio/ui";
+import { PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
+
 import "../pages/ChatPage.css";
-import { SidebarCollapseIcon, SidebarExpandIcon } from "../components/icons/naivePatch";
 import { useConfirm } from "../hooks/useConfirm";
 import {
   useState,
@@ -1114,7 +1115,7 @@ export default function ChatPage({
         }
 
         if (!apiConfig?.apiHost || !apiConfig.modelName) {
-          Notification.warning("请先在智能体设置中配置后端 Provider 与模型。");
+          warning("请先在智能体设置中配置后端 Provider 与模型。");
           return;
         }
 
@@ -1137,7 +1138,7 @@ export default function ChatPage({
             attachmentPayloads = await loadAttachmentPayloads(sendAttachments);
           }
         } catch (e) {
-          Notification.error(e instanceof Error ? e.message : "读取附件失败");
+          error(e instanceof Error ? e.message : "读取附件失败");
           return;
         }
 
@@ -1501,14 +1502,7 @@ export default function ChatPage({
       <div className="chat-main-area">
         {topicsLoaded && (
           <header className="chat-agent-header">
-            <Button
-              type="text"
-              size="small"
-              className="chat-sidebar-toggle"
-              icon={<Icon icon={sidebarCollapsed ? SidebarExpandIcon : SidebarCollapseIcon} size={16} />}
-              title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
-              onClick={() => setSidebarCollapsed((v) => !v)}
-            />
+            <Button variant="ghost" size="sm" className="chat-sidebar-toggle" title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"} onClick={() => setSidebarCollapsed((v) => !v)}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</Button>
             {topicAgent && (
               <>
                 <AgentAvatar
@@ -1521,14 +1515,7 @@ export default function ChatPage({
                     <small>{topicAgent.description}</small>
                   )}
                 </div>
-                <Button
-                  type="text"
-                  size="small"
-                  className="chat-agent-header-settings"
-                  icon={<Icon name="Settings" size={14} />}
-                  title="智能体设置"
-                  onClick={() => setEditingAgentId(topicAgent.id)}
-                />
+                <Button variant="ghost" size="sm" className="chat-agent-header-settings" title="智能体设置" onClick={() => setEditingAgentId(topicAgent.id)}><Settings size={14} /></Button>
               </>
             )}
           </header>

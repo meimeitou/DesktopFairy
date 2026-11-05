@@ -1,6 +1,6 @@
 .composer-quick {
-  position: relative;
   display: inline-flex;
+  position: static; /* 面板改锚 .chat-input-dock（最近的 positioned 祖先） */
 }
 
 .composer-quick .chat-tool-btn {
@@ -24,23 +24,21 @@
   pointer-events: none;
 }
 
-.composer-quick-menu {
+/* Cherry QuickPanel 定位：铺满输入框宽度、悬浮在其正上方（-top-1 -translate-y-full）。 */
+.composer-quick-panel {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 8px);
+  right: 0;
+  bottom: calc(100% + 4px);
   z-index: 1200;
-  min-width: 200px;
-  max-width: min(260px, calc(100vw - 32px));
-  max-height: 300px;
-  overflow: auto;
-  padding: 6px;
-  border-radius: 14px;
-  border: 1px solid var(--hairline-strong);
-  background: rgba(248, 244, 232, 0.98);
-  backdrop-filter: blur(16px);
-  box-shadow:
-    0 16px 40px rgba(121, 79, 39, 0.25),
-    inset 0 1px 0 rgba(121, 79, 39, 0.04);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  max-height: 60vh;
+  border-radius: 12px;
+  background: var(--popover, var(--ink-750));
+  border: 0.5px solid var(--hairline-strong);
+  box-shadow: 0 12px 32px color-mix(in srgb, #000 45%, transparent);
   animation: composer-quick-in 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -56,34 +54,82 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .composer-quick-menu {
+  .composer-quick-panel {
     animation: none;
   }
 }
 
+.composer-quick-panel-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+/* 行视觉 = DropdownMenuItem：rounded-sm px-2 py-1.5 text-sm + focus/hover bg-accent */
 .composer-quick-row {
   display: flex;
-  width: 100%;
+  align-items: center;
   justify-content: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--popover-foreground, var(--bone-200));
   font-size: 13px;
-  font-weight: 500;
-  color: var(--bone-300);
+  line-height: 1.4;
   text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.composer-quick-row:hover:not(:disabled),
+.composer-quick-row:focus-visible:not(:disabled) {
+  background: var(--accent, color-mix(in srgb, var(--bone-400) 10%, transparent));
+  color: var(--accent-foreground, var(--bone-100));
+}
+
+.composer-quick-row:disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .composer-quick-row.danger {
-  color: var(--rust-bright);
+  color: var(--destructive, var(--rust-bright));
+}
+
+.composer-quick-row.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive, var(--rust)) 15%, transparent);
+  color: var(--destructive, var(--rust-bright));
+}
+
+.composer-quick-row svg {
+  color: var(--muted-foreground, var(--bone-500));
+}
+
+.composer-quick-row.danger svg {
+  color: var(--destructive, var(--rust-bright));
 }
 
 .composer-quick-sep {
+  flex-basis: 100%;
   height: 1px;
-  margin: 4px 6px;
-  background: var(--hairline-strong);
+  margin: 4px 2px;
+  background: var(--hairline);
 }
 
 .composer-quick-label {
-  padding: 4px 10px 2px;
+  flex-basis: 100%;
+  padding: 4px 8px 2px;
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--bone-500);
+}
+
+/* 知识库勾选行按菜单项密度排布 */
+.composer-quick-panel .kb-list-row {
+  font-size: 13px;
 }

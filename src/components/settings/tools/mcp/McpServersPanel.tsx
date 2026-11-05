@@ -1,4 +1,5 @@
-import { Button, Modal, Switch } from "animal-island-ui";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Switch } from "@cherrystudio/ui";
+
 import { useCallback, useEffect, useState } from "react";
 import HintTip from "../../../HintTip";
 import type { AppSettings } from "../../../../shared/settings";
@@ -34,7 +35,6 @@ export default function McpServersPanel({ settings }: Props) {
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [serverOps, setServerOps] = useState<Set<string>>(new Set());
-
 
   const loadMcp = useCallback(async () => {
     setLoading(true);
@@ -161,17 +161,13 @@ export default function McpServersPanel({ settings }: Props) {
     <section className="settings-section agent-subsection">
       <div className="agent-skills-toolbar">
         <div className="agent-skills-toolbar-actions">
-          <Button
-            type="primary"
-            size="small"
-            onClick={() => setEditorTarget("create")}
-          >
+          <Button variant="default" size="sm" onClick={() => setEditorTarget("create")}>
             + 添加服务器
           </Button>
-          <Button type="default" size="small" onClick={() => setImportOpen(true)}>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
             JSON 导入
           </Button>
-          <Button type="default" size="small" onClick={() => void loadMcp()}>
+          <Button variant="outline" size="sm" onClick={() => void loadMcp()}>
             刷新
           </Button>
         </div>
@@ -222,26 +218,16 @@ export default function McpServersPanel({ settings }: Props) {
               <div className="agent-catalog-actions">
                 <Switch
                   checked={server.isActive !== false}
-                  onChange={(checked) => void toggleActive(server, checked)}
+                  onCheckedChange={(checked) => void toggleActive(server, checked)}
                   disabled={serverOps.has(server.id)}
                   aria-label={
                     server.isActive !== false ? "全局启用" : "全局禁用"
                   }
                 />
-                <Button
-                  type="default"
-                  size="small"
-                  onClick={() => setEditorTarget(server)}
-                >
+                <Button variant="outline" size="sm" onClick={() => setEditorTarget(server)}>
                   编辑
                 </Button>
-                <Button
-                  type="default"
-                  size="small"
-                  danger
-                  className="agent-catalog-remove"
-                  onClick={() => void removeServer(server.id)}
-                >
+                <Button variant="destructive" size="sm" className="agent-catalog-remove" onClick={() => void removeServer(server.id)}>
                   删除
                 </Button>
               </div>
@@ -262,15 +248,10 @@ export default function McpServersPanel({ settings }: Props) {
         />
       )}
 
-      <Modal
-        open={importOpen}
-        title="JSON 导入 MCP 服务器"
-        onClose={() => setImportOpen(false)}
-        footer={null}
-        typewriter={false}
-        width={560}
-        className="ssh-form-modal mcp-edit-modal"
-      >
+      <Dialog open={importOpen} onOpenChange={(next) => { if (!next) (() => setImportOpen(false))(); }}>
+      <DialogContent className={"ssh-form-modal mcp-edit-modal"} style={{ maxWidth: 560 }}>
+        <DialogHeader><DialogTitle>{"JSON 导入 MCP 服务器"}</DialogTitle></DialogHeader>
+        
         <p className="field-hint">
           粘贴 Claude Desktop / Cursor 风格配置（{"{"}"mcpServers": {"{"}…{"}"}{"}"}），顶层服务器 map 也可。
         </p>
@@ -287,19 +268,17 @@ export default function McpServersPanel({ settings }: Props) {
         )}
         <div className="agent-mcp-form-actions">
           <div className="agent-mcp-form-actions-spacer" />
-          <Button size="small" onClick={() => setImportOpen(false)}>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(false)}>
             取消
           </Button>
-          <Button
-            type="primary"
-            size="small"
-            disabled={!jsonText.trim()}
-            onClick={() => void importJson()}
-          >
+          <Button variant="default" size="sm" disabled={!jsonText.trim()} onClick={() => void importJson()}>
             解析并导入
           </Button>
         </div>
-      </Modal>
+      
+        
+      </DialogContent>
+    </Dialog>
     </section>
   );
 }

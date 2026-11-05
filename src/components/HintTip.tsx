@@ -1,3 +1,4 @@
+import { CircleHelp } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import "./HintTip.css";
@@ -7,7 +8,7 @@ interface HintTipProps {
   placement?: "top" | "bottom";
 }
 
-/** Small filled-circle "?" icon; tooltip portals to <body> so it never gets
+/** Lucide help icon; tooltip portals to <body> so it never gets
  *  clipped by card overflow:hidden or buried by sibling stacking contexts. */
 export default function HintTip({ tip, placement = "bottom" }: HintTipProps) {
   const [open, setOpen] = useState(false);
@@ -58,17 +59,7 @@ export default function HintTip({ tip, placement = "bottom" }: HintTipProps) {
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
       >
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="10" fill="currentColor" />
-          <path
-            d="M9.1 9a3 3 0 0 1 5.83 1c0 2-2.93 2.6-2.93 4.5"
-            fill="none"
-            stroke="var(--animal-bg-color)"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-          />
-          <circle cx="11.98" cy="17.6" r="1.5" fill="var(--animal-bg-color)" />
-        </svg>
+        <CircleHelp size={13} aria-hidden="true" />
       </button>
       {open &&
         createPortal(

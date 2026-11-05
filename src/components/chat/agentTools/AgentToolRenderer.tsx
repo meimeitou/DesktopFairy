@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { memo, useContext, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
 import {
@@ -395,7 +396,6 @@ function SshHostsToolBody({ msg }: { msg: ChatMsg }) {
   );
 }
 
-
 function renderToolBody(msg: ChatMsg) {
   const raw = msg.toolName || "";
   const name = LEGACY_TOOL_ID_MAP[raw] || raw;
@@ -459,12 +459,7 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
         />
         {isRunning && cancelTool && msg.toolCallId && (
           <div className="agent-tool-summary-actions">
-            <Button
-              type="primary"
-              size="small"
-              className="agent-tool-cancel-btn"
-              onClick={() => cancelTool(msg.toolCallId!)}
-            >
+            <Button variant="default" size="sm" className="agent-tool-cancel-btn" onClick={() => cancelTool(msg.toolCallId!)}>
               取消
             </Button>
           </div>

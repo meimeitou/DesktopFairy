@@ -1,149 +1,27 @@
 .chat-mode-selector {
-  position: relative;
   display: inline-flex;
   align-items: center;
 }
 
-.chat-mode-selector-icon {
-  display: inline-flex;
+/* .chat-mode-trigger: official Button ghost skin, no overrides */
+
+/* Cherry DropdownMenu 单选列表：RadioItem 自带左侧选中圆点，
+   这里只加两列文字（名称 + 一行说明）的布局。 */
+.chat-mode-menu {
+  min-width: 280px;
 }
 
-/* .chat-mode-trigger: official Button skin, no overrides */
-
-
-.chat-mode-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: 380px;
-  max-width: min(380px, calc(100vw - 24px));
-  padding: 8px 0;
-  background: rgba(248, 244, 232, 0.98);
-  backdrop-filter: blur(16px);
-  border: 1px solid var(--hairline-strong);
-  border-radius: 14px;
-  box-shadow:
-    0 16px 40px rgba(121, 79, 39, 0.25),
-    inset 0 1px 0 rgba(121, 79, 39, 0.04);
-  z-index: 1200;
-  animation: chat-mode-popover-in 0.14s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.chat-mode-popover-up {
-  top: auto;
-  bottom: calc(100% + 8px);
-  left: 0;
-}
-
-@keyframes chat-mode-popover-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.chat-mode-popover-up {
-  animation: chat-mode-popover-in-up 0.14s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes chat-mode-popover-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.chat-mode-popover-header {
-  padding: 6px 14px 8px;
-  font-size: 11px;
-  color: var(--bone-600);
-  letter-spacing: 0.04em;
-}
-
-.chat-mode-list {
-  list-style: none;
-  margin: 0;
-  padding: 0 6px 4px;
-}
-
-.chat-mode-item {
-  height: auto;
-  width: 100%;
-  color: inherit;
-  text-align: left;
-  border-radius: 12px;
-}
-
-.chat-mode-item:hover:not(:disabled):not(.active) {
-  background: rgba(121, 79, 39, 0.06);
-}
-
-/* Library Button wraps children in a bare <span>; re-establish the intended
-   icon/body two-column flex on that wrapper. */
-.chat-mode-item > span {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-}
-
-.chat-mode-item.active,
-.chat-mode-item.active:hover:not(:disabled) {
-  /* mint selected pill — matches the system's selection syntax */
-  background: var(--persimmon);
-  color: #fff9e3;
-}
-
-.chat-mode-item.active .chat-mode-item-icon,
-.chat-mode-item.active .chat-mode-item-title,
-.chat-mode-item.active .chat-mode-item-desc {
-  color: #fff9e3;
-}
-
-.chat-mode-item.active .chat-mode-item-icon svg {
-  filter: drop-shadow(0 1px 1px rgba(74, 54, 32, 0.25));
-}
-
-.chat-mode-item-icon {
-  flex: 0 0 auto;
-  padding-top: 2px;
-  display: inline-flex;
-}
-
-.chat-mode-item-body {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.chat-mode-item-title {
+.chat-mode-menu .chat-mode-item-title {
   font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
+  font-weight: 500;
 }
 
-.chat-mode-item-desc {
+.chat-mode-menu .chat-mode-item-desc {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
-  line-height: 1.45;
   color: var(--bone-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-mode-popover,
-  .chat-mode-popover-up {
-    animation: none;
-  }
-}
-
-/* Narrow chat window: hide the mode label if a text variant ever returns. */

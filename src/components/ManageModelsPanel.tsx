@@ -1,4 +1,5 @@
-import { Button, Input, Modal, Notification } from "animal-island-ui";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, error, warning } from "@cherrystudio/ui";
+
 import { useMemo, useState } from "react";
 import {
   getModelsListEndpointLabel,
@@ -57,7 +58,7 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
 
   const fetchRemote = async () => {
     if (!provider.apiHost) {
-      Notification.warning("请先填写 API Host");
+      warning("请先填写 API Host");
       return;
     }
     setLoading(true);
@@ -79,10 +80,10 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
         : [];
       setRemoteModels(catalog);
       if (catalog.length === 0) {
-        Notification.warning("未返回可用的对话 / Embedding / Rerank 模型");
+        warning("未返回可用的对话 / Embedding / Rerank 模型");
       }
     } catch (e) {
-      Notification.error(`拉取失败：${(e as Error).message || e}`);
+      error(`拉取失败：${(e as Error).message || e}`);
     } finally {
       setLoading(false);
     }
@@ -146,7 +147,7 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
   if (!open) {
     return (
       <div className="manage-models-trigger">
-        <Button type="default" size="small" onClick={openPanel}>
+        <Button variant="outline" size="sm" onClick={openPanel}>
           管理模型
           {enabledCount > 0 && (
             <span className="manage-models-count">{enabledCount}</span>
@@ -162,50 +163,23 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
       : "没有符合筛选的模型";
 
   return (
-    <Modal
-      open
-      title={`管理模型 - ${provider.name}`}
-      onClose={() => setOpen(false)}
-      width={520}
-      className="manage-models-modal"
-      typewriter={false}
-      footer={
-        <>
-          <Button type="primary" onClick={() => setOpen(false)}>
-            取消
-          </Button>
-          <Button type="primary" onClick={save}>
-            保存
-          </Button>
-        </>
-      }
-    >
+    <Dialog open={true} onOpenChange={(next) => { if (!next) (() => setOpen(false))(); }}>
+      <DialogContent className={"manage-models-modal"} style={{ maxWidth: 520 }}>
+        <DialogHeader><DialogTitle>{`管理模型 - ${provider.name}`}</DialogTitle></DialogHeader>
+        
       <p className="manage-models-desc">
         从 {getModelsListEndpointLabel(provider.type)}{" "}
         拉取列表，点选要启用的模型。
       </p>
       <div className="manage-models-toolbar">
-        <Input
-          type="search"
-          shadow
-          placeholder="搜索模型…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <Button type="primary" size="small" onClick={fetchRemote} disabled={loading}>
+        <Input type="search" placeholder="搜索模型…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Button variant="default" size="sm" onClick={fetchRemote} disabled={loading}>
           {loading ? "拉取中…" : "拉取模型"}
         </Button>
       </div>
       <div className="manage-models-filters" role="tablist" aria-label="按类型筛选">
         {MODEL_KIND_FILTERS.map((tab) => (
-          <Button
-            key={tab.id}
-            type="text"
-            role="tab"
-            aria-selected={kindFilter === tab.id}
-            className={kindFilter === tab.id ? "active" : ""}
-            onClick={() => setKindFilter(tab.id)}
-          >
+          <Button variant="ghost" key={tab.id} role="tab" aria-selected={kindFilter === tab.id} className={kindFilter === tab.id ? "active" : ""} onClick={() => setKindFilter(tab.id)}>
             {tab.label}
           </Button>
         ))}
@@ -222,14 +196,7 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
             const kind = displayModelKind(id, originalLists, remoteKind);
             const selected = draft.has(id);
             return (
-              <Button
-                key={id}
-                type="text"
-                role="option"
-                aria-selected={selected}
-                className={`manage-models-item${selected ? " selected" : ""}`}
-                onClick={() => toggle(id)}
-              >
+              <Button variant="ghost" key={id} role="option" aria-selected={selected} className={`manage-models-item${selected ? " selected" : ""}`} onClick={() => toggle(id)}>
                 <span className="manage-models-id">{id}</span>
                 <span className={`manage-models-kind kind-${kind}`}>
                   {MODEL_KIND_LABELS[kind]}
@@ -242,14 +209,24 @@ export default function ManageModelsPanel({ provider, onChange }: Props) {
       <div className="manage-models-footer">
         <span className="manage-models-selected">已选 {draft.size} 个</span>
         <span className="manage-models-bulk">
-          <Button type="text" size="small" onClick={selectAll}>
+          <Button variant="ghost" size="sm" onClick={selectAll}>
             全选
           </Button>
-          <Button type="text" size="small" onClick={selectNone}>
+          <Button variant="ghost" size="sm" onClick={selectNone}>
             取消
           </Button>
         </span>
       </div>
-    </Modal>
+    
+        <DialogFooter>{<>
+          <Button variant="default" onClick={() => setOpen(false)}>
+            取消
+          </Button>
+          <Button variant="default" onClick={save}>
+            保存
+          </Button>
+        </>}</DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

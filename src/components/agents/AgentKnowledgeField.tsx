@@ -1,8 +1,9 @@
-import { Icon, Input, Tooltip } from "animal-island-ui";
+import { Input, NormalTooltip } from "@cherrystudio/ui";
+import { Book, Plus, Trash2 } from "lucide-react";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKnowledgeBases } from "../../hooks/useKnowledgeBases";
 import "./AgentKnowledgeField.css";
-
 
 interface Props {
   selectedIds: string[];
@@ -71,20 +72,14 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
         >
-          <Icon name="Plus" size={12} />
+          <Plus size={12} />
           添加知识库
         </button>
       </div>
 
       {open && (
         <div className="agent-kb-pop" role="menu" aria-label="添加知识库">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索知识库..."
-            allowClear
-            size="small"
-          />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索知识库..." />
           {addable.length === 0 ? (
             <p className="agent-kb-pop-empty">没有更多可用的知识库</p>
           ) : (
@@ -98,7 +93,7 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
                 onClick={() => add(b.id)}
               >
                 <span className="agent-kb-icon agent-kb-icon-sm">
-                  <Icon name="Book" size={12} />
+                  <Book size={12} />
                 </span>
                 <span className="agent-kb-pop-row-main">
                   <span className="agent-kb-pop-row-name">{b.name}</span>
@@ -113,7 +108,7 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
 
       {linked.length === 0 ? (
         <div className="agent-kb-empty">
-          <Icon name="Book" size={20} />
+          <Book size={20} />
           <p>暂未关联知识库</p>
           <p>关联知识库后，智能体可以根据文档内容回答问题</p>
         </div>
@@ -122,7 +117,7 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
           {linked.map((kb) => (
             <div key={kb.id} className="agent-kb-row">
               <span className="agent-kb-icon">
-                <Icon name="Book" size={14} />
+                <Book size={14} />
               </span>
               <div className="agent-kb-row-main">
                 <div className="agent-kb-row-name">{kb.name}</div>
@@ -131,7 +126,7 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
 
                 </div>
               </div>
-              <Tooltip title="移除">
+              <NormalTooltip content="移除">
                 <button
                   type="button"
                   className="agent-kb-remove"
@@ -139,9 +134,9 @@ export default function AgentKnowledgeField({ selectedIds, onChange, disabled }:
                   aria-label="移除"
                   onClick={() => remove(kb.id)}
                 >
-                  <Icon name="Trash" size={12} />
+                  <Trash2 size={12} />
                 </button>
-              </Tooltip>
+              </NormalTooltip>
             </div>
           ))}
         </div>
@@ -161,5 +156,5 @@ function FieldHeadInline({ hint, children }: { hint?: string; children: React.Re
 }
 
 function HintTipInline({ tip }: { tip: string }) {
-  return <Tooltip title={tip}><span className="agent-kb-hint">?</span></Tooltip>;
+  return <NormalTooltip content={tip}><span className="agent-kb-hint">?</span></NormalTooltip>;
 }

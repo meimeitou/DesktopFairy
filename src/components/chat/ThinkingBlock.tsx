@@ -1,5 +1,5 @@
-import { Button, Icon } from "animal-island-ui";
-import { ChevronDown, CopyIcon } from "../icons/naivePatch";
+import { Button } from "@cherrystudio/ui";
+import { Check, ChevronDown, Copy, Lightbulb } from "lucide-react";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import {
@@ -95,31 +95,19 @@ function ThinkingBlock({ msg, isStreaming, clockLive }: Props) {
 
   return (
     <div className={cls}>
-      <Button
-        type="text"
-        className="thinking-header"
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded}
-      >
-        <Icon name="Bulb" />
+      <Button variant="ghost" className="thinking-header" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+        <Lightbulb />
         <ThinkingElapsedLabel
           msgId={msg.id}
           isThinking={isThinking}
           clockLive={tickClock}
         />
-        <Icon icon={ChevronDown} className="thinking-chevron" />
+        <ChevronDown className={"thinking-chevron"} />
       </Button>
       {expanded && (
         <div className="thinking-body">
           {!isThinking && (
-            <Button
-              type="text"
-              size="small"
-              className="thinking-copy"
-              onClick={handleCopy}
-              title="复制"
-              icon={copied ? <Icon name="Check" size={13} /> : <Icon icon={CopyIcon} size={13} />}
-            />
+            <Button variant="ghost" size="sm" className="thinking-copy" onClick={handleCopy} title="复制">{copied ? <Check size={16} /> : <Copy size={16} />}</Button>
           )}
           <ThinkingMarkdownBody content={content} isThinking={isThinking} />
         </div>

@@ -1,17 +1,11 @@
-/* 三重前缀 (0,3,0)：必须压过 index.css 后加载的全局弹窗密度块。
-   注意链方向：mask 在 modal 外层（mask > modal > body）。 */
-[class*="animal-mask"] .agent-settings-modal [class*="animal-body"] {
+/* Cherry Dialog 渲染：DialogContent 本体就是弹窗卡片。固定高度，
+   不随当前分区内容伸缩（切换菜单时高度跳动）。 */
+.agent-settings-modal {
+  height: min(80vh, 700px);
+  /* header + 可滚动的 body：内容超高时在 body 里滚，卡片不变。 */
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  /* 无 footer 弹窗：全局 animal-body 的 12px 底距是给 footer 按钮留的，这里不需要 */
-  padding-bottom: 0;
-}
-
-/* 固定高度：不随当前分区内容多少伸缩（切换菜单时高度跳动）。
-   min(80vh, 700px) 兼顾小留海屏与大屏。 */
-[class*="animal-mask"] .agent-settings-modal {
-  height: min(80vh, 700px);
+  overflow: hidden;
 }
 
 .agent-settings-modal-body {
@@ -35,7 +29,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 0 10px;
-  border-bottom: 1px solid rgba(139, 105, 70, 0.18);
+  border-bottom: 1px solid color-mix(in srgb, var(--bone-400) 18%, transparent);
 }
 
 .agent-settings-modal-head .agent-avatar-preview {
@@ -46,7 +40,7 @@
   justify-content: center;
   font-size: 22px;
   border-radius: 12px;
-  background: rgba(139, 105, 70, 0.1);
+  background: color-mix(in srgb, var(--bone-400) 10%, transparent);
 }
 
 .agent-settings-modal-head-main {
@@ -95,7 +89,7 @@
 }
 
 .agent-settings-panel .agent-settings-nav-item:hover:not(.active) {
-  background: rgba(121, 79, 39, 0.06);
+  background: color-mix(in srgb, var(--bone-400) 6%, transparent);
 }
 
 /* Active: mint soft bg + left-edge marker — same syntax as .settings-menu-item.active. */
@@ -103,7 +97,7 @@
 .agent-settings-panel .agent-settings-nav-item.active:hover {
   color: var(--bone-100);
   background: var(--persimmon-softer);
-  border-color: rgba(25, 200, 185, 0.28);
+  border-color: color-mix(in srgb, var(--persimmon) 28%, transparent);
 }
 
 .agent-settings-panel .agent-settings-nav-item.active::before {
@@ -154,25 +148,25 @@
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  border: 1px solid rgba(139, 105, 70, 0.2);
+  border: 1px solid color-mix(in srgb, var(--bone-400) 20%, transparent);
   border-radius: 12px;
-  background: rgba(255, 252, 240, 0.7);
+  background: color-mix(in srgb, var(--field-bg) 70%, transparent);
   cursor: pointer;
   text-align: left;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .agent-chatmode-card:hover {
-  border-color: rgba(139, 105, 70, 0.45);
+  border-color: color-mix(in srgb, var(--bone-400) 45%, transparent);
 }
 
 .agent-chatmode-card.active {
-  border-color: #b8895a;
-  background: rgba(184, 137, 90, 0.12);
+  border-color: var(--bone-400);
+  background: color-mix(in srgb, var(--bone-400) 12%, transparent);
 }
 
 .agent-chatmode-card span {
   font-size: 12px;
-  color: #7a6a58;
+  color: var(--bone-500);
   line-height: 1.4;
 }

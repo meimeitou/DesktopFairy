@@ -1,4 +1,5 @@
-import { Modal } from "animal-island-ui";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@cherrystudio/ui";
+
 import { useEffect, useMemo, useState } from "react";
 import { useSettings, setSettings } from "../../shared/settingsStore";
 import { updateAgentInSettings, appendAgentToSettings } from "../../shared/settings";
@@ -91,18 +92,17 @@ export default function AgentSettingsModal({
   if (!open || !agent) return null;
 
   return (
-    <Modal
-      open={open}
-      title="智能体设置"
-      onClose={onClose}
-      width={860}
-      className="agent-settings-modal"
-      footer={null}
-      typewriter={false}
-    >
+    <Dialog open={open} onOpenChange={(next) => { if (!next) (onClose)(); }}>
+      <DialogContent className={"agent-settings-modal"} style={{ maxWidth: 860 }}>
+        <DialogHeader><DialogTitle>{"智能体设置"}</DialogTitle></DialogHeader>
+        
       <div className="agent-settings-modal-body">
-        <AgentSettingsPanel agent={agent} onChange={updateAgent} onClose={onClose} />
+        <AgentSettingsPanel agent={agent} onChange={updateAgent} />
+        {/* No onClose passed: Cherry DialogContent already renders its own close X. */}
       </div>
-    </Modal>
+    
+        
+      </DialogContent>
+    </Dialog>
   );
 }

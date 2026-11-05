@@ -1,4 +1,5 @@
-import { Input } from "animal-island-ui";
+import { Input } from "@cherrystudio/ui";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import HintTip from "../../HintTip";
 import type { AgentConfig, AgentSkillDescriptor } from "../../../shared/agent";
@@ -21,7 +22,6 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
     () => new Set(agent.enabledSkillIds),
     [agent.enabledSkillIds]
   );
-
 
   const loadSkills = useCallback(async () => {
     setLoadingSkills(true);
@@ -74,9 +74,7 @@ export default function AgentSkillsSection({ agent, onChange }: Props) {
     <section className="settings-section agent-subsection">
       <div className="agent-tool-search-row">
         <div className="field agent-tool-search">
-          <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="搜索技能…"
-          aria-label="搜索技能" />
+          <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索技能…" aria-label="搜索技能" />
         </div>
         <HintTip tip="打开后，技能名称与简介会注入模型上下文，可通过 Skills 工具加载。关闭的技能不进上下文，只能用 /技能id 调用。技能的导入与卸载请在「设置 → 工具」中操作。" />
       </div>

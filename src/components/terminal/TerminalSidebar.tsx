@@ -1,7 +1,9 @@
-import { Button, Icon } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import { NamedIcon } from "../NamedIcon";
+import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings, SquareTerminal, Trash2 } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 import type { SidebarGroup, SidebarItem } from "./terminalSidebarGroups";
-import { SidebarCollapseIcon, SidebarExpandIcon, ChevronRight } from "../icons/naivePatch";
 
 export interface TerminalSidebarProps {
   collapsed: boolean;
@@ -118,40 +120,14 @@ export default function TerminalSidebar({
       <aside className={`terminal-sidebar${collapsed ? " collapsed" : ""}`}>
         <div className="terminal-sidebar-head">
           {!collapsed && <span className="terminal-sidebar-title">会话</span>}
-          <Button
-            type="text"
-            size="small"
-            className="terminal-sidebar-collapse"
-            icon={
-              <Icon
-                icon={collapsed ? SidebarExpandIcon : SidebarCollapseIcon}
-                size={16}
-              />
-            }
-            title={collapsed ? "展开侧边栏" : "收起侧边栏"}
-            onClick={onToggleCollapse}
-          />
+          <Button variant="ghost" size="sm" className="terminal-sidebar-collapse" title={collapsed ? "展开侧边栏" : "收起侧边栏"} onClick={onToggleCollapse}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</Button>
         </div>
 
         <div className="terminal-sidebar-actions">
-          <Button
-            type="primary"
-            size="small"
-            className="terminal-sidebar-action"
-            icon={<Icon name="Plus" size={14} />}
-            title="新建终端"
-            onClick={(e) => onCreateTerminal(e.currentTarget as HTMLElement)}
-          >
+          <Button variant="ghost" size="sm" className="terminal-sidebar-action" title="新建终端" onClick={(e) => onCreateTerminal(e.currentTarget as HTMLElement)}><Plus size={16} />
             {!collapsed && "新建终端"}
           </Button>
-          <Button
-            type="default"
-            size="small"
-            className="terminal-sidebar-action"
-            icon={<Icon name="Chat" size={14} />}
-            title="新建对话"
-            onClick={(e) => onCreateConversation(e.currentTarget as HTMLElement)}
-          >
+          <Button variant="ghost" size="sm" className="terminal-sidebar-action" title="新建对话" onClick={(e) => onCreateConversation(e.currentTarget as HTMLElement)}><MessageSquare size={16} />
             {!collapsed && "新建对话"}
           </Button>
         </div>
@@ -180,19 +156,14 @@ export default function TerminalSidebar({
                   }}
                 >
                   <span className="terminal-sidebar-group-caret">
-                    <Icon icon={ChevronRight} size={11} />
+                    <ChevronRight size={11} />
                   </span>
                   <span className="terminal-sidebar-group-icon">
-                    <Icon
-                      name={
-                        group.kind === "local"
+                    <NamedIcon name={group.kind === "local"
                           ? "Home"
                           : group.kind === "quick"
                             ? "Cloud"
-                            : "Globe"
-                      }
-                      size={12}
-                    />
+                            : "Globe"} size={12} />
                   </span>
                   <span className="terminal-sidebar-group-label">{group.label}</span>
                   {collapsedGroups.has(group.key) && group.items.length > 0 && (
@@ -210,7 +181,7 @@ export default function TerminalSidebar({
                         handlePlusClick(group, e.currentTarget);
                       }}
                     >
-                      <Icon name="Plus" size={13} />
+                      <Plus size={13} />
                     </button>
                     {group.kind === "host" && group.hostId && (
                       <button
@@ -222,7 +193,7 @@ export default function TerminalSidebar({
                           onEditHost(group.hostId!);
                         }}
                       >
-                        <Icon name="Edit" size={13} />
+                        <Pencil size={13} />
                       </button>
                     )}
                   </span>
@@ -247,10 +218,7 @@ export default function TerminalSidebar({
                     }}
                   >
                     <span className="terminal-sidebar-item-icon">
-                      <Icon
-                        name={item.kind === "host-chat" ? "Chat" : "Code"}
-                        size={14}
-                      />
+                      <NamedIcon name={item.kind === "host-chat" ? "Chat" : "Code"} size={14} />
                     </span>
                     {!collapsed && (
                       <>
@@ -275,7 +243,7 @@ export default function TerminalSidebar({
                           }}
                         >
                           {item.kind === "host-chat" ? (
-                            <Icon name="Trash" size={12} />
+                            <Trash2 size={12} />
                           ) : (
                             "×"
                           )}
@@ -290,14 +258,7 @@ export default function TerminalSidebar({
         </div>
 
         <div className="terminal-sidebar-foot">
-          <Button
-            type="text"
-            size="small"
-            className={`terminal-sidebar-settings${settingsActive ? " active" : ""}`}
-            icon={<Icon name="Settings" size={14} />}
-            title="终端设置"
-            onClick={onOpenSettings}
-          >
+          <Button variant="ghost" size="sm" className={`terminal-sidebar-settings${settingsActive ? " active" : ""}`} title="终端设置" onClick={onOpenSettings}><Settings size={14} />
             {!collapsed && "终端设置"}
           </Button>
         </div>
@@ -319,7 +280,7 @@ export default function TerminalSidebar({
               onNewTerminalForGroup(group);
             }}
           >
-            <Icon name="Code" size={13} />
+            <SquareTerminal size={13} />
             <span>新建终端</span>
           </button>
           <button
@@ -331,7 +292,7 @@ export default function TerminalSidebar({
               onNewConversationForGroup(group);
             }}
           >
-            <Icon name="Chat" size={13} />
+            <MessageSquare size={13} />
             <span>新建对话</span>
           </button>
         </div>

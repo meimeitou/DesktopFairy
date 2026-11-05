@@ -1,4 +1,7 @@
-import { Form, FormItem, Button, Input, Modal, Radio } from "animal-island-ui";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input } from "@cherrystudio/ui";
+import { Form, FormItem, useForm } from "../Form";
+import { Checkbox, Radio } from "../Choice";
+
 import type { ProviderType } from "../../shared/providers";
 
 interface Props {
@@ -8,15 +11,10 @@ interface Props {
 
 export default function AddProviderModal({ onClose, onConfirm }: Props) {
   return (
-    <Modal
-      open
-      title="添加服务商"
-      onClose={onClose}
-      width={420}
-      className="provider-form-modal"
-      footer={null}
-      typewriter={false}
-    >
+    <Dialog open={true} onOpenChange={(next) => { if (!next) (onClose)(); }}>
+      <DialogContent className={"provider-form-modal"} style={{ maxWidth: 420 }}>
+        <DialogHeader><DialogTitle>{"添加服务商"}</DialogTitle></DialogHeader>
+        
       <Form
         layout="vertical"
         colon={false}
@@ -35,7 +33,7 @@ export default function AddProviderModal({ onClose, onConfirm }: Props) {
             { required: true, whitespace: true, message: "请输入名称" },
           ]}
         >
-          <Input type="text" shadow placeholder="例如：DeepSeek、本地 Ollama" autoFocus />
+          <Input type="text" placeholder="例如：DeepSeek、本地 Ollama" autoFocus />
         </FormItem>
         <FormItem
           label="类型"
@@ -53,14 +51,17 @@ export default function AddProviderModal({ onClose, onConfirm }: Props) {
           />
         </FormItem>
         <div className="provider-modal-footer">
-          <Button type="primary" htmlType="button" onClick={onClose}>
+          <Button variant="default" type="button" onClick={onClose}>
             取消
           </Button>
-          <Button type="primary" htmlType="submit">
+          <Button variant="default" type="submit">
             添加
           </Button>
         </div>
       </Form>
-    </Modal>
+    
+        
+      </DialogContent>
+    </Dialog>
   );
 }

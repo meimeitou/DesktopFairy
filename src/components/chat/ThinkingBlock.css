@@ -2,15 +2,15 @@
   min-width: 0;
   max-width: 100%;
   margin-bottom: 8px;
-  border: 1px solid rgba(232, 184, 74, 0.3);
+  border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
   border-radius: 10px;
-  background: #fffdf4;
+  background: var(--ink-750);
   overflow: hidden;
   transition: border-color var(--motion-fast) var(--ease-island), background 0.15s ease;
 }
 
 .thinking-block.thinking-active {
-  border-color: rgba(232, 184, 74, 0.45);
+  border-color: color-mix(in srgb, var(--amber) 45%, transparent);
   background: var(--amber-soft);
 }
 
@@ -73,19 +73,19 @@
 .thinking-chevron {
   flex: 0 0 auto;
   display: inline-flex;
-  color: rgba(121, 79, 39, 0.4);
+  color: color-mix(in srgb, var(--bone-400) 40%, transparent);
   transition: transform var(--motion-fast) var(--ease-island), color 0.15s ease;
 }
 
 .thinking-block.thinking-expanded .thinking-chevron {
   transform: rotate(180deg);
-  color: rgba(121, 79, 39, 0.6);
+  color: color-mix(in srgb, var(--bone-400) 60%, transparent);
 }
 
 .thinking-body {
   position: relative;
   padding: 4px 12px 10px;
-  border-top: 1px solid rgba(121, 79, 39, 0.06);
+  border-top: 1px solid color-mix(in srgb, var(--bone-400) 6%, transparent);
   transition: max-height var(--motion-base) var(--ease-island);
 }
 

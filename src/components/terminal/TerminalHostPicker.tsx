@@ -1,4 +1,6 @@
-import { Button, Icon } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import { Globe, Play, Search, SquareTerminal } from "lucide-react";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SshHost } from "../../shared/terminalSettings";
 import { parseQuickConnect } from "../../shared/sshQuickConnect";
@@ -181,15 +183,9 @@ export default function TerminalHostPicker({
       }
       if (item.kind === "local") {
         nodes.push(
-          <Button
-            key="local"
-            type="text"
-            className={`ssh-picker-item${active ? " active" : ""}`}
-            data-idx={idx}
-            onClick={() => selectItem(idx)}
-          >
+          <Button variant="ghost" key="local" className={`ssh-picker-item${active ? " active" : ""}`} data-idx={idx} onClick={() => selectItem(idx)}>
             <span className="ssh-picker-item-icon">
-              <Icon name="Code" size={13} />
+              <SquareTerminal size={13} />
             </span>
             <span className="ssh-picker-item-main">
               <span className="ssh-picker-item-name">本机</span>
@@ -201,15 +197,9 @@ export default function TerminalHostPicker({
         );
       } else if (item.kind === "host") {
         nodes.push(
-          <Button
-            key={`h-${idx}`}
-            type="text"
-            className={`ssh-picker-item${active ? " active" : ""}`}
-            data-idx={idx}
-            onClick={() => selectItem(idx)}
-          >
+          <Button variant="ghost" key={`h-${idx}`} className={`ssh-picker-item${active ? " active" : ""}`} data-idx={idx} onClick={() => selectItem(idx)}>
             <span className="ssh-picker-item-icon">
-              <Icon name="Globe" size={13} />
+              <Globe size={13} />
             </span>
             <span className="ssh-picker-item-main">
               <span className="ssh-picker-item-name">{item.host.name}</span>
@@ -224,15 +214,9 @@ export default function TerminalHostPicker({
           <div key="q-sep" className="ssh-picker-section">
             快速连接
           </div>,
-          <Button
-            key="quick"
-            type="text"
-            className={`ssh-picker-item quick${active ? " active" : ""}`}
-            data-idx={idx}
-            onClick={() => selectItem(idx)}
-          >
+          <Button variant="ghost" key="quick" className={`ssh-picker-item quick${active ? " active" : ""}`} data-idx={idx} onClick={() => selectItem(idx)}>
             <span className="ssh-picker-item-icon">
-              <Icon name="Play" size={13} />
+              <Play size={13} />
             </span>
             <span className="ssh-picker-item-main">
               <span className="ssh-picker-item-name">
@@ -256,7 +240,7 @@ export default function TerminalHostPicker({
         onKeyDown={handleKeyDown}
       >
         <div className="ssh-picker-search-wrap">
-          <Icon className="ssh-picker-search-icon" name="Search" size={13} />
+          <Search size={13} className={"ssh-picker-search-icon"} />
           <input
             ref={inputRef}
             className="ssh-picker-search"

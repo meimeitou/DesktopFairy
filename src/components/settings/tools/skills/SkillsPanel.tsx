@@ -1,4 +1,5 @@
-import { Button, Input } from "animal-island-ui";
+import { Button, Input } from "@cherrystudio/ui";
+
 import { useCallback, useEffect, useState } from "react";
 import HintTip from "../../../HintTip";
 import type { AppSettings } from "../../../../shared/settings";
@@ -92,22 +93,13 @@ export default function SkillsPanel({ settings }: Props) {
     <section className="settings-section agent-subsection">
       <div className="agent-skills-toolbar">
         <div className="agent-skills-toolbar-actions">
-          <Button
-            type="primary"
-            size="small"
-            disabled={importingSkill}
-            onClick={() => void importLocalSkill()}
-          >
+          <Button variant="default" size="sm" disabled={importingSkill} onClick={() => void importLocalSkill()}>
             {importingSkill ? "导入中…" : "导入本地技能"}
           </Button>
-          <Button
-            type="default"
-            size="small"
-            onClick={() => void openSkillsDir()}
-          >
+          <Button variant="outline" size="sm" onClick={() => void openSkillsDir()}>
             打开目录
           </Button>
-          <Button type="default" size="small" onClick={() => void loadSkills()}>
+          <Button variant="outline" size="sm" onClick={() => void loadSkills()}>
             刷新
           </Button>
         </div>
@@ -118,9 +110,7 @@ export default function SkillsPanel({ settings }: Props) {
       )}
 
       <div className="field agent-tool-search">
-        <Input shadow type="search" value={search} onChange={(e) => setSearch(e.target.value)}
-        placeholder="搜索技能…"
-        aria-label="搜索技能" />
+        <Input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索技能…" aria-label="搜索技能" />
       </div>
 
       {loading ? (
@@ -153,14 +143,7 @@ export default function SkillsPanel({ settings }: Props) {
                 <p>{s.description || s.folderName}</p>
               </div>
               {!s.isBuiltin && (
-                <Button
-                  type="default"
-                  size="small"
-                  danger
-                  className="agent-catalog-remove"
-                  disabled={removingSkill === s.id}
-                  onClick={() => void removeSkill(s.id, s.name)}
-                >
+                <Button variant="outline" size="sm" className="agent-catalog-remove" disabled={removingSkill === s.id} onClick={() => void removeSkill(s.id, s.name)}>
                   {removingSkill === s.id ? "卸载中…" : "卸载"}
                 </Button>
               )}

@@ -24,6 +24,7 @@ describe("streamdown CSS bug fixes (SSR DOM shape)", () => {
     );
     const lineSpans = code.match(/<span class="block[ "]/g) ?? [];
     expect(lineSpans.length).toBe(4); // 4 lines incl. empty
+    expect(shell).toContain("在终端运行");
     // empty line = raw "\n" text node; non-empty lines carry no newline text
     const textOnly = code.replace(/<[^>]+>/g, "");
     expect(textOnly).toContain("\n"); // empty line's newline
@@ -60,9 +61,9 @@ describe("streamdown CSS bug fixes (SSR DOM shape)", () => {
     expect(html).toContain("后面还有正文");
   });
 
-  it("streaming mode sets caret var on streamdown root div", () => {
+  it("streaming mode still renders the text", () => {
     const html = renderToString(<ChatMarkdown content={"hello"} streaming />);
-    // caret suppresses when last block is an open fence; plain text keeps it
-    expect(html).toContain("--streamdown-caret");
+    expect(html).toContain("hello");
+    expect(html).toContain("chat-markdown-streaming");
   });
 });

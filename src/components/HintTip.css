@@ -42,7 +42,7 @@
   color: var(--bone-500);
   font-size: 12px;
   line-height: 1.5;
-  box-shadow: 0 3px 10px rgba(61, 52, 40, 0.12);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--shadow-ink) 12%, transparent);
   transform: translateX(-50%);
   pointer-events: none;
 }

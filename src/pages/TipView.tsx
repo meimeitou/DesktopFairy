@@ -1,4 +1,7 @@
-import { Button, Icon } from "animal-island-ui";
+import { NamedIcon } from "../components/NamedIcon";
+import { Button } from "@cherrystudio/ui";
+import { MessageSquare } from "lucide-react";
+
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   buildSearchUrl,
@@ -106,8 +109,8 @@ export default function TipView({ text: initialText }: Props) {
   if (enabledActions.length === 0) {
     return (
       <div className="tip-toolbar" ref={toolbarRef}>
-        <Button type="text" className="tip-action-btn" onClick={() => openChat(formatFencedText(text))}>
-          <Icon name="Chat" size={14} />
+        <Button variant="ghost" className="tip-action-btn" onClick={() => openChat(formatFencedText(text))}>
+          <MessageSquare size={14} />
           <span>询问</span>
         </Button>
       </div>
@@ -117,14 +120,8 @@ export default function TipView({ text: initialText }: Props) {
   return (
     <div className="tip-toolbar" ref={toolbarRef}>
       {enabledActions.map((action) => (
-        <Button
-          key={action.id}
-          type="text"
-          className="tip-action-btn"
-          title={action.name}
-          onClick={() => handleAction(action)}
-        >
-          <span className="tip-action-icon"><Icon name={action.icon as never} size={14} /></span>
+        <Button variant="ghost" key={action.id} className="tip-action-btn" title={action.name} onClick={() => handleAction(action)}>
+          <span className="tip-action-icon"><NamedIcon name={action.icon as never} size={14} /></span>
           <span className="tip-action-label">{action.name}</span>
         </Button>
       ))}

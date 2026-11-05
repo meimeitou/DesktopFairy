@@ -1,5 +1,6 @@
-import { Button, Form, FormItem, Icon, Input, Modal, Notification as AnimalNotification, useForm } from "animal-island-ui";
-import { CopyIcon } from "../icons/naivePatch";
+import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, warning } from "@cherrystudio/ui";
+import { Form, FormItem, useForm } from "../Form";
+import { Copy, Eye, Pencil, Trash2 } from "lucide-react";
 import Select from "../Select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm } from "../../hooks/useConfirm";
@@ -408,7 +409,7 @@ export default function TerminalSettingsTab({
       hosts?: SshHost[];
     } | null;
     if (!parsed?.hosts?.length) {
-      AnimalNotification.warning("未从所选文件中解析到任何 SSH 主机");
+      warning("未从所选文件中解析到任何 SSH 主机");
       return;
     }
     // 去重合并：以 host|user|port 为键
@@ -417,11 +418,11 @@ export default function TerminalSettingsTab({
       (h) => !existingKeys.has(`${h.host}|${h.user}|${h.port}`),
     );
     if (newHosts.length === 0) {
-      AnimalNotification.warning("导入的主机均已存在，已跳过");
+      warning("导入的主机均已存在，已跳过");
       return;
     }
     onChange({ sshHosts: [...sshHosts, ...newHosts] });
-    AnimalNotification.warning(
+    warning(
       `已导入 ${newHosts.length} 个主机（跳过 ${parsed.hosts.length - newHosts.length} 个重复）`,
     );
   };
@@ -536,32 +537,16 @@ export default function TerminalSettingsTab({
   return (
     <div className={`terminal-settings-tab${isActive ? " active" : ""}`}>
       <div className="terminal-settings-tabstrip">
-        <Button
-          type="text"
-          className={`terminal-tabstrip-btn${activeSection === "appearance" ? " active" : ""}`}
-          onClick={() => setActiveSection("appearance")}
-        >
+        <Button variant="ghost" className={`terminal-tabstrip-btn${activeSection === "appearance" ? " active" : ""}`} onClick={() => setActiveSection("appearance")}>
           终端外观
         </Button>
-        <Button
-          type="text"
-          className={`terminal-tabstrip-btn${activeSection === "ssh" ? " active" : ""}`}
-          onClick={() => setActiveSection("ssh")}
-        >
+        <Button variant="ghost" className={`terminal-tabstrip-btn${activeSection === "ssh" ? " active" : ""}`} onClick={() => setActiveSection("ssh")}>
           SSH 主机
         </Button>
-        <Button
-          type="text"
-          className={`terminal-tabstrip-btn${activeSection === "credentials" ? " active" : ""}`}
-          onClick={() => setActiveSection("credentials")}
-        >
+        <Button variant="ghost" className={`terminal-tabstrip-btn${activeSection === "credentials" ? " active" : ""}`} onClick={() => setActiveSection("credentials")}>
           凭据
         </Button>
-        <Button
-          type="text"
-          className={`terminal-tabstrip-btn${activeSection === "terminal-ai" ? " active" : ""}`}
-          onClick={() => setActiveSection("terminal-ai")}
-        >
+        <Button variant="ghost" className={`terminal-tabstrip-btn${activeSection === "terminal-ai" ? " active" : ""}`} onClick={() => setActiveSection("terminal-ai")}>
           终端助手
         </Button>
 
@@ -573,13 +558,7 @@ export default function TerminalSettingsTab({
             <div className="terminal-appearance-grid">
               <div className="field-row">
                 <label>字号</label>
-                <Input
-                  type="number"
-                  min={8}
-                  max={32}
-                  value={terminal.fontSize}
-                  onChange={(e) => updateTerminal({ fontSize: Number(e.target.value) })}
-                />
+                <Input type="number" min={8} max={32} value={terminal.fontSize} onChange={(e) => updateTerminal({ fontSize: Number(e.target.value) })} />
               </div>
 
               <div className="field-row">
@@ -598,25 +577,12 @@ export default function TerminalSettingsTab({
 
               <div className="field-row">
                 <label>字体</label>
-                <Input
-                  type="text"
-                  value={terminal.fontFamily}
-                  onChange={(e) => updateTerminal({ fontFamily: e.target.value })}
-                  placeholder='Menlo, "PingFang SC", "Apple Color Emoji", monospace'
-                  spellCheck={false}
-                />
+                <Input type="text" value={terminal.fontFamily} onChange={(e) => updateTerminal({ fontFamily: e.target.value })} placeholder='Menlo, "PingFang SC", "Apple Color Emoji", monospace' spellCheck={false} />
               </div>
 
               <div className="field-row">
                 <label>回滚行数</label>
-                <Input
-                  type="number"
-                  min={1000}
-                  max={100000}
-                  step={1000}
-                  value={terminal.scrollback}
-                  onChange={(e) => updateTerminal({ scrollback: Number(e.target.value) })}
-                />
+                <Input type="number" min={1000} max={100000} step={1000} value={terminal.scrollback} onChange={(e) => updateTerminal({ scrollback: Number(e.target.value) })} />
               </div>
             </div>
           </section>
@@ -625,24 +591,16 @@ export default function TerminalSettingsTab({
         {activeSection === "ssh" && (
           <section className="settings-section">
             <div className="ssh-section-actions">
-              <Button type="primary" size="small" onClick={handleAddGroup}>
+              <Button variant="default" size="sm" onClick={handleAddGroup}>
                 + 新增分组
               </Button>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => { setForm(EMPTY_FORM); setFormMode("add"); }}
-              >
+              <Button variant="default" size="sm" onClick={() => { setForm(EMPTY_FORM); setFormMode("add"); }}>
                 + 添加主机
               </Button>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => { setForm(EMPTY_FORM); setFormMode("quick"); }}
-              >
+              <Button variant="default" size="sm" onClick={() => { setForm(EMPTY_FORM); setFormMode("quick"); }}>
                 快速连接
               </Button>
-              <Button type="primary" size="small" onClick={handleImportConfig}>
+              <Button variant="default" size="sm" onClick={handleImportConfig}>
                 导入 SSH Config
               </Button>
             </div>
@@ -658,13 +616,7 @@ export default function TerminalSettingsTab({
                   >
                     <span className="toggle-arrow">▼</span>
                     {renamingGroup === groupName ? (
-                      <Input
-                        className="ssh-group-rename-input"
-                        autoFocus
-                        value={renameValue}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => {
+                      <Input className="ssh-group-rename-input" autoFocus value={renameValue} onClick={(e) => e.stopPropagation()} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
                             commitRenameGroup(groupName);
@@ -672,9 +624,7 @@ export default function TerminalSettingsTab({
                             e.preventDefault();
                             cancelRenameGroup();
                           }
-                        }}
-                        onBlur={() => commitRenameGroup(groupName)}
-                      />
+                        }} onBlur={() => commitRenameGroup(groupName)} />
                     ) : (
                       <span
                         className="ssh-group-name"
@@ -693,17 +643,10 @@ export default function TerminalSettingsTab({
                     )}
                     <span className="ssh-group-count">({hosts.length})</span>
                     {!isUngrouped && renamingGroup !== groupName && (
-                      <Button
-                        type="text"
-                        size="small"
-                        className="ssh-group-rename-btn"
-                        icon={<Icon name="Edit" size={12} />}
-                        onClick={(e) => {
+                      <Button variant="ghost" size="sm" className="ssh-group-rename-btn" onClick={(e) => {
                           e.stopPropagation();
                           startRenameGroup(groupName);
-                        }}
-                        title="重命名分组"
-                      />
+                        }} title="重命名分组"><Pencil size={12} /></Button>
                     )}
                   </div>
                   <div className={`ssh-group-hosts${collapsed ? " collapsed" : ""}`}>
@@ -719,48 +662,15 @@ export default function TerminalSettingsTab({
                             </span>
                           </div>
                           <div className="ssh-host-actions">
-                            <Button
-                              type="primary"
-                              size="small"
-                              onClick={() => onConnectSsh(host.id)}
-                            >
+                            <Button variant="default" size="sm" onClick={() => onConnectSsh(host.id)}>
                               连接
                             </Button>
-                            <Button
-                              type="text"
-                              size="small"
-                              className={`ssh-host-icon-btn test-btn ${status || ""}`}
-                              onClick={() => handleTestHost(host)}
-                              disabled={status === "testing"}
-                              title={status === "testing" ? "测试中" : status === "ok" ? "连接正常" : status === "fail" ? "连接失败" : "测试连接"}
-                            >
+                            <Button variant="ghost" size="sm" className={`ssh-host-icon-btn test-btn ${status || ""}`} onClick={() => handleTestHost(host)} disabled={status === "testing"} title={status === "testing" ? "测试中" : status === "ok" ? "连接正常" : status === "fail" ? "连接失败" : "测试连接"}>
                               {status === "testing" ? "···" : status === "ok" ? "✓" : status === "fail" ? "✗" : "测试"}
                             </Button>
-                            <Button
-                              type="text"
-                              size="small"
-                              className="ssh-host-icon-btn"
-                              icon={<Icon name="Edit" size={13} />}
-                              onClick={() => handleEditHost(host)}
-                              title="编辑"
-                            />
-                            <Button
-                              type="text"
-                              size="small"
-                              className="ssh-host-icon-btn"
-                              icon={<Icon icon={CopyIcon} size={13} />}
-                              onClick={() => handleDuplicateHost(host)}
-                              title="复制"
-                            />
-                            <Button
-                              type="default"
-                              size="small"
-                              danger
-                              className="ssh-host-icon-btn danger"
-                              icon={<Icon name="Trash" size={13} />}
-                              onClick={() => void handleDeleteHost(host.id)}
-                              title="删除"
-                            />
+                            <Button variant="ghost" size="sm" className="ssh-host-icon-btn" onClick={() => handleEditHost(host)} title="编辑"><Pencil size={13} /></Button>
+                            <Button variant="ghost" size="sm" className="ssh-host-icon-btn" onClick={() => handleDuplicateHost(host)} title="复制"><Copy size={16} /></Button>
+                            <Button variant="outline" size="sm" className="ssh-host-icon-btn danger" onClick={() => void handleDeleteHost(host.id)} title="删除"><Trash2 size={13} /></Button>
                           </div>
                         </div>
                       );
@@ -775,15 +685,11 @@ export default function TerminalSettingsTab({
         {activeSection === "credentials" && (
           <section className="settings-section">
             <div className="ssh-section-actions">
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => {
+              <Button variant="default" size="sm" onClick={() => {
                   setCredForm(EMPTY_CRED_FORM);
                   setEditingCredId(null);
                   setCredFormMode("add");
-                }}
-              >
+                }}>
                 + 添加凭据
               </Button>
             </div>
@@ -815,16 +721,9 @@ export default function TerminalSettingsTab({
                               <span className="ssh-credential-value-text">
                                 {revealedCreds[cred.id] ? cred.password : "••••••"}
                               </span>
-                              <Button
-                                type="text"
-                                size="small"
-                                className="ssh-credential-toggle"
-                                icon={<Icon name="Eye" size={13} />}
-                                onClick={() =>
+                              <Button variant="ghost" size="sm" className="ssh-credential-toggle" onClick={() =>
                                   setRevealedCreds((prev) => ({ ...prev, [cred.id]: !prev[cred.id] }))
-                                }
-                                title={revealedCreds[cred.id] ? "隐藏" : "显示"}
-                              />
+                                } title={revealedCreds[cred.id] ? "隐藏" : "显示"}><Eye size={13} /></Button>
                             </>
                           )}
                           {cred.privateKeyPath && (
@@ -837,23 +736,8 @@ export default function TerminalSettingsTab({
                         {cred.note && <div className="ssh-credential-note">{cred.note}</div>}
                       </div>
                       <div className="ssh-credential-actions">
-                        <Button
-                          type="text"
-                          size="small"
-                          className="ssh-host-icon-btn"
-                          icon={<Icon name="Edit" size={13} />}
-                          onClick={() => handleEditCred(cred)}
-                          title="编辑"
-                        />
-                        <Button
-                          type="default"
-                          size="small"
-                          danger
-                          className="ssh-host-icon-btn danger"
-                          icon={<Icon name="Trash" size={13} />}
-                          onClick={() => void handleDeleteCred(cred.id)}
-                          title="删除"
-                        />
+                        <Button variant="ghost" size="sm" className="ssh-host-icon-btn" onClick={() => handleEditCred(cred)} title="编辑"><Pencil size={13} /></Button>
+                        <Button variant="outline" size="sm" className="ssh-host-icon-btn danger" onClick={() => void handleDeleteCred(cred.id)} title="删除"><Trash2 size={13} /></Button>
                       </div>
                     </div>
                   );
@@ -868,7 +752,10 @@ export default function TerminalSettingsTab({
       </main>
 
       {formMode !== null && (
-        <Modal open title={formTitle} onClose={handleCancelForm} footer={null} typewriter={false} width={520} className="ssh-form-modal">
+        <Dialog open={true} onOpenChange={(next) => { if (!next) (handleCancelForm)(); }}>
+      <DialogContent className={"ssh-form-modal"} style={{ maxWidth: 520 }}>
+        <DialogHeader><DialogTitle>{formTitle}</DialogTitle></DialogHeader>
+        
           <Form
             form={hostFormApi}
             layout="vertical"
@@ -934,14 +821,7 @@ export default function TerminalSettingsTab({
                       ]}
                     />
                   </FormItem>
-                  <Button
-                    type="link"
-                    size="small"
-                    htmlType="button"
-                    className="ssh-form-cred-manage"
-                    onClick={() => setActiveSection("credentials")}
-                    title="去凭据 tab 管理"
-                  >
+                  <Button variant="link" size="sm" type="button" className="ssh-form-cred-manage" onClick={() => setActiveSection("credentials")} title="去凭据 tab 管理">
                     管理
                   </Button>
                 </div>
@@ -993,14 +873,7 @@ export default function TerminalSettingsTab({
                           ]}
                         />
                       </FormItem>
-                      <Button
-                        type="link"
-                        size="small"
-                        htmlType="button"
-                        className="ssh-form-cred-manage"
-                        onClick={() => setActiveSection("credentials")}
-                        title="去凭据 tab 管理"
-                      >
+                      <Button variant="link" size="sm" type="button" className="ssh-form-cred-manage" onClick={() => setActiveSection("credentials")} title="去凭据 tab 管理">
                         管理
                       </Button>
                     </div>
@@ -1009,50 +882,57 @@ export default function TerminalSettingsTab({
               )}
             </div>
             <div className="provider-modal-footer">
-              <Button type="primary" htmlType="button" onClick={handleCancelForm}>
+              <Button variant="default" type="button" onClick={handleCancelForm}>
                 取消
               </Button>
-              <Button type="primary" htmlType="submit">
+              <Button variant="default" type="submit">
                 {submitLabel}
               </Button>
             </div>
           </Form>
-        </Modal>
+        
+        
+      </DialogContent>
+    </Dialog>
       )}
 
       {showAddGroupModal && (
-        <Modal open title="新增分组" onClose={cancelAddGroup} footer={null} typewriter={false} className="ssh-form-modal">
+        <Dialog open={true} onOpenChange={(next) => { if (!next) (cancelAddGroup)(); }}>
+      <DialogContent className={"ssh-form-modal"}>
+        <DialogHeader><DialogTitle>{"新增分组"}</DialogTitle></DialogHeader>
+        
           <Form layout="vertical" colon={false} requiredMark onFinish={() => commitAddGroup()}>
             <FormItem
               label="分组名称"
               name="groupName"
               rules={[{ required: true, whitespace: true, message: "请输入分组名称" }]}
             >
-              <Input
-                type="text"
-                autoFocus
-                placeholder="例如：生产环境"
-                onChange={(e) => {
+              <Input type="text" autoFocus placeholder="例如：生产环境" onChange={(e) => {
                   setAddGroupName(e.target.value);
                   if (addGroupError) setAddGroupError("");
-                }}
-              />
+                }} />
             </FormItem>
             {addGroupError && <div className="ssh-form-hint ssh-form-error">{addGroupError}</div>}
             <div className="provider-modal-footer">
-              <Button type="primary" htmlType="button" onClick={cancelAddGroup}>
+              <Button variant="default" type="button" onClick={cancelAddGroup}>
                 取消
               </Button>
-              <Button type="primary" htmlType="submit">
+              <Button variant="default" type="submit">
                 创建
               </Button>
             </div>
           </Form>
-        </Modal>
+        
+        
+      </DialogContent>
+    </Dialog>
       )}
 
       {credFormMode !== null && (
-        <Modal open title={credTitle} onClose={handleCancelCredForm} footer={null} typewriter={false} width={520} className="ssh-form-modal">
+        <Dialog open={true} onOpenChange={(next) => { if (!next) (handleCancelCredForm)(); }}>
+      <DialogContent className={"ssh-form-modal"} style={{ maxWidth: 520 }}>
+        <DialogHeader><DialogTitle>{credTitle}</DialogTitle></DialogHeader>
+        
           <Form
             form={credFormApi}
             layout="vertical"
@@ -1089,14 +969,7 @@ export default function TerminalSettingsTab({
                 >
                   <Input type={showCredPassword ? "text" : "password"} placeholder="（可选）留空则不使用密码" />
                 </FormItem>
-                <Button
-                  type="link"
-                  size="small"
-                  htmlType="button"
-                  className="ssh-form-cred-manage"
-                  onClick={() => setShowCredPassword((v) => !v)}
-                  title={showCredPassword ? "隐藏" : "显示"}
-                >
+                <Button variant="link" size="sm" type="button" className="ssh-form-cred-manage" onClick={() => setShowCredPassword((v) => !v)} title={showCredPassword ? "隐藏" : "显示"}>
                   {showCredPassword ? "隐藏" : "显示"}
                 </Button>
               </div>
@@ -1104,7 +977,7 @@ export default function TerminalSettingsTab({
                 <FormItem label="私钥路径" name="privateKeyPath" className="ssh-form-cred-item">
                   <Input type="text" placeholder="（可选）如 ~/.ssh/id_ed25519" />
                 </FormItem>
-                <Button type="link" size="small" htmlType="button" className="ssh-form-cred-manage" onClick={handlePickCredKeyFile}>
+                <Button variant="link" size="sm" type="button" className="ssh-form-cred-manage" onClick={handlePickCredKeyFile}>
                   选择
                 </Button>
               </div>
@@ -1116,15 +989,18 @@ export default function TerminalSettingsTab({
               </div>
             </div>
             <div className="provider-modal-footer">
-              <Button type="primary" htmlType="button" onClick={handleCancelCredForm}>
+              <Button variant="default" type="button" onClick={handleCancelCredForm}>
                 取消
               </Button>
-              <Button type="primary" htmlType="submit">
+              <Button variant="default" type="submit">
                 {credFormMode === "edit" ? "保存" : "添加"}
               </Button>
             </div>
           </Form>
-        </Modal>
+        
+        
+      </DialogContent>
+    </Dialog>
       )}
       {confirmDialog}
     </div>

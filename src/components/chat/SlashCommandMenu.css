@@ -8,13 +8,13 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 6px 0;
-  background: rgba(248, 244, 232, 0.98);
+  background: color-mix(in srgb, var(--ink-750) 98%, transparent);
   backdrop-filter: blur(16px);
   border: 1px solid var(--hairline-strong);
   border-radius: 14px;
   box-shadow:
-    0 16px 40px rgba(121, 79, 39, 0.25),
-    inset 0 1px 0 rgba(121, 79, 39, 0.04);
+    0 16px 40px color-mix(in srgb, var(--bone-400) 25%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--bone-400) 4%, transparent);
   z-index: 1000;
   animation: slash-menu-in 0.14s cubic-bezier(0.16, 1, 0.3, 1);
 }

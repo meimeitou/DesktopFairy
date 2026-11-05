@@ -1,0 +1,72 @@
+:root {
+  /* Cherry dark surfaces, addressed by the names panel CSS already uses. */
+
+  --ink-900: oklch(0.209 0 0);
+  --ink-850: oklch(0.191 0 0);
+  --ink-800: #2f2f2f;
+  --ink-750: oklch(0.2393 0 0);
+  --ink-700: oklch(0.22 0 0);
+  --ink-600: oklch(0.27 0 0);
+  --ink-500: oklch(0.32 0 0);
+
+  --bone-100: oklch(0.931 0 0);
+  --bone-200: oklch(0.87 0 0);
+  --bone-300: oklch(0.78 0 0);
+  --bone-400: oklch(0.708 0 0);
+  --bone-500: oklch(0.62 0 0);
+  --bone-600: oklch(0.559 0 0);
+
+  --persimmon: var(--cs-brand-500);
+  --persimmon-bright: var(--cs-brand-400);
+  --persimmon-soft: color-mix(in srgb, var(--persimmon) 14%, transparent);
+  --persimmon-softer: color-mix(in srgb, var(--persimmon) 9%, transparent);
+  --persimmon-focus: color-mix(in srgb, var(--persimmon) 45%, transparent);
+
+  --amber: var(--cs-warning);
+  --amber-soft: color-mix(in srgb, var(--amber) 15%, transparent);
+
+  --rust: var(--cs-red-400);
+  --rust-bright: var(--cs-red-300);
+  --rust-soft: color-mix(in srgb, var(--rust) 14%, transparent);
+
+  --hairline: oklch(1 0 0 / 0.1);
+  --hairline-strong: oklch(1 0 0 / 0.2);
+  --hairline-bold: oklch(1 0 0 / 0.3);
+
+  --field-bg: #2f2f2f;
+  --field-text: oklch(0.931 0 0);
+  --field-shadow: oklch(0 0 0 / 0.45);
+  --capsule-bg: oklch(0.2393 0 0);
+  --capsule-hover: oklch(0.28 0 0);
+  --code-bg: #323232;
+  --code-fg: #ededed;
+  --code-cursor: #3ecf8e;
+  --overlay: oklch(0 0 0 / 0.55);
+  --shadow-ink: #000;
+
+  --radius-sm: 6px;
+  --radius-base: 8px;
+  --radius-lg: 12px;
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 250ms;
+  --ease-island: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Names still used by panel CSS, pointed at the Cherry dark tokens above. */
+  --animal-bg-color: var(--ink-900);
+  --animal-bg-color-secondary: var(--ink-800);
+  --animal-border: var(--hairline);
+  --animal-text-color-secondary: var(--bone-400);
+  --animal-text-secondary: var(--bone-400);
+  --animal-text-tertiary: var(--bone-500);
+  --animal-primary-color: var(--persimmon);
+  --animal-primary-color-hover: var(--persimmon-bright);
+  --animal-primary-color-active: var(--cs-brand-600);
+  --animal-primary-color-bg: var(--persimmon-soft);
+  --animal-success-color: var(--cs-success);
+  --animal-success-color-hover: var(--cs-green-400);
+  --animal-success-color-active: var(--cs-green-300);
+  --animal-success-color-bg: var(--persimmon-soft);
+  --animal-error-color: var(--rust);
+  --animal-shadow-lg: 0 16px 40px oklch(0 0 0 / 0.45);
+}

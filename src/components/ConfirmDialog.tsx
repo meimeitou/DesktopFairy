@@ -1,4 +1,5 @@
-import { Button, Modal } from "animal-island-ui";
+import { ConfirmDialog as CherryConfirmDialog } from "@cherrystudio/ui";
+import type { ReactNode } from "react";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -6,12 +7,12 @@ interface ConfirmDialogProps {
   /** 确认按钮文案，默认"确定" */
   okText?: string;
   danger?: boolean;
-  children?: React.ReactNode;
+  children?: ReactNode;
   onOk: () => void;
   onClose: () => void;
 }
 
-/** 库 Modal 版 window.confirm：标题 + 说明 + 确定/取消。 */
+/** Cherry confirm dialog: title, explanation, confirm and cancel. */
 export default function ConfirmDialog({
   open,
   title,
@@ -22,21 +23,17 @@ export default function ConfirmDialog({
   onClose,
 }: ConfirmDialogProps) {
   return (
-    <Modal
+    <CherryConfirmDialog
       open={open}
       title={title}
-      onClose={onClose}
-      typewriter={false}
-      footer={
-        <>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" danger={danger} onClick={onOk}>
-            {okText}
-          </Button>
-        </>
-      }
-    >
-      {children}
-    </Modal>
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      confirmText={okText}
+      cancelText="取消"
+      destructive={danger}
+      onConfirm={onOk}
+      content={children}
+    />
   );
 }

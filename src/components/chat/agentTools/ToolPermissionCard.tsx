@@ -1,4 +1,6 @@
-import { Button, Icon } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import { Check } from "lucide-react";
+
 import type { ChatMsg } from "../../../shared/chatMessages";
 import { formatToolSummary, getToolDisplayName } from "../../../shared/toolCallDisplay";
 import { getToolCommandLine } from "./toolUtils";
@@ -53,32 +55,14 @@ export default function ToolPermissionCard({
       </div>
       <div className="agent-tool-permission-actions">
         {!msg.toolForce && (
-          <Button
-            type="default"
-            size="small"
-            disabled={submitting || !canApprove}
-            onClick={() => msg.toolApprovalId && onAlwaysAllow?.(msg.toolApprovalId)}
-            title="批准本次并切换为全自动模式，后续工具调用不再询问"
-            icon={<Icon name="Check" size={12} />}
-          >
+          <Button variant="outline" size="sm" disabled={submitting || !canApprove} onClick={() => msg.toolApprovalId && onAlwaysAllow?.(msg.toolApprovalId)} title="批准本次并切换为全自动模式，后续工具调用不再询问"><Check size={12} />
             {alwaysAllowLabel}
           </Button>
         )}
-        <Button
-          type="default"
-          size="small"
-          danger
-          disabled={submitting || !msg.toolApprovalId}
-          onClick={() => msg.toolApprovalId && onDeny?.(msg.toolApprovalId)}
-        >
+        <Button variant="destructive" size="sm" disabled={submitting || !msg.toolApprovalId} onClick={() => msg.toolApprovalId && onDeny?.(msg.toolApprovalId)}>
           拒绝
         </Button>
-        <Button
-          type="primary"
-          size="small"
-          disabled={submitting || !canApprove}
-          onClick={() => msg.toolApprovalId && onApprove?.(msg.toolApprovalId)}
-        >
+        <Button variant="default" size="sm" disabled={submitting || !canApprove} onClick={() => msg.toolApprovalId && onApprove?.(msg.toolApprovalId)}>
           允许
         </Button>
       </div>

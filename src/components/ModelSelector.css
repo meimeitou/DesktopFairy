@@ -36,7 +36,7 @@
   text-align: left;
   padding: 4px 12px;
   border-radius: 10px;
-  background: #fff;
+  background: var(--field-bg);
 }
 
 /* Library Button wraps children in a bare <span> — make it a flex link in the
@@ -51,7 +51,7 @@
 }
 
 .model-selector-trigger:hover:not(:disabled) {
-  background: #fffdf7;
+  background: var(--ink-750);
 }
 
 .model-selector-trigger:disabled {
@@ -71,7 +71,7 @@
    .field input / df-select border syntax (transparent borders vanish on
    flattened transparent sections). */
 .model-selector-trigger.variant-field {
-  background: #faf8f3;
+  background: var(--capsule-bg);
   border: 1px solid var(--hairline);
   border-radius: 12px;
   padding: 6px 14px;
@@ -79,7 +79,7 @@
 
 .model-selector-trigger.variant-field:hover:not(:disabled) {
   border-color: var(--hairline-strong);
-  background: #fdfcf9;
+  background: var(--capsule-hover);
 }
 
 
@@ -128,7 +128,7 @@
   background: var(--ink-850);
   border: 1px solid var(--hairline-strong);
   border-radius: 10px;
-  box-shadow: 0 8px 20px rgba(121, 79, 39, 0.18);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--bone-400) 18%, transparent);
   z-index: 1000;
   overflow: hidden;
   animation: model-selector-panel-in 0.12s ease;

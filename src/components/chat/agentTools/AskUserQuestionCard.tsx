@@ -1,5 +1,7 @@
+import { Button, Input } from "@cherrystudio/ui";
+import { Checkbox, Radio } from "../../Choice";
 import { useMemo, useState } from "react";
-import { Button, Checkbox, Input, Radio } from "animal-island-ui";
+
 import type { ChatMsg } from "../../../shared/chatMessages";
 import { getToolDisplayName } from "../../../shared/toolCallDisplay";
 import {
@@ -159,34 +161,21 @@ export default function AskUserQuestionCard({
                 />
               )}
               {otherSelected[q.question] && (
-                <Input
-                  className="agent-tool-ask-other-input"
-                  type="text"
-                  value={otherText[q.question] || ""}
-                  disabled={submitting || submitted || !answerReady}
-                  placeholder="请输入你的回答…"
-                  onChange={(e) =>
+                <Input className="agent-tool-ask-other-input" type="text" value={otherText[q.question] || ""} disabled={submitting || submitted || !answerReady} placeholder="请输入你的回答…" onChange={(e) =>
                     setOtherText((prev) => ({ ...prev, [q.question]: e.target.value }))
-                  }
-                  onKeyDown={(e) => {
+                  } onKeyDown={(e) => {
                     if (e.key === "Enter" && canSubmit) {
                       e.preventDefault();
                       handleSubmit();
                     }
-                  }}
-                />
+                  }} />
               )}
             </div>
           ))
         )}
       </div>
       <div className="agent-tool-ask-actions">
-        <Button
-          type="primary"
-          size="small"
-          disabled={submitting || submitted || !canSubmit}
-          onClick={handleSubmit}
-        >
+        <Button variant="default" size="sm" disabled={submitting || submitted || !canSubmit} onClick={handleSubmit}>
           {submitted ? "已提交" : answerReady ? "提交回答" : "等待工具就绪…"}
         </Button>
       </div>

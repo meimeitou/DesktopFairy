@@ -1,4 +1,6 @@
-import { Button, Icon } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+import { Plus } from "lucide-react";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./BrowserPage.css";
 
@@ -204,13 +206,7 @@ export default function BrowserPage() {
       <header className="browser-topbar">
         <div className="browser-tabstrip">
           {tabs.map((tab) => (
-            <Button
-              key={tab.id}
-              type="text"
-              className={`browser-tab${tab.id === activeTabId ? " active" : ""}`}
-              onClick={() => setActiveTabId(tab.id)}
-              title={tab.url}
-            >
+            <Button variant="ghost" key={tab.id} className={`browser-tab${tab.id === activeTabId ? " active" : ""}`} onClick={() => setActiveTabId(tab.id)} title={tab.url}>
               <span className="browser-tab-label">{tabLabel(tab)}</span>
               <span
                 className="browser-tab-close"
@@ -226,14 +222,7 @@ export default function BrowserPage() {
               </span>
             </Button>
           ))}
-          <Button
-            type="text"
-            size="small"
-            className="browser-tab-add"
-            onClick={handleNewTab}
-            title="新标签页"
-            icon={<Icon name="Plus" size={16} />}
-          />
+          <Button variant="ghost" size="sm" className="browser-tab-add" onClick={handleNewTab} title="新标签页"><Plus size={16} /></Button>
         </div>
         <div className="browser-topbar-drag" aria-hidden />
       </header>
@@ -249,24 +238,10 @@ export default function BrowserPage() {
           onFocus={(e) => e.target.select()}
           onClick={(e) => e.currentTarget.select()}
         />
-        <Button
-          type="text"
-          size="small"
-          className="browser-url-action"
-          onClick={handleCopyUrl}
-          disabled={!displayUrl}
-          title="复制链接"
-        >
+        <Button variant="ghost" size="sm" className="browser-url-action" onClick={handleCopyUrl} disabled={!displayUrl} title="复制链接">
           {copied ? "已复制" : "复制"}
         </Button>
-        <Button
-          type="text"
-          size="small"
-          className="browser-url-action"
-          onClick={handleOpenExternal}
-          disabled={!displayUrl}
-          title="在默认浏览器打开"
-        >
+        <Button variant="ghost" size="sm" className="browser-url-action" onClick={handleOpenExternal} disabled={!displayUrl} title="在默认浏览器打开">
           浏览器打开
         </Button>
       </div>

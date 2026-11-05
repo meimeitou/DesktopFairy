@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { useState, useRef, useEffect, useId } from "react";
 import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import "./ReasoningEffortSelector.css";
@@ -55,18 +56,7 @@ export default function ReasoningEffortSelector({ value, onChange, disabled = fa
 
   return (
     <div className="reasoning-effort-selector" ref={hostRef}>
-      <Button
-        type="text"
-        size="small"
-        className={`reasoning-effort-trigger${visible ? " open" : ""}`}
-        onClick={() => setOpen((previous) => !previous)}
-        disabled={disabled}
-        title={`思考强度：${LABELS[value]}`}
-        aria-label={`思考强度：${LABELS[value]}`}
-        aria-haspopup="dialog"
-        aria-expanded={visible}
-        aria-controls={visible ? panelId : undefined}
-      >
+      <Button variant="ghost" size="sm" className={`reasoning-effort-trigger${visible ? " open" : ""}`} onClick={() => setOpen((previous) => !previous)} disabled={disabled} title={`思考强度：${LABELS[value]}`} aria-label={`思考强度：${LABELS[value]}`} aria-haspopup="dialog" aria-expanded={visible} aria-controls={visible ? panelId : undefined}>
         {LABELS[value]}
       </Button>
       {visible && (

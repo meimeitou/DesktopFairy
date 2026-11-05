@@ -5,7 +5,7 @@
 .manage-models-count {
   margin-left: 6px;
   padding: 1px 6px;
-  background: rgba(25, 200, 185, 0.35);
+  background: color-mix(in srgb, var(--persimmon) 35%, transparent);
   border-radius: 10px;
   font-size: 11px;
   color: var(--bone-100);
@@ -122,20 +122,20 @@
 
 .manage-models-kind.kind-chat {
   color: var(--bone-300);
-  background: rgba(121, 79, 39, 0.08);
+  background: color-mix(in srgb, var(--bone-400) 8%, transparent);
   border-color: var(--hairline-strong);
 }
 
 .manage-models-kind.kind-embedding {
   color: var(--amber);
   background: var(--amber-soft);
-  border-color: rgba(232, 184, 74, 0.28);
+  border-color: color-mix(in srgb, var(--amber) 28%, transparent);
 }
 
 .manage-models-kind.kind-rerank {
   color: var(--persimmon-bright);
   background: var(--persimmon-softer);
-  border-color: rgba(25, 200, 185, 0.28);
+  border-color: color-mix(in srgb, var(--persimmon) 28%, transparent);
 }
 
 .manage-models-empty {

@@ -1,4 +1,5 @@
-import { Button } from "animal-island-ui";
+import { Button } from "@cherrystudio/ui";
+
 import { useState } from "react";
 import type { KnowledgeCitation } from "../../shared/knowledge";
 import "./KnowledgeCitations.css";
@@ -18,17 +19,11 @@ export function KnowledgeCitations({
         const key = `${c.itemId}-${i}`;
         return (
           <div key={key} className="kb-citation">
-            <Button
-              type="link"
-              size="small"
-              className="kb-citation-btn"
-              onClick={() => setOpenId(openId === key ? null : key)}
-              title={
+            <Button variant="link" size="sm" className="kb-citation-btn" onClick={() => setOpenId(openId === key ? null : key)} title={
                 c.kind === "semi_structured"
                   ? "半结构化文件（全文注入）"
                   : "向量片段"
-              }
-            >
+              }>
               {c.kind === "semi_structured" ? "📄 " : ""}
               {c.baseName} / {c.sourceName}
             </Button>
@@ -45,7 +40,7 @@ export function KnowledgeCitations({
                   <pre>{c.text}</pre>
                 )}
                 {onOpen && (
-                  <Button type="text" onClick={() => onOpen(c)}>
+                  <Button variant="ghost" onClick={() => onOpen(c)}>
                     在知识库中查看
                   </Button>
                 )}

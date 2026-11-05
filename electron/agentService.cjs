@@ -127,8 +127,13 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
     );
   }
   parts.push(
-    '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。若需指向某条证据，用简短说明即可（如「见上方 WebSearch 结果 #2」）。'
+    '## 工具输出展示\n\n工具执行的原始证据（搜索结果、文件内容、命令输出等）会在界面的「工具调用」历史中展示给用户。你的回复只需给出结论、分析与必要引用；**禁止**在回复末尾重复粘贴完整搜索结果列表、文件原文或大段命令输出。'
   );
+  if (enabledToolNames.includes('WebSearch') || enabledToolNames.includes('WebFetch')) {
+    parts.push(
+      '## 网络来源引用\n\n本轮使用了网络搜索/抓取时，回复正文中在对应结论后标注来源序号（如「……发布于 2024 年[1]」）。序号与本轮 WebSearch/WebFetch 结果的出现顺序一致（第 1 次调用的第 1 条结果为 [1]，依次累加）。界面会在回复下方按同一顺序生成可点击的来源列表，你**不要**自己罗列 URL 或链接，只写 [n] 序号即可。没有使用网络工具时不要标序号。'
+    );
+  }
   if (enabledToolNames.includes('AskUserQuestion')) {
     parts.push(
       '## 向用户确认（AskUserQuestion）\n\n' +
