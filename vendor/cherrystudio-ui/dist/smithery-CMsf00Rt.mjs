@@ -1,0 +1,56 @@
+import { n as __exportAll } from "./rolldown-runtime-B000p9w_.mjs";
+import { r as AvatarFallback, s as cn, t as Avatar } from "./avatar-D3NkEc4-.mjs";
+import { jsx } from "react/jsx-runtime";
+//#region src/components/icons/providers/smithery/light.tsx
+const SmitheryLight = (props) => /* @__PURE__ */ jsx("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 120 120",
+	...props,
+	children: /* @__PURE__ */ jsx("path", {
+		fill: "#FF5601",
+		d: "M43.8966 50.9616H31V58.0079C31 63.5458 35.4928 68.0384 41.0306 68.0384H48.0769V55.1419C48.0769 52.8363 46.2023 50.9616 43.8966 50.9616ZM51.4378 55.1419V68.0384H64.3344C66.6399 68.0384 68.5147 66.1637 68.5147 63.8581V50.9616H55.6182C53.3125 50.9616 51.4378 52.8363 51.4378 55.1419ZM78.9341 50.9616H71.8876V63.8581C71.8876 66.1637 73.7624 68.0384 76.0682 68.0384H88.9647V59.8288C88.9647 54.2908 84.4718 50.9724 78.9341 50.9724V50.9616ZM31 41.211V47.6H43.8966C46.2023 47.6 48.0769 45.7253 48.0769 43.4197V27C38.9943 27.0646 31.0108 31.5358 31 41.211ZM51.4378 43.4196C51.4378 45.7252 53.3125 47.5999 55.6182 47.5999H68.5147V30.5445C62.212 29.5857 58.9258 27.5386 51.4378 27.0753V43.4088 43.4196ZM75.5616 31.0402C74.2256 31.0402 73.0084 30.9971 71.8876 30.9216V47.5999H78.9341C84.4718 47.5999 88.9647 43.1072 88.9647 37.5693V27.0538C85.8295 29.5102 81.3798 31.0402 75.5616 31.0402ZM31 81.4305V91.9461C34.1352 89.4896 38.585 87.9597 44.4029 87.9597 45.739 87.9597 46.9564 88.0027 48.0769 88.089V71.4108H41.0306C35.4928 71.4108 31 75.9034 31 81.4414V81.4305ZM64.3344 71.4108H51.4378V88.4552C57.7407 89.4142 61.0268 91.4613 68.5147 91.9241V75.5911C68.5147 73.2852 66.6399 71.4108 64.3344 71.4108ZM71.8876 75.5803V92C80.9595 91.9355 88.9322 87.464 88.9647 77.8104V71.4H76.0682C73.7624 71.4 71.8876 73.2748 71.8876 75.5803Z"
+	})
+});
+//#endregion
+//#region src/components/icons/providers/smithery/avatar.tsx
+function SmitheryAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ jsx(Avatar, {
+		className: cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ jsx(AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: /* @__PURE__ */ jsx(SmitheryLight, { style: {
+				width: size,
+				height: size
+			} })
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/smithery/index.tsx
+var smithery_exports = /* @__PURE__ */ __exportAll({
+	SmitheryIcon: () => SmitheryIcon,
+	default: () => SmitheryIcon
+});
+const Smithery = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ jsx(SmitheryLight, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ jsx(SmitheryLight, {
+		...props,
+		className
+	});
+};
+const SmitheryIcon = /*#__PURE__*/ Object.assign(Smithery, {
+	Avatar: SmitheryAvatar,
+	colorPrimary: "#FF5601"
+});
+//#endregion
+export { smithery_exports as n, SmitheryIcon as t };

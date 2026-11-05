@@ -1,0 +1,94 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/providers/openrouter/dark.tsx
+const OpenrouterDark = (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	viewBox: "-80.28 -134.13 561.96 561.96",
+	width: "1em",
+	height: "1em",
+	...props,
+	children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+		d: "M303.9475,17.19926c42.79734,0,77.48933,34.69327,77.48933,77.48933s-34.69199,77.48933-77.48933,77.48933l76.86166,76.86244c9.76367,9.76313,2.84903,26.45667-10.95697,26.45667h-220.88335c-71.32686,0-129.14889-57.82202-129.14889-129.14889S77.64197,17.19926,148.96884,17.19926h154.97866ZM148.96884,68.85881c-42.79607,0-77.48933,34.69327-77.48933,77.48933s34.69327,77.48933,77.48933,77.48933,77.48933-34.69327,77.48933-77.48933-34.69327-77.48933-77.48933-77.48933Z",
+		style: { fill: "#c8ff00" }
+	})
+});
+//#endregion
+//#region src/components/icons/providers/openrouter/light.tsx
+const OpenrouterLight = (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	viewBox: "-80.28 -134.13 561.96 561.96",
+	width: "1em",
+	height: "1em",
+	...props,
+	children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+		d: "M303.9475,17.19926c42.79734,0,77.48933,34.69327,77.48933,77.48933s-34.69199,77.48933-77.48933,77.48933l76.86166,76.86244c9.76367,9.76313,2.84903,26.45667-10.95697,26.45667h-220.88335c-71.32686,0-129.14889-57.82202-129.14889-129.14889S77.64197,17.19926,148.96884,17.19926h154.97866ZM148.96884,68.85881c-42.79607,0-77.48933,34.69327-77.48933,77.48933s34.69327,77.48933,77.48933,77.48933,77.48933-34.69327,77.48933-77.48933-34.69327-77.48933-77.48933-77.48933Z",
+		style: { fill: "#7624f4" }
+	})
+});
+//#endregion
+//#region src/components/icons/providers/openrouter/avatar.tsx
+function OpenrouterAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenrouterLight, {
+				className: "dark:hidden",
+				style: {
+					width: size,
+					height: size
+				}
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenrouterDark, {
+				className: "hidden dark:block",
+				style: {
+					width: size,
+					height: size
+				}
+			})]
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/openrouter/index.tsx
+var openrouter_exports = /* @__PURE__ */ require_avatar.__exportAll({
+	OpenrouterIcon: () => OpenrouterIcon,
+	default: () => OpenrouterIcon
+});
+const Openrouter = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenrouterLight, {
+		...props,
+		className
+	});
+	if (variant === "dark") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenrouterDark, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenrouterLight, {
+		className: require_avatar.cn("dark:hidden", className),
+		...props
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OpenrouterDark, {
+		className: require_avatar.cn("hidden dark:block", className),
+		...props
+	})] });
+};
+const OpenrouterIcon = /*#__PURE__*/ Object.assign(Openrouter, {
+	Avatar: OpenrouterAvatar,
+	colorPrimary: "#000000"
+});
+//#endregion
+Object.defineProperty(exports, "OpenrouterIcon", {
+	enumerable: true,
+	get: function() {
+		return OpenrouterIcon;
+	}
+});
+Object.defineProperty(exports, "openrouter_exports", {
+	enumerable: true,
+	get: function() {
+		return openrouter_exports;
+	}
+});

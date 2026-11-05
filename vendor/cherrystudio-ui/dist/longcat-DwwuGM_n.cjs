@@ -1,0 +1,173 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react = require("react");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/providers/longcat/dark.tsx
+const LongcatDark = (props) => {
+	const iconId = (0, react.useId)();
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+		xmlns: "http://www.w3.org/2000/svg",
+		width: "1em",
+		height: "1em",
+		fill: "none",
+		viewBox: "0 0 120 120",
+		...props,
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("mask", {
+			id: `${iconId}-longcatdark__a`,
+			width: 65,
+			height: 65,
+			x: 27,
+			y: 27,
+			maskUnits: "userSpaceOnUse",
+			style: { maskType: "luminance" },
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+				fill: "#fff",
+				d: "M92 27H27V92H92V27Z"
+			})
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+			mask: `url(#${iconId}-longcatdark__a)`,
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("mask", {
+				id: `${iconId}-longcatdark__b`,
+				width: 65,
+				height: 65,
+				x: 27,
+				y: 27,
+				maskUnits: "userSpaceOnUse",
+				style: { maskType: "luminance" },
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+					fill: "#fff",
+					d: "M92 27H27V92H92V27Z"
+				})
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+				mask: `url(#${iconId}-longcatdark__b)`,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+					fill: "#29E154",
+					fillRule: "evenodd",
+					d: "M28.3718 80.8499C28.1602 80.8502 27.9515 80.8014 27.7618 80.7075C27.5722 80.6137 27.4068 80.4772 27.2786 80.3091C27.1504 80.1406 27.0628 79.9451 27.0227 79.7371C26.9826 79.5293 26.991 79.3151 27.0474 79.1112L38.6174 37.1429C38.7322 36.7257 38.9439 36.3416 39.2355 36.0219C39.527 35.7022 39.89 35.456 40.2948 35.3033C40.6997 35.1506 41.1349 35.0959 41.5649 35.1436C41.995 35.1912 42.4077 35.34 42.7693 35.5775L57.9955 45.5632C58.4423 45.8557 58.9645 46.0116 59.4986 46.0116C60.0327 46.0116 60.5551 45.8557 61.0018 45.5632L76.2903 35.5721C76.6521 35.3351 77.0651 35.1871 77.4949 35.14C77.925 35.093 78.3602 35.1484 78.7646 35.3015C79.1692 35.4547 79.5319 35.7013 79.823 36.0214C80.1139 36.3414 80.3251 36.7257 80.4394 37.1429L91.9501 79.1139C92.0061 79.3178 92.0144 79.5318 91.9736 79.7395C91.9328 79.947 91.8451 80.1422 91.7166 80.3101C91.5881 80.4778 91.4226 80.6137 91.2329 80.7069C91.0432 80.8 90.8346 80.8483 90.6229 80.8472H75.9382C78.6115 77.7497 80.0825 73.7942 80.0819 69.7024V69.223C80.0817 65.2195 78.6254 61.3527 75.9843 58.3437L74.0965 48.8782C74.0581 48.6805 73.97 48.4958 73.8405 48.3416C73.7111 48.1874 73.5446 48.0686 73.3566 47.9966C73.1686 47.9245 72.9652 47.9014 72.7659 47.9297C72.5665 47.9579 72.3775 48.0363 72.2169 48.1577L65.1048 53.4904C64.8549 53.678 64.565 53.8052 64.2577 53.862C63.9503 53.9188 63.6343 53.9038 63.3336 53.8182C60.8263 53.1017 58.1683 53.1017 55.6609 53.8182C55.3608 53.9038 55.045 53.9188 54.7382 53.8619C54.4313 53.8051 54.1418 53.678 53.8924 53.4904L46.7749 48.1523C46.6145 48.0325 46.4261 47.9555 46.2277 47.9287C46.0293 47.9018 45.8273 47.926 45.6408 47.9989C45.4544 48.0719 45.2895 48.1911 45.1619 48.3454C45.0343 48.4997 44.9482 48.684 44.9115 48.8808L43.0834 58.7715C40.4116 61.4878 38.9145 65.1451 38.9153 68.9549V69.8568C38.9153 73.8489 40.3426 77.711 42.9453 80.7443L43.032 80.8472L28.3718 80.8499Z",
+					clipRule: "evenodd"
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+					fill: "#fff",
+					d: "M51.95 72.6167H56.0666V63.013H52.5729L51.95 72.6167ZM67.0436 72.6167H62.9269V63.013H66.4206L67.0436 72.6167Z"
+				})]
+			})]
+		})]
+	});
+};
+//#endregion
+//#region src/components/icons/providers/longcat/light.tsx
+const LongcatLight = (props) => {
+	const iconId = (0, react.useId)();
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+		xmlns: "http://www.w3.org/2000/svg",
+		width: "1em",
+		height: "1em",
+		fill: "none",
+		viewBox: "0 0 120 120",
+		...props,
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("mask", {
+			id: `${iconId}-longcatlight__a`,
+			width: 65,
+			height: 65,
+			x: 27,
+			y: 27,
+			maskUnits: "userSpaceOnUse",
+			style: { maskType: "luminance" },
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+				fill: "#fff",
+				d: "M92 27H27V92H92V27Z"
+			})
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+			mask: `url(#${iconId}-longcatlight__a)`,
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("mask", {
+				id: `${iconId}-longcatlight__b`,
+				width: 65,
+				height: 65,
+				x: 27,
+				y: 27,
+				maskUnits: "userSpaceOnUse",
+				style: { maskType: "luminance" },
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+					fill: "#fff",
+					d: "M92 27H27V92H92V27Z"
+				})
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+				mask: `url(#${iconId}-longcatlight__b)`,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+					fill: "#29E154",
+					fillRule: "evenodd",
+					d: "M28.3718 80.8499C28.1602 80.8502 27.9515 80.8014 27.7618 80.7075C27.5722 80.6137 27.4068 80.4772 27.2786 80.3091C27.1504 80.1406 27.0628 79.9451 27.0227 79.7371C26.9826 79.5293 26.991 79.3151 27.0474 79.1112L38.6174 37.1429C38.7322 36.7257 38.9439 36.3416 39.2355 36.0219C39.527 35.7022 39.89 35.456 40.2948 35.3033C40.6997 35.1506 41.1349 35.0959 41.5649 35.1436C41.995 35.1912 42.4077 35.34 42.7693 35.5775L57.9955 45.5632C58.4423 45.8557 58.9645 46.0116 59.4986 46.0116C60.0327 46.0116 60.5551 45.8557 61.0018 45.5632L76.2903 35.5721C76.6521 35.3351 77.0651 35.1871 77.4949 35.14C77.925 35.093 78.3602 35.1484 78.7646 35.3015C79.1692 35.4547 79.5319 35.7013 79.823 36.0214C80.1139 36.3414 80.3251 36.7257 80.4394 37.1429L91.9501 79.1139C92.0061 79.3178 92.0144 79.5318 91.9736 79.7395C91.9328 79.947 91.8451 80.1422 91.7166 80.3101C91.5881 80.4778 91.4226 80.6137 91.2329 80.7069C91.0432 80.8 90.8346 80.8483 90.6229 80.8472H75.9382C78.6115 77.7497 80.0825 73.7942 80.0819 69.7024V69.223C80.0817 65.2195 78.6254 61.3527 75.9843 58.3437L74.0965 48.8782C74.0581 48.6805 73.97 48.4958 73.8405 48.3416C73.7111 48.1874 73.5446 48.0686 73.3566 47.9966C73.1686 47.9245 72.9652 47.9014 72.7659 47.9297C72.5665 47.9579 72.3775 48.0363 72.2169 48.1577L65.1048 53.4904C64.8549 53.678 64.565 53.8052 64.2577 53.862C63.9503 53.9188 63.6343 53.9038 63.3336 53.8182C60.8263 53.1017 58.1683 53.1017 55.6609 53.8182C55.3608 53.9038 55.045 53.9188 54.7382 53.8619C54.4313 53.8051 54.1418 53.678 53.8924 53.4904L46.7749 48.1523C46.6145 48.0325 46.4261 47.9555 46.2277 47.9287C46.0293 47.9018 45.8273 47.926 45.6408 47.9989C45.4544 48.0719 45.2895 48.1911 45.1619 48.3454C45.0343 48.4997 44.9482 48.684 44.9115 48.8808L43.0834 58.7715C40.4116 61.4878 38.9145 65.1451 38.9153 68.9549V69.8568C38.9153 73.8489 40.3426 77.711 42.9453 80.7443L43.032 80.8472L28.3718 80.8499Z",
+					clipRule: "evenodd"
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+					fill: "#000",
+					d: "M51.95 72.6167H56.0666V63.013H52.5729L51.95 72.6167ZM67.0436 72.6167H62.9269V63.013H66.4206L67.0436 72.6167Z"
+				})]
+			})]
+		})]
+	});
+};
+//#endregion
+//#region src/components/icons/providers/longcat/avatar.tsx
+function LongcatAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LongcatLight, {
+				className: "dark:hidden",
+				style: {
+					width: size,
+					height: size
+				}
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LongcatDark, {
+				className: "hidden dark:block",
+				style: {
+					width: size,
+					height: size
+				}
+			})]
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/longcat/index.tsx
+var longcat_exports = /* @__PURE__ */ require_avatar.__exportAll({
+	LongcatIcon: () => LongcatIcon,
+	default: () => LongcatIcon
+});
+const Longcat = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LongcatLight, {
+		...props,
+		className
+	});
+	if (variant === "dark") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LongcatDark, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LongcatLight, {
+		className: require_avatar.cn("dark:hidden", className),
+		...props
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LongcatDark, {
+		className: require_avatar.cn("hidden dark:block", className),
+		...props
+	})] });
+};
+const LongcatIcon = /*#__PURE__*/ Object.assign(Longcat, {
+	Avatar: LongcatAvatar,
+	colorPrimary: "#29E154"
+});
+//#endregion
+Object.defineProperty(exports, "LongcatIcon", {
+	enumerable: true,
+	get: function() {
+		return LongcatIcon;
+	}
+});
+Object.defineProperty(exports, "longcat_exports", {
+	enumerable: true,
+	get: function() {
+		return longcat_exports;
+	}
+});

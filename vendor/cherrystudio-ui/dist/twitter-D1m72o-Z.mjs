@@ -1,0 +1,86 @@
+import { n as __exportAll } from "./rolldown-runtime-B000p9w_.mjs";
+import { r as AvatarFallback, s as cn, t as Avatar } from "./avatar-D3NkEc4-.mjs";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+//#region src/components/icons/providers/twitter/dark.tsx
+const TwitterDark = (props) => /* @__PURE__ */ jsx("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 120 120",
+	...props,
+	children: /* @__PURE__ */ jsx("path", {
+		fill: "#fff",
+		d: "M79.1864 31H89.1582L67.3785 55.9899L93 90H72.9435L57.2231 69.3783L39.2571 90H29.2711L52.5621 63.2656L28 31H48.565L62.7599 49.8488L79.1864 31ZM75.6836 84.0148H81.2062L45.5564 36.6731H39.6243L75.6836 84.0148Z"
+	})
+});
+//#endregion
+//#region src/components/icons/providers/twitter/light.tsx
+const TwitterLight = (props) => /* @__PURE__ */ jsx("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 120 120",
+	...props,
+	children: /* @__PURE__ */ jsx("path", {
+		fill: "#000",
+		d: "M79.1864 31H89.1582L67.3785 55.9899L93 90H72.9435L57.2231 69.3783L39.2571 90H29.2711L52.5621 63.2656L28 31H48.565L62.7599 49.8488L79.1864 31ZM75.6836 84.0148H81.2062L45.5564 36.6731H39.6243L75.6836 84.0148Z"
+	})
+});
+//#endregion
+//#region src/components/icons/providers/twitter/avatar.tsx
+function TwitterAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ jsx(Avatar, {
+		className: cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ jsxs(AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: [/* @__PURE__ */ jsx(TwitterLight, {
+				className: "dark:hidden",
+				style: {
+					width: size,
+					height: size
+				}
+			}), /* @__PURE__ */ jsx(TwitterDark, {
+				className: "hidden dark:block",
+				style: {
+					width: size,
+					height: size
+				}
+			})]
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/twitter/index.tsx
+var twitter_exports = /* @__PURE__ */ __exportAll({
+	TwitterIcon: () => TwitterIcon,
+	default: () => TwitterIcon
+});
+const Twitter = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ jsx(TwitterLight, {
+		...props,
+		className
+	});
+	if (variant === "dark") return /* @__PURE__ */ jsx(TwitterDark, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(TwitterLight, {
+		className: cn("dark:hidden", className),
+		...props
+	}), /* @__PURE__ */ jsx(TwitterDark, {
+		className: cn("hidden dark:block", className),
+		...props
+	})] });
+};
+const TwitterIcon = /*#__PURE__*/ Object.assign(Twitter, {
+	Avatar: TwitterAvatar,
+	colorPrimary: "#000000"
+});
+//#endregion
+export { twitter_exports as n, TwitterIcon as t };

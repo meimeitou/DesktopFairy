@@ -1,0 +1,76 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/providers/together/light.tsx
+const TogetherLight = (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 120 120",
+	...props,
+	children: [
+		/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+			fill: "#EF2CC1",
+			d: "M90.8203 38.1072C86.3341 30.3592 76.3968 27.7047 68.6264 32.1774C63.6272 35.0552 60.7426 40.1438 60.5156 45.4981L76.7528 45.5187L76.7509 46.907H60.5146C60.6194 49.4375 61.3209 51.9592 62.6787 54.3047C67.1649 62.0527 77.1021 64.7074 84.8735 60.2337C92.6448 55.761 95.3072 45.8552 90.8203 38.1072Z"
+		}),
+		/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+			fill: "#CAAEF5",
+			d: "M30.1792 38.1021C25.693 45.8502 28.3555 55.7568 36.1258 60.2305C41.1251 63.1083 46.9878 63.0542 51.7522 60.5738L43.6523 46.5438L44.8592 45.8512L52.9768 59.8694C55.1223 58.5135 56.9628 56.6473 58.3205 54.3018C62.8067 46.5537 60.1442 36.647 52.374 32.1733C44.6017 27.6996 34.6653 30.3541 30.1792 38.1021Z"
+		}),
+		/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+			fill: "#FC4C02",
+			d: "M60.4962 90.4676C69.4693 90.4676 76.7433 83.2155 76.7433 74.2691C76.7433 68.5135 73.7651 63.4789 69.2286 60.605L61.0913 74.6144L59.8864 73.9189L68.0039 59.9005C65.7539 58.7257 63.212 58.0707 60.4952 58.0707C51.5219 58.0707 44.248 65.3227 44.248 74.2691C44.248 83.2155 51.5229 90.4676 60.4962 90.4676Z"
+		})
+	]
+});
+//#endregion
+//#region src/components/icons/providers/together/avatar.tsx
+function TogetherAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TogetherLight, { style: {
+				width: size,
+				height: size
+			} })
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/together/index.tsx
+var together_exports = /* @__PURE__ */ require_avatar.__exportAll({
+	TogetherIcon: () => TogetherIcon,
+	default: () => TogetherIcon
+});
+const Together = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TogetherLight, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TogetherLight, {
+		...props,
+		className
+	});
+};
+const TogetherIcon = /*#__PURE__*/ Object.assign(Together, {
+	Avatar: TogetherAvatar,
+	colorPrimary: "#EF2CC1"
+});
+//#endregion
+Object.defineProperty(exports, "TogetherIcon", {
+	enumerable: true,
+	get: function() {
+		return TogetherIcon;
+	}
+});
+Object.defineProperty(exports, "together_exports", {
+	enumerable: true,
+	get: function() {
+		return together_exports;
+	}
+});

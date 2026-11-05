@@ -1,0 +1,85 @@
+import { r as AvatarFallback, s as cn, t as Avatar } from "./avatar-D3NkEc4-.mjs";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+//#region src/components/icons/models/phind/dark.tsx
+const PhindDark = (props) => /* @__PURE__ */ jsx("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 24 24",
+	...props,
+	children: /* @__PURE__ */ jsx("path", {
+		fill: "#fff",
+		fillRule: "evenodd",
+		d: "M6.11995 7.02851V20H8.49049V14.7382C8.49049 14.7382 8.49504 14.7382 8.49504 14.7429V14.4002C9.30689 15.2009 10.3267 15.7562 11.4558 15.9462C11.7275 15.9875 12.0044 16.0108 12.2852 16.0108C15.0964 15.9275 17.5307 13.7896 17.9395 10.8557C18.0504 10.0746 18.0085 9.27857 17.8162 8.51422C17.6239 7.74987 17.2851 7.03246 16.8196 6.40387C16.3562 5.77146 15.7758 5.23906 15.1115 4.83718C14.4471 4.43531 13.712 4.17187 12.9482 4.06196C12.1836 3.94853 11.4047 3.99114 10.6562 4.18734C9.90774 4.38354 9.20443 4.72947 8.58669 5.20525C8.43199 5.32058 8.28769 5.44524 8.14664 5.57523L6.4872 4.21462L5 6.10255L6.11995 7.02851ZM12.15 6.20454C12.9226 6.20361 13.676 6.45083 14.3046 6.91151C14.9332 7.37218 15.4053 8.02318 15.6548 8.77311C15.8158 9.26175 15.8774 9.77909 15.8357 10.2931C15.794 10.8071 15.6498 11.3069 15.4122 11.7615C15.1746 12.2161 14.8485 12.6159 14.4542 12.9361C14.0599 13.2562 13.6057 13.49 13.1198 13.6229C12.8037 13.7108 12.4775 13.7543 12.15 13.7522C11.5156 13.7522 10.9215 13.5903 10.4002 13.3036C9.92422 13.0478 9.51038 12.6855 9.18924 12.2436C8.81791 11.7439 8.57899 11.1542 8.49569 10.5317C8.4682 10.3495 8.4545 10.1654 8.45474 9.98106C8.45474 7.89381 10.1096 6.20454 12.15 6.20454Z",
+		clipRule: "evenodd"
+	})
+});
+//#endregion
+//#region src/components/icons/models/phind/light.tsx
+const PhindLight = (props) => /* @__PURE__ */ jsx("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 24 24",
+	...props,
+	children: /* @__PURE__ */ jsx("path", {
+		fill: "#000",
+		fillRule: "evenodd",
+		d: "M6.11995 7.02851V20H8.49049V14.7382C8.49049 14.7382 8.49504 14.7382 8.49504 14.7429V14.4002C9.30689 15.2009 10.3267 15.7562 11.4558 15.9462C11.7275 15.9875 12.0044 16.0108 12.2852 16.0108C15.0964 15.9275 17.5307 13.7896 17.9395 10.8557C18.0504 10.0746 18.0085 9.27857 17.8162 8.51422C17.6239 7.74987 17.2851 7.03246 16.8196 6.40387C16.3562 5.77146 15.7758 5.23906 15.1115 4.83718C14.4471 4.43531 13.712 4.17187 12.9482 4.06196C12.1836 3.94853 11.4047 3.99114 10.6562 4.18734C9.90774 4.38354 9.20443 4.72947 8.58669 5.20525C8.43199 5.32058 8.28769 5.44524 8.14664 5.57523L6.4872 4.21462L5 6.10255L6.11995 7.02851ZM12.15 6.20454C12.9226 6.20361 13.676 6.45083 14.3046 6.91151C14.9332 7.37218 15.4053 8.02318 15.6548 8.77311C15.8158 9.26175 15.8774 9.77909 15.8357 10.2931C15.794 10.8071 15.6498 11.3069 15.4122 11.7615C15.1746 12.2161 14.8485 12.6159 14.4542 12.9361C14.0599 13.2562 13.6057 13.49 13.1198 13.6229C12.8037 13.7108 12.4775 13.7543 12.15 13.7522C11.5156 13.7522 10.9215 13.5903 10.4002 13.3036C9.92422 13.0478 9.51038 12.6855 9.18924 12.2436C8.81791 11.7439 8.57899 11.1542 8.49569 10.5317C8.4682 10.3495 8.4545 10.1654 8.45474 9.98106C8.45474 7.89381 10.1096 6.20454 12.15 6.20454Z",
+		clipRule: "evenodd"
+	})
+});
+//#endregion
+//#region src/components/icons/models/phind/avatar.tsx
+function PhindAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ jsx(Avatar, {
+		className: cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ jsxs(AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: [/* @__PURE__ */ jsx(PhindLight, {
+				className: "dark:hidden",
+				style: {
+					width: size,
+					height: size
+				}
+			}), /* @__PURE__ */ jsx(PhindDark, {
+				className: "hidden dark:block",
+				style: {
+					width: size,
+					height: size
+				}
+			})]
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/models/phind/index.tsx
+const Phind = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ jsx(PhindLight, {
+		...props,
+		className
+	});
+	if (variant === "dark") return /* @__PURE__ */ jsx(PhindDark, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(PhindLight, {
+		className: cn("dark:hidden", className),
+		...props
+	}), /* @__PURE__ */ jsx(PhindDark, {
+		className: cn("hidden dark:block", className),
+		...props
+	})] });
+};
+const PhindIcon = /*#__PURE__*/ Object.assign(Phind, {
+	Avatar: PhindAvatar,
+	colorPrimary: "#000000"
+});
+//#endregion
+export { PhindIcon, PhindIcon as default };

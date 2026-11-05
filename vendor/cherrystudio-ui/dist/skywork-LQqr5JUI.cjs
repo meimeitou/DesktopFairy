@@ -1,0 +1,54 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/models/skywork/light.tsx
+const SkyworkLight = (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 24 24",
+	...props,
+	children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+		fill: "#4D5EFF",
+		d: "M12.9558 5.17096C11.927 4.36924 10.6484 3.95593 9.345 4.00373C8.04158 4.05152 6.79674 4.55736 5.82942 5.43228C4.73732 6.41996 4.08192 7.80073 4.00717 9.2713C3.93242 10.7419 4.44445 12.182 5.43077 13.2753C6.30431 14.244 7.49146 14.8738 8.78342 15.0537C10.0754 15.2337 11.3894 14.9524 12.4945 14.2592L8.18598 9.48412L12.9558 5.17096Z"
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+		fill: "#00FFCE",
+		d: "M11.0458 18.4944C12.0745 19.2958 13.3528 19.7089 14.6559 19.6611C15.9591 19.6133 17.2036 19.1077 18.1709 18.2331C19.2628 17.2453 19.9181 15.8646 19.9928 14.3941C20.0676 12.9235 19.5557 11.4835 18.5695 10.3901C17.696 9.42134 16.5088 8.79161 15.2169 8.61164C13.9249 8.43167 12.6109 8.71299 11.5058 9.40612L15.8143 14.1813L11.0445 18.4944H11.0458Z"
+	})]
+});
+//#endregion
+//#region src/components/icons/models/skywork/avatar.tsx
+function SkyworkAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkyworkLight, { style: {
+				width: size,
+				height: size
+			} })
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/models/skywork/index.tsx
+const Skywork = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkyworkLight, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkyworkLight, {
+		...props,
+		className
+	});
+};
+const SkyworkIcon = /*#__PURE__*/ Object.assign(Skywork, {
+	Avatar: SkyworkAvatar,
+	colorPrimary: "#4D5EFF"
+});
+//#endregion
+exports.SkyworkIcon = SkyworkIcon;

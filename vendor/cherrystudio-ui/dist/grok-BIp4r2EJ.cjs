@@ -1,0 +1,122 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react = require("react");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/models/grok/dark.tsx
+const GrokDark = (props) => {
+	const iconId = (0, react.useId)();
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+		xmlns: "http://www.w3.org/2000/svg",
+		width: "1em",
+		height: "1em",
+		fill: "none",
+		viewBox: "0 0 24 24",
+		...props,
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("mask", {
+			id: `${iconId}-grokdark__a`,
+			width: 16,
+			height: 16,
+			x: 4,
+			y: 4,
+			maskUnits: "userSpaceOnUse",
+			style: { maskType: "luminance" },
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+				fill: "#fff",
+				d: "M20 4H4V20H20V4Z"
+			})
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("g", {
+			mask: `url(#${iconId}-grokdark__a)`,
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+				fill: "#fff",
+				fillRule: "evenodd",
+				d: "M10.18 14.1933L15.4987 10.262C15.7593 10.0687 16.132 10.144 16.2567 10.4433C16.91 12.0227 16.618 13.92 15.3167 15.2227C14.016 16.5253 12.2053 16.8107 10.5507 16.16L8.74333 16.998C11.336 18.772 14.484 18.3333 16.4513 16.3627C18.012 14.8 18.4953 12.67 18.0433 10.7493L18.0473 10.754C17.392 7.93266 18.2087 6.80466 19.8807 4.49866C19.9207 4.44399 19.9607 4.38933 20 4.33333L17.7993 6.53666V6.53L10.178 14.1947M9.082 15.1487C7.22067 13.3687 7.542 10.6147 9.12933 9.026C10.3033 7.85066 12.2273 7.37066 13.9067 8.07599L15.71 7.24266C15.3352 6.96694 14.9251 6.74272 14.4907 6.576C13.3985 6.129 12.1986 6.01493 11.0418 6.24814C9.88499 6.48134 8.82297 7.05142 7.98933 7.88666C6.30067 9.57733 5.76933 12.1773 6.68133 14.396C7.36267 16.054 6.246 17.2267 5.12133 18.4107C4.722 18.8307 4.322 19.25 4 19.694L9.08 15.1507",
+				clipRule: "evenodd"
+			})
+		})]
+	});
+};
+//#endregion
+//#region src/components/icons/models/grok/light.tsx
+const GrokLight = (props) => {
+	const iconId = (0, react.useId)();
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+		xmlns: "http://www.w3.org/2000/svg",
+		width: "1em",
+		height: "1em",
+		fill: "none",
+		viewBox: "0 0 24 24",
+		...props,
+		children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("mask", {
+			id: `${iconId}-groklight__a`,
+			width: 16,
+			height: 16,
+			x: 4,
+			y: 4,
+			maskUnits: "userSpaceOnUse",
+			style: { maskType: "luminance" },
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+				fill: "#fff",
+				d: "M20 4H4V20H20V4Z"
+			})
+		}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("g", {
+			mask: `url(#${iconId}-groklight__a)`,
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+				fill: "#000",
+				fillRule: "evenodd",
+				d: "M10.18 14.1933L15.4987 10.262C15.7593 10.0687 16.132 10.144 16.2567 10.4433C16.91 12.0227 16.618 13.92 15.3167 15.2227C14.016 16.5253 12.2053 16.8107 10.5507 16.16L8.74333 16.998C11.336 18.772 14.484 18.3333 16.4513 16.3627C18.012 14.8 18.4953 12.67 18.0433 10.7493L18.0473 10.754C17.392 7.93268 18.2087 6.80468 19.8807 4.49868C19.9207 4.44401 19.9607 4.38934 20 4.33334L17.7993 6.53668V6.53001L10.178 14.1947M9.082 15.1487C7.22067 13.3687 7.542 10.6147 9.12933 9.02601C10.3033 7.85068 12.2273 7.37068 13.9067 8.07601L15.71 7.24268C15.3352 6.96696 14.9251 6.74273 14.4907 6.57601C13.3985 6.12901 12.1986 6.01494 11.0418 6.24816C9.88499 6.48136 8.82297 7.05144 7.98933 7.88668C6.30067 9.57734 5.76933 12.1773 6.68133 14.396C7.36267 16.054 6.246 17.2267 5.12133 18.4107C4.722 18.8307 4.322 19.25 4 19.694L9.08 15.1507",
+				clipRule: "evenodd"
+			})
+		})]
+	});
+};
+//#endregion
+//#region src/components/icons/models/grok/avatar.tsx
+function GrokAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(GrokLight, {
+				className: "dark:hidden",
+				style: {
+					width: size,
+					height: size
+				}
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GrokDark, {
+				className: "hidden dark:block",
+				style: {
+					width: size,
+					height: size
+				}
+			})]
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/models/grok/index.tsx
+const Grok = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GrokLight, {
+		...props,
+		className
+	});
+	if (variant === "dark") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GrokDark, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(GrokLight, {
+		className: require_avatar.cn("dark:hidden", className),
+		...props
+	}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GrokDark, {
+		className: require_avatar.cn("hidden dark:block", className),
+		...props
+	})] });
+};
+const GrokIcon = /*#__PURE__*/ Object.assign(Grok, {
+	Avatar: GrokAvatar,
+	colorPrimary: "#000000"
+});
+//#endregion
+exports.GrokIcon = GrokIcon;

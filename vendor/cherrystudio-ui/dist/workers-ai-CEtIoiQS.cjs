@@ -1,0 +1,66 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/providers/workers-ai/light.tsx
+const WorkersAiLight = (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 120 120",
+	...props,
+	children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+		fill: "#F38020",
+		d: "M71.2869 32H64.9819V45.8399L71.2869 45.8573V32ZM56.7269 39.9932L63.2962 46.5584L58.8242 50.9943L52.2678 44.4464L56.7269 39.9932ZM44.2685 52.6864H58.1438L58.1222 58.9831H44.2685V52.6864ZM52.2765 67.2274L58.8415 60.6666L63.2875 65.1328L56.7356 71.6763L52.2722 67.2231L52.2765 67.2274ZM64.9819 79.6695V65.8123L71.2869 65.8338V79.6695H64.9819ZM79.542 71.6849L72.9683 65.1198L77.4403 60.6796L84.0011 67.2318L79.542 71.6849ZM92 58.9831H78.125L78.1466 52.6864H92V58.9831ZM83.9967 44.4464L77.4273 51.0072L72.9856 46.541L79.542 39.9932L83.9967 44.4464ZM33.5 33.4238V36.9725H29.938V42.6634H33.5V46.2165H39.194V42.6678H42.7517V36.9769H39.194V33.4238H33.5ZM33.5 89V82.5085H27V76.8219H33.5V70.3347H39.194V76.8219H45.6941V82.5085H39.194V89H33.5Z"
+	})
+});
+//#endregion
+//#region src/components/icons/providers/workers-ai/avatar.tsx
+function WorkersAiAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkersAiLight, { style: {
+				width: size,
+				height: size
+			} })
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/workers-ai/index.tsx
+var workers_ai_exports = /* @__PURE__ */ require_avatar.__exportAll({
+	WorkersAiIcon: () => WorkersAiIcon,
+	default: () => WorkersAiIcon
+});
+const WorkersAi = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkersAiLight, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkersAiLight, {
+		...props,
+		className
+	});
+};
+const WorkersAiIcon = /*#__PURE__*/ Object.assign(WorkersAi, {
+	Avatar: WorkersAiAvatar,
+	colorPrimary: "#F38020"
+});
+//#endregion
+Object.defineProperty(exports, "WorkersAiIcon", {
+	enumerable: true,
+	get: function() {
+		return WorkersAiIcon;
+	}
+});
+Object.defineProperty(exports, "workers_ai_exports", {
+	enumerable: true,
+	get: function() {
+		return workers_ai_exports;
+	}
+});

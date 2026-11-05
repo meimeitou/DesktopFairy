@@ -1,0 +1,66 @@
+const require_avatar = require("./avatar-DqAhynaP.cjs");
+let react_jsx_runtime = require("react/jsx-runtime");
+//#region src/components/icons/providers/nvidia/light.tsx
+const NvidiaLight = (props) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+	xmlns: "http://www.w3.org/2000/svg",
+	width: "1em",
+	height: "1em",
+	fill: "none",
+	viewBox: "0 0 120 120",
+	...props,
+	children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+		fill: "#76B900",
+		d: "M51.2344 51.124V47.1575C51.6172 47.133 52 47.1085 52.3828 47.1085C63.0047 46.7657 69.9665 56.4618 69.9665 56.4618C69.9665 56.4618 62.4545 67.1374 54.3925 67.1374C53.3158 67.1374 52.2632 66.9661 51.2584 66.6232V54.5765C55.397 55.0908 56.2343 56.9517 58.6984 61.1874L64.2249 56.4374C64.2249 56.4374 60.1819 51.0261 53.3876 51.0261C52.6699 51.0016 51.9521 51.0506 51.2344 51.124ZM51.2344 38V43.9254L52.3828 43.852C67.1434 43.3377 76.7847 56.2415 76.7847 56.2415C76.7847 56.2415 65.732 70.0024 54.225 70.0024C53.2201 70.0024 52.2392 69.9043 51.2584 69.7328V73.4056C52.0718 73.5036 52.9091 73.5769 53.7224 73.5769C64.4403 73.5769 72.1913 67.9698 79.7035 61.359C80.9473 62.3874 86.0431 64.8602 87.0958 65.9376C79.9664 72.0589 63.3397 76.9805 53.9139 76.9805C53.0048 76.9805 52.1436 76.9314 51.2823 76.8335V82H92V38H51.2344ZM51.2344 66.6232V69.7574C41.3302 67.9455 38.579 57.3922 38.579 57.3922C38.579 57.3922 43.3397 52.0055 51.2344 51.124V54.5519H51.2106C47.0718 54.0377 43.8182 58.0044 43.8182 58.0044C43.8182 58.0044 45.6603 64.6889 51.2344 66.6232ZM33.6507 56.9517C33.6507 56.9517 39.512 48.0879 51.2584 47.1575V43.9254C38.2441 45.0028 27 56.2658 27 56.2658C27 56.2658 33.3637 75.1196 51.2344 76.8335V73.4056C38.1244 71.7406 33.6507 56.9517 33.6507 56.9517Z"
+	})
+});
+//#endregion
+//#region src/components/icons/providers/nvidia/avatar.tsx
+function NvidiaAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.Avatar, {
+		className: require_avatar.cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(require_avatar.AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NvidiaLight, { style: {
+				width: size,
+				height: size
+			} })
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/nvidia/index.tsx
+var nvidia_exports = /* @__PURE__ */ require_avatar.__exportAll({
+	NvidiaIcon: () => NvidiaIcon,
+	default: () => NvidiaIcon
+});
+const Nvidia = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NvidiaLight, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NvidiaLight, {
+		...props,
+		className
+	});
+};
+const NvidiaIcon = /*#__PURE__*/ Object.assign(Nvidia, {
+	Avatar: NvidiaAvatar,
+	colorPrimary: "#76B900"
+});
+//#endregion
+Object.defineProperty(exports, "NvidiaIcon", {
+	enumerable: true,
+	get: function() {
+		return NvidiaIcon;
+	}
+});
+Object.defineProperty(exports, "nvidia_exports", {
+	enumerable: true,
+	get: function() {
+		return nvidia_exports;
+	}
+});

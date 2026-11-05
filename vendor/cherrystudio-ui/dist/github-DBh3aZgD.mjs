@@ -1,0 +1,157 @@
+import { n as __exportAll } from "./rolldown-runtime-B000p9w_.mjs";
+import { r as AvatarFallback, s as cn, t as Avatar } from "./avatar-D3NkEc4-.mjs";
+import { useId } from "react";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+//#region src/components/icons/providers/github/dark.tsx
+const GithubDark = (props) => {
+	const iconId = useId();
+	return /* @__PURE__ */ jsxs("svg", {
+		xmlns: "http://www.w3.org/2000/svg",
+		width: "1em",
+		height: "1em",
+		fill: "none",
+		viewBox: "0 0 120 120",
+		...props,
+		children: [/* @__PURE__ */ jsx("mask", {
+			id: `${iconId}-githubdark__a`,
+			width: 65,
+			height: 65,
+			x: 27,
+			y: 27,
+			maskUnits: "userSpaceOnUse",
+			style: { maskType: "luminance" },
+			children: /* @__PURE__ */ jsx("path", {
+				fill: "#fff",
+				d: "M92 27H27V92H92V27Z"
+			})
+		}), /* @__PURE__ */ jsxs("g", {
+			mask: `url(#${iconId}-githubdark__a)`,
+			children: [/* @__PURE__ */ jsx("mask", {
+				id: `${iconId}-githubdark__b`,
+				width: 65,
+				height: 65,
+				x: 27,
+				y: 27,
+				maskUnits: "userSpaceOnUse",
+				style: { maskType: "luminance" },
+				children: /* @__PURE__ */ jsx("path", {
+					fill: "#fff",
+					d: "M92 27H27V92H92V27Z"
+				})
+			}), /* @__PURE__ */ jsx("g", {
+				mask: `url(#${iconId}-githubdark__b)`,
+				children: /* @__PURE__ */ jsx("path", {
+					fill: "#fff",
+					fillRule: "evenodd",
+					d: "M59.5268 27.5416C41.5403 27.5416 27 42.1891 27 60.3101C27 74.7953 36.3165 87.0565 49.241 91.3961C50.8569 91.7226 51.4488 90.6909 51.4488 89.8233C51.4488 89.064 51.3955 86.4602 51.3955 83.747C42.3473 85.7005 40.4631 79.8407 40.4631 79.8407C39.009 76.0431 36.8545 75.0671 36.8545 75.0671C33.893 73.0596 37.0702 73.0596 37.0702 73.0596C40.3552 73.2765 42.079 76.4231 42.079 76.4231C44.9866 81.414 49.6718 80.0038 51.5566 79.1355C51.8256 77.0197 52.6878 75.5551 53.6033 74.7412C46.3867 73.9818 38.7939 71.1608 38.7939 58.5738C38.7939 54.9931 40.0856 52.0636 42.1322 49.7852C41.8093 48.9716 40.6782 45.6074 42.4559 41.1046C42.4559 41.1046 45.2023 40.2364 51.3948 44.4682C54.0461 43.7509 56.7803 43.386 59.5268 43.383C62.2733 43.383 65.0729 43.7631 67.6583 44.4682C73.8515 40.2364 76.5979 41.1046 76.5979 41.1046C78.3757 45.6074 77.2436 48.9716 76.9208 49.7852C79.0214 52.0636 80.2599 54.9931 80.2599 58.5738C80.2599 71.1608 72.6671 73.9271 65.3966 74.7412C66.5817 75.772 67.6044 77.7247 67.6044 80.8174C67.6044 85.2116 67.5511 88.7384 67.5511 89.8233C67.5511 90.6909 68.1436 91.7226 69.7589 91.3969C82.6833 87.056 92 74.7953 92 60.3101C92.0529 42.1891 77.4595 27.5416 59.5268 27.5416Z",
+					clipRule: "evenodd"
+				})
+			})]
+		})]
+	});
+};
+//#endregion
+//#region src/components/icons/providers/github/light.tsx
+const GithubLight = (props) => {
+	const iconId = useId();
+	return /* @__PURE__ */ jsxs("svg", {
+		xmlns: "http://www.w3.org/2000/svg",
+		width: "1em",
+		height: "1em",
+		fill: "none",
+		viewBox: "0 0 120 120",
+		...props,
+		children: [/* @__PURE__ */ jsx("mask", {
+			id: `${iconId}-githublight__a`,
+			width: 65,
+			height: 65,
+			x: 27,
+			y: 27,
+			maskUnits: "userSpaceOnUse",
+			style: { maskType: "luminance" },
+			children: /* @__PURE__ */ jsx("path", {
+				fill: "#fff",
+				d: "M92 27H27V92H92V27Z"
+			})
+		}), /* @__PURE__ */ jsxs("g", {
+			mask: `url(#${iconId}-githublight__a)`,
+			children: [/* @__PURE__ */ jsx("mask", {
+				id: `${iconId}-githublight__b`,
+				width: 65,
+				height: 65,
+				x: 27,
+				y: 27,
+				maskUnits: "userSpaceOnUse",
+				style: { maskType: "luminance" },
+				children: /* @__PURE__ */ jsx("path", {
+					fill: "#fff",
+					d: "M92 27H27V92H92V27Z"
+				})
+			}), /* @__PURE__ */ jsx("g", {
+				mask: `url(#${iconId}-githublight__b)`,
+				children: /* @__PURE__ */ jsx("path", {
+					fill: "#000",
+					fillRule: "evenodd",
+					d: "M59.5268 27.5416C41.5403 27.5416 27 42.1891 27 60.3101C27 74.7953 36.3165 87.0565 49.241 91.3961C50.8569 91.7226 51.4488 90.6909 51.4488 89.8233C51.4488 89.064 51.3955 86.4602 51.3955 83.747C42.3473 85.7005 40.4631 79.8407 40.4631 79.8407C39.009 76.0431 36.8545 75.0671 36.8545 75.0671C33.893 73.0596 37.0702 73.0596 37.0702 73.0596C40.3552 73.2765 42.079 76.4231 42.079 76.4231C44.9866 81.414 49.6718 80.0038 51.5566 79.1355C51.8256 77.0197 52.6878 75.5551 53.6033 74.7412C46.3867 73.9818 38.7939 71.1608 38.7939 58.5738C38.7939 54.9931 40.0856 52.0636 42.1322 49.7852C41.8093 48.9716 40.6782 45.6074 42.4559 41.1046C42.4559 41.1046 45.2023 40.2364 51.3948 44.4682C54.0461 43.7509 56.7803 43.386 59.5268 43.383C62.2733 43.383 65.0729 43.7631 67.6583 44.4682C73.8515 40.2364 76.5979 41.1046 76.5979 41.1046C78.3757 45.6074 77.2436 48.9716 76.9208 49.7852C79.0214 52.0636 80.2599 54.9931 80.2599 58.5738C80.2599 71.1608 72.6671 73.9271 65.3966 74.7412C66.5817 75.772 67.6044 77.7247 67.6044 80.8174C67.6044 85.2116 67.5511 88.7384 67.5511 89.8233C67.5511 90.6909 68.1436 91.7226 69.7589 91.3969C82.6833 87.056 92 74.7953 92 60.3101C92.0529 42.1891 77.4595 27.5416 59.5268 27.5416Z",
+					clipRule: "evenodd"
+				})
+			})]
+		})]
+	});
+};
+//#endregion
+//#region src/components/icons/providers/github/avatar.tsx
+function GithubAvatar({ size = 32, shape = "circle", className }) {
+	return /* @__PURE__ */ jsx(Avatar, {
+		className: cn("overflow-hidden", shape === "circle" ? "rounded-full" : "rounded-[20%]", className),
+		style: {
+			width: size,
+			height: size
+		},
+		children: /* @__PURE__ */ jsxs(AvatarFallback, {
+			className: "text-foreground bg-background",
+			children: [/* @__PURE__ */ jsx(GithubLight, {
+				className: "dark:hidden",
+				style: {
+					width: size,
+					height: size
+				}
+			}), /* @__PURE__ */ jsx(GithubDark, {
+				className: "hidden dark:block",
+				style: {
+					width: size,
+					height: size
+				}
+			})]
+		})
+	});
+}
+//#endregion
+//#region src/components/icons/providers/github/index.tsx
+var github_exports = /* @__PURE__ */ __exportAll({
+	GithubIcon: () => GithubIcon,
+	default: () => GithubIcon
+});
+const Github = ({ variant, className, ...props }) => {
+	if (variant === "light") return /* @__PURE__ */ jsx(GithubLight, {
+		...props,
+		className
+	});
+	if (variant === "dark") return /* @__PURE__ */ jsx(GithubDark, {
+		...props,
+		className
+	});
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(GithubLight, {
+		className: cn("dark:hidden", className),
+		...props
+	}), /* @__PURE__ */ jsx(GithubDark, {
+		className: cn("hidden dark:block", className),
+		...props
+	})] });
+};
+const GithubIcon = /*#__PURE__*/ Object.assign(Github, {
+	Avatar: GithubAvatar,
+	colorPrimary: "#000000"
+});
+//#endregion
+export { github_exports as n, GithubIcon as t };
