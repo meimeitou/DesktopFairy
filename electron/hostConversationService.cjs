@@ -106,6 +106,7 @@ function createHostConversationService({
       resolveConnectParams,
       resolveHostIdByName,
       searchSavedHosts,
+      listSavedHosts,
       applyHostSettingsMutation,
     };
     return rt;
@@ -130,7 +131,7 @@ function createHostConversationService({
       topicId: id, hostId, defaultHostId: hostId,
       hostName: host?.name, hostUser: host?.user,
       assertValid: validate,
-      describeHost, fingerprintOf, resolveConnectParams, resolveHostIdByName, searchSavedHosts, applyHostSettingsMutation, forceApproval,
+      describeHost, fingerprintOf, resolveConnectParams, resolveHostIdByName, searchSavedHosts, listSavedHosts, applyHostSettingsMutation, forceApproval,
       isGranted: (target) => {
         validate();
         const fp = fingerprintOf(target);
@@ -326,6 +327,13 @@ function createHostConversationService({
     return matches.length === 1 ? matches[0].id : null;
   }
 
+  /** Live saved-host identities without authentication material. */
+  function listSavedHosts() {
+    return getHosts().filter((h) => h?.id && h?.name).map((h) => ({
+      id: h.id, name: h.name, host: h.host, port: h.port || 22, user: h.user,
+    }));
+  }
+
   /** Saved hosts matching a user-supplied name, address, or id. Exact hits rank first. */
   function searchSavedHosts(query) {
     const q = String(query || '').trim().toLowerCase();
@@ -359,6 +367,7 @@ function createHostConversationService({
     forceApproval,
     resolveHostIdByName,
     searchSavedHosts,
+    listSavedHosts,
     applyHostSettingsMutation,
     deleteTopicsByHost,
   };

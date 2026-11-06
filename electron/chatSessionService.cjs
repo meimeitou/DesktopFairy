@@ -237,6 +237,7 @@ function registerChatSessionHandlers({
 
   /** Abort any live stream for a topic and drop its session/tool-result/log files. */
   function deleteTopicFiles(topicId) {
+    require('./sudoPasswordCache.cjs').clearTopic(topicId);
     try {
       const abort = getAbortHandler ? getAbortHandler(topicId) : null;
       if (abort) abort();

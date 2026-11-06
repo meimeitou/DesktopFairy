@@ -52,6 +52,7 @@ const {
   isBinaryFile,
   classifyBufferAsBinary,
   runRipgrep,
+  truncateTerminalOutput,
 } = require('./agentBuiltinFsUtils.cjs');
 const snapshots = require('./agentSnapshotStore.cjs');
 const { applyHashlinePatch, applyHashlinePatchAsync } = require('./hashlinePatch.cjs');
@@ -1412,19 +1413,6 @@ async function toolMcpManager(args, deps = {}) {
   return fail(`Unknown action: ${action}`);
 }
 
-const MAX_TERMINAL_OUTPUT = 20000;
-const TERMINAL_OUTPUT_HEAD = 18000;
-const TERMINAL_OUTPUT_TAIL = 2000;
-
-function truncateTerminalOutput(text) {
-  const str = String(text || '');
-  if (str.length <= MAX_TERMINAL_OUTPUT) return str;
-  return (
-    str.slice(0, TERMINAL_OUTPUT_HEAD) +
-    `\n…[输出已截断，共 ${str.length} 字符]…\n` +
-    str.slice(str.length - TERMINAL_OUTPUT_TAIL)
-  );
-}
 
 async function toolTerminal(args, deps = {}) {
   const command = String(args?.command || '').trim();

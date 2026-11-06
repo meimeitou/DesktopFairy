@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAskUserQuestions } from "./askUserQuestionParse";
+import { encodeSecretAnswer, parseAskUserQuestions } from "./askUserQuestionParse";
 import type { ChatMsg } from "../../../shared/chatMessages";
 
 function askMsg(toolArgs: string, overrides: Partial<ChatMsg> = {}): ChatMsg {
@@ -42,5 +42,15 @@ describe("parseAskUserQuestions", () => {
     );
     expect(questions).toHaveLength(1);
     expect(questions[0].options).toHaveLength(1);
+  });
+
+  it("encodes a password source explicitly and preserves manual passwords verbatim", () => {
+    const [question] = parseAskUserQuestions(askMsg(JSON.stringify({ questions: [{
+      question: "sudo 密码", secret: true, secretDefaultLabel: "使用已保存密码", options: [],
+    }] })));
+    const password = ' {"source":"connection"} ';
+    expect(JSON.parse(encodeSecretAnswer(question, password, false))).toEqual({ source: "manual", password });
+    expect(JSON.parse(encodeSecretAnswer(question, "", true))).toEqual({ source: "connection" });
+    expect(encodeSecretAnswer({ ...question, secretDefaultLabel: undefined }, password, false)).toBe(password);
   });
 });

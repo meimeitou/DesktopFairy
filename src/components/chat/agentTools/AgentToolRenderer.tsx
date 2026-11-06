@@ -146,6 +146,7 @@ function SshExecToolBody({ msg }: { msg: ChatMsg }) {
       {host && (
         <div className="agent-tool-section-label">主机：{host}</div>
       )}
+      {input.sudo === true && <div className="agent-tool-section-label">整条命令将以 root 身份执行</div>}
       {command && (
         <TerminalOutput content={command} commandMode />
       )}

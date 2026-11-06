@@ -154,6 +154,7 @@ function normalizeAskUserQuestionsArgs(args) {
       question: q.question.trim(),
       ...(typeof q.header === 'string' && q.header.trim() ? { header: q.header.trim() } : {}),
       ...(q.multiSelect === true ? { multiSelect: true } : {}),
+      ...(q.secret === true ? { secret: true } : {}),
       options,
     });
   }
@@ -246,8 +247,8 @@ function explicitHostQuery(args, rt) {
 function pickHostFromAnswer(matches, answer) {
   const text = String(answer || '').trim();
   if (!text) return null;
-  const byLabel = matches.find((h) => savedHostLabel(h) === text || h.name === text || h.id === text);
-  if (byLabel) return byLabel;
+  const byLabel = matches.filter((h) => savedHostLabel(h) === text || h.name === text || h.id === text);
+  if (byLabel.length > 0) return byLabel.length === 1 ? byLabel[0] : null;
   const again = matches.filter((h) => {
     const blob = `${h.name} ${h.host || ''} ${h.user || ''}@${h.host || ''}`.toLowerCase();
     return blob.includes(text.toLowerCase());
@@ -261,33 +262,38 @@ async function confirmSavedSshHost(deps, args, toolCallId) {
   const query = explicitHostQuery(args, rt);
   if (!query) {
     args.hostId = rt.defaultHostId;
-    if (!args.hostId || !rt.fingerprintOf(args.hostId)) {
-      return { error: '请明确指定已保存主机' };
-    }
-    return { asked: false };
+    if (args.hostId && rt.fingerprintOf(args.hostId)) return { asked: false };
   }
-  const matches = typeof rt.searchSavedHosts === 'function' ? rt.searchSavedHosts(query) : [];
-  if (matches.length === 0) {
-    return { error: `已保存主机中没有与「${query}」匹配的主机` };
+  const matched = query && typeof rt.searchSavedHosts === 'function' ? rt.searchSavedHosts(query) : [];
+  const allHosts = rt.listSavedHosts?.() || [];
+  const exact = matched.filter((h) => [h.id, h.name, h.host, `${h.user || ''}@${h.host || ''}`]
+    .some((value) => String(value || '').toLowerCase() === query.toLowerCase()));
+  const requestedId = typeof args.hostId === 'string' ? args.hostId.trim() : '';
+  const conflicting = !!(args.host && requestedId && !(exact.length === 1 && exact[0].id === requestedId));
+  const matches = matched.length > 0 ? [...matched] : [...allHosts];
+  if (conflicting && !matches.some((h) => h.id === requestedId)) {
+    const byId = allHosts.find((h) => h.id === requestedId);
+    if (byId) matches.push(byId);
   }
-  const exact = matches.filter((h) => String(h.name).toLowerCase() === query.toLowerCase() || h.id === query);
-  if (exact.length === 1 && rt.isGranted(exact[0].id)) {
+  if (!conflicting && exact.length === 1 && rt.isGranted(exact[0].id)) {
     args.hostId = exact[0].id;
     delete args.host;
     return { asked: false };
   }
-  if (matches.length === 1 && rt.isGranted(matches[0].id)) {
-    args.hostId = matches[0].id;
-    delete args.host;
-    return { asked: false };
-  }
-
   const shown = matches.slice(0, 4);
   const extra = matches.length - shown.length;
   const fingerprintAtAsk = new Map(matches.map((h) => [h.id, rt.fingerprintOf(h.id)]));
-  const question = matches.length === 1
-    ? `在已保存主机「${savedHostLabel(matches[0])}」上执行这次操作？`
-    : `「${query}」匹配到 ${matches.length} 台已保存主机，要在哪一台执行？`;
+  const question = !matches.length
+    ? '当前没有已保存的 SSH 主机。请说明要连接的主机名称、地址和登录账号；确认并保存主机后才能执行操作。不要填写密码。'
+    : conflicting
+      ? '主机名称与 hostId 不能唯一对应同一台已保存主机，请确认本次操作的目标：'
+    : !query
+      ? '当前未指定目标主机，要在哪一台已保存主机上执行？'
+      : !matched.length
+        ? `已保存列表中没有与「${query}」匹配的主机。你指的是下面哪台已保存主机？若都不是，请说明目标主机，暂不执行。`
+        : matches.length === 1
+          ? `在已保存主机「${savedHostLabel(matches[0])}」上执行这次操作？`
+          : `「${query}」匹配到 ${matches.length} 台已保存主机，要在哪一台执行？`;
   const questionText = extra > 0 ? `${question}（另有 ${extra} 台未列出，可在「其他」填写完整主机名）` : question;
   const questions = [{
     question: questionText,
@@ -304,16 +310,28 @@ async function confirmSavedSshHost(deps, args, toolCallId) {
   });
   deps.onApprovalWaitStart?.();
   const answerResult = await waitForUserAnswer({ answerId, signal: deps.signal });
-  if (answerResult.kind === 'aborted') return { aborted: true };
+  const closeQuestion = (message, ok = false) => emitToolEvent(deps, {
+    toolCallId, toolName: 'AskUserQuestion', toolArgs: JSON.stringify({ questions }),
+    approvalId: answerId, status: 'done', resultPreview: JSON.stringify({ ok, message }),
+  });
+  if (answerResult.kind === 'aborted') { closeQuestion('已取消'); return { aborted: true }; }
   const answer = answerResult.answers?.[questionText] || Object.values(answerResult.answers || {})[0] || '';
   const picked = pickHostFromAnswer(matches, answer);
-  if (!picked) return { error: '没有确认到已保存主机，已取消执行' };
+  if (!picked) {
+    closeQuestion('尚未确认已保存主机，未执行操作');
+    return {
+      error: '没有确认到已保存主机，已取消执行。请先调用 ssh_hosts(action="list") 核对列表，通过 AskUserQuestion 澄清目标；需要新增主机时先收集配置并经用户批准保存，不得直接连接猜测的地址。',
+      clarification: String(answer).trim().slice(0, 2000),
+    };
+  }
   if (rt.fingerprintOf(picked.id) !== fingerprintAtAsk.get(picked.id)) {
+    closeQuestion('确认期间目标主机身份已变化');
     return { error: '确认期间目标主机身份已变化，请重新确认' };
   }
   args.hostId = picked.id;
   delete args.host;
   rt.ensureGrant(rt.topicId, picked.id);
+  closeQuestion(`已确认主机：${savedHostLabel(picked)}`, true);
   return { asked: true };
 }
 
@@ -362,13 +380,30 @@ async function executeAgentTool(toolCall, deps) {
     const confirmed = await confirmSavedSshHost(deps, args, toolCallId);
     if (confirmed.aborted) return { resultText: '', aborted: true };
     if (confirmed.error) {
-      return { resultText: JSON.stringify({ ok: false, error: confirmed.error }), denied: false };
+      return { resultText: JSON.stringify({ ok: false, error: confirmed.error, ...(confirmed.clarification ? { hostClarification: confirmed.clarification } : {}) }), denied: false };
     }
     hostJustConfirmed = confirmed.asked === true;
     args.targetLabel = deps.hostRuntime.describeHost?.(args.hostId) || args.hostId;
     rawArgs = JSON.stringify(args);
   }
   const targetFingerprint = isSshTargetTool ? deps.hostRuntime.fingerprintOf(args.hostId) : null;
+  // Bind the approval to the actual endpoint, including non-host contexts.
+  let sudoTarget = null;
+  const resolveSudoTarget = () => {
+    const hosts = require('./settingsSnapshot.cjs').getSnapshot()?.sshHosts || [];
+    const id = args.hostId || deps.hostRuntime?.hostId;
+    const matches = id ? hosts.filter((h) => h.id === id) : hosts.filter((h) => h.name === args.host);
+    if (matches.length !== 1) throw new Error('无法唯一确定 sudo 目标主机，请检查主机名称');
+    const h = matches[0];
+    return { id: h.id, name: h.name, user: h.user, host: h.host, port: h.port || 22, proxyJump: h.proxyJump || '' };
+  };
+  if (name === 'ssh_exec' && args.sudo === true) {
+    try {
+      sudoTarget = resolveSudoTarget();
+      args.targetLabel = `${sudoTarget.name} (${sudoTarget.user || '?'}@${sudoTarget.host}:${sudoTarget.port})`;
+      rawArgs = JSON.stringify(args);
+    } catch (e) { return { resultText: JSON.stringify({ ok: false, error: e.message }), denied: false }; }
+  }
 
   if (name === 'Terminal') {
     args.targetLabel = '当前交互终端（跟随会话）';
@@ -384,9 +419,10 @@ async function executeAgentTool(toolCall, deps) {
     deps.hostRuntime
       ? deps.hostRuntime.forceApproval(name, args, deps.hostRuntime)
       : false;
+  const sudoForce = name === 'ssh_exec' && args.sudo === true;
   const approvalMode = resolveToolApprovalMode(deps.agentConfig);
-  if (!hostJustConfirmed && (hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args)))) {
-    const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs, { force: hostForce });
+  if (sudoForce || (!hostJustConfirmed && (hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args))))) {
+    const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs, { force: hostForce || sudoForce });
     if (approvalResult === 'aborted') {
       return { resultText: '', aborted: true };
     }
@@ -396,6 +432,11 @@ async function executeAgentTool(toolCall, deps) {
         resultText: JSON.stringify({ ok: false, error: 'User denied tool execution' }),
         denied: true,
       };
+    }
+    if (sudoTarget) {
+      try {
+        if (JSON.stringify(resolveSudoTarget()) !== JSON.stringify(sudoTarget)) throw new Error('changed');
+      } catch { return { resultText: JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }) }; }
     }
     if (isSshTargetTool && deps.hostRuntime.fingerprintOf(args.hostId) !== targetFingerprint) {
       return { resultText: JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }) };
@@ -462,7 +503,7 @@ async function executeAgentTool(toolCall, deps) {
     toolCallId,
     name,
     rawArgs,
-    await executeBuiltinTool(name, args, deps),
+    await executeBuiltinTool(name, args, sudoTarget ? { ...deps, approvedSudoTarget: sudoTarget } : deps),
   );
 }
 

@@ -493,6 +493,22 @@ const RG_EXCLUDE_GLOBS = [
   '--glob', '!__pycache__/**',
 ];
 
+// 终端/SSH 命令输出截断（agentBuiltinExecutors 与 agentBuiltinSshExecutors 共用）。
+const MAX_TERMINAL_OUTPUT = 20000;
+const TERMINAL_OUTPUT_HEAD = 18000;
+const TERMINAL_OUTPUT_TAIL = 2000;
+
+function truncateTerminalOutput(text) {
+  const str = String(text || '');
+  if (str.length <= MAX_TERMINAL_OUTPUT) return str;
+  return (
+    str.slice(0, TERMINAL_OUTPUT_HEAD) +
+    `\n…[输出已截断，共 ${str.length} 字符]…\n` +
+    str.slice(str.length - TERMINAL_OUTPUT_TAIL)
+  );
+}
+
+
 module.exports = {
   MAX_LINE_LENGTH,
   DEFAULT_READ_LIMIT,
@@ -510,6 +526,7 @@ module.exports = {
   GLOB_DEFAULT_LIMIT,
   GLOB_MAX_LIMIT,
   RG_EXCLUDE_GLOBS,
+  truncateTerminalOutput,
   expandPath,
   resolveAgentPath,
   setAgentFsProtectedDir,

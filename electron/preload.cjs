@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'ai:stream_detach',
       'ai:stream_abort',
       'ai:tool:bypass_approval',
+      'ai:terminal:clear_sudo',
       'agent:tool:cancel',
       'agent:tool:approve',
       'agent:tool:answer',

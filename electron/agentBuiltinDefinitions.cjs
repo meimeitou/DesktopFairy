@@ -213,9 +213,10 @@ function getOpenAiToolParameters(toolId) {
       return {
         type: 'object',
         properties: {
-          host: { type: 'string', description: '已保存 SSH 主机的名称（精确匹配；主机对话中可省略）' },
-          hostId: { type: 'string', description: '目标主机 id（主机对话中缺省为对话所属主机）' },
-          command: { type: 'string', description: '要在远程主机上执行的 shell 命令' },
+          host: { type: 'string', description: '列表中已保存 SSH 主机的完整名称；先按用户线索筛选并确认，不要直接传模糊描述。主机对话中可省略' },
+          hostId: { type: 'string', description: 'ssh_hosts(list) 返回的真实主机 id；先结合用户线索筛选候选，推断目标须确认后使用，不得直接传用户提供的模糊 id。主机对话中可省略' },
+          command: { type: 'string', description: '要在远程主机上执行的 shell 命令；需要提权时不要在命令中写 sudo，而是设置 sudo 参数' },
+          sudo: { type: 'boolean', description: '整条 shell 命令以 root 执行，必须逐条确认，标准输入为 /dev/null。工具自动向用户询问密码或选择使用连接账号的已保存密码；不要自行询问密码或在工具参数中传入密码' },
           timeout: { type: 'number', description: '超时秒数，默认 30，最大 600' },
         },
         required: ['command'],
@@ -225,7 +226,7 @@ function getOpenAiToolParameters(toolId) {
         type: 'object',
         properties: {
           path: { type: 'string', description: '远程文件路径（可相对当前 cwd）' },
-          hostId: { type: 'string', description: '目标主机 id（缺省为对话所属主机）' },
+          hostId: { type: 'string', description: '已确认目标在 ssh_hosts(list) 中的真实 id；用户的简称、部分 IP 或用途描述须先筛选并确认，不得直接作为 hostId。缺省为对话所属主机' },
         },
         required: ['path'],
       };
@@ -237,7 +238,7 @@ function getOpenAiToolParameters(toolId) {
           hidden: { type: 'boolean', description: '是否包含点文件（默认 false）' },
           gitignore: { type: 'boolean', description: '兼容参数：远端不解析 .gitignore，仅应用内置排除集' },
           limit: { type: 'number', description: '最大返回条数' },
-          hostId: { type: 'string', description: '目标主机 id（缺省为对话所属主机）' },
+          hostId: { type: 'string', description: '已确认目标在 ssh_hosts(list) 中的真实 id；用户的简称、部分 IP 或用途描述须先筛选并确认，不得直接作为 hostId。缺省为对话所属主机' },
         },
       };
     case 'ssh_grep':
@@ -249,7 +250,7 @@ function getOpenAiToolParameters(toolId) {
           case: { type: 'boolean', description: '是否区分大小写（默认 true）' },
           gitignore: { type: 'boolean', description: '兼容参数：远端不解析 .gitignore，仅应用内置排除集' },
           skip: { type: 'number', description: '跳过前 N 条匹配，用于分页' },
-          hostId: { type: 'string', description: '目标主机 id（缺省为对话所属主机）' },
+          hostId: { type: 'string', description: '已确认目标在 ssh_hosts(list) 中的真实 id；用户的简称、部分 IP 或用途描述须先筛选并确认，不得直接作为 hostId。缺省为对话所属主机' },
         },
         required: ['pattern'],
       };
@@ -259,7 +260,7 @@ function getOpenAiToolParameters(toolId) {
         properties: {
           path: { type: 'string', description: '远程文件路径（可相对当前 cwd）' },
           content: { type: 'string', description: '文件完整内容' },
-          hostId: { type: 'string', description: '目标主机 id（缺省为对话所属主机）' },
+          hostId: { type: 'string', description: '已确认目标在 ssh_hosts(list) 中的真实 id；用户的简称、部分 IP 或用途描述须先筛选并确认，不得直接作为 hostId。缺省为对话所属主机' },
         },
         required: ['path', 'content'],
       };
@@ -268,7 +269,7 @@ function getOpenAiToolParameters(toolId) {
         type: 'object',
         properties: {
           input: { type: 'string', description: 'hashline patch 文本（[file#TAG] 头 + PUT/CUT 操作）' },
-          hostId: { type: 'string', description: '目标主机 id（缺省为对话所属主机）' },
+          hostId: { type: 'string', description: '已确认目标在 ssh_hosts(list) 中的真实 id；用户的简称、部分 IP 或用途描述须先筛选并确认，不得直接作为 hostId。缺省为对话所属主机' },
         },
         required: ['input'],
       };
@@ -277,7 +278,7 @@ function getOpenAiToolParameters(toolId) {
         type: 'object',
         properties: {
           path: { type: 'string', description: '要切换到的目录（缺省=查看当前 cwd）' },
-          hostId: { type: 'string', description: '目标主机 id（缺省为对话所属主机）' },
+          hostId: { type: 'string', description: '已确认目标在 ssh_hosts(list) 中的真实 id；用户的简称、部分 IP 或用途描述须先筛选并确认，不得直接作为 hostId。缺省为对话所属主机' },
         },
       };
     case 'ssh_hosts':

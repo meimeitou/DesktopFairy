@@ -65,4 +65,15 @@ describe("compact agent display", () => {
     expect(html).not.toContain("agent-tool-card-collapsed");
   });
 
+  it("offers a password source choice while keeping manual input masked", () => {
+    const msg: ChatMsg = {
+      ...tool, toolName: "AskUserQuestion", toolStatus: "awaiting_input", toolApprovalId: "sudo-answer",
+      toolArgs: JSON.stringify({ questions: [{ question: "sudo 密码", secret: true, secretDefaultLabel: "使用当前连接用户 user 的已保存密码", options: [] }] }),
+    };
+    const html = renderToStaticMarkup(<ToolCallBubble msg={msg} onAnswer={() => {}} />);
+    expect(html).toContain("手动输入密码");
+    expect(html).toContain("使用当前连接用户 user 的已保存密码");
+    expect(html).toContain('type="password"');
+  });
+
 });

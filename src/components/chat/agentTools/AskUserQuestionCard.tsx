@@ -6,6 +6,7 @@ import type { ChatMsg } from "../../../shared/chatMessages";
 import { getToolDisplayName } from "../../../shared/toolCallDisplay";
 import {
   canSubmitAskUserAnswer,
+  encodeSecretAnswer,
   parseAskUserQuestions,
   type AskUserAnswers,
   type QuestionItem,
@@ -59,6 +60,8 @@ export default function AskUserQuestionCard({
     [msg.toolArgs, msg.toolName],
   );
   const answerReady = canSubmitAskUserAnswer(msg);
+  const [secretText, setSecretText] = useState<Record<string, string>>({});
+  const [useDefaultSecret, setUseDefaultSecret] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [otherSelected, setOtherSelected] = useState<Record<string, boolean>>({});
   const [otherText, setOtherText] = useState<Record<string, string>>({});
@@ -69,6 +72,7 @@ export default function AskUserQuestionCard({
     !submitted &&
     questions.length > 0 &&
     questions.every((q) => {
+      if (q.secret) return (q.secretDefaultLabel && useDefaultSecret[q.question]) || String(secretText[q.question] || "").length > 0;
       const picks = selected[q.question] || [];
       const useOther = otherSelected[q.question];
       const other = String(otherText[q.question] || "").trim();
@@ -83,6 +87,10 @@ export default function AskUserQuestionCard({
     if (!msg.toolApprovalId || !canSubmit || submitting || submitted) return;
     const answers: AskUserAnswers = {};
     for (const q of questions) {
+      if (q.secret) {
+        answers[q.question] = encodeSecretAnswer(q, secretText[q.question] || "", useDefaultSecret[q.question] === true);
+        continue;
+      }
       const parts: string[] = [...(selected[q.question] || [])];
       if (otherSelected[q.question]) {
         const text = String(otherText[q.question] || "").trim();
@@ -93,6 +101,7 @@ export default function AskUserQuestionCard({
     setSubmitted(true);
     void Promise.resolve(onAnswer?.(msg.toolApprovalId, answers)).then((ok) => {
       if (ok === false) setSubmitted(false);
+      else setSecretText({});
     });
   };
 
@@ -119,7 +128,45 @@ export default function AskUserQuestionCard({
                 <div className="agent-tool-ask-question-header">{q.header}</div>
               )}
               <div className="agent-tool-ask-question-text">{q.question}</div>
-              {q.multiSelect ? (
+              {q.secret ? (
+                <>
+                  {q.secretDefaultLabel && (
+                    <Radio
+                      direction="vertical"
+                      disabled={submitting || submitted || !answerReady}
+                      value={useDefaultSecret[q.question] ? "connection" : "manual"}
+                      options={[
+                        { value: "manual", label: "手动输入密码" },
+                        { value: "connection", label: q.secretDefaultLabel },
+                      ]}
+                      onChange={(next) => {
+                        const useDefault = next === "connection";
+                        setUseDefaultSecret((prev) => ({ ...prev, [q.question]: useDefault }));
+                        if (useDefault) setSecretText((prev) => ({ ...prev, [q.question]: "" }));
+                      }}
+                    />
+                  )}
+                  {!useDefaultSecret[q.question] && (
+                    <Input
+                      className="agent-tool-ask-other-input"
+                      type="password"
+                      autoFocus
+                      value={secretText[q.question] || ""}
+                      disabled={submitting || submitted || !answerReady}
+                      placeholder="输入密码（不会显示明文）…"
+                      onChange={(e) =>
+                        setSecretText((prev) => ({ ...prev, [q.question]: e.target.value }))
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && canSubmit) {
+                          e.preventDefault();
+                          handleSubmit();
+                        }
+                      }}
+                    />
+                  )}
+                </>
+              ) : q.multiSelect ? (
                 <Checkbox
                   direction="vertical"
                   disabled={submitting || submitted || !answerReady}

@@ -12,6 +12,10 @@ export interface QuestionItem {
   question: string;
   header?: string;
   multiSelect?: boolean;
+  /** true = 掩码输入（密码等敏感信息）。 */
+  secret?: boolean;
+  /** Main-generated choice; the saved password itself must never enter toolArgs. */
+  secretDefaultLabel?: string;
   options: QuestionOption[];
 }
 
@@ -53,10 +57,18 @@ export function parseAskUserQuestions(msg: ChatMsg): QuestionItem[] {
       question,
       header: typeof q.header === "string" ? q.header : undefined,
       multiSelect: q.multiSelect === true,
+      secret: q.secret === true,
+      secretDefaultLabel: q.secret === true && typeof q.secretDefaultLabel === "string" && q.secretDefaultLabel.trim()
+        ? q.secretDefaultLabel.trim() : undefined,
       options,
     });
   }
   return out;
+}
+
+export function encodeSecretAnswer(question: QuestionItem, password: string, useDefault: boolean): string {
+  if (!question.secretDefaultLabel) return password;
+  return JSON.stringify(useDefault ? { source: "connection" } : { source: "manual", password });
 }
 
 export function isAskUserQuestionMsg(msg: ChatMsg): boolean {

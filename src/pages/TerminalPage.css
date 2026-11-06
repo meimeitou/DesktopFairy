@@ -1667,6 +1667,14 @@ button.terminal-context-menu-item {
   overflow-y: auto;
   padding-right: 4px;
 }
+/* 弹窗底部按钮：靠右 + 间距（provider-modal-footer 的样式只在设置页 CSS 里，
+   终端页单独打开时未加载，这里在 ssh-form-modal 下补齐）。 */
+.ssh-form-modal .provider-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
 
 /* 库 Input wrapper 白底+hairline 已上移 index.css 全局（body 前缀），
    此处不再需要弹窗局部覆盖。 */

@@ -12,6 +12,8 @@ const { Client } = require('ssh2');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { randomBytes } = require('crypto');
+const sudoPasswords = require('./sudoPasswordCache.cjs');
 const { createUtf8BoundaryMiddleware, toBuffer } = require('./utf8Boundary.cjs');
 
 const sessions = new Map();
@@ -519,7 +521,7 @@ function runCommandInSshSession(sessionId, command, timeout = 60_000, signal) {
 
 // 一次性 SSH 命令执行（ssh_exec 工具）：不复用会话 Map，连接 → exec → 断开。
 // connectParams 形如 ssh:create 入参；返回 { stdout, stderr, exitCode } 或 reject。
-async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signal) {
+async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signal, { sudo = false, sudoCache = {}, onPasswordPrompt } = {}) {
   const built = buildConnectConfig({
     host: connectParams?.host,
     port: connectParams?.port,
@@ -568,16 +570,23 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
   };
 
   const connectPromise = connectWithJump(built.config, connectParams?.proxyJump, jumpAuth);
-  const { conn, jumpConn, error } = await Promise.race([connectPromise, overallTimeout]);
-  if (error) { clearOverall(); throw new Error(error); }
+  // Attach before racing: a rejected timeout skips all code after await.
+  // A late successful connection must still be closed in that case.
+  connectPromise.then((result) => {
+    if (!overallSettled) return;
+    try { result?.conn?.end(); } catch { /* already closed */ }
+    try { result?.jumpConn?.end(); } catch { /* already closed */ }
+  }).catch(() => {});
+  let connected;
+  try {
+    connected = await Promise.race([connectPromise, overallTimeout]);
+  } finally {
+    clearOverall();
+  }
+  const { conn, jumpConn, error } = connected;
+  if (error) throw new Error(error);
   jumpRef.conn = conn;
   jumpRef.jumpConn = jumpConn;
-  clearOverall();
-  // race 落败方 connectPromise 若之后 resolve，其连接无人关闭 —— end 之（幂等）。
-  connectPromise.then((r) => {
-    if (r && r.conn && r.conn !== conn) { try { r.conn.end(); } catch { /* already closed */ } }
-    if (r && r.jumpConn && r.jumpConn !== jumpConn) { try { r.jumpConn.end(); } catch { /* already closed */ } }
-  }).catch(() => {});
 
   return new Promise((resolve, reject) => {
     // 输出缓冲上限（对齐 toolBash 的 50 KiB outputCap）：超过后保留头部并停止累积，
@@ -588,6 +597,17 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
     let truncated = false;
     let settled = false;
     let timer = null;
+    const nonce = randomBytes(24).toString('hex');
+    const promptMarker = `__DF_SUDO_PROMPT_${nonce}__`;
+    const startMarker = `__DF_SUDO_START_${nonce}__`;
+    let protocolBuffer = '';
+    let sudoStarted = false;
+    let promptAsking = false;
+    let attempts = 0;
+    let lastPassword = null;
+    let passwordFromCache = false;
+    const inputController = new AbortController();
+    const cacheArgs = [sudoCache.topicId, sudoCache.hostId, connectParams];
     const append = (buf, chunk) => {
       if (buf.length >= MAX_EXEC_BUFFER) {
         truncated = true;
@@ -604,6 +624,7 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
+      inputController.abort();
       if (timer) clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onAbort);
       try { conn.end(); } catch { /* already closed */ }
@@ -623,19 +644,103 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
       ));
     }, timeoutMs);
 
+    const armTimer = () => {
+      if (settled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => finish(reject, new Error(
+        `SSH 命令执行超时（${Math.round(timeoutMs / 1000)}s）` +
+        (partial() ? `\n\n已捕获的部分输出：\n${partial()}` : '')
+      )), timeoutMs);
+    };
+    const handlePrompt = async (stream) => {
+      if (settled || sudoStarted || promptAsking) return;
+      promptAsking = true;
+      if (attempts > 0) sudoPasswords.remove(...cacheArgs);
+      if (attempts >= 3) {
+        finish(reject, new Error('sudo 密码认证失败，已达到三次尝试上限'));
+        return;
+      }
+      try {
+        let password = attempts === 0 ? sudoPasswords.get(...cacheArgs) : null;
+        passwordFromCache = password != null;
+        if (password == null) {
+          if (timer) clearTimeout(timer);
+          password = await onPasswordPrompt?.(inputController.signal, attempts);
+          if (settled) return;
+          if (typeof password !== 'string' || !password.length) {
+            finish(reject, new Error('已取消 sudo 密码输入'));
+            return;
+          }
+        }
+        if (/[\r\n\0]/.test(password)) {
+          finish(reject, new Error('sudo 密码不能包含换行或 NUL 字符'));
+          return;
+        }
+        attempts++;
+        lastPassword = password;
+        stream.write(password + '\n');
+        armTimer();
+      } catch (error) {
+        finish(reject, new Error(`sudo 密码输入失败：${String(error?.message || error)}`));
+      } finally {
+        promptAsking = false;
+      }
+    };
+    // Only sudo's stderr is scanned before the controlled wrapper announces start.
+    // Keep a rolling suffix so marker detection survives arbitrary SSH chunking.
+    const consumeSudoStderr = (stream, chunk) => {
+      if (sudoStarted) { stderr = append(stderr, chunk); return; }
+      protocolBuffer += chunk;
+      while (!sudoStarted) {
+        const pi = protocolBuffer.indexOf(promptMarker);
+        const si = protocolBuffer.indexOf(startMarker);
+        const index = pi < 0 ? si : si < 0 ? pi : Math.min(pi, si);
+        if (index < 0) {
+          const keep = Math.max(promptMarker.length, startMarker.length) - 1;
+          if (protocolBuffer.length > keep) {
+            stderr = append(stderr, protocolBuffer.slice(0, -keep));
+            protocolBuffer = protocolBuffer.slice(-keep);
+          }
+          return;
+        }
+        stderr = append(stderr, protocolBuffer.slice(0, index));
+        const isStart = index === si;
+        protocolBuffer = protocolBuffer.slice(index + (isStart ? startMarker.length : promptMarker.length));
+        if (isStart) {
+          sudoStarted = true;
+          if (lastPassword != null && !passwordFromCache) sudoPasswords.put(...cacheArgs, lastPassword);
+          lastPassword = null;
+          stderr = append(stderr, protocolBuffer);
+          protocolBuffer = '';
+        } else {
+          void handlePrompt(stream);
+        }
+      }
+    };
+
     conn.on('error', (e) => finish(reject, new Error(String(e?.message || e))));
-    conn.exec(command, (err, stream) => {
+    const wrappedCommand = sudo
+      ? `sudo -S -p ${shellQuote(promptMarker)} -- sh -c ${shellQuote(`printf %s ${shellQuote(startMarker)} >&2; exec </dev/null; ${command}`)}`
+      : command;
+    conn.exec(wrappedCommand, (err, stream) => {
       if (err) return finish(reject, new Error(String(err?.message || err)));
       stream.on('data', (d) => { stdout = append(stdout, d.toString()); });
-      stream.on('stderr', (d) => { stderr = append(stderr, d.toString()); });
+      stream.stderr.on('data', (d) => {
+        if (sudo) consumeSudoStderr(stream, d.toString());
+        else stderr = append(stderr, d.toString());
+      });
       // 远端未传 exit status（被信号杀死/通道异常）时 code 为 null —— 用 -1 标记未知，
       // 与 runCommandInSshSession / toolBash 的异常退出约定一致，不伪装成成功（0）。
-      stream.on('close', (code) => finish(resolve, {
+      stream.on('close', (code) => {
+        if (protocolBuffer) stderr = append(stderr, protocolBuffer);
+        if (sudo && !sudoStarted && attempts > 0) sudoPasswords.remove(...cacheArgs);
+        finish(resolve, {
         stdout,
         stderr,
         exitCode: code == null ? -1 : code,
         truncated,
-      }));
+      });
+      });
     });
   });
 }
@@ -650,7 +755,7 @@ function shellQuote(s) {
  * connectParams for execOnSavedHost/withSftp. Mirrors renderer resolveCred:
  * credentialId → sshCredentials, legacy inline fields as fallback.
  */
-function resolveSshConnection(settings, { hostId, hostName } = {}) {
+function resolveSshConnection(settings, { hostId, hostName, passwordOverride } = {}) {
   const hosts = Array.isArray(settings?.sshHosts) ? settings.sshHosts : [];
   let target = null;
   if (hostId) {
@@ -678,10 +783,13 @@ function resolveSshConnection(settings, { hostId, hostName } = {}) {
 
   const creds = Array.isArray(settings?.sshCredentials) ? settings.sshCredentials : [];
   const cred = creds.find((c) => c && c.id === target.credentialId);
-  const password = cred?.password ?? target.password;
+  const password = passwordOverride ?? cred?.password ?? target.password;
   const privateKeyPath = cred?.privateKeyPath ?? target.privateKeyPath;
   if (target.authMethod !== 'auto' && target.authMethod !== 'agent' && !password && !privateKeyPath) {
-    throw new Error(`主机 "${target.name}" 缺少可用凭据，请先在终端设置中配置`);
+    const err = new Error(`主机 "${target.name}" 缺少可用凭据`);
+    err.code = 'SSH_MISSING_CREDENTIAL';
+    err.hostId = target.id;
+    throw err;
   }
   const jumpCred = creds.find((c) => c && c.id === target.proxyJumpCredentialId);
   return {

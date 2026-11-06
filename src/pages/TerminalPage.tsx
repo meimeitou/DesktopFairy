@@ -631,6 +631,9 @@ export default function TerminalPage({
     if (idx < 0) return;
     const nextTabs = prev.filter((t) => t.id !== id);
     const closed = prev[idx];
+    if (closed.kind === "terminal" || closed.kind === "ssh") {
+      void api.invoke("ai:terminal:clear_sudo", { tabId: id });
+    }
     setTabs((current) => removeTabFromList(current, id));
 
     // 设置页每次重新打开都是新的：清掉上一次的跳转/编辑请求，

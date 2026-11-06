@@ -34,7 +34,8 @@ export function getToolCommandLine(toolName: string, argsJson?: string): string 
       (typeof args.targetLabel === "string" ? args.targetLabel : "") ||
       (typeof args.host === "string" ? args.host.trim() : "") ||
       (typeof args.hostId === "string" ? args.hostId.trim() : "");
-    const cmd = extractCommand(args);
+    const rawCmd = extractCommand(args);
+    const cmd = args.sudo === true ? `[root] ${rawCmd}` : rawCmd;
     if (host && cmd) return `[${host}] ${cmd}`;
     if (cmd) return cmd;
   }

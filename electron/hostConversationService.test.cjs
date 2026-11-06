@@ -309,3 +309,117 @@ describe('approval target identity', () => {
     clearAllToolApprovals();
   });
 });
+
+describe('saved host discovery before operating', () => {
+  async function requestTarget(h, args, answer) {
+    const snapshot = require('./settingsSnapshot.cjs');
+    const previous = snapshot.getSnapshot();
+    for (const host of h.settings.sshHosts) host.authMethod = 'agent';
+    snapshot.setSnapshot(h.settings);
+    const rt = h.svc.resolveTerminalRuntime({}, 'local-session', () => {});
+    // Mark alpha granted to catch accidental reuse of a fuzzy match.
+    rt.ensureGrant(rt.topicId, 'h1');
+    const events = [];
+    const { executeAgentTool } = require('./agentTools.cjs');
+    const approval = require('./agentToolApproval.cjs');
+    try {
+      const result = await executeAgentTool({ id: 'discover', function: { name: 'ssh_cwd', arguments: JSON.stringify(args) } }, {
+        requestId: 'host-discovery-test', context: 'terminal', hostRuntime: rt,
+        agentConfig: { chatMode: 'full-auto' }, bypassApproval: true, allowedToolNames: new Set(['ssh_cwd']),
+        safeSend: (_channel, event) => {
+          events.push(event);
+          if (event.status === 'awaiting_input') queueMicrotask(() => {
+            const question = JSON.parse(event.toolArgs).questions[0];
+            approval.dispatchUserAnswer(event.approvalId, { [question.question]: typeof answer === 'function' ? answer(question) : answer });
+          });
+        },
+      });
+      return { result: JSON.parse(result.resultText), events, rt };
+    } finally { approval.clearAllToolApprovals(); snapshot.setSnapshot(previous); }
+  }
+
+  it('asks about a missing match and offers the current saved list without granting anything', async () => {
+    const h = makeHarness();
+    const { result, events, rt } = await requestTarget(h, { host: 'unknown-machine' }, '都不是，请先确认新机器配置');
+    const event = events.find((e) => e.status === 'awaiting_input');
+    const question = JSON.parse(event.toolArgs).questions[0];
+    expect(question.question).toContain('没有与「unknown-machine」匹配');
+    expect(question.options).toHaveLength(2);
+    expect(result.ok).toBe(false);
+    expect(result.hostClarification).toContain('新机器配置');
+    expect(rt.isGranted('h2')).toBe(false);
+    expect(events.some((e) => e.status === 'done')).toBe(true);
+  });
+
+  it('asks again for a fuzzy match even when that host was already granted', async () => {
+    const h = makeHarness();
+    const { result, events } = await requestTarget(h, { host: 'alp' }, (q) => q.options[0].label);
+    expect(events.some((e) => e.status === 'awaiting_input')).toBe(true);
+    expect(result.ok).toBe(true);
+  });
+
+  it('asks for a target when no host is bound and none was specified', async () => {
+    const h = makeHarness();
+    const { result, events, rt } = await requestTarget(h, {}, (q) => q.options[1].label);
+    expect(JSON.parse(events.find((e) => e.status === 'awaiting_input').toolArgs).questions[0].question).toContain('未指定');
+    expect(rt.isGranted('h2')).toBe(true);
+    expect(result.ok).toBe(true);
+  });
+
+  it('does not silently pick a duplicate name from a user answer', async () => {
+    const h = makeHarness();
+    h.settings.sshHosts[1].name = 'alpha';
+    const { result, events, rt } = await requestTarget(h, { host: 'alpha' }, 'alpha');
+    expect(events.some((e) => e.status === 'awaiting_input')).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(rt.isGranted('h2')).toBe(false);
+  });
+
+  it('asks rather than guessing a connection when the saved list is empty', async () => {
+    const h = makeHarness();
+    h.settings.sshHosts.splice(0);
+    const { result, events } = await requestTarget(h, { host: 'production' }, '需要新增主机');
+    const question = JSON.parse(events.find((e) => e.status === 'awaiting_input').toolArgs).questions[0];
+    expect(question.options).toEqual([]);
+    expect(result.ok).toBe(false);
+  });
+
+  it('allows an exact already-confirmed target without asking again', async () => {
+    const h = makeHarness();
+    const { result, events } = await requestTarget(h, { host: 'alpha' }, '');
+    expect(result.ok).toBe(true);
+    expect(events.some((e) => e.status === 'awaiting_input')).toBe(false);
+  });
+
+  it('asks when a supplied name and hostId disagree even if the named host was granted', async () => {
+    const h = makeHarness();
+    const { result, events } = await requestTarget(h, { host: 'alpha', hostId: 'h2' }, (q) => q.options[1].label);
+    const question = JSON.parse(events.find((e) => e.status === 'awaiting_input').toolArgs).questions[0];
+    expect(question.question).toContain('名称与 hostId');
+    expect(question.options).toHaveLength(2);
+    expect(result.ok).toBe(true);
+  });
+
+  it('lists the live settings snapshot without returning credentials', async () => {
+    const snapshot = require('./settingsSnapshot.cjs');
+    const previous = snapshot.getSnapshot();
+    snapshot.setSnapshot({ sshHosts: [{ id: 'new-host', name: 'latest', host: 'example', user: 'u', password: 'do-not-expose' }] });
+    try {
+      const result = JSON.parse(await require('./agentBuiltinSshExecutors.cjs').executeSshBuiltinTool('ssh_hosts', { action: 'list' }, {}));
+      expect(result.hosts[0].name).toBe('latest');
+      expect(JSON.stringify(result)).not.toContain('do-not-expose');
+    } finally { snapshot.setSnapshot(previous); }
+  });
+
+  it('requires listing and resolving uncertainty in the main-process prompt', () => {
+    const { buildAgentSystemPrompt } = require('./agentService.cjs');
+    const prompt = buildAgentSystemPrompt({ enabledSkillIds: [] }, 'terminal', null, ['ssh_hosts', 'ssh_exec', 'AskUserQuestion'], []);
+    expect(prompt).toContain('必须先调用 ssh_hosts(action="list")');
+    expect(prompt).toContain('先通过 AskUserQuestion 澄清目标');
+    expect(prompt).toContain('用户口中的“机器 id”只是目标线索');
+    expect(prompt).toContain('即使只有一台');
+    expect(prompt).toContain('确认后只使用列表返回的真实 hostId');
+    expect(prompt).not.toContain('模糊描述可原样传给');
+    expect(prompt).not.toContain('不要自己再调用 AskUserQuestion');
+  });
+});

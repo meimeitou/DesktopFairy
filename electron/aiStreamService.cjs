@@ -25,6 +25,14 @@ function registerAiStreamHandlers(ipcMain, deps) {
     return u.href;
   }
 
+  ipcMain.handle('ai:terminal:clear_sudo', (_event, { tabId } = {}) => {
+    if (typeof tabId === 'string') {
+      const topicId = `terminal:${tabId}`;
+      manager.abort(topicId);
+      require('./sudoPasswordCache.cjs').clearTopic(topicId);
+    }
+  });
+
   ipcMain.handle('ai:stream_open', async (event, payload) => {
     const {
       topicId,
