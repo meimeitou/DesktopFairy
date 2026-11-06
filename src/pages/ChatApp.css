@@ -69,8 +69,21 @@ html.chat-window-shell body {
   -webkit-app-region: no-drag;
 }
 
+.chat-app-workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.chat-app-workspace.maximized .chat-app-body {
+  display: none;
+}
+
 .chat-app-body {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;

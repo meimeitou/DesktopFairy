@@ -1,7 +1,8 @@
 import { Button } from "@cherrystudio/ui";
-import { Book, MessageSquare, Settings, SquareTerminal, X } from "lucide-react";
+import { Book, Globe, MessageSquare, Settings, SquareTerminal, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 
+import ChatBrowserPane from "../components/chat/ChatBrowserPane";
 import "./ChatApp.css";
 
 const ChatPage = lazy(() => import("./ChatPage"));
@@ -53,6 +54,8 @@ export default function ChatApp() {
     () => new Set<AppView>([initialView]),
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const [browserMaximized, setBrowserMaximized] = useState(false);
 
   useEffect(() => {
     setMountedViews((prev) => {
@@ -128,6 +131,10 @@ export default function ChatApp() {
             <SettingsIcon />
             <span>设置</span>
           </Button>
+          <Button variant="ghost" className={`chat-tab${browserOpen ? " active" : ""}`} onClick={() => setBrowserOpen(v => !v)} title="浏览器">
+            <Globe size={16} />
+            <span>浏览器</span>
+          </Button>
         </nav>
 
         <div className="chat-app-topbar-drag" aria-hidden />
@@ -139,48 +146,55 @@ export default function ChatApp() {
         )}
       </header>
 
-      <main className="chat-app-body">
-        {mountedViews.has("chat") && (
-          <div
-            className={`chat-app-panel${view === "chat" ? "" : " chat-app-panel-hidden"}`}
-            aria-hidden={view !== "chat"}
-          >
-            <Suspense fallback={null}>
-              <ChatPage embedded />
-            </Suspense>
-          </div>
-        )}
-        {mountedViews.has("terminal") && (
-          <div
-            className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}
-            aria-hidden={view !== "terminal"}
-          >
-            <Suspense fallback={null}>
-              <TerminalPage isActive={view === "terminal"} />
-            </Suspense>
-          </div>
-        )}
-        {mountedViews.has("knowledge") && (
-          <div
-            className={`chat-app-panel${view === "knowledge" ? "" : " chat-app-panel-hidden"}`}
-            aria-hidden={view !== "knowledge"}
-          >
-            <Suspense fallback={null}>
-              <KnowledgePage isActive={view === "knowledge"} />
-            </Suspense>
-          </div>
-        )}
-        {mountedViews.has("settings") && (
-          <div
-            className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}
-            aria-hidden={view !== "settings"}
-          >
-            <Suspense fallback={null}>
-              <SettingsPage embedded />
-            </Suspense>
-          </div>
-        )}
-      </main>
+      <div className={`chat-app-workspace${browserMaximized ? " maximized" : ""}`}>
+        <main className="chat-app-body">
+          {mountedViews.has("chat") && (
+            <div
+              className={`chat-app-panel${view === "chat" ? "" : " chat-app-panel-hidden"}`}
+              aria-hidden={view !== "chat"}
+            >
+              <Suspense fallback={null}>
+                <ChatPage embedded />
+              </Suspense>
+            </div>
+          )}
+          {mountedViews.has("terminal") && (
+            <div
+              className={`chat-app-panel${view === "terminal" ? "" : " chat-app-panel-hidden"}`}
+              aria-hidden={view !== "terminal"}
+            >
+              <Suspense fallback={null}>
+                <TerminalPage isActive={view === "terminal"} />
+              </Suspense>
+            </div>
+          )}
+          {mountedViews.has("knowledge") && (
+            <div
+              className={`chat-app-panel${view === "knowledge" ? "" : " chat-app-panel-hidden"}`}
+              aria-hidden={view !== "knowledge"}
+            >
+              <Suspense fallback={null}>
+                <KnowledgePage isActive={view === "knowledge"} />
+              </Suspense>
+            </div>
+          )}
+          {mountedViews.has("settings") && (
+            <div
+              className={`chat-app-panel${view === "settings" ? "" : " chat-app-panel-hidden"}`}
+              aria-hidden={view !== "settings"}
+            >
+              <Suspense fallback={null}>
+                <SettingsPage embedded />
+              </Suspense>
+            </div>
+          )}
+        </main>
+        <ChatBrowserPane
+          open={browserOpen}
+          onOpenChange={setBrowserOpen}
+          onMaximizeChange={setBrowserMaximized}
+        />
+      </div>
     </div>
   );
 }

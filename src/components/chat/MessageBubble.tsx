@@ -155,6 +155,7 @@ function MessageBubble({
           <ChatMarkdown
             content={msg.content}
             streaming={isStreamingAssistant}
+            citations={msg.webCitations}
           />
         )}
         {!isUser && !isEditing && (

@@ -151,10 +151,9 @@ declare global {
       onSshExit: (
         callback: (payload: { sessionId: string; exitCode?: number }) => void
       ) => () => void;
-      onBrowserOpenTab?: (
+      onBrowserPaneOpen?: (
         callback: (payload: { url: string; tabId?: string }) => void
       ) => () => void;
-      notifyBrowserRendererReady?: () => void;
     };
   }
 

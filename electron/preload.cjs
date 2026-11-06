@@ -311,12 +311,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('mcp:tool:progress', listener);
   },
 
-  onBrowserOpenTab: (callback) => {
+  onBrowserPaneOpen: (callback) => {
     const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on('browser:open_tab', listener);
-    return () => ipcRenderer.removeListener('browser:open_tab', listener);
-  },
-  notifyBrowserRendererReady: () => {
-    ipcRenderer.send('browser:renderer_ready');
+    ipcRenderer.on('browser:pane:open', listener);
+    return () => ipcRenderer.removeListener('browser:pane:open', listener);
   },
 });

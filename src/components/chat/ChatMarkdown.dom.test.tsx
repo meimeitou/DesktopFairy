@@ -61,6 +61,26 @@ describe("streamdown CSS bug fixes (SSR DOM shape)", () => {
     expect(html).toContain("后面还有正文");
   });
 
+  it("renders inline [n] citation markers as links when citations given", () => {
+    const cits = [
+      { index: 1, url: "https://a.com", title: "A", source: "WebSearch" },
+      { index: 2, url: "https://b.com", title: "B", source: "WebSearch" },
+      { index: 5, url: "https://e.com", title: "E", source: "WebSearch" },
+    ] as const;
+    const html = renderToString(
+      <ChatMarkdown content={"结论见[1][2][5]，超范围[9]。"} citations={[...cits]} />,
+    );
+    expect(html).toContain('href="https://a.com/"');
+    expect(html).toContain('href="https://b.com/"');
+    expect(html).toContain('href="https://e.com/"');
+    // visible [n] preserved, out-of-range untouched
+    expect(html).toContain("[1]");
+    expect(html).toContain("[5]");
+    expect(html).toContain("[9]");
+    // exactly 3 anchors
+    expect(html.match(/<a /g)?.length).toBe(3);
+  });
+
   it("streaming mode still renders the text", () => {
     const html = renderToString(<ChatMarkdown content={"hello"} streaming />);
     expect(html).toContain("hello");

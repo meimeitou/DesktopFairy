@@ -3,7 +3,54 @@ import remarkCjkFriendly from "remark-cjk-friendly";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
-import { normalizeGfmTables } from "./markdownPrepare";
+import { linkInlineCitations, normalizeGfmTables } from "./markdownPrepare";
+
+describe("linkInlineCitations", () => {
+  const cits = [
+    { index: 1, url: "https://a.com", title: "A", source: "WebSearch" },
+    { index: 2, url: "https://b.com", title: "B", source: "WebSearch" },
+  ];
+
+  it("links [n] markers by citation index, keeping visible [n]", () => {
+    expect(linkInlineCitations("结论一[1]，结论二[2]。", cits)).toBe(
+      "结论一[\\[1\\]](https://a.com)，结论二[\\[2\\]](https://b.com)。",
+    );
+  });
+
+  it("handles concatenated markers like [1][2]", () => {
+    expect(linkInlineCitations("见[1][2]", cits)).toBe(
+      "见[\\[1\\]](https://a.com)[\\[2\\]](https://b.com)",
+    );
+  });
+
+  it("maps by citation.index, not array position", () => {
+    const sparse = [{ index: 3, url: "https://c.com", title: "C", source: "WebFetch" }];
+    expect(linkInlineCitations("[3] 但不是 [1]", sparse)).toBe(
+      "[\\[3\\]](https://c.com) 但不是 [1]",
+    );
+  });
+
+  it("leaves out-of-range markers and text without brackets alone", () => {
+    expect(linkInlineCitations("见[3]和[9]", cits)).toBe("见[3]和[9]");
+    expect(linkInlineCitations("无标记", cits)).toBe("无标记");
+  });
+
+  it("skips fenced code, inline code, and existing links", () => {
+    expect(
+      linkInlineCitations("```\n[1] in code\n```\n[1]", cits),
+    ).toBe("```\n[1] in code\n```\n[\\[1\\]](https://a.com)");
+    expect(linkInlineCitations("`[1]` 与 [2]", cits)).toBe(
+      "`[1]` 与 [\\[2\\]](https://b.com)",
+    );
+    expect(linkInlineCitations("[1](https://x.com)", cits)).toBe(
+      "[1](https://x.com)",
+    );
+  });
+
+  it("returns input unchanged without citations", () => {
+    expect(linkInlineCitations("[1] 文本", undefined)).toBe("[1] 文本");
+  });
+});
 
 type MdNode = { type?: string; children?: MdNode[] };
 

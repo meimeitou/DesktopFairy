@@ -325,6 +325,7 @@ const createChatWindow = (options = {}) => {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true,
     },
   });
 
@@ -720,9 +721,8 @@ const setupIPC = () => {
   });
 
   registerBrowserHandlers(ipcMain, {
-    loadURL,
-    shouldOpenDevTools,
-    getDevToolsMode,
+    getChatWindow: () => (chatWindow && !chatWindow.isDestroyed() ? chatWindow : null),
+    openExternal: (url) => shell.openExternal(url),
   });
 
   ipcMain.handle('selection:copy', async (_event, text) => {
@@ -1144,6 +1144,16 @@ app.whenReady().then(() => {
 
   app.on('web-contents-created', (_event, contents) => {
     attachWindowOpenHandler(contents);
+    // Lock down every webview attachment (Electron security checklist #8):
+    // strip node/preload, require the browser partition, deny anything else.
+    contents.on('will-attach-webview', (event, webPreferences, params) => {
+      delete webPreferences.preload;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      if (params.partition !== 'persist:browser') {
+        event.preventDefault();
+      }
+    });
     contents.on('context-menu', (_event, params) => {
       if (!isDev) return;
       const menu = Menu.buildFromTemplate([

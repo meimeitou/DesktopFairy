@@ -1,12 +1,4 @@
-const { BrowserWindow, screen } = require('electron');
-const path = require('path');
-
-let browserWindow = null;
-let loadURLFn = null;
-let pendingOpenTabs = [];
-let browserRendererReady = false;
-let shouldOpenDevTools = () => false;
-let getDevToolsMode = () => 'detach';
+const deps = { getChatWindow: null, openExternal: null };
 
 function isHttpUrl(url) {
   try {
@@ -29,114 +21,6 @@ function genTabId() {
   return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function isBrowserGuestWebContents(contents) {
-  if (!browserWindow || browserWindow.isDestroyed()) return false;
-  const host = contents.hostWebContents;
-  return host && !host.isDestroyed() && host.id === browserWindow.webContents.id;
-}
-
-function closeBrowserWindow() {
-  if (!browserWindow || browserWindow.isDestroyed()) return;
-  browserWindow.close();
-}
-
-function bindBrowserCloseShortcut(contents) {
-  if (!contents || contents.isDestroyed()) return;
-  if (contents.__dfBrowserCloseShortcutBound) return;
-  contents.__dfBrowserCloseShortcutBound = true;
-
-  contents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || input.isAutoRepeat) return;
-    const mod = process.platform === 'darwin' ? input.meta : input.control;
-    if (!mod || input.alt || input.shift) return;
-    if (String(input.key || '').toLowerCase() !== 'w') return;
-    event.preventDefault();
-    closeBrowserWindow();
-  });
-}
-
-function sendOpenTab(payload) {
-  if (!browserWindow || browserWindow.isDestroyed()) return;
-  pendingOpenTabs.push(payload);
-  flushOpenTabs();
-}
-
-function flushOpenTabs() {
-  if (!browserWindow || browserWindow.isDestroyed()) return;
-  if (!browserRendererReady || browserWindow.webContents.isLoading()) return;
-  while (pendingOpenTabs.length > 0) {
-    browserWindow.webContents.send('browser:open_tab', pendingOpenTabs.shift());
-  }
-}
-
-function markBrowserRendererReady() {
-  browserRendererReady = true;
-  flushOpenTabs();
-}
-
-function createBrowserWindow() {
-  if (browserWindow && !browserWindow.isDestroyed()) {
-    return browserWindow;
-  }
-
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const winWidth = Math.min(1000, Math.max(640, Math.round(width * 0.7)));
-  const winHeight = Math.min(720, Math.max(480, Math.round(height * 0.75)));
-
-  browserWindow = new BrowserWindow({
-    title: '浏览器',
-    width: winWidth,
-    height: winHeight,
-    minWidth: 480,
-    minHeight: 360,
-    center: true,
-    show: false,
-    autoHideMenuBar: true,
-    backgroundColor: '#f5f8e0',
-    ...(process.platform === 'darwin'
-      ? {
-          titleBarStyle: 'hidden',
-          titleBarOverlay: {
-            color: '#f5f8e0',
-            symbolColor: 'rgba(74, 54, 32, 0.75)',
-            height: 44,
-          },
-          trafficLightPosition: { x: 14, y: 13 },
-        }
-      : { frame: true }),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      webviewTag: true,
-    },
-  });
-
-  loadURLFn(browserWindow, '?window=browser');
-  bindBrowserCloseShortcut(browserWindow.webContents);
-  browserWindow.webContents.on('did-attach-webview', (_event, guestContents) => {
-    bindBrowserCloseShortcut(guestContents);
-  });
-
-  if (shouldOpenDevTools()) {
-    browserWindow.webContents.openDevTools({ mode: getDevToolsMode() });
-  }
-
-  browserWindow.once('ready-to-show', () => {
-    if (!browserWindow || browserWindow.isDestroyed()) return;
-    browserWindow.show();
-    browserWindow.focus();
-  });
-
-  browserWindow.on('closed', () => {
-    browserWindow = null;
-    browserRendererReady = false;
-    pendingOpenTabs = [];
-  });
-
-  return browserWindow;
-}
-
 function openBrowserTab(url, options = {}) {
   const baseUrl = options.baseUrl || '';
   const normalized = resolveNavigationUrl(String(url || '').trim(), baseUrl);
@@ -144,20 +28,19 @@ function openBrowserTab(url, options = {}) {
     return { ok: false, reason: 'invalid_url' };
   }
 
-  createBrowserWindow();
   const tabId = genTabId();
-  sendOpenTab({ url: normalized, tabId });
-
-  if (browserWindow && !browserWindow.isDestroyed()) {
-    if (!browserWindow.isVisible()) browserWindow.show();
-    browserWindow.focus();
+  const win = deps.getChatWindow && deps.getChatWindow();
+  if (!win || win.isDestroyed()) {
+    // No chat window (e.g. link opened from the Live2D main window):
+    // fall back to the system browser so the link is never dropped.
+    deps.openExternal && deps.openExternal(normalized);
+    return { ok: true, fallback: 'external', url: normalized };
   }
 
+  if (!win.isVisible()) win.show();
+  win.focus();
+  win.webContents.send('browser:pane:open', { url: normalized, tabId });
   return { ok: true, tabId, url: normalized };
-}
-
-function openBrowserUrl(url, options = {}) {
-  return openBrowserTab(url, options);
 }
 
 function attachWindowOpenHandler(contents) {
@@ -167,36 +50,26 @@ function attachWindowOpenHandler(contents) {
     const baseUrl = contents.getURL();
     const resolved = resolveNavigationUrl(url, baseUrl);
     if (isHttpUrl(resolved)) {
-      if (isBrowserGuestWebContents(contents)) {
-        sendOpenTab({ url: resolved, tabId: genTabId() });
-      } else {
-        openBrowserTab(resolved, { baseUrl });
-      }
+      openBrowserTab(resolved, { baseUrl });
     }
     return { action: 'deny' };
   });
 }
 
-function registerBrowserHandlers(ipcMain, deps = {}) {
-  loadURLFn = deps.loadURL;
-  shouldOpenDevTools = deps.shouldOpenDevTools || (() => false);
-  getDevToolsMode = deps.getDevToolsMode || (() => 'detach');
+function registerBrowserHandlers(ipcMain, handlerDeps = {}) {
+  deps.getChatWindow = handlerDeps.getChatWindow || null;
+  deps.openExternal = handlerDeps.openExternal || null;
 
   ipcMain.handle('browser:open', async (_event, payload) => {
     const url = typeof payload?.url === 'string' ? payload.url : '';
     const baseUrl = typeof payload?.baseUrl === 'string' ? payload.baseUrl : '';
     return openBrowserTab(url, { baseUrl });
   });
-
-  ipcMain.on('browser:renderer_ready', () => {
-    markBrowserRendererReady();
-  });
 }
 
 module.exports = {
   isHttpUrl,
   resolveNavigationUrl,
-  openBrowserUrl,
   openBrowserTab,
   attachWindowOpenHandler,
   registerBrowserHandlers,

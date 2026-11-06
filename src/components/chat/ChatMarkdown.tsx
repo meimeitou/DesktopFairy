@@ -8,14 +8,17 @@ import {
   type Components,
   type CustomRendererProps,
 } from "streamdown";
-import { normalizeGfmTables } from "./markdownPrepare";
+import { normalizeGfmTables, linkInlineCitations } from "./markdownPrepare";
 import { stashTerminalCommand } from "../../shared/panelHandoff";
+import type { WebCitation } from "../../shared/webCitation";
 import "streamdown/styles.css";
 import "./ChatMarkdown.css";
 
 interface Props {
   content: string;
   streaming?: boolean;
+  /** Turn's web citations; lets plain [n] markers in the body open the source. */
+  citations?: WebCitation[];
 }
 
 const SHELL_LANGS = [
@@ -85,7 +88,7 @@ const components: Components = {
   },
 };
 
-function ChatMarkdown({ content, streaming }: Props) {
+function ChatMarkdown({ content, streaming, citations }: Props) {
   const id = useId();
   const plugins = useMemo(
     () => ({
@@ -96,7 +99,10 @@ function ChatMarkdown({ content, streaming }: Props) {
   );
 
   if (!content && streaming) return null;
-  const body = normalizeGfmTables(content);
+  const body = linkInlineCitations(
+    normalizeGfmTables(content),
+    citations,
+  );
 
   return (
     <div className={`chat-markdown${streaming ? " chat-markdown-streaming" : ""}`}>

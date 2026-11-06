@@ -1,6 +1,9 @@
 // Headless-test-only stub for window.electronAPI. Injected by vite.config.ts
 // ONLY when DF_HEADLESS_STUB=1; never loaded in normal dev or production builds.
 (function () {
+  // Real Electron preload (contextBridge) injects electronAPI before any
+  // page script — never overwrite it; the stub is for plain-Chrome checks only.
+  if (window.electronAPI) return;
   const handler = () => () => {};
   const base = {
     invoke: (channel) =>
@@ -8,7 +11,7 @@
   };
   const names = [
     "onAgentStreamTool", "onAiStreamChunk", "onAiStreamDone", "onAiStreamError",
-    "onBrowserOpenTab", "onChatNavigate", "onChatPrefill", "onChatStreamChunk",
+    "onBrowserPaneOpen", "onChatNavigate", "onChatPrefill", "onChatStreamChunk",
     "onChatStreamCitations", "onChatStreamDone", "onChatStreamError",
     "onChatStreamKnowledgeError", "onChatWindowFullscreenChanged",
     "onLive2DScene", "onMainWindowLayoutChanged", "onMainWindowVisibilityChanged",

@@ -1,8 +1,14 @@
 import { Button } from "@cherrystudio/ui";
-import { Plus } from "lucide-react";
+import { Maximize2, Minimize2, PanelRightClose, Plus } from "lucide-react";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import "./BrowserPage.css";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import "./ChatBrowserPane.css";
 
 const api = window.electronAPI;
 
@@ -15,11 +21,16 @@ type BrowserTab = {
 const NEW_TAB_URL = "about:blank";
 const NEW_TAB_TITLE = "新标签页";
 
+const MIN_WIDTH = 320;
+const DEFAULT_WIDTH = 420;
+const CLOSE_DRAG_THRESHOLD = 80;
+const WIDTH_STORAGE_KEY = "df.chat.browserPane.width";
+
 function tabLabel(tab: BrowserTab): string {
   if (tab.title && tab.title !== NEW_TAB_TITLE) return tab.title;
   try {
-    const host = new URL(tab.url).hostname;
-    return host || NEW_TAB_TITLE;
+    const u = new URL(tab.url);
+    return u.hostname || NEW_TAB_TITLE;
   } catch {
     return NEW_TAB_TITLE;
   }
@@ -97,84 +108,160 @@ function BrowserWebview({
   );
 }
 
-export default function BrowserPage() {
-  const [tabs, setTabs] = useState<BrowserTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+type TabState = { tabs: BrowserTab[]; activeTabId: string | null };
+
+export default function ChatBrowserPane({
+  open,
+  onOpenChange,
+  onMaximizeChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onMaximizeChange: (maximized: boolean) => void;
+}) {
+  const [tabState, setTabState] = useState<TabState>({
+    tabs: [],
+    activeTabId: null,
+  });
+  const tabs = tabState.tabs;
+  const activeTabId = tabState.activeTabId;
   const [copied, setCopied] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+  const [width, setWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0
+      ? Math.max(MIN_WIDTH, stored)
+      : DEFAULT_WIDTH;
+  });
   const urlInputRef = useRef<HTMLInputElement>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isMac =
-    typeof navigator !== "undefined" &&
-    navigator.platform.toUpperCase().includes("MAC");
+  const dragStateRef = useRef<{ startX: number; startWidth: number } | null>(
+    null,
+  );
+  const widthRef = useRef(width);
+
+  const openTabRef = useRef<(url: string, tabId?: string) => void>(() => {});
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
 
   useEffect(() => {
-    document.title = "浏览器";
-    document.documentElement.classList.add("browser-window-shell");
-    if (isMac) document.documentElement.classList.add("browser-page-mac");
-    return () => {
-      document.documentElement.classList.remove("browser-window-shell", "browser-page-mac");
-    };
-  }, [isMac]);
+    const off = api.onBrowserPaneOpen?.((payload) => {
+      if (!payload?.url) return;
+      openTabRef.current(payload.url, payload.tabId);
+      onOpenChangeRef.current(true);
+    });
+    return () => off?.();
+  }, []);
 
   const openTab = useCallback((url: string, tabId?: string) => {
     const normalized = url.trim();
     if (!normalized) return;
 
-    setTabs((prev) => {
+    setTabState(({ tabs: prev, activeTabId: currentActive }) => {
       const existing = prev.find((t) => t.url === normalized);
       if (existing) {
-        setActiveTabId(existing.id);
-        return prev;
+        return existing.id === currentActive
+          ? { tabs: prev, activeTabId: currentActive }
+          : { tabs: prev, activeTabId: existing.id };
       }
       const id = tabId || genTabId();
       const title = normalized === NEW_TAB_URL ? NEW_TAB_TITLE : normalized;
-      setActiveTabId(id);
-      return [...prev, { id, url: normalized, title }];
+      return { tabs: [...prev, { id, url: normalized, title }], activeTabId: id };
     });
   }, []);
+  openTabRef.current = openTab;
 
   const closeTab = useCallback((tabId: string) => {
-    setTabs((prev) => {
+    setTabState(({ tabs: prev, activeTabId: currentActive }) => {
       const idx = prev.findIndex((t) => t.id === tabId);
-      if (idx < 0) return prev;
+      if (idx < 0) return { tabs: prev, activeTabId: currentActive };
       const next = prev.filter((t) => t.id !== tabId);
-      setActiveTabId((current) => {
-        if (current !== tabId) return current;
-        if (next.length === 0) return null;
-        const neighbor = next[Math.min(idx, next.length - 1)];
-        return neighbor.id;
-      });
-      return next;
+      if (currentActive !== tabId) {
+        return { tabs: next, activeTabId: currentActive };
+      }
+      const activeTabId =
+        next.length === 0 ? null : next[Math.min(idx, next.length - 1)].id;
+      return { tabs: next, activeTabId };
     });
   }, []);
 
   const updateTabTitle = useCallback((tabId: string, title: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    setTabs((prev) =>
-      prev.map((t) => (t.id === tabId ? { ...t, title: trimmed } : t)),
-    );
+    setTabState(({ tabs: prev, activeTabId }) => ({
+      tabs: prev.map((t) => (t.id === tabId ? { ...t, title: trimmed } : t)),
+      activeTabId,
+    }));
   }, []);
 
   const updateTabUrl = useCallback((tabId: string, url: string) => {
-    setTabs((prev) =>
-      prev.map((t) => (t.id === tabId ? { ...t, url } : t)),
-    );
+    setTabState(({ tabs: prev, activeTabId }) => ({
+      tabs: prev.map((t) => (t.id === tabId ? { ...t, url } : t)),
+      activeTabId,
+    }));
   }, []);
-
-  useEffect(() => {
-    const off = api.onBrowserOpenTab?.((payload) => {
-      if (!payload?.url) return;
-      openTab(payload.url, payload.tabId);
-    });
-    // 监听已注册，通知主进程可以冲刷排队中的 open_tab（首次打开时
-    // dom-ready 早于 React 挂载，直接 send 会丢消息）。
-    api.notifyBrowserRendererReady?.();
-    return () => off?.();
-  }, [openTab]);
 
   const handleNewTab = () => {
     openTab(NEW_TAB_URL);
+  };
+
+  const handleToggleMaximize = () => {
+    setMaximized((v) => !v);
+  };
+
+  useEffect(() => {
+    onMaximizeChange(maximized);
+  }, [maximized, onMaximizeChange]);
+
+  useEffect(() => {
+    if (!open) setMaximized(false);
+  }, [open]);
+
+  const handleResizePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (maximized) return;
+    dragStateRef.current = { startX: e.clientX, startWidth: width };
+    widthRef.current = width;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic/unowned pointer — drag still works via bubbling */
+    }
+  };
+
+  const handleResizePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    if (!drag) return;
+    const paneRight = drag.startX + drag.startWidth;
+    const next = paneRight - e.clientX;
+    if (next < MIN_WIDTH - CLOSE_DRAG_THRESHOLD) {
+      dragStateRef.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* nothing captured */
+      }
+      setWidth(drag.startWidth);
+      widthRef.current = drag.startWidth;
+      onOpenChange(false);
+      return;
+    }
+    widthRef.current = Math.max(MIN_WIDTH, next);
+    setWidth(widthRef.current);
+  };
+
+  const handleResizePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current) return;
+    dragStateRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* nothing captured */
+    }
+    try {
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(widthRef.current));
+    } catch {
+      /* localStorage unavailable */
+    }
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
@@ -205,11 +292,22 @@ export default function BrowserPage() {
   }, []);
 
   return (
-    <div className={`browser-page${isMac ? " browser-page-mac" : ""}`}>
+    <div
+      className={`chat-browser-pane${open ? "" : " collapsed"}${maximized ? " maximized" : ""}`}
+      style={maximized ? undefined : { width: `${width}px` }}
+    >
+      <div
+        className="chat-browser-pane-resize"
+        role="separator"
+        aria-orientation="vertical"
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={handleResizePointerUp}
+      />
       <header className="browser-topbar">
         <div className="browser-tabstrip">
           {tabs.map((tab) => (
-            <Button variant="ghost" key={tab.id} className={`browser-tab${tab.id === activeTabId ? " active" : ""}`} onClick={() => setActiveTabId(tab.id)} title={tab.url}>
+            <Button variant="ghost" key={tab.id} className={`browser-tab${tab.id === activeTabId ? " active" : ""}`} onClick={() => setTabState((s) => ({ ...s, activeTabId: tab.id }))} title={tab.url}>
               <span className="browser-tab-label">{tabLabel(tab)}</span>
               <span
                 className="browser-tab-close"
@@ -227,7 +325,12 @@ export default function BrowserPage() {
           ))}
           <Button variant="ghost" size="sm" className="browser-tab-add" onClick={handleNewTab} title="新标签页"><Plus size={16} /></Button>
         </div>
-        <div className="browser-topbar-drag" aria-hidden />
+        <Button variant="ghost" size="sm" className="browser-pane-action" onClick={handleToggleMaximize} title={maximized ? "恢复" : "最大化"}>
+          {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </Button>
+        <Button variant="ghost" size="sm" className="browser-pane-action" onClick={() => onOpenChange(false)} title="关闭面板">
+          <PanelRightClose size={16} />
+        </Button>
       </header>
 
       <div className="browser-urlbar">

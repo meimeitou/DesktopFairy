@@ -1,3 +1,5 @@
+import type { WebCitation } from "../../shared/webCitation";
+
 const FENCE_OPEN_RE = /^ {0,3}(`{3,}|~{3,})/;
 
 interface FenceState {
@@ -105,6 +107,64 @@ export function normalizeGfmTables(md: string): string {
     }
 
     out.push(line);
+  }
+  return out.join("\n");
+}
+
+const INLINE_CITATION_RE = /\[(\d{1,2})\](?!\()/g;
+/** Inline code spans we must not rewrite: `...` (also skips the ` in `` ` ``). */
+const CODE_SPAN_SPLIT_RE = /(`+[^`]*`+)/g;
+
+function linkCitationsOnLine(
+  line: string,
+  byIndex: ReadonlyMap<number, WebCitation>,
+): string {
+  return line
+    .split(CODE_SPAN_SPLIT_RE)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part // inline code span — leave verbatim
+        : part.replace(INLINE_CITATION_RE, (whole, num: string) => {
+            const c = byIndex.get(Number(num));
+            // [\[n\]](url): escaped brackets keep the visible [n] while
+            // GFM renders a real link (a bare [n](url) would drop them).
+            return c ? `[\\[${num}\\]](${c.url})` : whole;
+          }),
+    )
+    .join("");
+}
+
+/**
+ * The system prompt tells the model to cite sources as plain [n] markers
+ * (matching the WebCitations list under the reply). Turn those markers into
+ * real markdown links — `[\[n\]](url)`, so the visible text stays `[n]` —
+ * looked up by citation.index. Skips fenced code, inline code spans,
+ * existing links ([n](url)), and out-of-range numbers.
+ */
+export function linkInlineCitations(
+  md: string,
+  citations?: readonly WebCitation[],
+): string {
+  if (!citations?.length || !md.includes("[")) return md;
+  const byIndex = new Map<number, WebCitation>();
+  for (const c of citations) byIndex.set(c.index, c);
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let fence: FenceState | null = null;
+
+  for (const line of lines) {
+    if (fence) {
+      out.push(line);
+      if (closingFence(line, fence)) fence = null;
+      continue;
+    }
+    const fm = FENCE_OPEN_RE.exec(line);
+    if (fm) {
+      fence = { marker: fm[1][0], length: fm[1].length };
+      out.push(line);
+      continue;
+    }
+    out.push(linkCitationsOnLine(line, byIndex));
   }
   return out.join("\n");
 }

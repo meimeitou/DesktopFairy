@@ -20,9 +20,6 @@ if (typeof document !== "undefined") {
   if (windowType === "chat" || windowType === "settings") {
     root.classList.add("chat-window-shell");
     if (isMac) root.classList.add("chat-window-mac");
-  } else if (windowType === "browser") {
-    root.classList.add("browser-window-shell");
-    if (isMac) root.classList.add("browser-page-mac");
   } else if (windowType === "tip") {
     root.classList.add("tip-window");
   }
@@ -30,7 +27,6 @@ if (typeof document !== "undefined") {
 
 const ChatApp = lazy(() => import("./pages/ChatApp"));
 const TipView = lazy(() => import("./pages/TipView"));
-const BrowserPage = lazy(() => import("./pages/BrowserPage"));
 const MainView = lazy(() => import("./pages/MainView"));
 
 function App() {
@@ -43,12 +39,6 @@ function App() {
     );
   } else if (windowType === "tip") {
     child = <TipView text={params.get("text") || ""} />;
-  } else if (windowType === "browser") {
-    child = (
-      <div className="app">
-        <BrowserPage />
-      </div>
-    );
   } else {
     child = (
       <div className="app">
