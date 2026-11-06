@@ -154,6 +154,7 @@ declare global {
       onBrowserOpenTab?: (
         callback: (payload: { url: string; tabId?: string }) => void
       ) => () => void;
+      notifyBrowserRendererReady?: () => void;
     };
   }
 

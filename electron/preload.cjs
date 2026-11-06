@@ -316,4 +316,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('browser:open_tab', listener);
     return () => ipcRenderer.removeListener('browser:open_tab', listener);
   },
+  notifyBrowserRendererReady: () => {
+    ipcRenderer.send('browser:renderer_ready');
+  },
 });

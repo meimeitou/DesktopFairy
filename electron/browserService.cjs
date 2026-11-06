@@ -3,6 +3,8 @@ const path = require('path');
 
 let browserWindow = null;
 let loadURLFn = null;
+let pendingOpenTabs = [];
+let browserRendererReady = false;
 let shouldOpenDevTools = () => false;
 let getDevToolsMode = () => 'detach';
 
@@ -55,15 +57,21 @@ function bindBrowserCloseShortcut(contents) {
 
 function sendOpenTab(payload) {
   if (!browserWindow || browserWindow.isDestroyed()) return;
-  const send = () => {
-    if (!browserWindow || browserWindow.isDestroyed()) return;
-    browserWindow.webContents.send('browser:open_tab', payload);
-  };
-  if (browserWindow.webContents.isLoading()) {
-    browserWindow.webContents.once('dom-ready', send);
-  } else {
-    send();
+  pendingOpenTabs.push(payload);
+  flushOpenTabs();
+}
+
+function flushOpenTabs() {
+  if (!browserWindow || browserWindow.isDestroyed()) return;
+  if (!browserRendererReady || browserWindow.webContents.isLoading()) return;
+  while (pendingOpenTabs.length > 0) {
+    browserWindow.webContents.send('browser:open_tab', pendingOpenTabs.shift());
   }
+}
+
+function markBrowserRendererReady() {
+  browserRendererReady = true;
+  flushOpenTabs();
 }
 
 function createBrowserWindow() {
@@ -122,6 +130,8 @@ function createBrowserWindow() {
 
   browserWindow.on('closed', () => {
     browserWindow = null;
+    browserRendererReady = false;
+    pendingOpenTabs = [];
   });
 
   return browserWindow;
@@ -176,6 +186,10 @@ function registerBrowserHandlers(ipcMain, deps = {}) {
     const url = typeof payload?.url === 'string' ? payload.url : '';
     const baseUrl = typeof payload?.baseUrl === 'string' ? payload.baseUrl : '';
     return openBrowserTab(url, { baseUrl });
+  });
+
+  ipcMain.on('browser:renderer_ready', () => {
+    markBrowserRendererReady();
   });
 }
 

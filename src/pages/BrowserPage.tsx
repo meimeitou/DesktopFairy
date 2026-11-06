@@ -167,6 +167,9 @@ export default function BrowserPage() {
       if (!payload?.url) return;
       openTab(payload.url, payload.tabId);
     });
+    // 监听已注册，通知主进程可以冲刷排队中的 open_tab（首次打开时
+    // dom-ready 早于 React 挂载，直接 send 会丢消息）。
+    api.notifyBrowserRendererReady?.();
     return () => off?.();
   }, [openTab]);
 
