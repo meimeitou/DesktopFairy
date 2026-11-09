@@ -320,20 +320,17 @@
 .terminal-sidebar-foot {
   padding: 8px 10px;
   border-top: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .terminal-sidebar.collapsed .terminal-sidebar-foot {
   padding: 8px 0;
-  display: flex;
   justify-content: center;
 }
 
 .terminal-sidebar .terminal-sidebar-settings {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-.terminal-sidebar.collapsed .terminal-sidebar-settings {
   width: 32px;
   height: 32px;
   padding: 0;
@@ -753,34 +750,6 @@
   z-index: 49;
 }
 
-/* ---- terminal settings: AI 助手分区 ---- */
-
-.terminal-ai-section {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  gap: 12px;
-}
-
-/* 竖向分区菜单跟着页面滚动会消失；内容长时钉在视口顶部。
-   滚动容器是外层 .terminal-settings-content，所以 top 相对它取 0。
-   菜单一旦 sticky 就只剩自身高度，竖线因此挪到正文左边缘，才能贯穿整栏。 */
-.terminal-ai-section .agent-settings-nav {
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
-  border-right: none;
-  padding-right: 12px;
-}
-
-.terminal-ai-section .agent-settings-body {
-  border-left: 1px solid var(--hairline);
-}
-
-.terminal-ai-missing {
-  font-size: 12px;
-  color: var(--bone-500);
-}
 
 .terminal-agent-toggle {
   position: absolute;

@@ -1,4 +1,4 @@
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, warning } from "@cherrystudio/ui";
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, warning } from "@cherrystudio/ui";
 import { Form, FormItem, useForm } from "../Form";
 import { Copy, Eye, Pencil, Trash2 } from "lucide-react";
 import Select from "../Select";
@@ -7,7 +7,7 @@ import { useConfirm } from "../../hooks/useConfirm";
 import type { AppSettings } from "../../shared/settings";
 import type { SshHost, SshCredential, SshAuthMethod, CursorStyle } from "../../shared/terminalSettings";
 import { SSH_UNGROUPED_LABEL } from "../../shared/terminalSettings";
-import TerminalAiSettingsSection from "./TerminalAiSettingsSection";
+
 
 const api = window.electronAPI;
 
@@ -67,9 +67,7 @@ const EMPTY_CRED_FORM: CredForm = {
 export type Section =
   | "appearance"
   | "ssh"
-  | "credentials"
-  | "terminal-ai"
-  | "host-ai";
+  | "credentials";
 type FormMode = "add" | "edit" | "quick" | "duplicate";
 type CredFormMode = "add" | "edit";
 type TestStatus = "testing" | "ok" | "fail";
@@ -90,7 +88,7 @@ export default function TerminalSettingsTab({
   // 该组件是 keep-alive 的：外部跳转靠 nonce 触发一次分区切换，并回到分区顶部。
   useEffect(() => {
     if (!sectionRequest) return;
-    setActiveSection(sectionRequest.section === "host-ai" ? "terminal-ai" : sectionRequest.section);
+    setActiveSection(sectionRequest.section);
     contentRef.current?.scrollTo({ top: 0 });
   }, [sectionRequest?.nonce]);
   const [formMode, setFormMode] = useState<FormMode | null>(null);
@@ -546,9 +544,6 @@ export default function TerminalSettingsTab({
         <Button variant="ghost" className={`terminal-tabstrip-btn${activeSection === "credentials" ? " active" : ""}`} onClick={() => setActiveSection("credentials")}>
           凭据
         </Button>
-        <Button variant="ghost" className={`terminal-tabstrip-btn${activeSection === "terminal-ai" ? " active" : ""}`} onClick={() => setActiveSection("terminal-ai")}>
-          终端助手
-        </Button>
 
       </div>
 
@@ -746,9 +741,7 @@ export default function TerminalSettingsTab({
             )}
           </section>
         )}
-        {activeSection === "terminal-ai" && (
-          <TerminalAiSettingsSection />
-        )}
+
       </main>
 
       {formMode !== null && (

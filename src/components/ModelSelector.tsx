@@ -1,6 +1,7 @@
 import { Button, Input } from "@cherrystudio/ui";
 
 import { ChevronDown } from "lucide-react";
+import { measureDropdownSpace } from "../shared/dropdownBounds";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./ModelSelector.css";
 
@@ -42,6 +43,7 @@ export default function ModelSelector({
   const [dropUp, setDropUp] = useState(false);
   const [alignEnd, setAlignEnd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [panelMaxHeight, setPanelMaxHeight] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
@@ -108,14 +110,24 @@ export default function ModelSelector({
     listRef.current
       ?.querySelector('[aria-selected="true"]')
       ?.scrollIntoView({ block: "nearest" });
-    if (panelDirection !== "auto" || !containerRef.current) return;
+    if (!containerRef.current) return;
+    // 面板会被最近的 overflow 祖先（弹窗体/滚动容器）裁剪：
+    // 按该祖先边界压缩面板高度；空间不够时改向上展开。
+    const trigger = containerRef.current.querySelector<HTMLElement>(".model-selector-trigger");
+    const { spaceAbove, spaceBelow: spaceBelowClipped } = trigger
+      ? measureDropdownSpace(trigger)
+      : { spaceAbove: Infinity, spaceBelow: Infinity };
+    const viewportSpaceBelow = window.innerHeight - containerRef.current.getBoundingClientRect().bottom;
+    const spaceBelow = Math.min(spaceBelowClipped, viewportSpaceBelow);
+    const maxPanel = 352; // 面板满高（搜索框 + 列表 max-height 224 + padding）
+    const preferUp = spaceAbove > spaceBelow && spaceAbove > 120;
+    setDropUp(preferUp);
+    const budget = Math.max(160, Math.min(preferUp ? spaceAbove : spaceBelow, maxPanel));
+    setPanelMaxHeight(budget < maxPanel ? budget : null);
+    if (panelDirection !== "auto") return;
     const rect = containerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceRight = window.innerWidth - rect.right;
-    const spaceLeft = rect.left;
-    setDropUp(rect.top > spaceBelow);
     // Prefer expanding toward the side with more room (chat toolbar sits on the right).
-    setAlignEnd(spaceLeft >= spaceRight);
+    setAlignEnd(rect.left >= window.innerWidth - rect.right);
   }, [open, panelDirection]);
 
   if (useCustom) {
@@ -172,7 +184,7 @@ export default function ModelSelector({
             </span>
           </Button>
           {open && (
-            <div className="model-selector-panel" role="listbox">
+            <div className="model-selector-panel" role="listbox" style={panelMaxHeight ? { maxHeight: panelMaxHeight } : undefined}>
               <div className="model-selector-search-wrap">
                 <Input type="search" placeholder="搜索模型…" value={query} onChange={(e) => setQuery(e.target.value)} />
               </div>

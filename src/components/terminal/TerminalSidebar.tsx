@@ -1,6 +1,6 @@
 import { Button } from "@cherrystudio/ui";
 import { NamedIcon } from "../NamedIcon";
-import { ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings, SquareTerminal, Trash2 } from "lucide-react";
+import { Bot, ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings, SquareTerminal, Trash2 } from "lucide-react";
 
 import { useEffect, useRef, useState } from "react";
 import type { SidebarGroup, SidebarItem } from "./terminalSidebarGroups";
@@ -22,6 +22,8 @@ export interface TerminalSidebarProps {
   /** 仅已保存主机有可编辑记录 */
   onEditHost: (hostId: string) => void;
   onOpenSettings: () => void;
+  /** 打开终端助手设置弹窗 */
+  onOpenAgentSettings: () => void;
 }
 
 /** 分组菜单的最小宽度（含 padding 与边框），用于右边界收敛。 */
@@ -44,6 +46,7 @@ export default function TerminalSidebar({
   onNewConversationForGroup,
   onEditHost,
   onOpenSettings,
+  onOpenAgentSettings,
 }: TerminalSidebarProps) {
   const [addMenu, setAddMenu] = useState<{
     group: SidebarGroup;
@@ -259,7 +262,8 @@ export default function TerminalSidebar({
 
         <div className="terminal-sidebar-foot">
           <Button variant="ghost" size="sm" className={`terminal-sidebar-settings${settingsActive ? " active" : ""}`} title="终端设置" onClick={onOpenSettings}><Settings size={14} />
-            {!collapsed && "终端设置"}
+          </Button>
+          <Button variant="ghost" size="sm" className="terminal-sidebar-settings" title="助手设置" onClick={onOpenAgentSettings}><Bot size={14} />
           </Button>
         </div>
       </aside>

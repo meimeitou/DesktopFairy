@@ -8,7 +8,7 @@ import {
 } from "react";
 
 import { ChevronDown } from "lucide-react";
-import "./Select.css";
+import { measureDropdownSpace } from "../shared/dropdownBounds";
 
 export interface SelectOption {
   key: string;
@@ -45,6 +45,7 @@ export default function Select({
   const [dropUp, setDropUp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [listMaxHeight, setListMaxHeight] = useState<number | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const uid = useId().replace(/:/g, "");
   const listboxId = `df-select-${uid}-listbox`;
@@ -93,6 +94,14 @@ export default function Select({
     setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
     const rect = containerRef.current?.getBoundingClientRect();
     if (rect) setDropUp(rect.top > window.innerHeight - rect.bottom);
+    // 面板会被最近的 overflow 祖先（弹窗体/滚动容器）裁剪：压缩高度而非溢出。
+    if (triggerRef.current && rect) {
+      const goingUp = rect.top > window.innerHeight - rect.bottom;
+      const { spaceAbove, spaceBelow } = measureDropdownSpace(triggerRef.current);
+      const below = Math.min(spaceBelow, window.innerHeight - rect.bottom);
+      const budget = Math.max(120, Math.min(goingUp ? spaceAbove : below, 240));
+      setListMaxHeight(budget < 240 ? budget : null);
+    }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep active option in view while navigating.
@@ -175,7 +184,7 @@ export default function Select({
         </span>
       </button>
       {open && (
-        <ul className="df-select-list" role="listbox" id={listboxId} ref={listRef}>
+        <ul className="df-select-list" role="listbox" id={listboxId} ref={listRef} style={listMaxHeight ? { maxHeight: listMaxHeight } : undefined}>
           {options.map((opt, i) => (
             <li key={opt.key} role="option" aria-selected={i === selectedIndex}>
               <button

@@ -11,6 +11,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import "./TerminalPage.css";
+import AgentSettingsModal from "../components/agents/AgentSettingsModal";
 import TerminalAgentDrawer from "../components/terminal/TerminalAgentDrawer";
 import TerminalSelectionTooltip from "../components/terminal/TerminalSelectionTooltip";
 import TerminalContextMenu from "../components/terminal/TerminalContextMenu";
@@ -708,11 +709,17 @@ export default function TerminalPage({
     [activateTab],
   );
 
-  // 助手抽屉右上角的齿轮：收起抽屉并跳到终端设置的「终端助手」分区。
+  // 打开终端助手设置弹窗：与抽屉同款兜底（terminalAgentId 失效时回退 builtinRole）。
+  const terminalAgentId =
+    findAgentById(settings.agents, settings.terminalAgentId)?.id ??
+    settings.agents.find((a) => a.builtinRole === "terminal-assistant")?.id ??
+    null;
+  const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
+
+  // 助手抽屉右上角的齿轮：原地打开助手设置弹窗。
   const handleOpenTerminalAgentSettings = useCallback(() => {
-    setDrawerOpen(false);
-    handleOpenSettings("terminal-ai");
-  }, [handleOpenSettings]);
+    setAgentSettingsOpen(true);
+  }, []);
 
   // 侧栏分组标题的编辑按钮：跳到终端设置的 SSH 分区并弹出该主机的编辑窗。
   const handleEditHostFromSidebar = useCallback(
@@ -1206,6 +1213,7 @@ export default function TerminalPage({
         onNewConversationForGroup={handleNewConversationForGroup}
         onEditHost={handleEditHostFromSidebar}
         onOpenSettings={() => handleOpenSettings()}
+        onOpenAgentSettings={() => setAgentSettingsOpen(true)}
       />
 
       <div className="terminal-page-main">
@@ -1349,6 +1357,11 @@ export default function TerminalPage({
           <Smile size={18} />
         </Button>
       )}
+      <AgentSettingsModal
+        open={agentSettingsOpen && !!terminalAgentId}
+        agentId={terminalAgentId}
+        onClose={() => setAgentSettingsOpen(false)}
+      />
       {confirmDialog}
     </div>
   );
