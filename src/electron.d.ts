@@ -151,6 +151,8 @@ declare global {
       onSshExit: (
         callback: (payload: { sessionId: string; exitCode?: number }) => void
       ) => () => void;
+      onBrowserState?: (callback: (state: import("./shared/browser").BrowserState) => void) => () => void;
+      onBrowserResume?: (callback: (task: import("./shared/browser").BrowserPausedTask) => void) => () => void;
       onBrowserPaneOpen?: (
         callback: (payload: { url: string; tabId?: string }) => void
       ) => () => void;

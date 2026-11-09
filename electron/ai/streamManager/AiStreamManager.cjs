@@ -222,6 +222,7 @@ class AiStreamManager {
         });
       }
     } finally {
+      require('../../browserService.cjs').browser.release(topicId, requestId);
       for (const callId of entry.mcpCallIds) abortTool(callId);
       if (this.activeStreams.get(topicId) === entry) {
         this.scheduleGrace(topicId);

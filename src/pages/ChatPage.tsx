@@ -167,6 +167,7 @@ export default function ChatPage({
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [browserResume, setBrowserResume] = useState<{ topicId: string; tabId: string } | null>(null);
 
   const activeState = topicStates[activeTopicId ?? ""] ?? emptyTopicState();
   const { messages, input, attachments, streaming, invalidAttachmentPaths } =
@@ -590,6 +591,7 @@ export default function ChatPage({
         autoCreated?: ChatTopic | null;
       };
       if (!result.ok) return;
+      void api.invoke("browser:ui", { action: "discard", topicId });
 
       setTopicStates((prev) => {
         const next = { ...prev };
@@ -1264,6 +1266,27 @@ export default function ChatPage({
       void handleSend(text, options);
     };
   }, [handleSend]);
+
+  useEffect(() => api.onBrowserResume?.((task) => {
+    if (!topicsRef.current.some((topic) => topic.id === task.topicId)) return;
+    void (async () => {
+      if (!topicStatesRef.current[task.topicId]?.sessionReady) await loadSessionForTopic(task.topicId);
+      setActiveTopicId(task.topicId);
+      setBrowserResume(task);
+    })();
+  }), [loadSessionForTopic]);
+
+  useEffect(() => {
+    if (!browserResume || activeTopicId !== browserResume.topicId || !activeState.sessionReady || streaming) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setBrowserResume(null);
+      void api.invoke("browser:ui", { action: "discard", topicId: browserResume.topicId });
+      handleSendRef.current(`继续之前的浏览器任务。用户已手动接管过页面，请先用 browser_tabs 确认标签页，再重新读取标签页 ${browserResume.tabId} 的快照，根据当前页面继续；不要重放之前的提交动作。`);
+    });
+    return () => { cancelled = true; };
+  }, [browserResume, activeTopicId, activeState.sessionReady, streaming]);
 
   const handleStop = useCallback(() => {
     const topicId = activeTopicIdRef.current;

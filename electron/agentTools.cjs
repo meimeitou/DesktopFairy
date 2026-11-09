@@ -501,6 +501,7 @@ async function executeAgentTool(toolCall, deps) {
     rawArgs,
     await executeBuiltinTool(name, args, {
       ...deps,
+      toolCallId,
       ...(sudoTarget ? { approvedSudoTarget: sudoTarget } : {}),
       ...(hostOperation ? { hostOperation } : {}),
     }),

@@ -1,5 +1,5 @@
 import { Button } from "@cherrystudio/ui";
-import { Maximize2, Minimize2, PanelRightClose, Plus } from "lucide-react";
+import { Maximize2, Minimize2, PanelRightClose, Plus, Pause, Play } from "lucide-react";
 
 import {
   useCallback,
@@ -8,18 +8,11 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { BrowserState, BrowserTab } from "../../shared/browser";
+import ComposerBusyHalo from "./ComposerBusyHalo";
 import "./ChatBrowserPane.css";
 
 const api = window.electronAPI;
-
-type BrowserTab = {
-  id: string;
-  url: string;
-  title: string;
-};
-
-const NEW_TAB_URL = "about:blank";
-const NEW_TAB_TITLE = "新标签页";
 
 const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 420;
@@ -27,88 +20,66 @@ const CLOSE_DRAG_THRESHOLD = 80;
 const WIDTH_STORAGE_KEY = "df.chat.browserPane.width";
 
 function tabLabel(tab: BrowserTab): string {
-  if (tab.title && tab.title !== NEW_TAB_TITLE) return tab.title;
+  if (tab.title && tab.title !== "新标签页") return tab.title;
   try {
     const u = new URL(tab.url);
-    return u.hostname || NEW_TAB_TITLE;
+    return u.hostname || "新标签页";
   } catch {
-    return NEW_TAB_TITLE;
+    return "新标签页";
   }
-}
-
-function genTabId(): string {
-  return `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 type WebviewElement = HTMLElement & {
   src?: string;
-  getURL?: () => string;
-  loadURL?: (url: string) => void;
+  getWebContentsId?: () => number;
 };
 
-function BrowserWebview({
-  tab,
-  active,
-  onTitle,
-  onUrlChange,
-}: {
+function BrowserWebview({ tab, active, onError }: {
   tab: BrowserTab;
   active: boolean;
-  onTitle: (tabId: string, title: string) => void;
-  onUrlChange: (tabId: string, url: string) => void;
+  onError: (message: string) => void;
 }) {
   const ref = useRef<WebviewElement | null>(null);
-
+  const initialUrl = useRef(tab.url);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    let connected = false;
+    let registering = false;
+    let disposed = false;
+    const register = () => {
+      if (connected || registering || disposed) return;
+      let webContentsId: number | undefined;
+      try { webContentsId = el.getWebContentsId?.(); }
+      catch { return; /* The guest has not attached yet. */ }
+      if (!webContentsId) return;
+      registering = true;
+      void api.invoke("browser:register", { tabId: tab.id, webContentsId })
+        .then(() => { connected = true; clearInterval(poll); })
+        .catch((e: Error) => { clearInterval(poll); if (!disposed) onError(`页面连接失败：${e.message}`); })
+        .finally(() => { registering = false; });
+    };
     el.setAttribute("allowpopups", "true");
-    el.src = tab.url;
-  }, [tab.id]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const onTitleEvent = (e: Event) => {
-      const detail = e as Event & { title?: string };
-      if (detail.title) onTitle(tab.id, detail.title);
-    };
-
-    const onNavigate = (e: Event) => {
-      const detail = e as Event & { url?: string };
-      if (detail.url && detail.url !== "about:blank") {
-        onUrlChange(tab.id, detail.url);
-      }
-    };
-
-    const onNewWindow = (e: Event) => {
-      const detail = e as Event & { preventDefault?: () => void };
-      detail.preventDefault?.();
-    };
-
-    el.addEventListener("page-title-updated", onTitleEvent);
-    el.addEventListener("did-navigate", onNavigate);
-    el.addEventListener("did-navigate-in-page", onNavigate);
-    el.addEventListener("new-window", onNewWindow);
+    // Register the guest independently of the first page finishing its load.
+    el.addEventListener("did-attach", register);
+    el.addEventListener("dom-ready", register);
+    // StrictMode/HMR can reconnect effects after did-attach was dispatched.
+    const poll = setInterval(register, 50);
+    if (!el.getAttribute("src")) el.src = initialUrl.current;
+    register(); // Also recover an already attached guest after renderer HMR.
     return () => {
-      el.removeEventListener("page-title-updated", onTitleEvent);
-      el.removeEventListener("did-navigate", onNavigate);
-      el.removeEventListener("did-navigate-in-page", onNavigate);
-      el.removeEventListener("new-window", onNewWindow);
+      disposed = true;
+      clearInterval(poll);
+      el.removeEventListener("did-attach", register);
+      el.removeEventListener("dom-ready", register);
     };
-  }, [tab.id, onTitle, onUrlChange]);
-
-  return (
-    <webview
-      ref={ref}
-      className={`browser-webview${active ? " active" : ""}`}
-      partition="persist:browser"
-    />
-  );
+  }, [tab.id, onError]);
+  const controlledRequestId = tab.control?.requestId || (tab.pending ? "pending" : undefined);
+  useEffect(() => {
+    if (controlledRequestId) ref.current?.blur();
+  }, [controlledRequestId]);
+  return <webview ref={ref} className={`browser-webview${active ? " active" : ""}`} partition="persist:browser" tabIndex={tab.control || tab.pending ? -1 : 0} />;
 }
-
-type TabState = { tabs: BrowserTab[]; activeTabId: string | null };
 
 export default function ChatBrowserPane({
   open,
@@ -119,10 +90,18 @@ export default function ChatBrowserPane({
   onOpenChange: (open: boolean) => void;
   onMaximizeChange: (maximized: boolean) => void;
 }) {
-  const [tabState, setTabState] = useState<TabState>({
-    tabs: [],
-    activeTabId: null,
-  });
+  const [tabState, setTabState] = useState<BrowserState>({ tabs: [], activeTabId: null, paused: [] });
+  const [error, setError] = useState("");
+  const [addressDraft, setAddressDraft] = useState<{ tabId: string | null; url: string; value: string } | null>(null);
+  const reportError = useCallback((message: string) => setError(message), []);
+  const command = useCallback(async (payload: Record<string, string>) => {
+    try {
+      const result = await api.invoke("browser:ui", payload) as BrowserState & { ok: boolean; error?: string };
+      if (!result.ok) { setError(result.error || "操作失败，请重试"); return; }
+      setError("");
+      // State events are authoritative; avoid rolling them back with an older invoke response.
+    } catch (e) { setError(`浏览器连接失败：${String(e)}`); }
+  }, []);
   const tabs = tabState.tabs;
   const activeTabId = tabState.activeTabId;
   const [copied, setCopied] = useState(false);
@@ -140,69 +119,22 @@ export default function ChatBrowserPane({
   );
   const widthRef = useRef(width);
 
-  const openTabRef = useRef<(url: string, tabId?: string) => void>(() => {});
   const onOpenChangeRef = useRef(onOpenChange);
-  onOpenChangeRef.current = onOpenChange;
-
+  useEffect(() => { onOpenChangeRef.current = onOpenChange; }, [onOpenChange]);
   useEffect(() => {
-    const off = api.onBrowserPaneOpen?.((payload) => {
-      if (!payload?.url) return;
-      openTabRef.current(payload.url, payload.tabId);
-      onOpenChangeRef.current(true);
-    });
-    return () => off?.();
-  }, []);
-
-  const openTab = useCallback((url: string, tabId?: string) => {
-    const normalized = url.trim();
-    if (!normalized) return;
-
-    setTabState(({ tabs: prev, activeTabId: currentActive }) => {
-      const existing = prev.find((t) => t.url === normalized);
-      if (existing) {
-        return existing.id === currentActive
-          ? { tabs: prev, activeTabId: currentActive }
-          : { tabs: prev, activeTabId: existing.id };
-      }
-      const id = tabId || genTabId();
-      const title = normalized === NEW_TAB_URL ? NEW_TAB_TITLE : normalized;
-      return { tabs: [...prev, { id, url: normalized, title }], activeTabId: id };
-    });
-  }, []);
-  openTabRef.current = openTab;
-
-  const closeTab = useCallback((tabId: string) => {
-    setTabState(({ tabs: prev, activeTabId: currentActive }) => {
-      const idx = prev.findIndex((t) => t.id === tabId);
-      if (idx < 0) return { tabs: prev, activeTabId: currentActive };
-      const next = prev.filter((t) => t.id !== tabId);
-      if (currentActive !== tabId) {
-        return { tabs: next, activeTabId: currentActive };
-      }
-      const activeTabId =
-        next.length === 0 ? null : next[Math.min(idx, next.length - 1)].id;
-      return { tabs: next, activeTabId };
-    });
-  }, []);
-
-  const updateTabTitle = useCallback((tabId: string, title: string) => {
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    setTabState(({ tabs: prev, activeTabId }) => ({
-      tabs: prev.map((t) => (t.id === tabId ? { ...t, title: trimmed } : t)),
-      activeTabId,
-    }));
-  }, []);
-
-  const updateTabUrl = useCallback((tabId: string, url: string) => {
-    setTabState(({ tabs: prev, activeTabId }) => ({
-      tabs: prev.map((t) => (t.id === tabId ? { ...t, url } : t)),
-      activeTabId,
-    }));
-  }, []);
+    let receivedState = false;
+    const offState = api.onBrowserState?.((state) => { receivedState = true; setTabState(state); });
+    const offOpen = api.onBrowserPaneOpen?.(() => onOpenChangeRef.current(true));
+    void api.invoke("browser:ui", { action: "state" }).then((state) => {
+      if (!receivedState && (state as BrowserState & { ok: boolean })?.ok) setTabState(state as BrowserState);
+    }).catch((e: Error) => reportError(e.message));
+    return () => { offState?.(); offOpen?.(); };
+  }, [reportError]);
+  const controlledTab = tabs.find((tab) => tab.id === activeTabId && (tab.control || tab.pending));
+  const paused = tabState.paused.filter((task) => task.tabId === activeTabId || !tabs.some((tab) => tab.id === task.tabId));
 
   const handleNewTab = () => {
-    openTab(NEW_TAB_URL);
+    void command({ action: "open" });
   };
 
   const handleToggleMaximize = () => {
@@ -266,7 +198,14 @@ export default function ChatBrowserPane({
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const displayUrl =
-    activeTab && activeTab.url !== NEW_TAB_URL ? activeTab.url : "";
+    activeTab && activeTab.url !== "about:blank" ? activeTab.url : "";
+
+  const address = addressDraft?.tabId === activeTabId && addressDraft.url === displayUrl ? addressDraft.value : displayUrl;
+
+  const navigateAddress = () => {
+    if (controlledTab || !address.trim()) return;
+    void command({ action: "navigate", ...(activeTabId ? { tabId: activeTabId } : {}), url: address.trim() });
+  };
 
   const handleCopyUrl = async () => {
     if (!displayUrl) return;
@@ -296,6 +235,7 @@ export default function ChatBrowserPane({
       className={`chat-browser-pane${open ? "" : " collapsed"}${maximized ? " maximized" : ""}`}
       style={maximized ? undefined : { width: `${width}px` }}
     >
+      {open && controlledTab?.control ? <ComposerBusyHalo /> : null}
       <div
         className="chat-browser-pane-resize"
         role="separator"
@@ -307,7 +247,7 @@ export default function ChatBrowserPane({
       <header className="browser-topbar">
         <div className="browser-tabstrip">
           {tabs.map((tab) => (
-            <Button variant="ghost" key={tab.id} className={`browser-tab${tab.id === activeTabId ? " active" : ""}`} onClick={() => setTabState((s) => ({ ...s, activeTabId: tab.id }))} title={tab.url}>
+            <Button variant="ghost" key={tab.id} className={`browser-tab${tab.id === activeTabId ? " active" : ""}`} onClick={() => void command({ action: "activate", tabId: tab.id })} title={tab.control ? `${tab.title} · 智能体正在操作` : tab.url}>
               <span className="browser-tab-label">{tabLabel(tab)}</span>
               <span
                 className="browser-tab-close"
@@ -316,7 +256,7 @@ export default function ChatBrowserPane({
                 aria-label="关闭标签页"
                 onClick={(e) => {
                   e.stopPropagation();
-                  closeTab(tab.id);
+                  void command({ action: "close", tabId: tab.id });
                 }}
               >
                 ×
@@ -338,11 +278,17 @@ export default function ChatBrowserPane({
           ref={urlInputRef}
           type="text"
           className="browser-url-input"
-          readOnly
-          value={displayUrl}
-          placeholder="无页面"
+          readOnly={Boolean(controlledTab)}
+          value={address}
+          aria-label="网页地址"
+          placeholder="输入网址，按 Enter 打开"
+          onChange={(e) => setAddressDraft({ tabId: activeTabId, url: displayUrl, value: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Enter") { e.preventDefault(); navigateAddress(); }
+            if (e.key === "Escape") { e.preventDefault(); setAddressDraft(null); e.currentTarget.select(); }
+          }}
           onFocus={(e) => e.target.select()}
-          onClick={(e) => e.currentTarget.select()}
         />
         <Button variant="ghost" size="sm" className="browser-url-action" onClick={handleCopyUrl} disabled={!displayUrl} title="复制链接">
           {copied ? "已复制" : "复制"}
@@ -352,20 +298,34 @@ export default function ChatBrowserPane({
         </Button>
       </div>
 
+      {controlledTab ? (
+        <div className={`browser-control-bar${controlledTab.control ? " browser-control-bar--active" : ""}`} role="status">
+          <span title={controlledTab.control?.topicId}>{controlledTab.control ? `${controlledTab.control.topicName} · ${controlledTab.control.action}` : "正在停止页面操作，请稍候…"}</span>
+          {controlledTab.control ? <Button variant="ghost" size="sm" onClick={() => void command({ action: "pause", tabId: controlledTab.id })}><Pause size={14} />暂停并接管</Button> : null}
+        </div>
+      ) : null}
+      {paused.map((task) => (
+        <div className="browser-control-bar" key={task.topicId}>
+          <span>已暂停，你可以手动操作页面</span>
+          <Button variant="ghost" size="sm" disabled={tabs.some((tab) => tab.pending)} onClick={() => void command({ action: "resume", topicId: task.topicId })}><Play size={14} />继续</Button>
+          <Button variant="ghost" size="sm" onClick={() => void command({ action: "discard", topicId: task.topicId })}>结束</Button>
+        </div>
+      ))}
+      {error ? <div className="browser-control-error" role="alert">{error}</div> : null}
       <main className="browser-content">
         {tabs.length === 0 ? (
           <div className="browser-empty">点击对话中的链接，或按 + 打开新标签页</div>
         ) : (
           tabs.map((tab) => (
             <BrowserWebview
-              key={tab.id}
+              key={`${tab.id}:${tab.generation || 1}`}
               tab={tab}
               active={tab.id === activeTabId}
-              onTitle={updateTabTitle}
-              onUrlChange={updateTabUrl}
+              onError={reportError}
             />
           ))
         )}
+        {controlledTab ? <div className="browser-input-shield" aria-hidden="true" /> : null}
       </main>
     </div>
   );

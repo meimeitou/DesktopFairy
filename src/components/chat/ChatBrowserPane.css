@@ -19,6 +19,24 @@
   min-width: 0;
 }
 
+/* Reuse the composer's double-beam animation, inside the clipped browser pane. */
+.chat-browser-pane > .chat-input-busy-halo {
+  inset: 0;
+  border-radius: 0;
+  padding: 3px;
+  z-index: 11;
+  opacity: 1;
+  visibility: visible;
+  animation-play-state: running;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-browser-pane > .chat-input-busy-halo {
+    animation: none;
+    background: var(--amber);
+  }
+}
+
 .chat-browser-pane-resize {
   position: absolute;
   left: 0;
@@ -165,4 +183,42 @@
 
 .browser-webview.active {
   display: flex;
+}
+
+.browser-control-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--persimmon-softer);
+  color: var(--bone-200);
+  font-size: 12px;
+}
+.browser-control-bar > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.browser-control-bar--active {
+  background: var(--amber);
+  color: var(--ink-850);
+  border-bottom-color: var(--amber);
+  font-weight: 600;
+}
+.browser-control-bar--active button {
+  color: inherit;
+}
+.browser-control-error {
+  padding: 8px 12px;
+  color: var(--animal-error-color, var(--bone-200));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.browser-input-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  cursor: default;
 }

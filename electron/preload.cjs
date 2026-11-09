@@ -99,6 +99,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'agent:avatar:clear_image',
       'websearch:test',
       'browser:open',
+      'browser:register',
+      'browser:ui',
       'knowledge:list_bases',
       'knowledge:list_directories',
       'knowledge:select_vaults',
@@ -312,6 +314,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('mcp:tool:progress', listener);
   },
 
+  onBrowserState: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('browser:state', listener);
+    return () => ipcRenderer.removeListener('browser:state', listener);
+  },
+  onBrowserResume: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('browser:resume', listener);
+    return () => ipcRenderer.removeListener('browser:resume', listener);
+  },
   onBrowserPaneOpen: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('browser:pane:open', listener);

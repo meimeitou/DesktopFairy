@@ -98,7 +98,7 @@ let tray = null;
 let isQuitting = false;
 let currentShortcut = 'Command+Shift+C'; // mirrored for get_shortcut IPC
 let currentChatShortcut = 'Command+R'; // mirrored for get_chat_shortcut IPC
-let modelHiddenByUser = false; // set when user hides the model via the menu toggle
+let modelHiddenByUser; // initialized after the disk helpers below
 
 const selectionDeps = () => ({
   loadURL,
@@ -131,6 +131,22 @@ const CHAT_TOPICS_INDEX_PATH = () => path.join(app.getPath('userData'), 'da_chat
 const CHAT_SESSIONS_DIR = () => path.join(app.getPath('userData'), 'chat_sessions');
 const CHAT_TOOL_RESULTS_DIR = () => path.join(app.getPath('userData'), 'chat_tool_results');
 const CHAT_LOGS_DIR = () => path.join(app.getPath('userData'), 'chat_session_logs');
+const MODEL_HIDDEN_PATH = () => path.join(app.getPath('userData'), 'da_model_hidden.json');
+const readModelHiddenFromDisk = () => {
+  try {
+    return JSON.parse(fs.readFileSync(MODEL_HIDDEN_PATH(), 'utf8')).hidden === true;
+  } catch {
+    return false;
+  }
+};
+modelHiddenByUser = readModelHiddenFromDisk();
+const writeModelHiddenToDisk = (hidden) => {
+  try {
+    fs.writeFileSync(MODEL_HIDDEN_PATH(), JSON.stringify({ hidden }));
+  } catch (e) {
+    console.warn('[main] failed to persist model hidden state:', e);
+  }
+};
 const loadSettingsFromDisk = () => {
   try {
     return JSON.parse(fs.readFileSync(SETTINGS_PATH(), 'utf8'));
@@ -508,7 +524,9 @@ const createMainWindow = () => {
   openDevToolsForWindow(mainWindow);
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
+    // Respect the persisted hidden state — otherwise a hidden-at-quit model
+    // pops back on every launch.
+    if (!modelHiddenByUser) mainWindow.show();
   });
 
   // Window close = hide (not quit)
@@ -721,6 +739,7 @@ const setupIPC = () => {
   });
 
   registerBrowserHandlers(ipcMain, {
+    getTopicName: (topicId) => hostConversationService.getTopic(topicId)?.name,
     getChatWindow: () => (chatWindow && !chatWindow.isDestroyed() ? chatWindow : null),
     openExternal: (url) => shell.openExternal(url),
   });
@@ -975,11 +994,13 @@ const toggleMainWindow = () => {
   if (mainWindow.isVisible()) {
     mainWindow.hide();
     modelHiddenByUser = true;
+    writeModelHiddenToDisk(true);
     notifyMainWindowVisibility(false);
   } else {
     mainWindow.show();
     mainWindow.focus();
     modelHiddenByUser = false;
+    writeModelHiddenToDisk(false);
     notifyMainWindowVisibility(true);
   }
 };

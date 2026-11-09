@@ -1522,6 +1522,9 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
   ) {
     return fail('主机环境不提供本机工具：' + toolName);
   }
+  if (require('./browserAutomation.cjs').TOOL_NAMES.includes(toolName)) {
+    return JSON.stringify(await require('./browserService.cjs').executeBrowserTool(toolName, args, deps));
+  }
   switch (toolName) {
     case 'read':
       return toolRead(args);

@@ -14,6 +14,7 @@ const CLAUDE_CODE_BUILTIN_TOOLS = tools.map((tool) => ({
 const TOOL_LABELS = Object.fromEntries(CLAUDE_CODE_BUILTIN_TOOLS.map((t) => [t.id, t.name]));
 
 function getOpenAiToolParameters(toolId) {
+  if (toolId.startsWith('browser_')) return require('./browserToolDefinitions.cjs').parameters(toolId);
   switch (toolId) {
     case 'read':
       return {

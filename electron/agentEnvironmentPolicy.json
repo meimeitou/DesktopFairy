@@ -33,7 +33,11 @@
         "write",
         "edit",
         "glob",
-        "grep"
+        "grep",
+        "browser_tabs",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_act"
       ],
       "defaultDisabled": []
     },
@@ -45,7 +49,11 @@
         "edit",
         "glob",
         "grep",
-        "McpManager"
+        "McpManager",
+        "browser_tabs",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_act"
       ],
       "defaultDisabled": []
     },
@@ -58,7 +66,11 @@
         "glob",
         "grep",
         "Terminal",
-        "McpManager"
+        "McpManager",
+        "browser_tabs",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_act"
       ],
       "defaultDisabled": []
     }
@@ -73,7 +85,9 @@
     "ssh_exec",
     "ssh_write",
     "ssh_edit",
-    "ssh_cwd"
+    "ssh_cwd",
+    "browser_navigate",
+    "browser_act"
   ],
   "previousTerminalSouls": [
     "# Soul\n\n你是终端助手，一位帮助用户诊断问题、维护本机与远程主机的运维工程师。\n\n- 主动读取现状，再执行修复；完成后验证结果。\n- 回复简短、精确、可执行，不重复粘贴工具的大段输出。\n- 依据系统注入的运行环境与工具说明操作，先确认目标、账号和路径。\n- 破坏性操作先说明影响并遵循当前模式的审批规则。\n- 不确定时先查证，不猜测执行目标。",
@@ -83,7 +97,7 @@
   ],
   "terminalUserTemplate": "## 填写说明\n\n只填写已确认、希望长期记住的信息；留空项目表示未知，不据此猜测，也无需逐项追问。当前主机、账号、目录和工具能力由每次会话的环境信息提供。\n\n## 沟通偏好\n\n- 称呼：\n- 回复语言：\n- 技术熟悉程度：\n- 希望的解释深度与回复长度：\n- 命令展示习惯：\n\n## 工作背景\n\n- 主要工作或项目：\n- 常用操作系统与 shell：\n- 常用技术栈和工具：\n- 常用主机别名及用途：\n- 常用项目目录或仓库：\n\n## 操作习惯\n\n- 配置备份与回滚习惯：\n- 常用验证命令或验收方式：\n- 希望额外说明或确认的操作：\n\n## 长期备注\n\n（仅记录用户明确表达的长期习惯与约束；操作偏好不替代当前会话的授权。不要填写密码、私钥、Token 或其他凭据。）",
   "chatModeSuffixes": {
-    "plan": "\n\n## 计划模式\n当前处于【计划模式】。你只能使用 read / glob / grep / TodoWrite / Skills / AskUserQuestion 等只读工具来理解现状并输出执行计划。严禁调用 write / edit / bash / WebFetch / WebSearch 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。若目标或方案有歧义，可调用 AskUserQuestion 向用户确认。",
+    "plan": "\n\n## 计划模式\n当前处于【计划模式】。你只能使用 read / glob / grep / TodoWrite / Skills / AskUserQuestion 等只读工具来理解现状并输出执行计划。严禁调用 write / edit / bash / WebFetch / WebSearch 等会改变系统或需要联网的工具。回答先给出目标与方案拆解，再列出要修改的文件和具体步骤，等待用户确认后再进入下一阶段。若目标或方案有歧义，可调用 AskUserQuestion 向用户确认。 内置浏览器仅允许 browser_tabs(action=\"list\") 和 browser_snapshot，禁止导航、创建、关闭与页面操作。",
     "auto-edit": "\n\n## 自动编辑模式\n当前处于【自动编辑模式】。为了推进任务，你可以直接读写文件，无需再为 edit / write 等编辑类操作请求用户确认；但 bash / WebFetch / WebSearch / 网络请求或可能破坏环境的操作仍需先征得用户同意。若缺少关键偏好或实现方向不明确，可调用 AskUserQuestion 向用户确认。",
     "full-auto": "\n\n## 全自动模式\n当前处于【全自动模式】。为了高效推进任务，你可以自主决定使用任何已提供的工具，无需再向用户请求确认，包括文件编辑、bash 命令、网络请求等。全自动模式下不可向用户追问方向，请自行做出合理假设并继续；请保持操作的正确性与安全，在任务完成后再向用户汇报结果。"
   }
