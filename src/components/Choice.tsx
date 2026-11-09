@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import CheckboxItem from "./Checkbox";
 import "./RadioGroup.css";
 
 type Option = { value: string; label: ReactNode };
@@ -62,20 +63,19 @@ export function Checkbox({
       {options.map((option) => {
         const checked = value.includes(option.value);
         return (
-          <label key={option.value} className={checked ? "df-radio is-checked" : "df-radio"}>
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled={disabled}
-              onChange={() => {
-                const next = checked
-                  ? value.filter((item) => item !== option.value)
-                  : [...value, option.value];
-                onChange?.(next);
-              }}
-            />
+          <CheckboxItem
+            key={option.value}
+            checked={checked}
+            disabled={disabled}
+            onChange={(nextChecked) => {
+              const next = nextChecked
+                ? [...value, option.value]
+                : value.filter((item) => item !== option.value);
+              onChange?.(next);
+            }}
+          >
             <span>{option.label}</span>
-          </label>
+          </CheckboxItem>
         );
       })}
     </div>
