@@ -106,7 +106,10 @@ export function mergeSelectionActions(
   );
   const merged = saved.map((item) => {
     const def = defaultsById.get(item.id);
-    return def ? { ...def, ...item, isBuiltIn: def.isBuiltIn } : item;
+    // 内置动作的 icon 以默认值为准（历史保存的 emoji 图标已废弃）
+    return def
+      ? { ...def, ...item, isBuiltIn: def.isBuiltIn, icon: def.icon }
+      : item;
   });
   for (const def of DEFAULT_SELECTION_ACTIONS) {
     if (!merged.some((m) => m.id === def.id)) {

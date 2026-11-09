@@ -42,6 +42,7 @@ export default function ModelSelector({
   const [dropUp, setDropUp] = useState(false);
   const [alignEnd, setAlignEnd] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -104,6 +105,9 @@ export default function ModelSelector({
   useLayoutEffect(() => {
     if (!open) return;
     containerRef.current?.querySelector("input")?.focus();
+    listRef.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
     if (panelDirection !== "auto" || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom;
@@ -172,7 +176,7 @@ export default function ModelSelector({
               <div className="model-selector-search-wrap">
                 <Input type="search" placeholder="搜索模型…" value={query} onChange={(e) => setQuery(e.target.value)} />
               </div>
-              <div className="model-selector-list">
+              <div className="model-selector-list" ref={listRef}>
                 {showCustomEntry && customLabel && customValue && (
                   <Button variant="ghost" role="option" aria-selected className="model-selector-option selected" title={customLabel} onClick={() => {
                       onChange(customValue);

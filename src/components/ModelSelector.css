@@ -39,14 +39,14 @@
   background: var(--field-bg);
 }
 
-/* Library Button wraps children in a bare <span> — make it a flex link in the
-   min-width:0 chain so the value span's ellipsis can take effect. */
+/* Flex layout for trigger children (value + caret). No width:100% here —
+   it hits the caret too (Library Button renders children bare), and with
+   flex-basis:auto the caret would swallow the whole row. */
 .model-selector-trigger > span {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  width: 100%;
   min-width: 0;
 }
 
