@@ -1,6 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { hostFingerprint } = require('./chatSessionService.cjs');
+const operationFingerprintKey = crypto.randomBytes(32);
 
 
 /** Tools whose cross-host invocation requires a user grant. */
@@ -37,6 +39,66 @@ function createHostConversationService({
   function fingerprintOf(hostId) {
     const host = findHost(hostId);
     return host ? hostFingerprint(host) : null;
+  }
+
+  // Operation snapshots include authentication references and resolved secret
+  // values without retaining or exposing them. This prevents an approval or
+  // password wait from silently switching credentials underneath an action.
+  function operationFingerprintOf(hostId) {
+    const settings = getSettings();
+    const host = findHost(hostId);
+    if (!host) return null;
+    const credentials = Array.isArray(settings.sshCredentials) ? settings.sshCredentials : [];
+    const findCredential = (id) => credentials.find((credential) => credential?.id === id) || null;
+    const secretFingerprint = (value) => crypto.createHmac('sha256', operationFingerprintKey)
+      .update(String(value || ''))
+      .digest('hex');
+    const credentialValue = (id) => {
+      const credential = findCredential(id);
+      return credential ? {
+        id: credential.id,
+        passwordFingerprint: secretFingerprint(credential.password),
+        privateKeyPath: credential.privateKeyPath || '',
+      } : null;
+    };
+    const payload = {
+      endpoint: hostFingerprint(host),
+      name: host.name || '',
+      authMethod: host.authMethod || 'auto',
+      credentialId: host.credentialId || '',
+      credential: credentialValue(host.credentialId),
+      passwordFingerprint: secretFingerprint(host.password),
+      privateKeyPath: host.privateKeyPath || '',
+      proxyJumpAuthMethod: host.proxyJumpAuthMethod || 'auto',
+      proxyJumpCredentialId: host.proxyJumpCredentialId || '',
+      proxyJumpCredential: credentialValue(host.proxyJumpCredentialId),
+      proxyJumpPasswordFingerprint: secretFingerprint(host.proxyJumpPassword),
+      proxyJumpPrivateKeyPath: host.proxyJumpPrivateKeyPath || '',
+    };
+    return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  }
+
+  function captureOperation(hostId, options = {}, readCwd) {
+    const endpointFingerprint = fingerprintOf(hostId);
+    const operationFingerprint = operationFingerprintOf(hostId);
+    if (!endpointFingerprint || !operationFingerprint) throw new Error(`目标主机已不存在（id: ${hostId}）`);
+    return Object.freeze({
+      hostId,
+      endpointFingerprint,
+      operationFingerprint,
+      cwd: Object.prototype.hasOwnProperty.call(options, 'cwd')
+        ? options.cwd
+        : typeof readCwd === 'function' ? readCwd() : null,
+    });
+  }
+
+  function assertOperation(operation) {
+    if (!operation || !operation.hostId) throw new Error('SSH 操作目标未绑定，请重新确认主机');
+    if (fingerprintOf(operation.hostId) !== operation.endpointFingerprint ||
+        operationFingerprintOf(operation.hostId) !== operation.operationFingerprint) {
+      throw new Error('等待期间目标主机连接配置或凭据已变化，请重新确认');
+    }
+    return true;
   }
 
   function describeHost(hostId) {
@@ -103,6 +165,16 @@ function createHostConversationService({
       setCwd,
       describeHost,
       fingerprintOf,
+      operationFingerprintOf,
+      captureOperation: (targetHostId, options) => captureOperation(
+        targetHostId,
+        options,
+        () => getCwd(topicId, targetHostId),
+      ),
+      assertOperation: (operation) => {
+        assertValid();
+        return assertOperation(operation);
+      },
       resolveConnectParams,
       resolveHostIdByName,
       searchSavedHosts,
@@ -132,6 +204,19 @@ function createHostConversationService({
       hostName: host?.name, hostUser: host?.user,
       assertValid: validate,
       describeHost, fingerprintOf, resolveConnectParams, resolveHostIdByName, searchSavedHosts, listSavedHosts, applyHostSettingsMutation, forceApproval,
+      operationFingerprintOf,
+      captureOperation: (targetHostId, options) => captureOperation(
+        targetHostId,
+        options,
+        () => {
+          const entry = state.cwdByHost[targetHostId];
+          return entry?.identity === fingerprintOf(targetHostId) ? entry.path : null;
+        },
+      ),
+      assertOperation: (operation) => {
+        validate();
+        return assertOperation(operation);
+      },
       isGranted: (target) => {
         validate();
         const fp = fingerprintOf(target);

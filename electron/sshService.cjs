@@ -519,9 +519,11 @@ function runCommandInSshSession(sessionId, command, timeout = 60_000, signal) {
   });
 }
 
-// 一次性 SSH 命令执行（ssh_exec 工具）：不复用会话 Map，连接 → exec → 断开。
-// connectParams 形如 ssh:create 入参；返回 { stdout, stderr, exitCode } 或 reject。
-async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signal, { sudo = false, sudoCache = {}, onPasswordPrompt } = {}) {
+// 一次性连接的公共骨架：buildConnectConfig + 跳板认证 + 整体 deadline/abort +
+// 迟到连接回收。keepDeadline=false 时 deadline 只覆盖连接阶段（exec 语义，fn 自管
+// 执行期限）；true 时 deadline 覆盖 fn 全程（SFTP 语义，abort 可中断传输中的操作）。
+// fn 返回后统一回收 conn/jumpConn，两条路径共享同一份资源生命周期规则。
+async function withOneShotConnection(connectParams, { timeoutMs = 30_000, signal, keepDeadline = true, timeoutLabel }, fn) {
   const built = buildConnectConfig({
     host: connectParams?.host,
     port: connectParams?.port,
@@ -531,33 +533,29 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
     privateKeyPath: connectParams?.privateKeyPath,
   });
   if (built.error) throw new Error(built.error);
-
   const jumpAuth = {
     authMethod: connectParams?.proxyJumpAuthMethod || 'auto',
     password: connectParams?.proxyJumpPassword,
     privateKeyPath: connectParams?.proxyJumpPrivateKeyPath,
   };
-  // 整体超时/取消：覆盖连接阶段（connectWithJump 无自身 timeout 时挂死的场景）。
-  // 连接成功后 clearOverall() 摘除，exec 阶段由 Promise executor 内的独立 timer 接管。
   const jumpRef = { conn: null, jumpConn: null };
-  let overallTimer = null;
   let overallSettled = false;
   let overallReject = null;
   const overallTimeout = new Promise((_resolve, rej) => { overallReject = rej; });
-  overallTimer = setTimeout(() => {
+  const settleOverall = (message) => {
     if (overallSettled) return;
     overallSettled = true;
     try { jumpRef.conn?.end(); } catch { /* already closed */ }
     try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
-    overallReject(new Error(`SSH 命令执行超时（${Math.round(timeoutMs / 1000)}s，含连接阶段）`));
-  }, timeoutMs);
+    overallReject(new Error(message));
+  };
+  const overallTimer = setTimeout(
+    () => settleOverall(`${timeoutLabel || 'SSH 操作'}超时（${Math.round(timeoutMs / 1000)}s，含连接阶段）`),
+    timeoutMs,
+  );
   const onOverallAbort = () => {
     clearTimeout(overallTimer);
-    if (overallSettled) return;
-    overallSettled = true;
-    try { jumpRef.conn?.end(); } catch { /* already closed */ }
-    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
-    overallReject(new Error('SSH 命令已取消'));
+    settleOverall('SSH 命令已取消');
   };
   if (signal?.aborted) {
     clearTimeout(overallTimer);
@@ -570,25 +568,45 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
   };
 
   const connectPromise = connectWithJump(built.config, connectParams?.proxyJump, jumpAuth);
-  // Attach before racing: a rejected timeout skips all code after await.
-  // A late successful connection must still be closed in that case.
-  connectPromise.then((result) => {
-    if (!overallSettled) return;
+  // The tracked chain marks a consumed connection FIRST; the recycle handler
+  // is registered after it, so on the normal path it observes consumed=true.
+  // A late success after timeout (overallSettled) is still recycled.
+  let consumed = false;
+  const trackedConnect = connectPromise.then((r) => { consumed = true; return r; });
+  trackedConnect.then((result) => {
+    if (consumed && !overallSettled) return;
     try { result?.conn?.end(); } catch { /* already closed */ }
     try { result?.jumpConn?.end(); } catch { /* already closed */ }
   }).catch(() => {});
   let connected;
   try {
-    connected = await Promise.race([connectPromise, overallTimeout]);
-  } finally {
+    connected = await Promise.race([trackedConnect, overallTimeout]);
+  } catch (e) {
     clearOverall();
+    throw e;
   }
   const { conn, jumpConn, error } = connected;
-  if (error) throw new Error(error);
+  if (error) {
+    clearOverall();
+    throw new Error(error);
+  }
   jumpRef.conn = conn;
   jumpRef.jumpConn = jumpConn;
+  if (!keepDeadline) clearOverall();
+  try {
+    return await fn(conn, jumpConn, keepDeadline ? overallTimeout : null);
+  } finally {
+    clearOverall();
+    try { conn.end(); } catch { /* already closed */ }
+    if (jumpConn) { try { jumpConn.end(); } catch { /* already closed */ } }
+  }
+}
 
-  return new Promise((resolve, reject) => {
+// 一次性 SSH 命令执行（ssh_exec 工具）：不复用会话 Map，连接 → exec → 断开。
+// connectParams 形如 ssh:create 入参；返回 { stdout, stderr, exitCode } 或 reject。
+async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signal, { sudo = false, sudoCache = {}, onPasswordPrompt } = {}) {
+  return withOneShotConnection(connectParams, { timeoutMs, signal, keepDeadline: false, timeoutLabel: 'SSH 命令执行' }, (conn, jumpConn) =>
+    new Promise((resolve, reject) => {
     // 输出缓冲上限（对齐 toolBash 的 50 KiB outputCap）：超过后保留头部并停止累积，
     // 防止失控远程命令（yes / cat /dev/zero）耗尽主进程内存。截断标记随结果返回。
     const MAX_EXEC_BUFFER = 50 * 1024;
@@ -740,9 +758,9 @@ async function execOnSavedHost(connectParams, command, timeoutMs = 30_000, signa
         exitCode: code == null ? -1 : code,
         truncated,
       });
-      });
+       });
     });
-  });
+  }));
 }
 
 /** Single-quote shell escaping for `cd '<path>'` prefixes. */
@@ -812,68 +830,11 @@ function resolveSshConnection(settings, { hostId, hostName, passwordOverride } =
 
 /**
  * One-shot SFTP session (ssh_read/glob/grep/write/edit): connect → sftp → fn → disconnect.
- * Mirrors execOnSavedHost's overall-timeout/abort/connection-recycling skeleton.
+ * Shares withOneShotConnection with execOnSavedHost; the deadline stays armed
+ * through transfers so abort can tear the connection mid-read/write.
  */
 async function withSftp(connectParams, fn, { timeoutMs = 30_000, signal } = {}) {
-  const built = buildConnectConfig({
-    host: connectParams?.host,
-    port: connectParams?.port,
-    user: connectParams?.user,
-    authMethod: connectParams?.authMethod,
-    password: connectParams?.password,
-    privateKeyPath: connectParams?.privateKeyPath,
-  });
-  if (built.error) throw new Error(built.error);
-
-  const jumpAuth = {
-    authMethod: connectParams?.proxyJumpAuthMethod || 'auto',
-    password: connectParams?.proxyJumpPassword,
-    privateKeyPath: connectParams?.proxyJumpPrivateKeyPath,
-  };
-  const jumpRef = { conn: null, jumpConn: null };
-  let overallTimer = null;
-  let overallSettled = false;
-  let overallReject = null;
-  const overallTimeout = new Promise((_resolve, rej) => { overallReject = rej; });
-  overallTimer = setTimeout(() => {
-    if (overallSettled) return;
-    overallSettled = true;
-    try { jumpRef.conn?.end(); } catch { /* already closed */ }
-    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
-    overallReject(new Error(`SSH SFTP 操作超时（${Math.round(timeoutMs / 1000)}s，含连接阶段）`));
-  }, timeoutMs);
-  const onOverallAbort = () => {
-    clearTimeout(overallTimer);
-    if (overallSettled) return;
-    overallSettled = true;
-    try { jumpRef.conn?.end(); } catch { /* already closed */ }
-    try { jumpRef.jumpConn?.end(); } catch { /* already closed */ }
-    overallReject(new Error('SSH 命令已取消'));
-  };
-  if (signal?.aborted) {
-    clearTimeout(overallTimer);
-    throw new Error('SSH 命令已取消');
-  }
-  signal?.addEventListener('abort', onOverallAbort, { once: true });
-  const clearOverall = () => {
-    clearTimeout(overallTimer);
-    signal?.removeEventListener('abort', onOverallAbort);
-  };
-
-  const connectPromise = connectWithJump(built.config, connectParams?.proxyJump, jumpAuth);
-  const { conn, jumpConn, error } = await Promise.race([connectPromise, overallTimeout]);
-  if (error) { clearOverall(); throw new Error(error); }
-  jumpRef.conn = conn;
-  jumpRef.jumpConn = jumpConn;
-  // NOTE: clearOverall() stays armed through the SFTP phase — the same
-  // deadline covers connect + transfers, and abort must be able to tear the
-  // connection down while a read/write is in flight.
-  connectPromise.then((r) => {
-    if (r && r.conn && r.conn !== conn) { try { r.conn.end(); } catch { /* already closed */ } }
-    if (r && r.jumpConn && r.jumpConn !== jumpConn) { try { r.jumpConn.end(); } catch { /* already closed */ } }
-  }).catch(() => {});
-
-  try {
+  return withOneShotConnection(connectParams, { timeoutMs, signal, keepDeadline: true, timeoutLabel: 'SSH SFTP 操作' }, async (conn, _jumpConn, overallTimeout) => {
     const sftp = await Promise.race([
       new Promise((resolve, reject) => {
         conn.sftp((err, sftpSession) => {
@@ -888,11 +849,7 @@ async function withSftp(connectParams, fn, { timeoutMs = 30_000, signal } = {}) 
     } finally {
       try { sftp.end(); } catch { /* already closed */ }
     }
-  } finally {
-    clearOverall();
-    try { conn.end(); } catch { /* already closed */ }
-    if (jumpConn) { try { jumpConn.end(); } catch { /* already closed */ } }
-  }
+  });
 }
 
 function getOwnedSession(sessionId, sender) {

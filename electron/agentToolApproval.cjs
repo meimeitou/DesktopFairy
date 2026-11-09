@@ -153,9 +153,41 @@ function clearAllToolApprovals() {
   pendingAnswers.clear();
 }
 
+/**
+ * One in-stream user-interaction lifecycle: register → show card → wait →
+ * terminal state. Callers keep only the business meaning of the question and
+ * the answer; event/close choreography lives here.
+ * @returns {Promise<{ kind: 'aborted' } | { kind: 'answered', answers: Record<string, string>, close: (message: string, ok?: boolean) => void }>}
+ */
+async function askUserInStream({ requestId, safeSend, onApprovalWaitStart, signal, toolCallId, questions }) {
+  const answerId = makeAnswerId(requestId, toolCallId);
+  const toolArgs = JSON.stringify({ questions });
+  const emit = (patch) => safeSend?.('agent:stream:tool', {
+    requestId,
+    toolCallId,
+    toolName: 'AskUserQuestion',
+    toolArgs,
+    approvalId: answerId,
+    ...patch,
+  });
+  emit({ status: 'awaiting_input' });
+  onApprovalWaitStart?.();
+  const result = await waitForUserAnswer({ answerId, signal });
+  if (result.kind === 'aborted') {
+    emit({ status: 'error', message: '已取消' });
+    return { kind: 'aborted' };
+  }
+  return {
+    kind: 'answered',
+    answers: result.answers,
+    close: (message, ok = true) => emit({ status: 'done', resultPreview: JSON.stringify({ ok, message }) }),
+  };
+}
+
 module.exports = {
   makeApprovalId,
   makeAnswerId,
+  askUserInStream,
   registerToolApprovalHandlers,
   waitForToolApproval,
   waitForUserAnswer,

@@ -200,6 +200,52 @@ describe('sudo password source question', () => {
     expect(received).toEqual([]);
   });
 
+  it('rejects execution when host credentials change while the sudo password card is open', async () => {
+    const snapshot = require('./settingsSnapshot.cjs');
+    const approval = require('./agentToolApproval.cjs');
+    const { executeAgentTool } = require('./agentTools.cjs');
+    const { createHostConversationService } = require('./hostConversationService.cjs');
+    const { hostFingerprint } = require('./chatSessionService.cjs');
+    const events = [];
+    const hosts = [{ id: 'h1', name: 'host', host: '127.0.0.1', port, user: 'user', authMethod: 'password', password: 'ssh-password' }];
+    snapshot.setSnapshot({ sshHosts: hosts, sshCredentials: [] });
+    const svc = createHostConversationService({
+      settingsSnapshot: { getSnapshot: () => snapshot.getSnapshot() },
+      onHostSettingsChanged: () => {},
+    });
+    const session = { savedHostId: 'h1', savedHostFingerprint: hostFingerprint(hosts[0]) };
+    const rt = svc.resolveTerminalRuntime(session, 'drift-session', () => {});
+    let approvals = 0;
+    const result = await executeAgentTool({ id: 'drift-call', function: { name: 'ssh_exec', arguments: JSON.stringify({ hostId: 'h1', command: 'id', sudo: true }) } }, {
+      requestId: 'sudo-drift-test', topicId, hostRuntime: rt,
+      agentConfig: { chatMode: 'full-auto' },
+      allowedToolNames: new Set(['ssh_exec']),
+      safeSend: (_channel, event) => {
+        events.push(event);
+        if (event.status === 'awaiting_approval' && !approvals++) {
+          queueMicrotask(() => approval.dispatchToolApproval(event.approvalId, true));
+          return;
+        }
+        if (event.status === 'awaiting_input') queueMicrotask(() => {
+          // 密码问答等待期间静默更换主机凭据 —— 用户批准的是旧身份。
+          snapshot.setSnapshot({
+            sshHosts: [{ id: 'h1', name: 'host', host: '127.0.0.1', port, user: 'user', authMethod: 'password', password: 'swapped-password' }],
+            sshCredentials: [],
+          });
+          const question = JSON.parse(event.toolArgs).questions[0];
+          approval.dispatchUserAnswer(event.approvalId, { [question.question]: JSON.stringify({ source: 'manual', password: ' correct ' }) });
+        });
+      },
+    });
+    const parsed = JSON.parse(result.resultText);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toContain('变化');
+    // 密码不得被写入已漂移的连接。
+    expect(received).toEqual([]);
+    expect(JSON.stringify(events)).not.toContain(' correct ');
+    snapshot.setSnapshot(null);
+  });
+
   it('does not claim a command was never executed merely because its exit code is nonzero', async () => {
     behavior = 'command-error';
     const { result } = await runTool(() => '', 'ssh-password', {

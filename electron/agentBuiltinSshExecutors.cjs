@@ -620,7 +620,10 @@ function hasNestedQuantifier(source) {
 function resolveHostTarget(args, deps) {
   const rt = deps.hostRuntime;
   if (!rt) return { error: '主机上下文不可用（hostRuntime missing）' };
-  try { rt.assertValid?.(); } catch (e) { return { error: e.message }; }
+  try {
+    rt.assertValid?.();
+    if (deps.hostOperation) rt.assertOperation(deps.hostOperation);
+  } catch (e) { return { error: e.message }; }
   const hostId = typeof args?.hostId === 'string' && args.hostId.trim()
     ? args.hostId.trim()
     : rt.hostId;
@@ -636,7 +639,10 @@ function resolveHostTarget(args, deps) {
   } catch (e) {
     return { error: String(e?.message || e) };
   }
-  const cwd = rt.getCwd(rt.topicId, hostId);
+  if (deps.hostOperation && deps.hostOperation.hostId !== hostId) {
+    return { error: 'SSH 操作目标与已确认主机不一致，请重新确认' };
+  }
+  const cwd = deps.hostOperation ? deps.hostOperation.cwd : rt.getCwd(rt.topicId, hostId);
   return { hostId, connectParams, cwd };
 }
 
@@ -644,16 +650,13 @@ function resolveHostTarget(args, deps) {
  * 缺凭据时的用户补全：弹 AskUserQuestion 卡（列出已存凭据 + 手输密码）。
  * - 选已有凭据 → 通过 applyHostSettingsMutation 持久绑定 credentialId，返回新 connectParams。
  * - 手输密码 → 仅本次注入（passwordOverride），不落盘。
- * 复用 confirmSavedSshHost 同款 waitForUserAnswer 通道。
+ * 复用 confirmSavedSshHost 同款 askUserInStream 交互通道。
  */
 async function askForMissingCredential({ settings, hostId, deps }) {
   if (deps.agentConfig?.chatMode === 'full-auto') {
     return { error: 'full-auto 模式无法弹窗补全凭据，请先在终端设置中为主机配置凭据' };
   }
-  const {
-    makeAnswerId,
-    waitForUserAnswer,
-  } = require('./agentToolApproval.cjs');
+  const { askUserInStream } = require('./agentToolApproval.cjs');
   const rt = deps.hostRuntime;
   const hosts = Array.isArray(settings?.sshHosts) ? settings.sshHosts : [];
   const host = hosts.find((h) => h && h.id === hostId);
@@ -668,36 +671,25 @@ async function askForMissingCredential({ settings, hostId, deps }) {
     // 选项 value 带 cred: 前缀：手输密码即使恰好等于凭据名也不会被误判为选择。
     options: namedCreds.map((c) => ({ label: `cred:${c.name || c.id}` })),
   }];
-  const answerId = makeAnswerId(deps.requestId, `cred_${hostId}_${Date.now()}`);
   const askToolCallId = `askcred_${hostId}_${Date.now()}`;
-  // agentTools.cjs 未导出 emitToolEvent（内部函数），直接用 deps.safeSend 发事件。
-  deps.safeSend?.('agent:stream:tool', {
+  const askResult = await askUserInStream({
     requestId: deps.requestId,
+    safeSend: deps.safeSend,
+    onApprovalWaitStart: deps.onApprovalWaitStart,
+    signal: deps.signal,
     toolCallId: askToolCallId,
-    toolName: 'AskUserQuestion',
-    toolArgs: JSON.stringify({ questions }),
-    approvalId: answerId,
-    status: 'awaiting_input',
+    questions,
   });
-  deps.onApprovalWaitStart?.();
-  const answerResult = await waitForUserAnswer({ answerId, signal: deps.signal });
   // 终态事件：让卡片离开 awaiting_input，避免会话重载后残留可交互的失效卡。
-  const closeAskCard = (message) => {
-    deps.safeSend?.('agent:stream:tool', {
-      requestId: deps.requestId,
-      toolCallId: askToolCallId,
-      toolName: 'AskUserQuestion',
-      toolArgs: JSON.stringify({ questions }),
-      approvalId: answerId,
-      status: 'done',
-      resultPreview: JSON.stringify({ ok: true, message }),
-    });
-  };
-  if (answerResult.kind === 'aborted') {
-    closeAskCard('已取消');
+  const closeAskCard = askResult.close;
+  if (askResult.kind === 'aborted') {
     return { error: '已取消：用户未补全凭据' };
   }
-  const answer = String(answerResult.answers?.[question] || Object.values(answerResult.answers || {})[0] || '').trim();
+  try { if (deps.hostOperation) rt?.assertOperation(deps.hostOperation); } catch (e) {
+    closeAskCard('等待期间主机连接配置或凭据已变化');
+    return { error: e.message };
+  }
+  const answer = String(askResult.answers?.[question] || Object.values(askResult.answers || {})[0] || '').trim();
   if (!answer) {
     closeAskCard('未选择凭据');
     return { error: '未选择凭据，已取消执行' };
@@ -725,7 +717,13 @@ async function askForMissingCredential({ settings, hostId, deps }) {
       }
       closeAskCard(`已绑定凭据「${credName}」`);
       const refreshedSettings = require('./settingsSnapshot.cjs').getSnapshot() || settings;
-      return sshService.resolveSshConnection(refreshedSettings, { hostId });
+      const resolved = sshService.resolveSshConnection(refreshedSettings, { hostId });
+      return {
+        ...resolved,
+        ...(typeof rt.captureOperation === 'function'
+          ? { hostOperation: rt.captureOperation(hostId, { cwd: deps.hostOperation?.cwd }) }
+          : {}),
+      };
     }
     // terminal context：无法持久化，注入该凭据内容（仅本次）。
     const refreshed = require('./settingsSnapshot.cjs').getSnapshot() || {};
@@ -744,54 +742,37 @@ async function askForMissingCredential({ settings, hostId, deps }) {
  * sudo 等提权密码询问：弹 secret 密文输入卡，返回用户输入的密码或 null（取消）。
  */
 async function askSudoPassword({ deps, hostName, connectParams, attempt = 0, signal = deps.signal }) {
-  const {
-    makeAnswerId,
-    waitForUserAnswer,
-  } = require('./agentToolApproval.cjs');
+  const { askUserInStream } = require('./agentToolApproval.cjs');
   const hasConnectionPassword = typeof connectParams?.password === 'string' && connectParams.password.length > 0;
   const question = `${attempt > 0 ? '上次 sudo 密码认证失败，请重新选择或输入。' : ''}主机「${hostName}」需要 sudo 密码（通常为当前登录用户的密码）。验证成功后仅在当前会话内缓存 10 分钟：`;
   const questions = [{
     question, header: '提权', secret: true, options: [],
     ...(hasConnectionPassword ? { secretDefaultLabel: `使用当前连接用户 ${connectParams.user || ''} 的已保存密码` } : {}),
-  }];
+   }];
   const uniqueId = require('crypto').randomBytes(12).toString('hex');
-  const answerId = makeAnswerId(deps.requestId, `sudo_${uniqueId}`);
-  const askToolCallId = `asksudo_${uniqueId}`;
-  deps.safeSend?.('agent:stream:tool', {
+   const askToolCallId = `asksudo_${uniqueId}`;
+  const askResult = await askUserInStream({
     requestId: deps.requestId,
+    safeSend: deps.safeSend,
+    onApprovalWaitStart: deps.onApprovalWaitStart,
+    signal,
     toolCallId: askToolCallId,
-    toolName: 'AskUserQuestion',
-    toolArgs: JSON.stringify({ questions }),
-    approvalId: answerId,
-    status: 'awaiting_input',
+    questions,
   });
-  deps.onApprovalWaitStart?.();
-  const answerResult = await waitForUserAnswer({ answerId, signal });
+  if (askResult.kind === 'aborted') return null;
+  const answer = String(askResult.answers?.[question] || '');
   let password = null;
   let error = null;
-  if (answerResult.kind !== 'aborted') {
-    const answer = String(answerResult.answers?.[question] || '');
-    if (hasConnectionPassword) {
-      try {
-        const choice = JSON.parse(answer);
-        if (choice?.source === 'connection') password = connectParams.password;
-        else if (choice?.source === 'manual' && typeof choice.password === 'string') password = choice.password;
-        else error = '请选择密码来源或手动输入密码';
-      } catch { error = '密码回答格式无效，请重新选择或输入'; }
-    } else password = answer || null;
-  }
+  if (hasConnectionPassword) {
+    try {
+      const choice = JSON.parse(answer);
+      if (choice?.source === 'connection') password = connectParams.password;
+      else if (choice?.source === 'manual' && typeof choice.password === 'string') password = choice.password;
+      else error = '请选择密码来源或手动输入密码';
+    } catch { error = '密码回答格式无效，请重新选择或输入'; }
+  } else password = answer || null;
   // 终态只记录是否收讫，不回显密码或带密码的回答结构。
-  deps.safeSend?.('agent:stream:tool', {
-    requestId: deps.requestId,
-    toolCallId: askToolCallId,
-    toolName: 'AskUserQuestion',
-    toolArgs: JSON.stringify({ questions }),
-    approvalId: answerId,
-    status: 'done',
-    // 不回显密码本身，只报收讫。
-    resultPreview: JSON.stringify(error ? { ok: false, message: error } : password ? { ok: true, message: '已收到密码' } : { ok: false, message: '已取消' }),
-  });
-  if (answerResult.kind === 'aborted') return null;
+  askResult.close(error || (password ? '已收到密码' : '已取消'), !error && !!password);
   if (error) throw new Error(error);
   return password || null;
 }
@@ -1243,6 +1224,7 @@ async function toolSshExec(args, deps = {}) {
   }
 
   const sshService = require('./sshService.cjs');
+  let hostOperation = deps.hostOperation || null;
   let target;
   try {
     if (deps.hostRuntime) {
@@ -1260,6 +1242,10 @@ async function toolSshExec(args, deps = {}) {
       }
       if (!hostId) hostId = deps.hostRuntime.hostId;
       if (!hostId) return fail('请明确指定已保存主机');
+      if (hostOperation) {
+        deps.hostRuntime.assertOperation(hostOperation);
+        if (hostOperation.hostId !== hostId) return fail('SSH 操作目标与已确认主机不一致，请重新确认');
+      }
       if (hostId !== deps.hostRuntime.defaultHostId && !deps.hostRuntime.isGranted(hostId)) {
         return fail(`尚未授权在主机 ${hostId} 上执行操作，请先征得用户确认`);
       }
@@ -1274,10 +1260,18 @@ async function toolSshExec(args, deps = {}) {
     if (e?.code === 'SSH_MISSING_CREDENTIAL' && e.hostId) {
       const resolvedCred = await askForMissingCredential({ settings, hostId: e.hostId, deps });
       if (resolvedCred.error) return fail(resolvedCred.error);
+      if (resolvedCred.hostOperation) {
+        hostOperation = resolvedCred.hostOperation;
+        delete resolvedCred.hostOperation;
+      }
       target = resolvedCred;
     } else {
       return fail(String(e?.message || e));
     }
+  }
+
+  try { if (hostOperation) deps.hostRuntime?.assertOperation(hostOperation); } catch (e) {
+    return fail(String(e?.message || e));
   }
 
   if (args?.sudo === true && deps.approvedSudoTarget) {
@@ -1290,10 +1284,12 @@ async function toolSshExec(args, deps = {}) {
     }
   }
 
-  // cwd 前缀：host context 且该主机有持久 cwd 时拼接；cwd 为 null 不拼（登录默认 home）。
+  // 当前操作使用主机确认时捕获的 cwd；之后更新的 cwd 只影响后续操作。
   let fullCommand = command;
   if (deps.hostRuntime) {
-    const cwd = deps.hostRuntime.getCwd(deps.hostRuntime.topicId, target.hostId);
+    const cwd = hostOperation
+      ? hostOperation.cwd
+      : deps.hostRuntime.getCwd(deps.hostRuntime.topicId, target.hostId);
     if (cwd) {
       fullCommand = `cd ${sshService.shellQuote(cwd)} && ${command}`;
     }
@@ -1308,7 +1304,11 @@ async function toolSshExec(args, deps = {}) {
       {
         sudo: args?.sudo === true,
         sudoCache: { topicId: deps.topicId, hostId: target.hostId },
-        onPasswordPrompt: async (signal, attempt) => askSudoPassword({ deps, hostName: target.hostName, connectParams: target.connectParams, attempt, signal }),
+        onPasswordPrompt: async (signal, attempt) => {
+          const password = await askSudoPassword({ deps, hostName: target.hostName, connectParams: target.connectParams, attempt, signal });
+          if (hostOperation) deps.hostRuntime.assertOperation(hostOperation);
+          return password;
+        },
       },
     );
     return ok({

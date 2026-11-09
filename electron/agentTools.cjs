@@ -4,9 +4,8 @@ const { executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs
 const { parseToolArgumentsStrict } = require('./toolCallDisplay.cjs');
 const {
   makeApprovalId,
-  makeAnswerId,
+  askUserInStream,
   waitForToolApproval,
-  waitForUserAnswer,
 } = require('./agentToolApproval.cjs');
 
 function parseCommandString(commandStr) {
@@ -196,33 +195,15 @@ async function executeAskUserQuestion(toolCall, deps, args, rawArgs, toolCallId)
   const normalized = normalizeAskUserQuestionsArgs(args);
   const normalizedArgsJson = JSON.stringify({ questions: normalized.questions });
 
-  const answerId = makeAnswerId(deps.requestId, toolCallId);
-  emitToolEvent(deps, {
-    toolCallId,
-    toolName,
-    toolArgs: normalizedArgsJson,
-    approvalId: answerId,
-    status: 'awaiting_input',
-  });
-  deps.onApprovalWaitStart?.();
-
-  const answerResult = await waitForUserAnswer({
-    answerId,
+  const answerResult = await askUserInStream({
+    requestId: deps.requestId,
+    safeSend: deps.safeSend,
+    onApprovalWaitStart: deps.onApprovalWaitStart,
     signal: deps.signal,
+    toolCallId,
+    questions: normalized.questions,
   });
-
-  if (answerResult.kind === 'aborted') {
-    emitToolEvent(deps, {
-      toolCallId,
-      toolName,
-      toolArgs: normalizedArgsJson,
-      approvalId: answerId,
-      status: 'error',
-      message: '已取消',
-    });
-    return { resultText: '', aborted: true };
-  }
-
+  if (answerResult.kind === 'aborted') return { resultText: '', aborted: true };
   return returnToolResult(
     deps,
     toolCallId,
@@ -282,7 +263,12 @@ async function confirmSavedSshHost(deps, args, toolCallId) {
   }
   const shown = matches.slice(0, 4);
   const extra = matches.length - shown.length;
-  const fingerprintAtAsk = new Map(matches.map((h) => [h.id, rt.fingerprintOf(h.id)]));
+  const fingerprintAtAsk = new Map(matches.map((h) => [
+    h.id,
+    typeof rt.operationFingerprintOf === 'function'
+      ? rt.operationFingerprintOf(h.id)
+      : rt.fingerprintOf(h.id),
+  ]));
   const question = !matches.length
     ? '当前没有已保存的 SSH 主机。请说明要连接的主机名称、地址和登录账号；确认并保存主机后才能执行操作。不要填写密码。'
     : conflicting
@@ -300,32 +286,30 @@ async function confirmSavedSshHost(deps, args, toolCallId) {
     header: '主机',
     options: shown.map((h) => ({ label: savedHostLabel(h) })),
   }];
-  const answerId = makeAnswerId(deps.requestId, toolCallId);
-  emitToolEvent(deps, {
+  const askResult = await askUserInStream({
+    requestId: deps.requestId,
+    safeSend: deps.safeSend,
+    onApprovalWaitStart: deps.onApprovalWaitStart,
+    signal: deps.signal,
     toolCallId,
-    toolName: 'AskUserQuestion',
-    toolArgs: JSON.stringify({ questions }),
-    approvalId: answerId,
-    status: 'awaiting_input',
+    questions,
   });
-  deps.onApprovalWaitStart?.();
-  const answerResult = await waitForUserAnswer({ answerId, signal: deps.signal });
-  const closeQuestion = (message, ok = false) => emitToolEvent(deps, {
-    toolCallId, toolName: 'AskUserQuestion', toolArgs: JSON.stringify({ questions }),
-    approvalId: answerId, status: 'done', resultPreview: JSON.stringify({ ok, message }),
-  });
-  if (answerResult.kind === 'aborted') { closeQuestion('已取消'); return { aborted: true }; }
-  const answer = answerResult.answers?.[questionText] || Object.values(answerResult.answers || {})[0] || '';
+  if (askResult.kind === 'aborted') return { aborted: true };
+  const closeQuestion = askResult.close;
+  const answer = askResult.answers?.[questionText] || Object.values(askResult.answers || {})[0] || '';
   const picked = pickHostFromAnswer(matches, answer);
   if (!picked) {
-    closeQuestion('尚未确认已保存主机，未执行操作');
+    closeQuestion('尚未确认已保存主机，未执行操作', false);
     return {
       error: '没有确认到已保存主机，已取消执行。请先调用 ssh_hosts(action="list") 核对列表，通过 AskUserQuestion 澄清目标；需要新增主机时先收集配置并经用户批准保存，不得直接连接猜测的地址。',
       clarification: String(answer).trim().slice(0, 2000),
     };
   }
-  if (rt.fingerprintOf(picked.id) !== fingerprintAtAsk.get(picked.id)) {
-    closeQuestion('确认期间目标主机身份已变化');
+  const currentFingerprint = typeof rt.operationFingerprintOf === 'function'
+    ? rt.operationFingerprintOf(picked.id)
+    : rt.fingerprintOf(picked.id);
+  if (currentFingerprint !== fingerprintAtAsk.get(picked.id)) {
+    closeQuestion('确认期间目标主机身份已变化', false);
     return { error: '确认期间目标主机身份已变化，请重新确认' };
   }
   args.hostId = picked.id;
@@ -375,16 +359,20 @@ async function executeAgentTool(toolCall, deps) {
   }
 
   const isSshTargetTool = deps.hostRuntime && name.startsWith('ssh_') && name !== 'ssh_hosts';
-  let hostJustConfirmed = false;
+  let hostOperation = null;
   if (isSshTargetTool) {
     const confirmed = await confirmSavedSshHost(deps, args, toolCallId);
     if (confirmed.aborted) return { resultText: '', aborted: true };
     if (confirmed.error) {
       return { resultText: JSON.stringify({ ok: false, error: confirmed.error, ...(confirmed.clarification ? { hostClarification: confirmed.clarification } : {}) }), denied: false };
     }
-    hostJustConfirmed = confirmed.asked === true;
     args.targetLabel = deps.hostRuntime.describeHost?.(args.hostId) || args.hostId;
     rawArgs = JSON.stringify(args);
+    try {
+      hostOperation = deps.hostRuntime.captureOperation?.(args.hostId) || null;
+    } catch (e) {
+      return { resultText: JSON.stringify({ ok: false, error: e.message }), denied: false };
+    }
   }
   const targetFingerprint = isSshTargetTool ? deps.hostRuntime.fingerprintOf(args.hostId) : null;
   // Bind the approval to the actual endpoint, including non-host contexts.
@@ -421,7 +409,7 @@ async function executeAgentTool(toolCall, deps) {
       : false;
   const sudoForce = name === 'ssh_exec' && args.sudo === true;
   const approvalMode = resolveToolApprovalMode(deps.agentConfig);
-  if (sudoForce || (!hostJustConfirmed && (hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args))))) {
+  if (sudoForce || hostForce || (!deps.bypassApproval && shouldPromptForTool(name, approvalMode, args))) {
     const approvalResult = await requestInlineToolApproval(toolCall, deps, args, rawArgs, { force: hostForce || sudoForce });
     if (approvalResult === 'aborted') {
       return { resultText: '', aborted: true };
@@ -436,10 +424,15 @@ async function executeAgentTool(toolCall, deps) {
     if (sudoTarget) {
       try {
         if (JSON.stringify(resolveSudoTarget()) !== JSON.stringify(sudoTarget)) throw new Error('changed');
-      } catch { return { resultText: JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }) }; }
+      } catch {
+        return returnToolResult(deps, toolCallId, name, rawArgs, JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }));
+      }
     }
     if (isSshTargetTool && deps.hostRuntime.fingerprintOf(args.hostId) !== targetFingerprint) {
-      return { resultText: JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }) };
+      return returnToolResult(deps, toolCallId, name, rawArgs, JSON.stringify({ ok: false, error: '审批期间目标主机身份已变化，请重新确认' }));
+    }
+    try { if (hostOperation) deps.hostRuntime.assertOperation(hostOperation); } catch (e) {
+      return returnToolResult(deps, toolCallId, name, rawArgs, JSON.stringify({ ok: false, error: e.message }));
     }
     // Approved force card for a cross-host call → persist the grant.
     if (
@@ -460,6 +453,9 @@ async function executeAgentTool(toolCall, deps) {
 
   // Recheck after approval: the terminal or host may have changed while waiting.
   try { deps.assertEnvironment?.(); } catch (e) {
+    return returnToolResult(deps, toolCallId, name, rawArgs, JSON.stringify({ ok: false, error: e.message }));
+  }
+  try { if (hostOperation) deps.hostRuntime.assertOperation(hostOperation); } catch (e) {
     return returnToolResult(deps, toolCallId, name, rawArgs, JSON.stringify({ ok: false, error: e.message }));
   }
 
@@ -503,7 +499,11 @@ async function executeAgentTool(toolCall, deps) {
     toolCallId,
     name,
     rawArgs,
-    await executeBuiltinTool(name, args, sudoTarget ? { ...deps, approvedSudoTarget: sudoTarget } : deps),
+    await executeBuiltinTool(name, args, {
+      ...deps,
+      ...(sudoTarget ? { approvedSudoTarget: sudoTarget } : {}),
+      ...(hostOperation ? { hostOperation } : {}),
+    }),
   );
 }
 
