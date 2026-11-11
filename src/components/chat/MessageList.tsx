@@ -183,6 +183,21 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       return idx >= 0 ? messages[idx].id : null;
     }, [messages, streaming]);
 
+    // Compute once per render which bubble (if any) should tick the thinking clock.
+    // isThinkingClockLive does an O(n) messages.findIndex per call; hoisting it here
+    // means it runs at most once per frame instead of once per visible virtual row.
+    const thinkingClockLiveId = useMemo(() => {
+      if (!streaming || !streamingAssistantId) return null;
+      for (const item of items) {
+        if (item.kind !== "message") continue;
+        if (item.msg.id !== streamingAssistantId) continue;
+        return isThinkingClockLive(streaming, item.msg, messages)
+          ? item.msg.id
+          : null;
+      }
+      return null;
+    }, [items, messages, streaming, streamingAssistantId]);
+
     // Narrow approval key so the effect does not re-run every stream frame.
     const approvalInfo = useMemo(() => {
       for (let i = 0; i < items.length; i++) {
@@ -360,8 +375,11 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       return () => ro.disconnect();
     }, [messages.length, pinToBottom]);
 
-    // Center awaiting-approval cards without permanently detaching follow-bottom.
-    // After the card is resolved, resume pinning so the final reply can follow.
+    // Position awaiting-approval cards just above the composer, not at the
+    // viewport's mathematical center — "center" ignores the floating input dock
+    // and can land the card's bottom under it. "end" respects scroll-margin-bottom
+    // (defined on .agent-tool-permission / .agent-tool-ask) which already reserves
+    // composerHeight + 24px so the card's action buttons are fully visible.
     useEffect(() => {
       if (!approvalInfo) {
         const hadApproval = lastApprovalKeyRef.current != null;
@@ -378,12 +396,12 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       lastApprovalKeyRef.current = approvalInfo.key;
       pauseForApprovalRef.current = true;
       cancelPendingPin();
-      virtualizer.scrollToIndex(approvalInfo.index, { align: "center" });
+      virtualizer.scrollToIndex(approvalInfo.index, { align: "end" });
       requestAnimationFrame(() => {
         const card = parentRef.current?.querySelector<HTMLElement>(
           "[data-tool-approval-id]",
         );
-        card?.scrollIntoView({ block: "center", behavior: "auto" });
+        card?.scrollIntoView({ block: "end", behavior: "auto" });
       });
     }, [approvalInfo, cancelPendingPin, pinToBottom, virtualizer]);
 
@@ -453,11 +471,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     msg={item.msg}
                     isStreamingTarget={item.msg.id === streamingAssistantId}
                     streaming={streaming}
-                    thinkingClockLive={isThinkingClockLive(
-                      streaming,
-                      item.msg,
-                      messages,
-                    )}
+                    thinkingClockLive={item.msg.id === thinkingClockLiveId}
                     invalidAttachmentPaths={invalidAttachmentPaths}
                     isEditing={item.msg.id === editingMsgId}
                     onRetry={item.msg.role === "user" ? onRetry : undefined}

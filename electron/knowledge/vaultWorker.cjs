@@ -20,25 +20,36 @@ function open(vault) {
     CREATE TABLE IF NOT EXISTS chunks(id INTEGER PRIMARY KEY, path TEXT, start_line INTEGER, end_line INTEGER, text TEXT);
     CREATE INDEX IF NOT EXISTS chunks_path ON chunks(path);
     CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(title, aliases, tags, path, body, tokenize='unicode61');`);
+  // Prepare all hot-path statements once at open time; reuse across every file during scan.
+  db.s = {
+    delSearchByPath: db.prepare('DELETE FROM search WHERE rowid IN (SELECT id FROM chunks WHERE path=?)'),
+    delChunksByPath: db.prepare('DELETE FROM chunks WHERE path=?'),
+    delFile:         db.prepare('DELETE FROM files WHERE path=?'),
+    getMtime:        db.prepare('SELECT mtime,size FROM files WHERE path=?'),
+    insFile:         db.prepare('INSERT INTO files VALUES(?,?,?,?,?,?)'),
+    insChunk:        db.prepare('INSERT INTO chunks(path,start_line,end_line,text) VALUES(?,?,?,?)'),
+    insSearch:       db.prepare('INSERT INTO search(rowid,title,aliases,tags,path,body) VALUES(?,?,?,?,?,?)'),
+    countFiles:      db.prepare('SELECT count(*) n FROM files'),
+    allPaths:        db.prepare('SELECT path FROM files'),
+    allForAlias:     db.prepare('SELECT path,title,aliases FROM files'),
+  };
   dbs.set(vault.id, db);
   return db;
 }
 function removeFile(db, file) {
-  db.prepare('DELETE FROM search WHERE rowid IN (SELECT id FROM chunks WHERE path=?)').run(file);
-  db.prepare('DELETE FROM chunks WHERE path=?').run(file);
-  db.prepare('DELETE FROM files WHERE path=?').run(file);
+  db.s.delSearchByPath.run(file);
+  db.s.delChunksByPath.run(file);
+  db.s.delFile.run(file);
 }
 function indexFile(db, vault, relative) {
   const { text, stat } = readFile(vault, relative);
   const note = parseNote(text, relative);
   db.transaction(() => {
     removeFile(db, relative);
-    db.prepare('INSERT INTO files VALUES(?,?,?,?,?,?)').run(relative, stat.mtimeMs, stat.size, note.title, JSON.stringify(note.aliases), JSON.stringify(note.tags));
-    const chunkStmt = db.prepare('INSERT INTO chunks(path,start_line,end_line,text) VALUES(?,?,?,?)');
-    const searchStmt = db.prepare('INSERT INTO search(rowid,title,aliases,tags,path,body) VALUES(?,?,?,?,?,?)');
+    db.s.insFile.run(relative, stat.mtimeMs, stat.size, note.title, JSON.stringify(note.aliases), JSON.stringify(note.tags));
     for (const chunk of lineChunks(text)) {
-      const row = chunkStmt.run(relative, chunk.startLine, chunk.endLine, chunk.text);
-      searchStmt.run(row.lastInsertRowid, textTokens(note.title), textTokens(note.aliases.join(' ')), textTokens(note.tags.join(' ')), textTokens(relative), textTokens(chunk.text));
+      const row = db.s.insChunk.run(relative, chunk.startLine, chunk.endLine, chunk.text);
+      db.s.insSearch.run(row.lastInsertRowid, textTokens(note.title), textTokens(note.aliases.join(' ')), textTokens(note.tags.join(' ')), textTokens(relative), textTokens(chunk.text));
     }
   })();
   return note.warning;
@@ -56,7 +67,7 @@ async function scan(vault, rebuild, id) {
     const seen = new Set();
     const errors = [];
     let processed = 0, discovered = 0;
-    const report = () => parentPort.postMessage({ status: { baseId: vault.id, state: 'indexing', processed, discovered, fileCount: db.prepare('SELECT count(*) n FROM files').get().n, errors: [...errors] } });
+    const report = () => parentPort.postMessage({ status: { baseId: vault.id, state: 'indexing', processed, discovered, fileCount: db.s.countFiles.get().n, errors: [...errors] } });
     report();
     async function walk(dir, prefix = '') {
       check(id);
@@ -70,7 +81,7 @@ async function scan(vault, rebuild, id) {
         seen.add(relative); discovered++;
         try {
           const stat = fs.statSync(resolveFile(vault, relative));
-          const old = db.prepare('SELECT mtime,size FROM files WHERE path=?').get(relative);
+          const old = db.s.getMtime.get(relative);
           if (rebuild || !old || old.mtime !== stat.mtimeMs || old.size !== stat.size) {
             const warning = indexFile(db, vault, relative);
             if (warning && errors.length < 20) errors.push(relative + ': ' + warning);
@@ -86,9 +97,9 @@ async function scan(vault, rebuild, id) {
     await walk(root);
     check(id);
     db.transaction(() => {
-      for (const row of db.prepare('SELECT path FROM files').all()) if (!seen.has(row.path)) removeFile(db, row.path);
+      for (const row of db.s.allPaths.all()) if (!seen.has(row.path)) removeFile(db, row.path);
     })();
-    const status = { baseId: vault.id, state: 'ready', processed, discovered, fileCount: db.prepare('SELECT count(*) n FROM files').get().n, errors, updatedAt: Date.now() };
+    const status = { baseId: vault.id, state: 'ready', processed, discovered, fileCount: db.s.countFiles.get().n, errors, updatedAt: Date.now() };
     parentPort.postMessage({ status });
     return status;
   });
@@ -100,6 +111,8 @@ function search(vaults, args, id) {
   if (!query) return { hits: [], errors: [] };
   const terms = query.split(' AND ');
   const limit = Math.max(1, Math.min(50, Math.floor(Number(args.limit) || 10)));
+  const rawTerms = terms.map((term) => term.slice(1, -1));
+  const matchesFn = (value) => rawTerms.some((t) => textTokens(value).includes(t));
   const hits = [], errors = [];
   for (const vault of vaults) {
     check(id);
@@ -133,11 +146,9 @@ function search(vaults, args, id) {
           // Search snippets always come from the current source, never offline cached text.
           const source = readLines(vault, { path: row.path, startLine: row.start_line, endLine: row.end_line });
           paths.add(row.path);
-          const terms = query.split(' AND ').map((term) => term.slice(1, -1));
-          const matches = (value) => terms.some((term) => textTokens(value).includes(term));
           const matchedBy = [
-            matches(row.title) && '标题', matches(JSON.parse(row.aliases).join(' ')) && '别名',
-            matches(JSON.parse(row.tags).join(' ')) && '标签', matches(row.path) && '路径',
+            matchesFn(row.title) && '标题', matchesFn(JSON.parse(row.aliases).join(' ')) && '别名',
+            matchesFn(JSON.parse(row.tags).join(' ')) && '标签', matchesFn(row.path) && '路径',
           ].filter(Boolean);
           const lines = source.text.split('\n');
           let bodyStart = 0;
@@ -145,7 +156,7 @@ function search(vaults, args, id) {
             const frontEnd = lines.findIndex((line, index) => index > 0 && /^(---|\.\.\.)\s*$/.test(line));
             if (frontEnd >= 0) bodyStart = frontEnd + 1;
           }
-          let matchLine = lines.findIndex((line, index) => index >= bodyStart && matches(line));
+          let matchLine = lines.findIndex((line, index) => index >= bodyStart && matchesFn(line));
           if (matchLine >= 0) matchedBy.push('正文');
           else matchLine = bodyStart;
           const snippetStart = Math.max(bodyStart, matchLine - 2);
@@ -184,7 +195,7 @@ function resolveLink(vault, args) {
     if (!candidates.length) candidates = tryPath(path.posix.normalize(target));
     if (!candidates.length && !target.includes('/')) {
       const name = target.replace(/\.(md|markdown)$/i, '').normalize('NFKC').toLowerCase();
-      candidates = db.prepare('SELECT path,title,aliases FROM files').all().filter((row) =>
+      candidates = db.s.allForAlias.all().filter((row) =>
         [path.posix.basename(row.path).replace(/\.(md|markdown)$/i, ''), ...JSON.parse(row.aliases)].some((s) => s.normalize('NFKC').toLowerCase() === name));
     }
   }
@@ -195,10 +206,12 @@ function resolveLink(vault, args) {
   if (anchor) {
     const { text } = readFile(vault, relative);
     const normalize = (s) => s.replace(/\s+/g, '-').toLowerCase();
-    const index = text.split('\n').findIndex((line) => {
-      const heading = line.match(/^#{1,6}\s+(.+?)\s*#*\s*$/)?.[1];
-      return heading && (heading === anchor || normalize(heading) === normalize(anchor));
-    });
+    const lines = text.split('\n');
+    let index = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const heading = lines[i].match(/^#{1,6}\s+(.+?)\s*#*\s*$/)?.[1];
+      if (heading && (heading === anchor || normalize(heading) === normalize(anchor))) { index = i; break; }
+    }
     if (index < 0) throw new Error('未找到标题锚点');
     startLine = index + 1;
   }

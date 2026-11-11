@@ -46,6 +46,7 @@ import {
   buildTrimOptions,
   estimateAgentSystemPromptTokens,
   estimateContextUsage,
+  type ContextUsageResult,
   resolveActiveModelName,
   resolveContextWindow,
 } from "../shared/contextUsage";
@@ -194,6 +195,13 @@ export default function ChatPage({
   const handleClearContextRef = useRef<() => void>(() => {});
   const compactRequestIdRef = useRef<string | null>(null);
   const agentSendLockRef = useRef(new Set<string>());
+  /**
+   * Frozen snapshots of contextMessages / contextUsage while streaming.
+   * Token estimation is O(n) over all messages; recomputing every RAF frame
+   * during streaming is wasteful — the bar only needs to update once per turn.
+   */
+  const frozenContextMessagesRef = useRef<ChatMsg[] | null>(null);
+  const frozenContextUsageRef = useRef<ContextUsageResult | null>(null);
 
   useEffect(() => {
     // Keep ref in sync without clobbering live stream progress.
@@ -286,18 +294,28 @@ export default function ChatPage({
   const activeChatMode: ChatMode =
     activeTopic?.chatMode ?? currentAgent?.chatMode ?? "normal";
 
-  const contextMessages = useMemo(
-    () => filterForAgentHistory(messages),
-    [messages],
-  );
+  const contextMessages = useMemo(() => {
+    // During streaming every chunk produces a new messages array; re-filtering
+    // the full list each frame is O(n) work for a bar that doesn't need 60 fps.
+    // Freeze the snapshot at stream-start and recompute once streaming ends.
+    if (streaming && frozenContextMessagesRef.current !== null) {
+      return frozenContextMessagesRef.current;
+    }
+    const result = filterForAgentHistory(messages);
+    frozenContextMessagesRef.current = result;
+    return result;
+  }, [messages, streaming]);
 
   const contextUsage = useMemo(() => {
-    if (!topicAgent) return null;
+    if (streaming && frozenContextUsageRef.current !== null) {
+      return frozenContextUsageRef.current;
+    }
+    if (!topicAgent) { frozenContextUsageRef.current = null; return null; }
     const contextWindow = resolveContextWindow(
       resolveActiveModelName(topicAgent),
     );
     const systemTokens = estimateAgentSystemPromptTokens(topicAgent);
-    return estimateContextUsage({
+    const result = estimateContextUsage({
       messages: contextMessages,
       input,
       attachments,
@@ -307,7 +325,10 @@ export default function ChatPage({
       lastCompletionTokens: activeState.lastCompletionTokens,
       lastUsageMessageCount: activeState.lastUsageMessageCount,
     });
+    frozenContextUsageRef.current = result;
+    return result;
   }, [
+    streaming,
     topicAgent,
     contextMessages,
     input,

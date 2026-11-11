@@ -6,16 +6,18 @@ const { Worker } = require('worker_threads');
 const { app, dialog, shell, BrowserWindow } = require('electron');
 const { normalizeExcludes, resolveFile } = require('./vaultFiles.cjs');
 let worker = null, sequence = 0, revision = 0;
+let _catalog = null; // in-memory cache; always kept in sync with disk by save()
 const pending = new Map(), statuses = new Map(), watchers = new Map(), jobs = new Map();
 let reconcileTimer;
 function root() { return path.join(app.getPath('userData'), 'vault-knowledge'); }
 function configPath() { return path.join(root(), 'vaults.json'); }
 function catalog() {
+  if (_catalog) return _catalog;
   try {
     const data = JSON.parse(fs.readFileSync(configPath(), 'utf8'));
     if (!Array.isArray(data.vaults)) throw new Error('vault 配置损坏');
-    return data.vaults;
-  } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+    return (_catalog = data.vaults);
+  } catch (error) { if (error.code === 'ENOENT') return (_catalog = []); throw error; }
 }
 function broadcast(windows = BrowserWindow.getAllWindows()) {
   for (const win of windows) {
@@ -33,6 +35,7 @@ function save(vaults) {
   fs.mkdirSync(root(), { recursive: true });
   fs.writeFileSync(configPath() + '.tmp', JSON.stringify({ version: 1, vaults }, null, 2));
   fs.renameSync(configPath() + '.tmp', configPath());
+  _catalog = vaults; // keep in-memory cache in sync with the new state
   revision++; broadcast();
 }
 function ensureWorker() {
@@ -56,6 +59,8 @@ function ensureWorker() {
     pending.clear();
     for (const [baseId, status] of statuses) statuses.set(baseId, { ...status, state: 'error', errors: [error.message] });
     broadcast();
+    // Reschedule all vaults after a short pause; ensureWorker() recreates the worker on the next rpc call.
+    setTimeout(() => { for (const vault of catalog()) void schedule(vault); }, 2000);
   };
   next.on('error', fail);
   next.on('exit', (code) => fail(new Error('知识库索引进程已退出（' + code + '），将自动重试')));
@@ -118,6 +123,9 @@ function watch(vault) {
   try {
     const watcher = fs.watch(vault.path, { recursive: true }, (_event, name) => {
       const relative = name?.toString().replace(/\\/g, '/');
+      // Skip changes to non-Markdown files (images, PDFs, attachments…). An unknown
+      // name (null) or a path without an extension may be a directory event — let it through.
+      if (relative && /\.[^/.]+$/.test(relative) && !/\.(md|markdown)$/i.test(relative)) return;
       if (relative && (relative.split('/').some((p) => p.startsWith('.')) || vault.excludes.some((d) => relative === d || relative.startsWith(d + '/')))) return;
       clearTimeout(timer);
       timer = setTimeout(() => { void schedule(vault); }, 350);
@@ -195,12 +203,19 @@ function registerKnowledgeHandlers(ipcMain) {
   });
   ipcMain.handle('knowledge:open_vault', async (_event, { baseId }) => {
     const vault = getVault(baseId);
-    await shell.openExternal('obsidian://open?path=' + encodeURIComponent(vault.path));
+    if (vault.obsidian) await shell.openExternal('obsidian://open?path=' + encodeURIComponent(vault.path));
+    else { const error = await shell.openPath(vault.path); if (error) throw new Error(error); }
     return { ok: true };
   });
   for (const vault of catalog()) { watch(vault); void schedule(vault); }
   reconcileTimer = setInterval(() => {
-    for (const vault of catalog()) { watch(vault); void schedule(vault); }
+    for (const vault of catalog()) {
+      const wasWatched = watchers.has(vault.id);
+      watch(vault);
+      // Only scan if the watcher was absent — the directory was offline or the
+      // watcher never started. Active watchers trigger their own incremental scans.
+      if (!wasWatched) void schedule(vault);
+    }
   }, 60000);
   reconcileTimer.unref();
   app.once('before-quit', () => {

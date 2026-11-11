@@ -229,7 +229,7 @@ class BrowserAutomation {
         effectPossible = true;
         await tab.cdp.answer(args.accept, args.promptText || '');
         if (tab.dialogOperation) await this.bounded(() => tab.dialogOperation, deps.signal);
-        return { ok: true, tabId: tab.id, outcome: 'applied' };
+        return { ok: true, tabId: tab.id, ...this.info(tab), outcome: 'applied', verify: '先重新读取页面确认结果；不要自动重试提交。' };
       }
       if (tab.cdp?.dialog) return { ok: false, error: 'dialog_pending', dialog: tab.cdp.dialog };
       this.lease(tab, deps, ACTION_LABELS[name]?.[args.action || 'read'] || '操作页面');

@@ -108,6 +108,8 @@ class BrowserCdp {
       await this.send('Debugger.resume');
       return;
     }
+    this.dialog = null;
+    this.onDialog(null);
     await this.send('Page.handleJavaScriptDialog', { accept, promptText });
   }
   static key(raw) {

@@ -13,7 +13,11 @@
 .vault-list-item strong, .vault-list-item small { display: block; overflow-wrap: anywhere; }
 .vault-list-item strong { font-size: 13px; font-weight: 700; }
 .vault-list-item small { font-size: 11px; margin-top: 5px; color: var(--bone-500); }
+.vault-list .vault-list-item:hover,
 .vault-list .vault-list-item.active { background: var(--persimmon-softer); color: var(--bone-100); }
+/* Suppress the ghost button's own hover tint so it doesn't double-stack on the row color. */
+.vault-list .vault-list-item:hover .vault-list-item-select,
+.vault-list .vault-list-item.active .vault-list-item-select { background: transparent; }
 .vault-item-action { align-self: center; flex: 0 0 30px; width: 30px; min-width: 30px; height: 30px; padding: 0; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
 .vault-list-item:hover .vault-item-action,
 .vault-list-item:focus-within .vault-item-action { opacity: 1; pointer-events: auto; }

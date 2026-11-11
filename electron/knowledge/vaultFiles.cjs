@@ -89,8 +89,6 @@ function readFile(vault, relative) {
   const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
   try {
     const stat = fs.fstatSync(fd);
-    const current = fs.statSync(resolveFile(vault, relative));
-    if (stat.ino !== current.ino || stat.dev !== current.dev) throw new Error('文件位置已变化，请重试');
     // Bound pathological single files without restricting the total vault size.
     if (stat.size > 16 * 1024 * 1024) throw new Error('笔记超过 16 MB，请拆分后重试');
     return { text: fs.readFileSync(fd, 'utf8').replace(/\r\n?/g, '\n'), stat };
@@ -152,10 +150,17 @@ function readLines(vault, args) {
   const requestedEnd = Math.floor(Number(args.endLine) || startLine + 199);
   if (startLine > lines.length || requestedEnd < startLine) throw new Error('行号超出文件范围');
   let endLine = Math.min(lines.length, requestedEnd, startLine + 499);
-  let content = lines.slice(startLine - 1, endLine).join('\n');
-  while (Buffer.byteLength(content) > 32768 && endLine > startLine) {
-    endLine--; content = lines.slice(startLine - 1, endLine).join('\n');
+  // Find the last line that fits in 32 KB by accumulating byte sizes (O(n) one pass).
+  let total = 0;
+  let cutIdx = 0;
+  for (let i = startLine - 1; i < endLine; i++) {
+    const lineBytes = Buffer.byteLength(lines[i], 'utf8') + 1; // +1 for '\n'
+    if (total + lineBytes > 32768) break;
+    total += lineBytes; cutIdx = i - (startLine - 1) + 1;
   }
+  // Always include at least one line; byteTruncated handles sub-line truncation below.
+  if (cutIdx < endLine - (startLine - 1)) endLine = startLine - 1 + Math.max(1, cutIdx);
+  let content = lines.slice(startLine - 1, endLine).join('\n');
   const buffer = Buffer.from(content);
   const byteTruncated = buffer.length > 32768;
   if (byteTruncated) content = buffer.subarray(0, 32768).toString('utf8').replace(/\uFFFD$/, '');
