@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'mcp:servers:list',
       'mcp:servers:save',
       'mcp:servers:delete',
+      'mcp:servers:instructions',
       'mcp:servers:tools',
       'mcp:servers:prompts',
       'mcp:servers:resources',

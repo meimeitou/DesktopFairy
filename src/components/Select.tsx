@@ -9,6 +9,7 @@ import {
 
 import { ChevronDown } from "lucide-react";
 import { measureDropdownSpace } from "../shared/dropdownBounds";
+import "./Select.css";
 
 export interface SelectOption {
   key: string;
@@ -193,7 +194,13 @@ export default function Select({
                   i === activeIndex ? " active" : ""
                 }`}
                 onMouseEnter={() => setActiveIndex(i)}
-                onClick={() => commit(opt.key)}
+                onClick={(event) => {
+                  // FormItem wraps controls in a label. Closing removes this
+                  // button before the label's default activation, which would
+                  // otherwise click the trigger and reopen the menu.
+                  event.preventDefault();
+                  commit(opt.key);
+                }}
               >
                 {opt.label}
               </button>

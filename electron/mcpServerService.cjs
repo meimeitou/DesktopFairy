@@ -104,7 +104,7 @@ async function testMcpServer(server) {
   }
 }
 
-/** Fetch tools/prompts/resources from a live server client; throws on missing/disconnected. */
+/** Fetch server content from a live server client; throws on missing/disconnected. */
 async function requireLiveClient(id) {
   const server = getServerById(String(id || ''));
   if (!server) throw new Error(`MCP server ${id} not found`);
@@ -215,6 +215,11 @@ function registerMcpServerHandlers(ipcMain) {
   });
 
   ipcMain.handle('mcp:servers:test', async (_event, server) => testMcpServer(server));
+
+  ipcMain.handle('mcp:servers:instructions', async (_event, { id }) => {
+    const client = await requireLiveClient(id);
+    return client.getInstructions() ?? '';
+  });
 
   ipcMain.handle('mcp:servers:tools', async (_event, { id }) => {
     const client = await requireLiveClient(id);

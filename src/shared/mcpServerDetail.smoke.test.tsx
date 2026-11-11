@@ -1,4 +1,4 @@
-// Smoke: McpServerDetail renders five tabs and per-tool toggles.
+// Smoke: McpServerDetail renders six tabs and per-tool toggles.
 vi.hoisted(() => {
   const stub = {
     // Return one tool / one prompt / one resource for the detail tabs.
@@ -47,7 +47,7 @@ const server: McpServer = {
 };
 
 describe("McpServerDetail smoke", () => {
-  it("renders header, five tabs, and general editor", () => {
+  it("renders header, six tabs, and general editor", () => {
     const html = renderToStaticMarkup(
       React.createElement(McpServerDetail, {
         server,
@@ -55,7 +55,7 @@ describe("McpServerDetail smoke", () => {
         onBack: () => {},
       })
     );
-    for (const label of ["通用", "工具", "提示", "资源", "日志", "测试连接", "返回列表"]) {
+    for (const label of ["通用", "服务器指令", "工具", "提示", "资源", "日志", "测试连接", "返回列表"]) {
       expect(html).toContain(label);
     }
     // General tab is the default: editor fields visible.

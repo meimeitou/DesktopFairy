@@ -13,10 +13,11 @@ import type { McpTestResult } from "./mcpServerForm";
 
 const api = window.electronAPI;
 
-type DetailTab = "general" | "tools" | "prompts" | "resources" | "logs";
+type DetailTab = "general" | "instructions" | "tools" | "prompts" | "resources" | "logs";
 
 const TABS: { id: DetailTab; label: string }[] = [
   { id: "general", label: "通用" },
+  { id: "instructions", label: "服务器指令" },
   { id: "tools", label: "工具" },
   { id: "prompts", label: "提示" },
   { id: "resources", label: "资源" },
@@ -52,6 +53,17 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
   const [disabledToolNames, setDisabledToolNames] = useState<string[]>(
     server.disabledToolNames || [],
   );
+  const [instructionsResult, setInstructionsResult] = useState<{
+    serverId: string;
+    revision: number;
+    text?: string;
+    error?: string;
+  } | null>(null);
+  const [instructionsRevision, setInstructionsRevision] = useState(0);
+  const currentInstructions = instructionsResult?.serverId === server.id &&
+    instructionsResult.revision === instructionsRevision ? instructionsResult : null;
+  const instructions = currentInstructions?.text ?? null;
+  const instructionsError = currentInstructions?.error ?? null;
   const [tools, setTools] = useState<McpToolInfo[] | null>(null);
   const [toolsError, setToolsError] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<McpPromptInfo[] | null>(null);
@@ -62,6 +74,20 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
   const [editing, setEditing] = useState(false);
   const [testResult, setTestResult] = useState<McpTestResult | null>(null);
   const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    if (tab !== "instructions") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const text = await api.invoke("mcp:servers:instructions", { id: server.id });
+        if (!cancelled) setInstructionsResult({ serverId: server.id, revision: instructionsRevision, text });
+      } catch (e) {
+        if (!cancelled) setInstructionsResult({ serverId: server.id, revision: instructionsRevision, error: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, server.id, instructionsRevision]);
 
   const loadTools = useCallback(async () => {
     setToolsError(null);
@@ -149,6 +175,7 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
     try {
       const result = (await api.invoke("mcp:servers:test", server)) as McpTestResult;
       setTestResult(result);
+      if (result.ok) setInstructionsRevision((revision) => revision + 1);
     } catch (e) {
       setTestResult({
         ok: false,
@@ -277,6 +304,29 @@ export default function McpServerDetail({ server, status, onBack }: Props) {
             onBack();
           }}
         />
+      )}
+
+      {tab === "instructions" && (
+        <div className="tools-mcp-tab-body">
+          <div className="tools-mcp-instructions-head">
+            <p className="field-hint">服务器提供的使用说明。</p>
+            <Button variant="ghost" size="sm" disabled={instructions === null && !instructionsError}
+              onClick={() => setInstructionsRevision((revision) => revision + 1)}>
+              刷新
+            </Button>
+          </div>
+          {instructionsError ? (
+            <p className="field-hint field-hint--after warn" role="alert">
+              读取服务器指令失败：{instructionsError}
+            </p>
+          ) : instructions === null ? (
+            <p className="agent-status-line" role="status">正在加载服务器指令…</p>
+          ) : !instructions.trim() ? (
+            <p className="agent-catalog-empty">该服务器未提供服务器指令。</p>
+          ) : (
+            <pre className="tools-mcp-instructions" aria-label="服务器指令内容">{instructions}</pre>
+          )}
+        </div>
       )}
 
       {tab === "tools" && (

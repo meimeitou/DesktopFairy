@@ -1,5 +1,5 @@
-import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Switch } from "@cherrystudio/ui";
-import { Form, FormItem, useForm } from "../../../Form";
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Switch } from "@cherrystudio/ui";
+import { Form, FormItem } from "../../../Form";
 
 import { useEffect, useState } from "react";
 import Select from "../../../Select";
@@ -205,9 +205,6 @@ export default function McpServerEditModal({
                       : "http://localhost:3000/mcp"
                   } />
               </FormItem>
-              <p className="field-hint field-hint--after warn">
-                远程 MCP 暂不支持智能体运行时，请优先使用 stdio。
-              </p>
             </>
           )}
         </div>

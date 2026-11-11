@@ -1587,6 +1587,27 @@
   margin-top: 12px;
 }
 
+.tools-mcp-instructions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tools-mcp-instructions {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--ink-850);
+  color: var(--bone-200);
+  font: inherit;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tools-mcp-schema {
   margin-top: 6px;
 }

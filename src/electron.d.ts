@@ -8,6 +8,7 @@ declare global {
   interface Window {
     electronAPI: {
       invoke: {
+        (channel: "mcp:servers:instructions", payload: { id: string }): Promise<string>;
         (channel: "ai:stream_open", payload: import("./services/aiTransport/IpcChatTransport").AgentStreamOpenPayload): Promise<import("./services/aiTransport/IpcChatTransport").AgentStreamOpenResult>;
         (channel: string, ...args: unknown[]): Promise<unknown>;
       };
