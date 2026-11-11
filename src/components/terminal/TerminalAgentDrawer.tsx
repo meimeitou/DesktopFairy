@@ -1,3 +1,4 @@
+import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
 import { Button, NormalTooltip, warning } from "@cherrystudio/ui";
 import { CircleStop, Eraser, FoldVertical, Send, Settings, Sparkles, Trash2, X } from "lucide-react";
 import {
@@ -22,7 +23,7 @@ import type { ChatMode } from "../../shared/chatMode";
 import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import ChatModeSelector from "../chat/ChatModeSelector";
 import ContextUsageMeter from "../chat/ContextUsageMeter";
-import SlashCommandMenu from "../chat/SlashCommandMenu";
+import SkillComposerEditor from "../chat/SkillComposerEditor";
 import ComposerBusyHalo from "../chat/ComposerBusyHalo";
 import ComposerQuickMenu from "../chat/ComposerQuickMenu";
 import ReasoningEffortSelector from "../chat/ReasoningEffortSelector";
@@ -32,8 +33,8 @@ import {
   trimMessagesForApi,
 } from "../../shared/chatMessages";
 import {
-  applySendFail,
   beginSend,
+  acceptSendDraft,
   clearMessages as clearSessionMessages,
   emptyAgentSessionState,
   genSessionId,
@@ -59,14 +60,12 @@ import {
   useSettings,
   flushSettingsSave,
 } from "../../shared/settingsStore";
-import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import {
   COMPACT_PROMPT,
   parseSlashCommand,
   getBuiltinCommands,
   buildSkillCommands,
-  applySkillSlashCommand,
-  withEnabledSkillId,
+  buildHostCommands,
   type SlashCommand,
 } from "../../shared/slashCommands";
 
@@ -74,9 +73,12 @@ import {
   detachTopicStream,
   abortTopicStream,
   openAgentStream,
+  agentStreamRejection,
 } from "../../services/aiTransport/IpcChatTransport";
 import "../../pages/ChatPage.css";
 import "./TerminalAgentDrawer.css";
+
+import { prepareSkillInvocation, type SkillResendOptions } from "../../shared/skillInvocation";
 
 const MAX_INPUT_HEIGHT = 140;
 const DRAWER_MIN_WIDTH = 360;
@@ -162,7 +164,6 @@ export default function TerminalAgentDrawer({
   // 多标签可同时流式，压缩请求必须按 requestId 记，不能用单值（会被别的标签的 done 清掉）。
   const compactRequestIdsRef = useRef<Set<string>>(new Set());
   const handleClearContextRef = useRef<() => void>(() => {});
-  const handleSendRef = useRef<(text?: string) => void>(() => {});
   const agentSendLockRef = useRef(new Set<string>());
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(
     null,
@@ -244,15 +245,9 @@ export default function TerminalAgentDrawer({
   const composerDisabled = activeState.streaming || !!editingMsgId;
 
   const slashCommands = useMemo(
-    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
-    [skills],
+    () => [...getBuiltinCommands(), ...buildHostCommands(settings.sshHosts), ...buildSkillCommands(skills, terminalAgent?.enabledSkillIds)],
+    [skills, settings.sshHosts, terminalAgent?.enabledSkillIds],
   );
-  const {
-    open: showSlashMenu,
-    query: slashQuery,
-    hostRef: slashHostRef,
-    close: closeSlashMenu,
-  } = useSlashCommandMenu(activeState.input, composerDisabled, slashCommands);
 
   useEffect(() => {
     let cancelled = false;
@@ -455,7 +450,7 @@ export default function TerminalAgentDrawer({
   }, [activeTabId, scrollToBottom]);
 
   const handleSend = useCallback(
-    async (overrideText?: string) => {
+    async (overrideText?: string, options?: SkillResendOptions) => {
       const state = tabStatesRef.current[activeTabId];
       if (!state || state.streaming) return;
       if (agentSendLockRef.current.has(activeTabId)) return;
@@ -470,26 +465,24 @@ export default function TerminalAgentDrawer({
         return;
       }
 
+      const selectedHosts = isResend ? (options?.selectedHosts || []) : (state.selectedHosts || []);
       // Capture the session before awaiting settings; switching tabs must not retarget this request.
       const sessionId = getActiveSessionId();
-      if (!sessionId) {
+      if (!sessionId && !selectedHosts.length) {
         warning("终端已断开，请重新连接后再发送。");
         return;
       }
       agentSendLockRef.current.add(activeTabId);
       try {
-        let finalText = text;
-        let invokedSkillId: string | undefined;
-        if (!overrideText) {
-          const applied = applySkillSlashCommand(
-            text,
-            skills.map((s) => s.id),
-          );
-          if (applied) {
-            finalText = applied.text;
-            invokedSkillId = applied.skillId;
-          }
+        const invocation = prepareSkillInvocation(text,
+          isResend ? (options?.selectedSkillIds || []) : (state.selectedSkillIds || []), skills.map((sk) => sk.id), selectedHosts);
+        if ((invocation.selectedSkillIds.length || selectedHosts.length) && !hasReferenceTask(invocation.rawText, invocation.selectedSkillIds, selectedHosts)) {
+          warning("请输入要执行的任务。");
+          return;
         }
+        const finalText = invocation.text;
+        const sendMessages = options?.resendMessageId
+          ? state.messages.slice(0, state.messages.findIndex((m) => m.id === options.resendMessageId)) : state.messages;
 
         await flushSettingsSave();
         const currentSettings = getSettingsSnapshot();
@@ -501,17 +494,7 @@ export default function TerminalAgentDrawer({
         if (!agent) return;
         const guidance = getAgentBackendGuidance(currentSettings, agent);
         if (guidance) {
-          updateTabState(activeTabId, (s) =>
-            beginSend(s, { requestId: "", userText: finalText, keepInput: isResend }),
-          );
-          // beginSend 的占位气泡替换为引导错误气泡。
-          updateTabState(activeTabId, (s) => {
-            const idx = s.messages.length - 1;
-            const next = s.messages.slice();
-            next[idx] = { ...next[idx], content: guidance, error: true };
-            return { ...s, streaming: false, requestId: null, messages: next };
-          });
-          scrollToBottom();
+          warning(guidance);
           return;
         }
 
@@ -524,7 +507,7 @@ export default function TerminalAgentDrawer({
         }
 
         const history = trimMessagesForApi(
-          filterForAgentHistory(state.messages),
+          filterForAgentHistory(sendMessages),
           buildTrimOptions({
             contextWindow: resolveContextWindow(
               resolveActiveModelName(agent),
@@ -550,23 +533,26 @@ export default function TerminalAgentDrawer({
         const agentConfig: AgentConfig = {
           ...agent,
           chatMode,
-          enabledSkillIds: invokedSkillId
-            ? withEnabledSkillId(agent.enabledSkillIds, invokedSkillId)
-            : agent.enabledSkillIds,
+
         };
 
         updateTabState(activeTabId, (s) =>
-          beginSend(s, {
+          beginSend({ ...s, messages: sendMessages }, {
             requestId,
             userText: finalText,
+            selectedSkillIds: invocation.selectedSkillIds,
+            selectedHosts,
+            rawText: invocation.rawText,
             isCompact: isCompactRequest,
-            keepInput: isResend,
+            keepInput: true,
           }),
         );
         scrollToBottom();
 
         try {
           const result = await openAgentStream({
+            selectedSkillIds: invocation.selectedSkillIds,
+            selectedHosts,
             topicId,
             requestId,
             messages: payloadMessages,
@@ -577,27 +563,26 @@ export default function TerminalAgentDrawer({
               modelName: apiConfig.modelName,
             },
             agentConfig,
-            terminalSessionId: sessionId,
+            terminalSessionId: selectedHosts.length ? undefined : sessionId,
             // 抽屉按标签维护知识库勾选；没勾就回落到智能体自身的配置。
             knowledgeBaseIds:
               knowledgeIdsByTabRef.current[activeTabId] ??
               agent.knowledgeBaseIds,
           });
-          if (result.mode === "blocked") {
-            if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
-              return;
+          const rejection = agentStreamRejection(result);
+          if (rejection) {
             requestIdToTabIdRef.current.delete(requestId);
-            updateTabState(activeTabId, (s) =>
-              applySendFail(s, requestId, "该终端已有进行中的会话，请等待完成或先停止。"),
-            );
+            compactRequestIdsRef.current.delete(requestId);
+            updateTabState(activeTabId, () => ({ ...state, skillErrors: result.skillErrors, hostErrors: result.hostErrors }));
+            warning(rejection);
+          } else {
+            updateTabState(activeTabId, (s) => acceptSendDraft(s, isResend, state));
           }
         } catch (e) {
-          if (requestIdToTabIdRef.current.get(requestId) !== activeTabId)
-            return;
           requestIdToTabIdRef.current.delete(requestId);
-          updateTabState(activeTabId, (s) =>
-            applySendFail(s, requestId, `请求失败：${e instanceof Error ? e.message : String(e)}`),
-          );
+          compactRequestIdsRef.current.delete(requestId);
+          updateTabState(activeTabId, () => state);
+          warning(`请求失败：${e instanceof Error ? e.message : String(e)}`);
         }
       } finally {
         agentSendLockRef.current.delete(activeTabId);
@@ -614,12 +599,6 @@ export default function TerminalAgentDrawer({
     ],
   );
 
-  useEffect(() => {
-    handleSendRef.current = (text?: string) => {
-      void handleSend(text);
-    };
-  }, [handleSend]);
-
   const resendFromUserMessage = useCallback(
     (msgId: string, newText: string) => {
       const state = tabStatesRef.current[activeTabId];
@@ -630,12 +609,11 @@ export default function TerminalAgentDrawer({
       if (target.role !== "user") return;
       const trimmed = newText.trim();
       if (!trimmed) return;
-      const kept = state.messages.slice(0, idx);
       setEditingMsgId(null);
-      updateTabState(activeTabId, (s) => ({ ...s, messages: kept }));
-      setTimeout(() => handleSendRef.current(trimmed), 0);
+      const references = retainedReferences(trimmed, target.selectedSkillIds, target.selectedHosts);
+      void handleSend(trimmed, { selectedSkillIds: references.skillIds, selectedHosts: references.hosts, resendMessageId: msgId });
     },
-    [activeTabId, updateTabState],
+    [activeTabId, handleSend],
   );
 
   const handleRetry = useCallback(
@@ -680,18 +658,6 @@ export default function TerminalAgentDrawer({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (showSlashMenu) {
-        if (
-          e.key === "ArrowDown" ||
-          e.key === "ArrowUp" ||
-          e.key === "Enter" ||
-          e.key === "Escape" ||
-          e.key === "Tab"
-        ) {
-          e.preventDefault();
-        }
-        return;
-      }
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         if (!composerDisabled) {
@@ -699,7 +665,7 @@ export default function TerminalAgentDrawer({
         }
       }
     },
-    [composerDisabled, handleSend, showSlashMenu],
+    [composerDisabled, handleSend],
   );
 
   const handleClearContext = useCallback(() => {
@@ -721,10 +687,6 @@ export default function TerminalAgentDrawer({
 
   const handleSlashCommand = useCallback(
     (cmd: SlashCommand) => {
-      if (cmd.group === "skill" && cmd.insertText) {
-        setActiveInput(cmd.insertText);
-        return;
-      }
       if (cmd.group === "builtin" && cmd.id === "clear") {
         setActiveInput("");
         handleClearContext();
@@ -876,29 +838,17 @@ export default function TerminalAgentDrawer({
           aria-busy={activeState.streaming}
         >
           <ComposerBusyHalo />
-          <div className="terminal-agent-editor" ref={slashHostRef}>
-            {showSlashMenu && (
-              <SlashCommandMenu
-                commands={slashCommands}
-                query={slashQuery}
-                onSelect={handleSlashCommand}
-                onClose={closeSlashMenu}
-              />
-            )}
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              placeholder={
-                composerDisabled
-                  ? editingMsgId
-                    ? "正在编辑上方消息…"
-                    : "生成中…"
-                  : "输入消息，Enter 发送…"
-              }
-              value={activeState.input}
-              onChange={(e) => setActiveInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={composerDisabled}
+          <div className="terminal-agent-editor">
+            <SkillComposerEditor key={activeTabId}
+              textareaRef={textareaRef} rows={1}
+              placeholder={composerDisabled ? (editingMsgId ? "正在编辑上方消息…" : "生成中…") : "输入消息，@ 选择技能，Enter 发送…"}
+              input={activeState.input} onInputChange={setActiveInput}
+              commands={slashCommands} onCommand={handleSlashCommand}
+              selectedHosts={activeState.selectedHosts} hostErrors={activeState.hostErrors}
+              onSelectedHostsChange={(hosts) => updateTabState(activeTabId, (s) => ({ ...s, selectedHosts: hosts, hostErrors: undefined }))}
+              selectedSkillIds={activeState.selectedSkillIds} skillErrors={activeState.skillErrors}
+              onSelectedSkillIdsChange={(ids) => updateTabState(activeTabId, (s) => ({ ...s, selectedSkillIds: ids, skillErrors: undefined }))}
+              onKeyDown={handleKeyDown} disabled={composerDisabled}
             />
           </div>
           <div className="chat-input-toolbar">

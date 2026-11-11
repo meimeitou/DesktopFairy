@@ -1298,8 +1298,6 @@ export default function TerminalPage({
               text={selectionTip.text}
               x={selectionTip.x}
               y={selectionTip.y}
-              containerWidth={(selectionTip.x + 9999)}
-              containerHeight={(selectionTip.y + 9999)}
               onAddToChat={() => {
                 window.dispatchEvent(
                   new CustomEvent("terminal:add-to-chat", {

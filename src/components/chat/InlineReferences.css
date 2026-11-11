@@ -1,0 +1,52 @@
+.reference-inline {
+  --reference-color: var(--persimmon-bright, #8cdbad);
+  border-radius: 4px;
+  background: var(--persimmon-softer);
+  box-shadow: inset 0 0 0 1px var(--persimmon-soft);
+  color: var(--reference-color);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.reference-inline-host {
+  --reference-color: var(--cs-blue-300, #8fc5ff);
+  background: color-mix(in srgb, var(--reference-color) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--reference-color) 30%, transparent);
+}
+.reference-inline.has-error {
+  --reference-color: var(--rust-bright, #ffb4ab);
+  background: var(--rust-soft);
+  box-shadow: inset 0 0 0 1px var(--rust);
+}
+
+.skill-composer-input { position: relative; }
+/* Text is painted by the synchronized mirror so references can have colors;
+   the native textarea retains caret, selection, IME and keyboard handling. */
+.skill-composer .skill-composer-input textarea {
+  position: relative;
+  color: transparent;
+  caret-color: var(--bone-100);
+}
+.skill-composer .skill-composer-input textarea::placeholder {
+  color: var(--bone-600);
+}
+.skill-composer .skill-composer-input textarea::selection {
+  color: var(--bone-100);
+}
+.skill-composer-input:has(textarea:disabled) .skill-composer-highlights {
+  opacity: 0.55;
+}
+.skill-composer-highlights {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 4px 2px 8px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--bone-100);
+}

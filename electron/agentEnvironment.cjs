@@ -2,10 +2,15 @@
 function resolveAgentEnvironment({
   topicId,
   terminalSessionId,
+  selectedHosts,
   sender,
   hostConversationService,
   getSessionService = (id) => id.startsWith('ssh_') ? require('./sshService.cjs') : require('./ptyService.cjs'),
 }) {
+  if (selectedHosts?.length) {
+    const hostRuntime = hostConversationService.resolveSelectedHostsRuntime(topicId, selectedHosts);
+    return { context: 'host', hostRuntime, assertValid: hostRuntime.assertValid };
+  }
   if (terminalSessionId) {
     if (!topicId?.startsWith('terminal:') && !topicId?.startsWith('legacy:')) {
       throw new Error('终端请求缺少终端对话标识');

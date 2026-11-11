@@ -1,3 +1,4 @@
+const { normalizeSelectedHosts } = require('./hostSelection.cjs');
 const fs = require('fs');
 const path = require('path');
 const { readChatLog } = require('./chatSessionLog.cjs');
@@ -90,6 +91,9 @@ function normalizeChatMessage(raw) {
     id: m.id,
     role: m.role,
     content: m.content,
+    selectedHosts: normalizeSelectedHosts(m.selectedHosts),
+    rawText: typeof m.rawText === 'string' ? m.rawText : undefined,
+    selectedSkillIds: Array.isArray(m.selectedSkillIds) ? [...new Set(m.selectedSkillIds.filter((id) => typeof id === 'string'))] : undefined,
     type: m.type === 'clear' ? 'clear' : undefined,
     error: m.error === true,
     timestamp: m.timestamp,
@@ -111,7 +115,9 @@ function normalizeSession(raw) {
         ? raw.updatedAt
         : Date.now(),
     messages,
+    draftSelectedHosts: normalizeSelectedHosts(raw.draftSelectedHosts),
     draftInput: typeof raw.draftInput === 'string' ? raw.draftInput : '',
+    draftSelectedSkillIds: Array.isArray(raw.draftSelectedSkillIds) ? raw.draftSelectedSkillIds.filter((id) => typeof id === 'string') : [],
     draftAttachments: Array.isArray(raw.draftAttachments) ? raw.draftAttachments : [],
   };
 }

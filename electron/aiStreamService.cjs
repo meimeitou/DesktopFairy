@@ -55,7 +55,24 @@ function registerAiStreamHandlers(ipcMain, deps) {
       throw new Error(resolved.error || 'ai:stream_open invalid apiConfig');
     }
     const apiConfig = resolved.apiConfig;
-    const agentConfig = resolved.agentConfig;
+    const selected = require('./hostSelection.cjs').validateSelectedHosts(payload?.selectedHosts, settingsSnapshot.getSnapshot()?.sshHosts || []);
+    if (selected.hosts.length) {
+      const topic = deps.hostConversationService?.getTopic(topicId);
+      if (!String(topicId).startsWith('terminal:') && !topic?.host && topic?.origin !== 'terminal') {
+        selected.errors.selection = '此聊天入口不支持选择机器，请使用终端页。';
+      }
+    }
+    if (Object.keys(selected.errors).length) {
+      return { mode: 'invalid_hosts', requestId, hostErrors: selected.errors };
+    }
+    const selectedSkills = require('./agentSkillService.cjs').loadSelectedSkills(payload?.selectedSkillIds);
+    if (Object.keys(selectedSkills.errors).length) {
+      return { mode: 'invalid_skills', requestId, skillErrors: selectedSkills.errors };
+    }
+    const agentConfig = {
+      ...resolved.agentConfig,
+      enabledSkillIds: [...new Set([...(resolved.agentConfig.enabledSkillIds || []), ...selectedSkills.ids])],
+    };
     assertHttpUrl(apiConfig.apiHost);
 
     const sender = event.sender;
@@ -78,6 +95,8 @@ function registerAiStreamHandlers(ipcMain, deps) {
       terminalSessionId,
       sender,
       agentConfig,
+      selectedSkillsPrompt: selectedSkills.prompt,
+      selectedHosts: selected.hosts,
       apiConfig,
       apiMessages,
       knowledgeBaseIds,

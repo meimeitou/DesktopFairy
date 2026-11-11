@@ -240,6 +240,12 @@ function pickHostFromAnswer(matches, answer) {
 /** One AskUserQuestion before ssh_* when the user named a host that is not yet granted. */
 async function confirmSavedSshHost(deps, args, toolCallId) {
   const rt = deps.hostRuntime;
+  if (rt.requireExplicitHost && !String(args.hostId || '').trim()) {
+    return { error: '本轮选择了多台机器，请为此次 ssh_* 操作明确提供真实 hostId；不得使用隐式默认目标。' };
+  }
+  if (!args.host && rt.selectedHosts?.some((h) => h.id === args.hostId) && rt.isGranted(args.hostId)) {
+    return { asked: false };
+  }
   const query = explicitHostQuery(args, rt);
   if (!query) {
     args.hostId = rt.defaultHostId;

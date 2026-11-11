@@ -2,10 +2,12 @@
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  width: 340px;
+  width: min(480px, 100%);
   max-width: 90vw;
-  max-height: 320px;
-  overflow-y: auto;
+  max-height: min(440px, 60vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   overflow-x: hidden;
   padding: 6px 0;
   background: color-mix(in srgb, var(--ink-750) 98%, transparent);
@@ -49,12 +51,21 @@
 }
 
 .slash-menu-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px;
   padding: 6px 14px;
   font-size: 11px;
-  color: var(--bone-600);
+  color: var(--bone-500);
 }
 
 .slash-menu-list {
+  min-height: 0;
+  max-height: 250px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 1 1 auto;
   list-style: none;
   margin: 0;
   padding: 0 4px 4px;
@@ -66,7 +77,7 @@
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--bone-600);
+  color: var(--bone-500);
 }
 .slash-menu .slash-menu-item {
   display: flex;
@@ -113,3 +124,28 @@
     animation: none;
   }
 }
+
+.skill-composer { position: relative; min-width: 0; width: 100%; }
+.skill-selection-error { color: var(--error-subtle-foreground); }
+.skill-selection-error { font-size: 12px; padding: 4px 0; overflow-wrap: anywhere; }
+.slash-menu-item-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; min-width: 0; }
+.slash-menu-item-id { font-size: 11px; color: var(--bone-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 50%; }
+.slash-menu .slash-menu-item.active { background: var(--persimmon-softer); }
+.slash-menu-detail {
+  border-top: 1px solid var(--hairline);
+  padding: 10px 14px;
+  /* A stable preview slot keeps the upward-opening list under the pointer. */
+  flex: 0 0 min(150px, 22vh);
+  height: min(150px, 22vh);
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  color: var(--bone-200);
+  font-size: 12px;
+}
+.slash-menu-detail strong { display: block; font-size: 13px; }
+.slash-menu-detail-meta { display: block; font-size: 11px; margin-top: 3px; color: var(--bone-500); }
+.slash-menu-detail p { margin: 6px 0 0; line-height: 1.6; white-space: pre-wrap; }
+.slash-menu-empty { padding: 12px 10px; color: var(--bone-500); font-size: 12px; }
+
+.slash-menu-item-label svg { display: inline-block; vertical-align: -1px; margin-right: 3px; }

@@ -124,6 +124,39 @@ function scanSkills() {
   return skills;
 }
 
+/** Read explicitly selected skills for this request, before starting any model/tool work. */
+function loadSelectedSkills(rawIds, root) {
+  if (rawIds !== undefined && (!Array.isArray(rawIds) || rawIds.some((id) => typeof id !== 'string'))) {
+    return { errors: { selection: '技能选择格式无效，请重新选择。' }, ids: [], prompt: '' };
+  }
+  const ids = [...new Set(rawIds || [])];
+  const directory = ids.length ? (root || getSkillsDir()) : root;
+  const errors = Object.create(null);
+  const blocks = [];
+  for (const id of ids) {
+    if (!id || id === '.' || id === '..' || /[/\\\0]/.test(id)) {
+      errors[id || 'selection'] = '技能 id 无效，请移除后重新选择。';
+      continue;
+    }
+    const skillPath = path.join(directory, id, 'SKILL.md');
+    try {
+      const content = fs.readFileSync(skillPath, 'utf8');
+      const meta = parseFrontmatter(content);
+      const body = content.replace(/^---[\s\S]*?---\r?\n?/, '').trim();
+      if (!body) throw new Error('技能正文为空');
+      blocks.push(`### ${meta.name || id} (${id})\n文件：${skillPath}\n相对资源路径以此文件所在目录为准。\n\n${body}`);
+    } catch (e) {
+      errors[id] = `无法加载技能「${id}」：${e.code === 'ENOENT' ? '文件已不存在' : e.message}。请修复或移除后重试。`;
+    }
+  }
+  return {
+    ids,
+    errors,
+    prompt: Object.keys(errors).length || !ids.length ? '' :
+      `## 用户本轮明确选择的技能\n以下技能正文已由程序加载，无需再次调用 Skills 加载。请结合本轮任务遵循全部所选技能，合理安排执行顺序。此选择仅适用于本轮，不代表后续请求持续启用。\n\n${blocks.join('\n\n')}`,
+  };
+}
+
 function getEnabledSkillSet(enabledSkillIds, sessionEnabledSkillIds) {
   const ids = sessionEnabledSkillIds || enabledSkillIds;
   if (ids instanceof Set) return ids;
@@ -560,6 +593,7 @@ function registerAgentSkillHandlers(ipcMain) {
 module.exports = {
   registerAgentSkillHandlers,
   scanSkills,
+  loadSelectedSkills,
   buildSkillsPrompt,
   buildSkillsCatalog,
   getSkillsDir,

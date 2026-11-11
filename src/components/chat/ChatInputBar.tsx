@@ -1,3 +1,4 @@
+import type { SelectedHost } from "../../shared/hostSelection";
 import { Button, NormalTooltip, error, warning } from "@cherrystudio/ui";
 import { Camera, CircleStop, Eraser, FoldVertical, MessageSquare, Send, Trash2, Upload } from "lucide-react";
 import {
@@ -10,14 +11,13 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from "react";
-import { useSlashCommandMenu } from "../../hooks/useSlashCommandMenu";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 
 import AttachmentPreview from "./AttachmentPreview";
 import ChatModeSelector from "./ChatModeSelector";
 import ContextUsageMeter from "./ContextUsageMeter";
 import ReasoningEffortSelector from "./ReasoningEffortSelector";
-import SlashCommandMenu from "./SlashCommandMenu";
+import SkillComposerEditor from "./SkillComposerEditor";
 import {
   collectDataTransferFiles,
   dataTransferHasFiles,
@@ -61,6 +61,12 @@ interface Props {
   attachmentsEnabled?: boolean;
   slashCommands?: SlashCommand[];
   onSlashCommand?: (cmd: SlashCommand) => void;
+  selectedSkillIds?: string[];
+  onSelectedSkillIdsChange?: (ids: string[]) => void;
+  skillErrors?: Record<string, string>;
+  selectedHosts?: SelectedHost[];
+  onSelectedHostsChange?: (hosts: SelectedHost[]) => void;
+  hostErrors?: Record<string, string>;
   /** 递增时把焦点收回输入框（划词预填后使用） */
   focusSignal?: number;
   /** 正在编辑上方用户消息时锁定输入栏 */
@@ -92,6 +98,12 @@ function ChatInputBar({
   attachmentsEnabled = true,
   slashCommands,
   onSlashCommand,
+  selectedSkillIds,
+  onSelectedSkillIdsChange,
+  skillErrors,
+  selectedHosts,
+  onSelectedHostsChange,
+  hostErrors,
   focusSignal,
   editingMessage = false,
   contextUsage,
@@ -108,17 +120,6 @@ function ChatInputBar({
   useComposerOverlay(dockRef);
 
   const composerDisabled = streaming || editingMessage;
-  const {
-    open: showSlashMenu,
-    query: slashQuery,
-    hostRef: slashHostRef,
-    close: closeSlashMenu,
-  } = useSlashCommandMenu(
-    input,
-    composerDisabled || !onSlashCommand,
-    slashCommands,
-  );
-
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -302,18 +303,6 @@ function ChatInputBar({
   );
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showSlashMenu) {
-      if (
-        e.key === "ArrowDown" ||
-        e.key === "ArrowUp" ||
-        e.key === "Enter" ||
-        e.key === "Escape" ||
-        e.key === "Tab"
-      ) {
-        e.preventDefault();
-      }
-      return;
-    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (!composerDisabled) onSend();
@@ -321,13 +310,13 @@ function ChatInputBar({
   };
 
   const canSend =
-    !composerDisabled && (input.trim().length > 0 || attachments.length > 0);
+    !composerDisabled && (input.trim().length > 0 || (attachments.length > 0 && !selectedSkillIds?.length && !selectedHosts?.length));
 
   const placeholder = editingMessage
     ? "正在编辑上方消息…"
     : streaming
       ? "生成中…"
-      : "输入消息，可拖拽或粘贴文件…";
+      : "输入消息，@ 选择技能，可拖拽文件…";
 
   return (
     <div
@@ -352,25 +341,15 @@ function ChatInputBar({
         }
       />
 
-      <div className="chat-input-editor" ref={slashHostRef}>
-        {showSlashMenu && slashCommands && onSlashCommand && (
-          <SlashCommandMenu
-            commands={slashCommands}
-            query={slashQuery}
-            onSelect={onSlashCommand}
-            onClose={closeSlashMenu}
-          />
-        )}
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          placeholder={placeholder}
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          disabled={composerDisabled}
-          autoFocus
+      <div className="chat-input-editor">
+        <SkillComposerEditor
+          textareaRef={textareaRef} rows={1} placeholder={placeholder}
+          input={input} onInputChange={onInputChange}
+          commands={slashCommands} onCommand={onSlashCommand}
+          selectedSkillIds={selectedSkillIds} onSelectedSkillIdsChange={onSelectedSkillIdsChange}
+          selectedHosts={selectedHosts} onSelectedHostsChange={onSelectedHostsChange} hostErrors={hostErrors}
+          skillErrors={skillErrors} onKeyDown={handleKeyDown} onPaste={handlePaste}
+          disabled={composerDisabled} autoFocus
         />
       </div>
 

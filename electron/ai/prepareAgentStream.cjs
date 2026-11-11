@@ -50,6 +50,7 @@ function createAgentTextStream(ctx) {
       terminalSessionId,
       sender,
       hostConversationService,
+      selectedHosts: ctx.selectedHosts,
     });
     const { context, hostRuntime } = environment;
     ctx.mcpRuntime = await loadMcpToolDefinitions(getServersByIds(agentConfig.mcpServerIds));
@@ -67,7 +68,7 @@ function createAgentTextStream(ctx) {
           cwd: hostRuntime.getCwd(hostRuntime.topicId, hostRuntime.hostId) || '',
         }
       : null;
-    const systemPrompt = buildAgentSystemPrompt(
+    const baseSystemPrompt = buildAgentSystemPrompt(
       agentConfig,
       context,
       terminalState,
@@ -75,6 +76,9 @@ function createAgentTextStream(ctx) {
       settingsSnapshot.getSnapshot()?.sshHosts || [],
       hostInfo,
     );
+
+    const selectedHostsPrompt = require('../hostSelection.cjs').buildSelectedHostsPrompt(hostRuntime?.selectedHosts);
+    const systemPrompt = [baseSystemPrompt, ctx.selectedSkillsPrompt, selectedHostsPrompt].filter(Boolean).join('\n\n');
 
     const toolDeps = buildAgentToolDeps({
       topicId,
@@ -94,7 +98,7 @@ function createAgentTextStream(ctx) {
         if (live?.idle) manager.extendIdleForApproval(topicId, live.idle);
       },
       webSearchConfig: getCurrentWebSearchConfig(),
-      terminalSessionId,
+      terminalSessionId: context === 'host' ? undefined : terminalSessionId,
       suppressToolDoneEvent: true,
       onToolDenied: bridge.markDenied,
       onToolArgs: bridge.setToolArgs,

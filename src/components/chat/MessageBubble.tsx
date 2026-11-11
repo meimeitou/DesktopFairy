@@ -3,6 +3,7 @@ import { Check, Copy, File, Flame, GitFork, Pencil, RefreshCw, Trash2, X } from 
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
+import InlineReferences from "./InlineReferences";
 import ChatMarkdown from "./ChatMarkdown";
 import ThinkingBlock from "./ThinkingBlock";
 import { KnowledgeCitations } from "../knowledge/KnowledgeCitations";
@@ -150,7 +151,7 @@ function MessageBubble({
             rows={3}
           />
         ) : isUser ? (
-          <span className="msg-plain">{msg.content}</span>
+          <span className="msg-plain"><InlineReferences text={msg.content} skillIds={msg.selectedSkillIds} hosts={msg.selectedHosts} /></span>
         ) : (
           <ChatMarkdown
             content={msg.content}

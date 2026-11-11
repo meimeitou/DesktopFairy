@@ -81,6 +81,24 @@ describe('hostFingerprint', () => {
 });
 
 describe('hostConversationService', () => {
+  it('validates a captured SSH operation in a host conversation', async () => {
+    const h = makeHarness();
+    try {
+      const topic = await createHostTopic(h, 'h1');
+      const rt = h.svc.resolveHostRuntime(topic.id);
+      const operation = rt.captureOperation('h1');
+      expect(rt.assertOperation(operation)).toBe(true);
+
+      h.settings.sshHosts[0].password = 'changed';
+      expect(() => rt.assertOperation(operation)).toThrow(/凭据已变化/);
+
+      h.topicStore.deleteTopicsByHost('h1');
+      expect(() => rt.assertOperation(operation)).toThrow(/主机绑定已变化/);
+    } finally {
+      fs.rmSync(h.tmp, { recursive: true, force: true });
+    }
+  });
+
   it('resolveHostRuntime throws for non-host topics and missing hosts', async () => {
     const h = makeHarness();
     const r = await h.handlers['chat:topics:create']({}, {

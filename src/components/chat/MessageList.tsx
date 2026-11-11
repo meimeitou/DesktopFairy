@@ -114,33 +114,32 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     useEffect(() => {
       const root = parentRef.current;
       if (!root) return;
-      let observer: ResizeObserver | null = null;
-      let cancelled = false;
-      const bind = () => {
-        if (cancelled) return;
-        const host = root.closest(
-          ".chat-main-area, .terminal-agent-drawer-content",
+      const host = root.closest<HTMLElement>(
+        ".chat-main-area, .host-chat-main, .terminal-agent-drawer-content",
+      );
+      if (!host) return;
+
+      // useComposerOverlay owns this value and updates it even when a keyed
+      // composer is replaced on topic switch. Observing the dock itself would
+      // leave us measuring the detached node after that replacement.
+      const apply = () => {
+        const height = Number.parseFloat(
+          getComputedStyle(host).getPropertyValue("--chat-composer-height"),
         );
-        const dock = host?.querySelector<HTMLElement>(
-          ".chat-input-dock, .terminal-agent-dock",
-        );
-        if (!dock) {
-          requestAnimationFrame(bind);
-          return;
-        }
-        const apply = () => {
-          setOverlayPad(
-            Math.round(dock.getBoundingClientRect().height) + COMPOSER_SCROLL_GAP,
-          );
-        };
-        apply();
-        observer = new ResizeObserver(apply);
-        observer.observe(dock);
+        setOverlayPad((Number.isFinite(height) ? height : 96) + COMPOSER_SCROLL_GAP);
       };
-      bind();
+      apply();
+      const styleObserver = new MutationObserver(apply);
+      styleObserver.observe(host, {
+        attributes: true,
+        attributeFilter: ["style"],
+      });
+      // Keep-alive panels may first mount hidden and report a zero height.
+      const resizeObserver = new ResizeObserver(apply);
+      resizeObserver.observe(host);
       return () => {
-        cancelled = true;
-        observer?.disconnect();
+        styleObserver.disconnect();
+        resizeObserver.disconnect();
       };
     }, []);
 

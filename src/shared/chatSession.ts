@@ -1,3 +1,4 @@
+import { normalizeSelectedHosts, type SelectedHost } from "./hostSelection";
 import { type ChatMode, normalizeChatMode } from "./chatMode";
 import type { ChatAttachment } from "./chatAttachments";
 import type { ChatMsg } from "./chatMessages";
@@ -21,6 +22,8 @@ export interface ChatSession {
   updatedAt: number;
   messages: ChatMsg[];
   draftInput?: string;
+  draftSelectedSkillIds?: string[];
+  draftSelectedHosts?: SelectedHost[];
   draftAttachments?: ChatAttachment[];
   /** Last API usage snapshot for context meter calibration (not sent to model). */
   lastServerUsage?: ChatSessionServerUsage;
@@ -254,6 +257,9 @@ function normalizeChatMessage(raw: unknown): ChatMsg | null {
     id: m.id,
     role: m.role,
     content: m.content,
+    selectedHosts: normalizeSelectedHosts(m.selectedHosts),
+    rawText: typeof m.rawText === "string" ? m.rawText : undefined,
+    selectedSkillIds: Array.isArray(m.selectedSkillIds) ? [...new Set(m.selectedSkillIds.filter((id) => typeof id === "string"))] : undefined,
     reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
     type: m.type === "clear" ? "clear" : undefined,
     error: m.error === true,
@@ -319,7 +325,9 @@ export function normalizeChatSession(raw: unknown): ChatSession {
         ? data.updatedAt
         : Date.now(),
     messages,
+    draftSelectedHosts: normalizeSelectedHosts(data.draftSelectedHosts),
     draftInput: typeof data.draftInput === "string" ? data.draftInput : "",
+    draftSelectedSkillIds: Array.isArray(data.draftSelectedSkillIds) ? data.draftSelectedSkillIds.filter((id) => typeof id === "string") : [],
     draftAttachments: normalizeAttachments(data.draftAttachments),
     lastServerUsage,
   };
@@ -330,6 +338,8 @@ export function buildChatSession(
   draftInput: string,
   draftAttachments: ChatAttachment[],
   lastServerUsage?: ChatSessionServerUsage,
+  draftSelectedSkillIds?: string[],
+  draftSelectedHosts?: SelectedHost[],
 ): ChatSession {
   return {
     version: CHAT_SESSION_VERSION,
@@ -337,6 +347,8 @@ export function buildChatSession(
     messages,
     draftInput,
     draftAttachments,
+    draftSelectedSkillIds,
+    draftSelectedHosts,
     ...(lastServerUsage ? { lastServerUsage } : {}),
   };
 }

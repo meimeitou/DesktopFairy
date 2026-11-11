@@ -1,3 +1,4 @@
+import type { SelectedHost } from "./hostSelection";
 import type { ChatAttachment } from "./chatAttachments";
 import { isSupportedAttachmentName } from "./chatAttachments";
 import type { ToolTerminalState } from "./ai/stream";
@@ -12,6 +13,9 @@ export interface ChatMsg {
   id: string;
   role: ChatRole;
   content: string;
+  selectedSkillIds?: string[];
+  selectedHosts?: SelectedHost[];
+  rawText?: string;
   /** Model reasoning / chain-of-thought text (from `reasoning_content`). Display-only, never replayed to the model. */
   reasoning?: string;
   /** Runtime-only: UIMessageChunk text part id that fills this bubble. Routing key while streaming. */

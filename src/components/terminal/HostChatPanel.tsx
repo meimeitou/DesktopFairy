@@ -1,3 +1,6 @@
+import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
+import { hostsForContinuation } from "../../shared/hostSelection";
+import { warning } from "@cherrystudio/ui";
 import { NamedIcon } from "../NamedIcon";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +17,7 @@ import {
   abortTopicStream,
   detachTopicStream,
   openAgentStream,
+  agentStreamRejection,
 } from "../../services/aiTransport/IpcChatTransport";
 import {
   type ChatMsg,
@@ -25,6 +29,7 @@ import {
   applySendFail,
   beginContinue,
   beginSend,
+  acceptSendDraft,
   clearMessages as clearSessionMessages,
   emptyAgentSessionState,
   genSessionId,
@@ -46,8 +51,8 @@ import {
 import { findAgentById, type AgentSkillDescriptor } from "../../shared/agent";
 import {
   COMPACT_PROMPT,
-  applySkillSlashCommand,
   buildSkillCommands,
+  buildHostCommands,
   getBuiltinCommands,
   parseSlashCommand,
   type SlashCommand,
@@ -59,7 +64,7 @@ import {
   resolveActiveModelName,
   resolveContextWindow,
 } from "../../shared/contextUsage";
-import { getSettingsSnapshot, setSettings, useSettings } from "../../shared/settingsStore";
+import { getSettingsSnapshot, setSettings, useSettings, flushSettingsSave } from "../../shared/settingsStore";
 import { stashKnowledgeReveal } from "../../shared/panelHandoff";
 import type { SshHost } from "../../shared/terminalSettings";
 
@@ -67,6 +72,8 @@ import type { ChatMode } from "../../shared/chatMode";
 import type { ReasoningEffort } from "../../shared/reasoningEffort";
 import "../../pages/ChatPage.css";
 import "./HostChatPanel.css";
+
+import { prepareSkillInvocation, type SkillResendOptions } from "../../shared/skillInvocation";
 
 const api = window.electronAPI;
 
@@ -97,7 +104,6 @@ export default function HostChatPanel({
   const messageListRef = useRef<MessageListHandle>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const sendLockRef = useRef(false);
-  const handleSendRef = useRef<(text?: string) => void>(() => {});
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [maxTurnsPending, setMaxTurnsPending] = useState(false);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
@@ -126,8 +132,8 @@ export default function HostChatPanel({
   }, []);
 
   const slashCommands = useMemo(
-    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
-    [skills],
+    () => [...getBuiltinCommands(), ...buildHostCommands(settings.sshHosts), ...buildSkillCommands(skills, findAgentById(settings.agents, topic.agentId)?.enabledSkillIds)],
+    [skills, settings.agents, settings.sshHosts, topic.agentId],
   );
   const effectiveKbIds = useMemo(
     () => kbIdsOverride ?? (topic.knowledgeBaseIds || []),
@@ -175,7 +181,7 @@ export default function HostChatPanel({
     const s = stateRef.current;
     if (!s.sessionReady) return;
     const session = trimSessionForStorage(
-      buildChatSession(s.messages, s.input, []),
+      buildChatSession(s.messages, s.input, [], undefined, s.selectedSkillIds, s.selectedHosts),
     );
     await api.invoke("chat:session:save", { topicId, session });
   }, [topicId]);
@@ -213,6 +219,8 @@ export default function HostChatPanel({
           ...emptyAgentSessionState(),
           messages: session.messages ?? [],
           input: session.draftInput ?? "",
+          selectedSkillIds: session.draftSelectedSkillIds ?? [],
+          selectedHosts: session.draftSelectedHosts ?? [],
           sessionReady: true,
         };
         // 用户在读盘完成前就动了输入框/发了消息：磁盘快照是旧的，整体覆盖会吞掉
@@ -334,7 +342,7 @@ export default function HostChatPanel({
     [patchState, persistSession],
   );
 
-  const handleSend = useCallback(async (overrideText?: string) => {
+  const handleSend = useCallback(async (overrideText?: string, options?: SkillResendOptions) => {
     const s = stateRef.current;
     if (s.streaming || sendLockRef.current) return;
 
@@ -355,62 +363,39 @@ export default function HostChatPanel({
 
     sendLockRef.current = true;
     try {
+      await flushSettingsSave();
       const currentSettings = getSettingsSnapshot();
       const agent = findAgentById(currentSettings.agents, topic.agentId);
       if (!agent) return;
 
-      let finalText = text;
-      let invokedSkillId: string | undefined;
-      if (!isCompactRequest && !overrideText) {
-        const applied = applySkillSlashCommand(
-          text,
-          skills.map((sk) => sk.id),
-        );
-        if (applied) {
-          finalText = applied.text;
-          invokedSkillId = applied.skillId;
-        }
+      const selectedHosts = isResend ? (options?.selectedHosts || []) : (s.selectedHosts || []);
+      const invocation = prepareSkillInvocation(text,
+        isResend ? (options?.selectedSkillIds || []) : (s.selectedSkillIds || []), skills.map((sk) => sk.id), selectedHosts);
+      if ((invocation.selectedSkillIds.length || selectedHosts.length) && !hasReferenceTask(invocation.rawText, invocation.selectedSkillIds, selectedHosts)) {
+        warning("请输入要执行的任务。");
+        return;
       }
+      const finalText = invocation.text;
+      const sendMessages = options?.resendMessageId
+        ? s.messages.slice(0, s.messages.findIndex((m) => m.id === options.resendMessageId)) : s.messages;
 
       // 与 ChatPage 一致：后端未配置时给出可操作的引导而不是静默失败。
       const guidance = getAgentBackendGuidance(currentSettings, agent);
       if (guidance) {
-        patchState((prev) =>
-          beginSend(prev, {
-            requestId: "",
-            userText: finalText,
-            keepInput: isResend,
-          }),
-        );
-        // beginSend 的占位气泡替换为引导错误气泡。
-        patchState((prev) => {
-          const idx = prev.messages.length - 1;
-          const next = prev.messages.slice();
-          next[idx] = { ...next[idx], content: guidance, error: true };
-          return { ...prev, streaming: false, requestId: null, messages: next };
-        });
-        scrollToBottom();
-        void persistSession();
+        warning(guidance);
         return;
       }
       const apiConfig = getChatApiConfig(currentSettings, agent);
       if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
-      const sendAgent = invokedSkillId
-        ? {
-            ...agent,
-            enabledSkillIds: agent.enabledSkillIds.includes(invokedSkillId)
-              ? agent.enabledSkillIds
-              : [...agent.enabledSkillIds, invokedSkillId],
-          }
-        : agent;
+      const sendAgent = agent;
 
       const trimOpts = buildTrimOptions({
         contextWindow: resolveContextWindow(resolveActiveModelName(sendAgent)),
         systemTokens: estimateAgentSystemPromptTokens(sendAgent),
       });
       const history = trimMessagesForApi(
-        filterForAgentHistory(s.messages),
+        filterForAgentHistory(sendMessages),
         trimOpts,
       );
       const payloadMessages = buildAgentHistoryMessages([
@@ -428,54 +413,59 @@ export default function HostChatPanel({
       if (isCompactRequest) compactRequestIdRef.current = requestId;
 
       patchState((prev) =>
-        beginSend(prev, {
+        beginSend({ ...prev, messages: sendMessages }, {
           requestId,
           userText: finalText,
+          selectedSkillIds: invocation.selectedSkillIds,
+          selectedHosts,
+          rawText: invocation.rawText,
           isCompact: isCompactRequest,
-          keepInput: isResend,
+          keepInput: true,
         }),
       );
       scrollToBottom();
 
-      // First user message → derive topic title.
-      if (!topic.name) {
-        onTopicRenamed(topicId, generateTopicTitle(finalText));
-      }
-
-      openAgentStream({
-        topicId,
-        requestId,
-        messages: payloadMessages,
-        apiConfig: {
-          apiHost: apiConfig.apiHost,
-          apiKey: apiConfig.apiKey,
-          providerType: apiConfig.providerType,
-          modelName: apiConfig.modelName,
-        },
-        agentConfig: {
-          ...sendAgent,
-          chatMode: chatMode ?? sendAgent.chatMode,
-        },
-        knowledgeBaseIds: effectiveKbIds,
-      })
-        .then((result) => {
-          if (!result) return;
-          if (result.mode !== "blocked") return;
-          failAgentOpen(requestId, "该话题已有进行中的会话，请等待完成或先停止。");
-        })
-        .catch((e: Error) => {
-          failAgentOpen(requestId, `请求失败：${e.message || e}`);
+      const restoreDraft = (message: string, skillErrors?: Record<string, string>, hostErrors?: Record<string, string>) => {
+        compactRequestIdRef.current = null;
+        requestIdRef.current = "";
+        patchState(() => ({ ...s, skillErrors, hostErrors }));
+        warning(message);
+        void persistSession();
+      };
+      try {
+        const result = await openAgentStream({
+          selectedSkillIds: invocation.selectedSkillIds,
+          selectedHosts,
+          topicId,
+          requestId,
+          messages: payloadMessages,
+          apiConfig: {
+            apiHost: apiConfig.apiHost,
+            apiKey: apiConfig.apiKey,
+            providerType: apiConfig.providerType,
+            modelName: apiConfig.modelName,
+          },
+          agentConfig: {
+            ...sendAgent,
+            chatMode: chatMode ?? sendAgent.chatMode,
+          },
+          knowledgeBaseIds: effectiveKbIds,
         });
+        const rejection = agentStreamRejection(result);
+        if (rejection) { restoreDraft(rejection, result.skillErrors, result.hostErrors); return; }
+        patchState((prev) => acceptSendDraft(prev, isResend, s));
+        void persistSession();
+        // First user message → derive topic title.
+        if (!topic.name) {
+          onTopicRenamed(topicId, generateTopicTitle(finalText));
+        }
+      } catch (e) {
+        restoreDraft(`请求失败：${e instanceof Error ? e.message : String(e)}`);
+      }
     } finally {
       sendLockRef.current = false;
     }
-  }, [chatMode, effectiveKbIds, failAgentOpen, handleClearContext, onTopicRenamed, patchState, persistSession, scrollToBottom, skills, topic.agentId, topic.name, topicId]);
-
-  useEffect(() => {
-    handleSendRef.current = (text?: string) => {
-      void handleSend(text);
-    };
-  }, [handleSend]);
+  }, [chatMode, effectiveKbIds, handleClearContext, onTopicRenamed, patchState, persistSession, scrollToBottom, skills, topic.agentId, topic.name, topicId]);
 
   // 与 ChatPage 一致：截断到被重发消息之前，再以新文本发送。
   const resendFromUserMessage = useCallback((msgId: string, newText: string) => {
@@ -487,11 +477,10 @@ export default function HostChatPanel({
     if (target.role !== "user") return;
     const trimmed = newText.trim();
     if (!trimmed) return;
-    const kept = s.messages.slice(0, idx);
     setEditingMsgId(null);
-    patchState((prev) => ({ ...prev, messages: kept }));
-    setTimeout(() => handleSendRef.current(trimmed), 0);
-  }, [patchState]);
+    const references = retainedReferences(trimmed, target.selectedSkillIds, target.selectedHosts);
+    void handleSend(trimmed, { selectedSkillIds: references.skillIds, selectedHosts: references.hosts, resendMessageId: msgId });
+  }, [handleSend]);
 
   const handleRetry = useCallback(
     (msgId: string) => {
@@ -602,10 +591,6 @@ export default function HostChatPanel({
 
   const handleSlashCommand = useCallback(
     (cmd: SlashCommand) => {
-      if (cmd.group === "skill" && cmd.insertText) {
-        patchState((s) => ({ ...s, input: cmd.insertText }));
-        return;
-      }
       if (cmd.group === "builtin" && cmd.id === "clear") {
         patchState((s) => ({ ...s, input: "" }));
         handleClearContext();
@@ -628,6 +613,7 @@ export default function HostChatPanel({
     sendLockRef.current = true;
     void (async () => {
       try {
+        await flushSettingsSave();
         const currentSettings = getSettingsSnapshot();
         const agent = findAgentById(currentSettings.agents, topic.agentId);
         if (!agent) return;
@@ -651,6 +637,7 @@ export default function HostChatPanel({
         scrollToBottom();
 
         openAgentStream({
+          selectedHosts: hostsForContinuation(s.messages),
           topicId,
           requestId,
           messages: payloadMessages,
@@ -668,8 +655,11 @@ export default function HostChatPanel({
         })
           .then((result) => {
             if (!result) return;
-            if (result.mode !== "blocked") return;
-            failAgentOpen(requestId, "该话题已有进行中的会话，请等待完成或先停止。");
+            const rejection = agentStreamRejection(result);
+            if (!rejection) return;
+            patchState(() => ({ ...s, hostErrors: result.hostErrors }));
+            setMaxTurnsPending(true);
+            warning(rejection);
           })
           .catch((e: Error) => {
             failAgentOpen(requestId, `请求失败：${e.message || e}`);
@@ -760,6 +750,16 @@ export default function HostChatPanel({
           />
         )}
         <ChatInputBar
+          selectedHosts={state.selectedHosts} hostErrors={state.hostErrors}
+          onSelectedHostsChange={(hosts) => {
+            patchState((s) => ({ ...s, selectedHosts: hosts, hostErrors: undefined }));
+            void persistSession();
+          }}
+          selectedSkillIds={state.selectedSkillIds} skillErrors={state.skillErrors}
+          onSelectedSkillIdsChange={(ids) => {
+            patchState((s) => ({ ...s, selectedSkillIds: ids, skillErrors: undefined }));
+            void persistSession();
+          }}
           input={input}
           onInputChange={setInput}
           attachments={[]}

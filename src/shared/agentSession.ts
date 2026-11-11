@@ -1,3 +1,4 @@
+import type { SelectedHost } from "./hostSelection";
 /**
  * 智能体会话状态机 — 单一 owner of 智能体流生命周期。
  *
@@ -28,6 +29,10 @@ export type { ToolTerminalState };
 export interface AgentSessionState {
   messages: ChatMsg[];
   input: string;
+  selectedSkillIds?: string[];
+  selectedHosts?: SelectedHost[];
+  hostErrors?: Record<string, string>;
+  skillErrors?: Record<string, string>;
   streaming: boolean;
   requestId: string | null;
   sessionReady: boolean;
@@ -131,6 +136,9 @@ export function beginSend(
     keepInput?: boolean;
     attachments?: ChatMsg["attachments"];
     usageCleared?: boolean;
+    selectedSkillIds?: string[];
+    selectedHosts?: SelectedHost[];
+    rawText?: string;
   },
 ): AgentSessionState {
   const now = Date.now();
@@ -143,6 +151,8 @@ export function beginSend(
             id: genSessionId(),
             role: "user" as const,
             content: opts.userText,
+            ...(opts.selectedSkillIds?.length || opts.selectedHosts?.length
+              ? { selectedSkillIds: opts.selectedSkillIds, selectedHosts: opts.selectedHosts, rawText: opts.rawText } : {}),
             ...(opts.attachments && opts.attachments.length > 0
               ? { attachments: opts.attachments }
               : {}),
@@ -160,9 +170,25 @@ export function beginSend(
     ...state,
     messages,
     input: opts.keepInput ? state.input : "",
+    selectedSkillIds: opts.keepInput ? state.selectedSkillIds : [],
+    selectedHosts: opts.keepInput ? state.selectedHosts : [],
+    hostErrors: undefined,
+    skillErrors: undefined,
     streaming: true,
     requestId: opts.requestId,
   };
+}
+
+/** Clear the submitted draft only after main accepted the request. Resends keep the current draft. */
+export function acceptSendDraft<T extends AgentSessionState>(
+  state: T,
+  keepDraft: boolean,
+  submitted?: Pick<AgentSessionState, "input" | "selectedSkillIds" | "selectedHosts">,
+): T {
+  const changed = submitted && (state.input !== submitted.input ||
+    JSON.stringify(state.selectedSkillIds || []) !== JSON.stringify(submitted.selectedSkillIds || []) ||
+    JSON.stringify(state.selectedHosts || []) !== JSON.stringify(submitted.selectedHosts || []));
+  return keepDraft || changed ? state : { ...state, input: "", selectedSkillIds: [], selectedHosts: [], hostErrors: undefined, skillErrors: undefined };
 }
 
 /** 续跑（maxTurns 到顶）：不插用户消息，只追加空 assistant 气泡。 */

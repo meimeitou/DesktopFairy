@@ -1,3 +1,4 @@
+import { hasReferenceTask, retainedReferences } from "../shared/composerReferences";
 import { Button, error, warning } from "@cherrystudio/ui";
 import { PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 
@@ -34,6 +35,7 @@ import {
   applySendFail,
   beginContinue,
   beginSend,
+  acceptSendDraft,
   clearMessages as clearSessionMessages,
   emptyAgentSessionState,
   genSessionId,
@@ -81,18 +83,19 @@ import {
   getBuiltinCommands,
   buildSkillCommands,
   parseSlashCommand,
-  applySkillSlashCommand,
-  withEnabledSkillId,
   COMPACT_PROMPT,
 } from "../shared/slashCommands";
 import {
   detachTopicStream,
   abortTopicStream,
   openAgentStream,
+  agentStreamRejection,
 } from "../services/aiTransport/IpcChatTransport";
 import { mergeRefTopicStates } from "../shared/topicStateSync";
 
-type SendResendOptions = {
+import { prepareSkillInvocation, type SkillResendOptions } from "../shared/skillInvocation";
+
+type SendResendOptions = SkillResendOptions & {
   resendAttachments?: ChatAttachment[];
 };
 
@@ -333,6 +336,7 @@ export default function ChatPage({
               messageCount: state.lastUsageMessageCount,
             }
           : undefined,
+        state.selectedSkillIds,
       ),
     );
     await api.invoke("chat:session:save", { topicId: tid, session });
@@ -397,6 +401,7 @@ export default function ChatPage({
         [topicId]: {
           messages: session.messages,
           input: session.draftInput ?? "",
+          selectedSkillIds: session.draftSelectedSkillIds ?? [],
           attachments: session.draftAttachments ?? [],
           streaming: false,
           requestId: null,
@@ -885,8 +890,8 @@ export default function ChatPage({
   );
 
   const slashCommands = useMemo(
-    () => [...getBuiltinCommands(), ...buildSkillCommands(skills)],
-    [skills],
+    () => [...getBuiltinCommands(), ...buildSkillCommands(skills, topicAgent?.enabledSkillIds)],
+    [skills, topicAgent?.enabledSkillIds],
   );
 
   const loadAttachmentPayloads = useCallback(
@@ -1044,7 +1049,17 @@ export default function ChatPage({
 
       const isCompactRequest = overrideText === COMPACT_PROMPT;
 
-      let finalText = text;
+      const invocation = prepareSkillInvocation(text,
+        isResend ? (options?.selectedSkillIds || []) : (state.selectedSkillIds || []),
+        skills.map((s) => s.id));
+      if (!isCompactRequest && invocation.selectedSkillIds.length && !hasReferenceTask(invocation.rawText, invocation.selectedSkillIds)) {
+        warning("请输入要使用技能完成的任务。");
+        return;
+      }
+      const finalText = invocation.text;
+      const sendMessages = options?.resendMessageId
+        ? state.messages.slice(0, state.messages.findIndex((m) => m.id === options.resendMessageId))
+        : state.messages;
       if (!isCompactRequest && !overrideText) {
         const parsed = parseSlashCommand(text);
         if (parsed?.command === "clear") {
@@ -1071,47 +1086,11 @@ export default function ChatPage({
           findAgentById(settings.agents, settings.activeChatAgentId);
         if (!agent) return;
         const apiConfig = getChatApiConfig(settings, agent);
-        let invokedSkillId: string | undefined;
-        if (!isCompactRequest && !overrideText) {
-          const applied = applySkillSlashCommand(
-            text,
-            skills.map((s) => s.id),
-          );
-          if (applied) {
-            finalText = applied.text;
-            invokedSkillId = applied.skillId;
-          }
-        }
 
         {
           const guidance = getAgentBackendGuidance(settings, agent);
           if (guidance) {
-            setTopicStates((prev) => {
-              const s = prev[topicId] ?? emptyTopicState();
-              const next: TopicPageState = {
-                ...s,
-                ...beginSend(s, {
-                  requestId: "",
-                  userText: finalText,
-                  keepInput: isResend,
-                  attachments:
-                    sendAttachments.length > 0 ? [...sendAttachments] : undefined,
-                }),
-                attachments: isResend ? s.attachments : [],
-                requestBackend: null,
-                // beginSend 置 streaming:true/requestId:""，guidance 无流事件，
-                // 必须显式重置（与 Drawer/HostPanel 一致），否则输入框永久禁用。
-                streaming: false,
-                requestId: null,
-              };
-              // beginSend 的占位气泡替换为引导错误气泡。
-              const idx = next.messages.length - 1;
-              const msgs = next.messages.slice();
-              msgs[idx] = { ...msgs[idx], content: guidance, error: true };
-              return { ...prev, [topicId]: { ...next, messages: msgs } };
-            });
-            scrollToBottom();
-            scheduleTopicSave(topicId);
+            warning(guidance);
             return;
           }
         }
@@ -1121,15 +1100,7 @@ export default function ChatPage({
           return;
         }
 
-        const sendAgent = invokedSkillId
-          ? {
-              ...agent,
-              enabledSkillIds: withEnabledSkillId(
-                agent.enabledSkillIds,
-                invokedSkillId,
-              ),
-            }
-          : agent;
+        const sendAgent = agent;
 
         let attachmentPayloads = {
           textFiles: [] as { name: string; text: string }[],
@@ -1154,7 +1125,7 @@ export default function ChatPage({
         });
 
         const agentHistory = trimMessagesForApi(
-          filterForAgentHistory(state.messages),
+          filterForAgentHistory(sendMessages),
           trimOpts,
         );
         const payloadMessages = buildAgentApiMessages(
@@ -1175,15 +1146,17 @@ export default function ChatPage({
         const live = topicStatesRef.current[topicId] ?? emptyTopicState();
         const nextTopic: TopicPageState = {
           ...live,
-          ...beginSend(live, {
+          ...beginSend({ ...live, messages: sendMessages }, {
             requestId,
             userText: finalText,
+            selectedSkillIds: invocation.selectedSkillIds,
+            rawText: invocation.rawText,
             isCompact: isCompactRequest,
-            keepInput: isResend,
+            keepInput: true,
             attachments:
               sendAttachments.length > 0 ? [...sendAttachments] : undefined,
           }),
-          attachments: isResend ? live.attachments : [],
+          attachments: live.attachments,
           requestBackend: AGENT_BACKEND_KEY,
         };
         topicStatesRef.current = {
@@ -1194,59 +1167,70 @@ export default function ChatPage({
         syncStreamingFlag(topicId, true);
         scrollToBottom();
 
-        if (shouldAutoTitle) {
-          const autoTitle = generateTopicTitle(text);
-          void api
-            .invoke("chat:topics:rename", {
-              topicId,
-              name: autoTitle,
-            })
-            .then(() => {
-              setTopics((prev) =>
-                prev.map((t) =>
-                  t.id === topicId
-                    ? { ...t, name: autoTitle, updatedAt: Date.now() }
-                    : t,
-                ),
-              );
-            });
-        }
-
-        scheduleTopicSave(topicId);
-        setSidebarCollapsed(false);
-
         notifyLive2DScene("userSend");
-        const invokePromise = openAgentStream({
-          topicId,
-          requestId,
-          messages: payloadMessages,
-          apiConfig: {
-            apiHost: apiConfig.apiHost,
-            apiKey: apiConfig.apiKey,
-            providerType: apiConfig.providerType,
-            modelName: apiConfig.modelName,
-          },
-          agentConfig: {
-            ...sendAgent,
-            chatMode: topic?.chatMode ?? sendAgent.chatMode,
-          },
-          knowledgeBaseIds:
-            topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
-            [],
-        });
-        invokePromise
-          .then((result) => {
-            if (!result || typeof result !== "object") return;
-            if ((result as { mode?: string }).mode !== "blocked") return;
-            failAgentOpen(
-              topicId,
-              requestId,
-              "该话题已有进行中的会话，请等待完成或先停止。",
-            );
-          })
-          .catch((e: Error) => {
-            failAgentOpen(topicId, requestId, `请求失败：${e.message || e}`);
+        const restoreDraft = (message: string, skillErrors?: Record<string, string>) => {
+          requestIdToTopicIdRef.current.delete(requestId);
+          compactRequestIdRef.current = null;
+          const restored = { ...live, skillErrors };
+          topicStatesRef.current = { ...topicStatesRef.current, [topicId]: restored };
+          setTopicStates((prev) => ({ ...prev, [topicId]: restored }));
+          syncStreamingFlag(topicId, false);
+          warning(message);
+          scheduleTopicSave(topicId);
+        };
+        try {
+          const result = await openAgentStream({
+            selectedSkillIds: invocation.selectedSkillIds,
+            topicId,
+            requestId,
+            messages: payloadMessages,
+            apiConfig: {
+              apiHost: apiConfig.apiHost,
+              apiKey: apiConfig.apiKey,
+              providerType: apiConfig.providerType,
+              modelName: apiConfig.modelName,
+            },
+            agentConfig: {
+              ...sendAgent,
+              chatMode: topic?.chatMode ?? sendAgent.chatMode,
+            },
+            knowledgeBaseIds:
+              topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
+              [],
           });
+          const rejection = agentStreamRejection(result);
+          if (rejection) {
+            restoreDraft(rejection, result.skillErrors);
+            return;
+          }
+          const accepted = topicStatesRef.current[topicId] ?? nextTopic;
+          const draft = acceptSendDraft(accepted, isResend || accepted.attachments !== state.attachments, state);
+          const cleared = { ...draft, attachments: draft === accepted ? accepted.attachments : [] };
+          topicStatesRef.current = { ...topicStatesRef.current, [topicId]: cleared };
+          setTopicStates((prev) => ({ ...prev, [topicId]: cleared }));
+          if (shouldAutoTitle) {
+            const autoTitle = generateTopicTitle(text);
+            void api
+              .invoke("chat:topics:rename", {
+                topicId,
+                name: autoTitle,
+              })
+              .then(() => {
+                setTopics((prev) =>
+                  prev.map((t) =>
+                    t.id === topicId
+                      ? { ...t, name: autoTitle, updatedAt: Date.now() }
+                      : t,
+                  ),
+                );
+              });
+          }
+
+          scheduleTopicSave(topicId);
+          setSidebarCollapsed(false);
+        } catch (e) {
+          restoreDraft(`请求失败：${e instanceof Error ? e.message : String(e)}`);
+        }
       } finally {
         agentSendLockRef.current.delete(topicId);
       }
@@ -1254,7 +1238,6 @@ export default function ChatPage({
     [
       skills,
       loadAttachmentPayloads,
-      failAgentOpen,
       scheduleTopicSave,
       scrollToBottom,
       syncStreamingFlag,
@@ -1324,10 +1307,6 @@ export default function ChatPage({
 
   const handleSlashCommand = useCallback(
     (cmd: SlashCommand) => {
-      if (cmd.group === "skill" && cmd.insertText) {
-        setActiveInput(cmd.insertText);
-        return;
-      }
       if (cmd.group === "builtin" && cmd.id === "clear") {
         setActiveInput("");
         handleClearContext();
@@ -1378,18 +1357,11 @@ export default function ChatPage({
       const trimmed = newText.trim();
       const resendAttachments = target.attachments ?? [];
       if (!trimmed && resendAttachments.length === 0) return;
-      const kept = state.messages.slice(0, idx);
       setEditingMsgId(null);
-      setTopicStates((prev) => ({
-        ...prev,
-        [topicId]: { ...(prev[topicId] ?? emptyTopicState()), messages: kept },
-      }));
-      setTimeout(
-        () => handleSendRef.current(trimmed, { resendAttachments }),
-        0,
-      );
+      const references = retainedReferences(trimmed, target.selectedSkillIds);
+      void handleSend(trimmed, { resendAttachments, selectedSkillIds: references.skillIds, resendMessageId: msgId });
     },
-    [],
+    [handleSend],
   );
 
   // 重试用户消息：删除该消息及其后所有消息，用原始文本重新发送
@@ -1588,7 +1560,13 @@ export default function ChatPage({
             />
           )}
 
-        <ChatInputBar
+        <ChatInputBar key={activeTopicId}
+          selectedSkillIds={activeState.selectedSkillIds} skillErrors={activeState.skillErrors}
+          onSelectedSkillIdsChange={(ids) => {
+            if (!activeTopicId) return;
+            setTopicStates((prev) => ({ ...prev, [activeTopicId]: { ...(prev[activeTopicId] ?? emptyTopicState()), selectedSkillIds: ids, skillErrors: undefined } }));
+            scheduleTopicSave(activeTopicId);
+          }}
           input={input}
           onInputChange={setActiveInput}
           attachments={attachments}

@@ -172,7 +172,7 @@ function createHostConversationService({
         () => getCwd(topicId, targetHostId),
       ),
       assertOperation: (operation) => {
-        assertValid();
+        rt.assertValid();
         return assertOperation(operation);
       },
       resolveConnectParams,
@@ -242,6 +242,61 @@ function createHostConversationService({
         return true;
       },
     };
+  }
+
+  /** Targets and grants belong to this stream, independently of any visible terminal. */
+  function resolveSelectedHostsRuntime(topicId, selectedHosts) {
+    const { validateSelectedHosts } = require('./hostSelection.cjs');
+    const checked = validateSelectedHosts(selectedHosts, getHosts());
+    if (!checked.hosts.length || Object.keys(checked.errors).length) {
+      throw new Error(Object.values(checked.errors).join(' ') || '请先选择目标机器');
+    }
+    const terminalTopic = topicId?.startsWith('terminal:');
+    const validate = () => {
+      if (!terminalTopic && !topicStore.getTopic(topicId)) throw new Error('对话已被删除');
+      const current = validateSelectedHosts(checked.hosts, getHosts());
+      if (Object.keys(current.errors).length) throw new Error(Object.values(current.errors).join(' '));
+    };
+    validate();
+    const grants = new Map(checked.hosts.map((h) => [h.id, fingerprintOf(h.id)]));
+    const cwdByHost = new Map();
+    const host = checked.hosts.length === 1 ? checked.hosts[0] : null;
+    const rt = {
+      topicId, hostId: host?.id || null, defaultHostId: host?.id || null,
+      hostName: host?.name, hostUser: host?.user,
+      selectedHosts: checked.hosts,
+      requireExplicitHost: checked.hosts.length > 1,
+      assertValid: validate,
+      describeHost, fingerprintOf, operationFingerprintOf, resolveConnectParams,
+      resolveHostIdByName, searchSavedHosts, listSavedHosts, applyHostSettingsMutation, forceApproval,
+      isGranted: (target) => {
+        validate();
+        const fp = fingerprintOf(target);
+        return !!fp && grants.get(target) === fp;
+      },
+      ensureGrant: (_scope, target) => {
+        validate();
+        const fp = fingerprintOf(target);
+        if (!fp) return false;
+        grants.set(target, fp);
+        return true;
+      },
+      getCwd: (_scope, target) => {
+        validate();
+        const entry = cwdByHost.get(target);
+        return entry?.identity === fingerprintOf(target) ? entry.path : null;
+      },
+      setCwd: (_scope, target, cwdPath) => {
+        validate();
+        const fp = fingerprintOf(target);
+        if (!fp) return false;
+        cwdByHost.set(target, { identity: fp, path: cwdPath });
+        return true;
+      },
+      captureOperation: (target, options) => captureOperation(target, options, () => rt.getCwd(topicId, target)),
+      assertOperation: (operation) => { validate(); return assertOperation(operation); },
+    };
+    return rt;
   }
 
   /** cwd for hostId, or null (= login home default, no cd prefix). */
@@ -443,6 +498,7 @@ function createHostConversationService({
   return {
     resolveHostRuntime,
     resolveTerminalRuntime,
+    resolveSelectedHostsRuntime,
     getTopic: (topicId) => topicStore.getTopic(topicId),
     fingerprintOf,
     resolveConnectParams,

@@ -1,3 +1,4 @@
+import type { SelectedHost } from "../../shared/hostSelection";
 /**
  * IPC chat transport — Cherry Studio pattern adapter for DesktopFairy.
  */
@@ -23,9 +24,13 @@ export interface StreamAttachResult {
 export interface AgentStreamOpenResult {
   mode: string;
   requestId: string;
+  skillErrors?: Record<string, string>;
+  hostErrors?: Record<string, string>;
 }
 
-export async function openAgentStream(payload: {
+export interface AgentStreamOpenPayload {
+  selectedHosts?: SelectedHost[];
+  selectedSkillIds?: string[];
   topicId: string;
   requestId: string;
   messages: Array<Record<string, unknown>>;
@@ -38,7 +43,9 @@ export async function openAgentStream(payload: {
   };
   terminalSessionId?: string;
   knowledgeBaseIds?: string[];
-}) {
+}
+
+export async function openAgentStream(payload: AgentStreamOpenPayload) {
   return api.invoke("ai:stream_open", payload) as Promise<AgentStreamOpenResult>;
 }
 
@@ -131,3 +138,10 @@ export function subscribeAiStream(
 }
 
 export type { ToolTerminalState };
+
+export function agentStreamRejection(result: AgentStreamOpenResult) {
+  if (result.mode === "invalid_hosts") return Object.values(result.hostErrors || {}).join(" ") || "机器校验失败，请重新选择。";
+  if (result.mode === "invalid_skills") return Object.values(result.skillErrors || {}).join(" ") || "技能加载失败，请重新选择。";
+  if (result.mode === "blocked") return "该会话已有进行中的请求，请等待完成或先停止。";
+  return null;
+}

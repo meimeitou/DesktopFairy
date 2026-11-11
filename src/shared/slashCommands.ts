@@ -1,6 +1,8 @@
+import { projectHostSelection, type SelectedHost } from "./hostSelection";
+import type { SshHost } from "./terminalSettings";
 import type { AgentSkillDescriptor } from "./agent";
 
-export type SlashCommandGroup = "builtin" | "skill";
+export type SlashCommandGroup = "builtin" | "skill" | "host";
 
 export interface SlashCommand {
   id: string;
@@ -12,6 +14,11 @@ export interface SlashCommand {
   group: SlashCommandGroup;
   /** The text to insert into the textarea (for skill commands) */
   insertText?: string;
+  name?: string;
+  isBuiltin?: boolean;
+  enabled?: boolean;
+  host?: SelectedHost;
+  searchText?: string;
 }
 
 const BUILTIN_COMMANDS: SlashCommand[] = [
@@ -34,14 +41,28 @@ export function getBuiltinCommands(): SlashCommand[] {
 }
 
 export function buildSkillCommands(
-  skills: AgentSkillDescriptor[]
+  skills: AgentSkillDescriptor[],
+  enabledSkillIds: string[] = [],
 ): SlashCommand[] {
   return skills.map((s) => ({
     id: s.id,
+    name: s.name,
+    isBuiltin: s.isBuiltin,
+    enabled: enabledSkillIds.includes(s.id),
     label: `/${s.id}`,
     description: s.description || s.name,
     group: "skill" as const,
     insertText: `/${s.id} `,
+  }));
+}
+
+/** Machine commands participate only in the @ menu, never in slash commands. */
+export function buildHostCommands(hosts: SshHost[]): SlashCommand[] {
+  return hosts.map((host) => ({
+    id: host.id, name: host.name, label: `@${host.name}`, group: "host",
+    description: `${host.user}@${host.host}:${host.port || 22}`,
+    searchText: `${host.host} ${host.user} ${host.group || ""}`,
+    host: projectHostSelection(host),
   }));
 }
 

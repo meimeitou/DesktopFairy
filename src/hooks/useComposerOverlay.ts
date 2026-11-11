@@ -6,7 +6,7 @@ export function useComposerOverlay(ref: RefObject<HTMLElement | null>) {
     const el = ref.current;
     if (!el) return;
     const host = el.closest(
-      ".chat-main-area, .terminal-agent-drawer-content",
+      ".chat-main-area, .host-chat-main, .terminal-agent-drawer-content",
     ) as HTMLElement | null;
     if (!host) return;
     const apply = () => {
