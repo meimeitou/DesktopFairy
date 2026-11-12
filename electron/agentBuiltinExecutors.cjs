@@ -1522,6 +1522,14 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
   ) {
     return fail('主机环境不提供本机工具：' + toolName);
   }
+  // Defense in depth: terminal sessions operate through the Terminal tool only;
+  // local file/command tools are always blocked regardless of catalog.
+  if (
+    deps.context === 'terminal' &&
+    ['read', 'write', 'edit', 'bash', 'glob', 'grep'].includes(toolName)
+  ) {
+    return fail('终端环境不提供本地文件工具，请通过 Terminal 工具执行命令：' + toolName);
+  }
   if (require('./browserAutomation.cjs').TOOL_NAMES.includes(toolName)) {
     return JSON.stringify(await require('./browserService.cjs').executeBrowserTool(toolName, args, deps));
   }

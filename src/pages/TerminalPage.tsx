@@ -715,6 +715,7 @@ export default function TerminalPage({
     settings.agents.find((a) => a.builtinRole === "terminal-assistant")?.id ??
     null;
   const [agentSettingsOpen, setAgentSettingsOpen] = useState(false);
+  const [editingTopicAgentId, setEditingTopicAgentId] = useState<string | null>(null);
 
   // 助手抽屉右上角的齿轮：原地打开助手设置弹窗。
   const handleOpenTerminalAgentSettings = useCallback(() => {
@@ -1246,6 +1247,12 @@ export default function TerminalPage({
                       if (list) openConversationTab(topic);
                     });
                   }}
+                  onNewConversation={
+                    topic.host?.hostId
+                      ? () => void handleNewConversation(topic.host!.hostId)
+                      : () => void handleNewLocalConversation()
+                  }
+                  onEditAgent={topic.agentId ? () => setEditingTopicAgentId(topic.agentId!) : undefined}
                 />
               );
             }
@@ -1359,6 +1366,11 @@ export default function TerminalPage({
         open={agentSettingsOpen && !!terminalAgentId}
         agentId={terminalAgentId}
         onClose={() => setAgentSettingsOpen(false)}
+      />
+      <AgentSettingsModal
+        open={!!editingTopicAgentId}
+        agentId={editingTopicAgentId}
+        onClose={() => setEditingTopicAgentId(null)}
       />
       {confirmDialog}
     </div>

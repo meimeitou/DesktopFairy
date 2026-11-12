@@ -1,7 +1,8 @@
 import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
 import { hostsForContinuation } from "../../shared/hostSelection";
-import { warning } from "@cherrystudio/ui";
+import { error, warning } from "@cherrystudio/ui";
 import { NamedIcon } from "../NamedIcon";
+import type { ChatAttachment } from "../../shared/chatAttachments";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MessageList, {
@@ -21,9 +22,10 @@ import {
 } from "../../services/aiTransport/IpcChatTransport";
 import {
   type ChatMsg,
+  classifyStreamError,
   filterForAgentHistory,
   trimMessagesForApi,
-  buildAgentHistoryMessages,
+  buildAgentApiMessages,
 } from "../../shared/chatMessages";
 import {
   applySendFail,
@@ -85,6 +87,8 @@ export default function HostChatPanel({
   onStatusChange,
   onTopicRenamed,
   onTopicForked,
+  onNewConversation,
+  onEditAgent,
 }: {
   topicId: string;
   topic: ChatTopic;
@@ -93,6 +97,9 @@ export default function HostChatPanel({
   onStatusChange: (topicId: string, status: { streaming: boolean; awaiting: boolean }) => void;
   onTopicRenamed: (topicId: string, name: string) => void;
   onTopicForked?: (topic: ChatTopic) => void;
+  onNewConversation?: () => void;
+  /** Opens agent/model settings for model_config error actions. */
+  onEditAgent?: () => void;
 }) {
   const settings = useSettings();
   const stateRef = useRef<AgentSessionState>(emptyAgentSessionState());
@@ -104,12 +111,16 @@ export default function HostChatPanel({
   const messageListRef = useRef<MessageListHandle>(null);
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const sendLockRef = useRef(false);
+  const browserResumeRef = useRef<{ topicId: string; tabId: string } | null>(null);
+  const handleSendRef = useRef<(text: string) => Promise<void>>(async () => {});
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [maxTurnsPending, setMaxTurnsPending] = useState(false);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   // topic prop 由 TerminalPage 持有，updateMeta 只落盘不回灌；
   // 本地 override 保证选择器与发送用同一份最新值。
   const [kbIdsOverride, setKbIdsOverride] = useState<string[] | null>(null);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [invalidAttachmentPaths, setInvalidAttachmentPaths] = useState<Set<string>>(new Set());
   const compactRequestIdRef = useRef<string | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
@@ -223,6 +234,17 @@ export default function HostChatPanel({
           selectedHosts: session.draftSelectedHosts ?? [],
           sessionReady: true,
         };
+        // 检查历史消息中附件路径是否仍有效，更新 invalidAttachmentPaths。
+        const allPaths = new Set<string>();
+        for (const msg of hydrated.messages) {
+          for (const att of msg.attachments ?? []) allPaths.add(att.path);
+        }
+        const invalidPaths = new Set<string>();
+        await Promise.all([...allPaths].map(async (p) => {
+          try { await api.invoke("file:stat_path", p); }
+          catch { invalidPaths.add(p); }
+        }));
+        if (!cancelled && invalidPaths.size > 0) setInvalidAttachmentPaths(invalidPaths);
         // 用户在读盘完成前就动了输入框/发了消息：磁盘快照是旧的，整体覆盖会吞掉
         // 刚敲的草稿、用户消息和 streaming 标记。保留内存态，只补上 sessionReady。
         const current = stateRef.current;
@@ -335,11 +357,32 @@ export default function HostChatPanel({
   const failAgentOpen = useCallback(
     (requestId: string, message: string) => {
       if (requestId !== requestIdRef.current) return;
-      patchState((prev) => applySendFail(prev, requestId, message));
+      patchState((prev) => applySendFail(prev, requestId, message, classifyStreamError(message) ?? undefined));
       // 用户消息 + 错误气泡也要落盘，否则硬退出会丢这一轮。
       void persistSession();
     },
     [patchState, persistSession],
+  );
+
+  const loadAttachmentPayloads = useCallback(
+    async (files: ChatAttachment[]) => {
+      const textFiles: { name: string; text: string }[] = [];
+      const images: { name: string; dataUrl: string }[] = [];
+      for (const file of files) {
+        const data = (await api.invoke("file:read", file)) as {
+          kind: string; text?: string; dataUrl?: string; name: string;
+        };
+        if (data.kind === "image" && data.dataUrl) {
+          images.push({ name: data.name, dataUrl: data.dataUrl });
+        } else if (data.kind === "text" && data.text != null) {
+          textFiles.push({ name: data.name, text: data.text });
+        } else {
+          throw new Error(`不支持的文件类型：${file.name}`);
+        }
+      }
+      return { textFiles, images };
+    },
+    [],
   );
 
   const handleSend = useCallback(async (overrideText?: string, options?: SkillResendOptions) => {
@@ -347,9 +390,9 @@ export default function HostChatPanel({
     if (s.streaming || sendLockRef.current) return;
 
     const isResend = overrideText !== undefined;
-    const text = (overrideText ?? s.input).trim();
-    if (!text) return;
     const isCompactRequest = overrideText === COMPACT_PROMPT;
+    const text = (overrideText ?? s.input).trim();
+    if (!isCompactRequest && !text && attachments.length === 0) return;
 
     // 与 ChatPage 一致：/clear 在发送前本地处理。
     if (!isCompactRequest && !overrideText) {
@@ -379,13 +422,29 @@ export default function HostChatPanel({
       const sendMessages = options?.resendMessageId
         ? s.messages.slice(0, s.messages.findIndex((m) => m.id === options.resendMessageId)) : s.messages;
 
-      // 与 ChatPage 一致：后端未配置时给出可操作的引导而不是静默失败。
+      // 与 ChatPage 一致：后端未配置时在对话里内联提示，而不是 toast。
       const guidance = getAgentBackendGuidance(currentSettings, agent);
-      if (guidance) {
-        warning(guidance);
+      const apiConfig = getChatApiConfig(currentSettings, agent);
+      const configError = guidance ?? (!apiConfig?.apiHost || !apiConfig.modelName
+        ? "智能体尚未配置后端 Provider 或模型，请在智能体设置中完成配置。"
+        : null);
+      if (configError) {
+        patchState((s) => ({
+          ...s,
+          messages: [
+            ...s.messages,
+            {
+              id: genSessionId(),
+              role: "assistant" as const,
+              content: configError,
+              error: true,
+              errorKind: "model_config" as const,
+              timestamp: Date.now(),
+            },
+          ],
+        }));
         return;
       }
-      const apiConfig = getChatApiConfig(currentSettings, agent);
       if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
       const sendAgent = agent;
@@ -393,20 +452,33 @@ export default function HostChatPanel({
       const trimOpts = buildTrimOptions({
         contextWindow: resolveContextWindow(resolveActiveModelName(sendAgent)),
         systemTokens: estimateAgentSystemPromptTokens(sendAgent),
+        draftInput: finalText,
+        draftAttachments: isResend ? (options?.resendAttachments ?? []) : attachments,
       });
       const history = trimMessagesForApi(
         filterForAgentHistory(sendMessages),
         trimOpts,
       );
-      const payloadMessages = buildAgentHistoryMessages([
-        ...history,
-        {
-          id: genSessionId(),
-          role: "user" as const,
-          content: finalText,
-          timestamp: Date.now(),
-        },
-      ]);
+
+      const sendAttachments = isResend
+        ? (options?.resendAttachments ?? [])
+        : attachments;
+      let attachmentPayloads = { textFiles: [] as { name: string; text: string }[], images: [] as { name: string; dataUrl: string }[] };
+      try {
+        if (sendAttachments.length > 0) {
+          attachmentPayloads = await loadAttachmentPayloads(sendAttachments);
+        }
+      } catch (e) {
+        error(e instanceof Error ? e.message : "读取附件失败");
+        return;
+      }
+
+      const payloadMessages = buildAgentApiMessages(
+        history,
+        finalText,
+        attachmentPayloads,
+        sendAgent.soul,
+      );
 
       const requestId = genSessionId();
       requestIdRef.current = requestId;
@@ -421,15 +493,21 @@ export default function HostChatPanel({
           rawText: invocation.rawText,
           isCompact: isCompactRequest,
           keepInput: true,
+          attachments: sendAttachments.length > 0 ? sendAttachments : undefined,
         }),
       );
+      if (!isResend) setAttachments([]);
       scrollToBottom();
 
       const restoreDraft = (message: string, skillErrors?: Record<string, string>, hostErrors?: Record<string, string>) => {
         compactRequestIdRef.current = null;
         requestIdRef.current = "";
-        patchState(() => ({ ...s, skillErrors, hostErrors }));
-        warning(message);
+        const errorKind = classifyStreamError(message) ?? undefined;
+        patchState((prev) => ({
+          ...applySendFail(prev, requestId, message, errorKind),
+          skillErrors,
+          hostErrors,
+        }));
         void persistSession();
       };
       try {
@@ -465,7 +543,27 @@ export default function HostChatPanel({
     } finally {
       sendLockRef.current = false;
     }
-  }, [chatMode, effectiveKbIds, handleClearContext, onTopicRenamed, patchState, persistSession, scrollToBottom, skills, topic.agentId, topic.name, topicId]);
+  }, [attachments, chatMode, effectiveKbIds, handleClearContext, loadAttachmentPayloads, onTopicRenamed, patchState, persistSession, scrollToBottom, skills, topic.agentId, topic.name, topicId]);
+
+  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
+
+  useEffect(() => {
+    const off = api.onBrowserResume?.((task) => {
+      if (task.topicId !== topicId) return;
+      browserResumeRef.current = task;
+    });
+    return () => off?.();
+  }, [topicId]);
+
+  useEffect(() => {
+    const task = browserResumeRef.current;
+    if (!task || task.topicId !== topicId || streaming || !sessionReady) return;
+    browserResumeRef.current = null;
+    void api.invoke("browser:ui", { action: "discard", topicId: task.topicId });
+    void handleSendRef.current(
+      `继续之前的浏览器任务。用户已手动接管过页面，请先用 browser_tabs 确认标签页，再重新读取标签页 ${task.tabId} 的快照，根据当前页面继续；不要重放之前的提交动作。`,
+    );
+  }, [topicId, streaming, sessionReady]);
 
   // 与 ChatPage 一致：截断到被重发消息之前，再以新文本发送。
   const resendFromUserMessage = useCallback((msgId: string, newText: string) => {
@@ -476,10 +574,11 @@ export default function HostChatPanel({
     const target = s.messages[idx];
     if (target.role !== "user") return;
     const trimmed = newText.trim();
-    if (!trimmed) return;
+    const resendAttachments = target.attachments ?? [];
+    if (!trimmed && resendAttachments.length === 0) return;
     setEditingMsgId(null);
     const references = retainedReferences(trimmed, target.selectedSkillIds, target.selectedHosts);
-    void handleSend(trimmed, { selectedSkillIds: references.skillIds, selectedHosts: references.hosts, resendMessageId: msgId });
+    void handleSend(trimmed, { selectedSkillIds: references.skillIds, selectedHosts: references.hosts, resendMessageId: msgId, resendAttachments });
   }, [handleSend]);
 
   const handleRetry = useCallback(
@@ -707,7 +806,7 @@ export default function HostChatPanel({
             ref={messageListRef}
             messages={messages}
             streaming={streaming}
-            invalidAttachmentPaths={new Set()}
+            invalidAttachmentPaths={invalidAttachmentPaths}
             emptyContent={
               sessionReady ? (
                 <div className="host-chat-empty">
@@ -740,6 +839,7 @@ export default function HostChatPanel({
               });
               window.dispatchEvent(new CustomEvent("knowledge:reveal"));
             }}
+            onEditAgent={onEditAgent}
           />
         </ToolCancelContext.Provider>
         {maxTurnsPending && !streaming && (
@@ -762,9 +862,9 @@ export default function HostChatPanel({
           }}
           input={input}
           onInputChange={setInput}
-          attachments={[]}
-          onAttachmentsChange={() => {}}
-          attachmentsEnabled={false}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
+          attachmentsEnabled={true}
           streaming={streaming}
           editingMessage={!!editingMsgId}
           hasMessages={messages.length > 0}
@@ -776,6 +876,7 @@ export default function HostChatPanel({
           onReasoningEffortChange={handleReasoningEffortChange}
           onSend={() => void handleSend()}
           onStop={handleStop}
+          onNewConversation={onNewConversation}
           onClearContext={handleClearContext}
           onClearMessages={handleClearMessages}
           onCompact={handleCompact}

@@ -32,7 +32,16 @@ function browserPage(command) {
     }
     collect(document);
     const l = command.locator || {};
-    const nodes = all.filter((el) => (!l.css || el.matches(l.css)) && (!l.name || label(el) === l.name) && (!l.text || el.textContent.includes(l.text)) && (!command.text || el.textContent.includes(command.text)));
+    const nodes = all.filter((el) => {
+      if (!l.css || el.matches(l.css)) {
+        if (l.role) {
+          const role = el.getAttribute('role') || ({ BUTTON: 'button', A: 'link', SELECT: 'combobox', TEXTAREA: 'textbox' }[el.tagName]) || (el.tagName === 'INPUT' ? (['checkbox','radio'].includes(el.type) ? el.type : 'textbox') : '');
+          if (role !== l.role) return false;
+        }
+        return (!l.name || label(el) === l.name) && (!l.text || el.textContent.includes(l.text)) && (!command.text || el.textContent.includes(command.text));
+      }
+      return false;
+    });
     const state = command.state || 'visible';
     return { matched: state === 'detached' ? nodes.length === 0 : state === 'hidden' ? !nodes.some(visible) : state === 'attached' ? nodes.length > 0 : nodes.some(visible) };
   }

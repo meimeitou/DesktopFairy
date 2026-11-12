@@ -67,6 +67,7 @@ export interface SkillResendOptions {
   selectedSkillIds?: string[];
   selectedHosts?: SelectedHost[];
   resendMessageId?: string;
+  resendAttachments?: import("./chatAttachments").ChatAttachment[];
 }
 
 export function prepareSkillInvocation(text: string, selectedIds: string[], installedIds: string[], selectedHosts: SelectedHost[] = []) {

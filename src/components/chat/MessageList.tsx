@@ -66,6 +66,8 @@ export interface MessageListProps {
   onDelete?: (msgId: string) => void;
   onFork?: (msgId: string) => void;
   onOpenCitation?: (citation: import("../../shared/knowledge").KnowledgeCitation) => void;
+  /** Opens agent/model settings — forwarded to MessageBubble for model_config errors. */
+  onEditAgent?: () => void;
 }
 
 const MessageList = forwardRef<MessageListHandle, MessageListProps>(
@@ -90,6 +92,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       onDelete,
       onOpenCitation,
       onFork,
+      onEditAgent,
     },
     ref,
   ) {
@@ -481,6 +484,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                     onCancelEdit={onCancelEdit}
                     onDelete={onDelete}
                     onOpenCitation={onOpenCitation}
+                    onEditAgent={item.msg.errorKind === "model_config" ? onEditAgent : undefined}
                   />
                 )}
               </div>

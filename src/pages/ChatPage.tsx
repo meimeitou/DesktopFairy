@@ -27,6 +27,7 @@ import {
   type ChatMsg,
   buildAgentApiMessages,
   buildAgentHistoryMessages,
+  classifyStreamError,
   filterForAgentHistory,
   findLastAssistantReplyIndex,
   trimMessagesForApi,
@@ -949,7 +950,7 @@ export default function ChatPage({
       if (!s) return;
       const next: TopicPageState = {
         ...s,
-        ...applySendFail(s, requestId, message),
+        ...applySendFail(s, requestId, message, classifyStreamError(message) ?? undefined),
         requestBackend: s.requestId === requestId ? null : s.requestBackend,
       };
       topicStatesRef.current = { ...topicStatesRef.current, [topicId]: next };
@@ -1110,14 +1111,36 @@ export default function ChatPage({
 
         {
           const guidance = getAgentBackendGuidance(settings, agent);
-          if (guidance) {
-            warning(guidance);
+          if (!guidance && (!apiConfig?.apiHost || !apiConfig.modelName)) {
+            // apiConfig missing falls through to same inline error path
+          }
+          const configError = guidance ?? (!apiConfig?.apiHost || !apiConfig.modelName
+            ? "智能体尚未配置后端 Provider 或模型，请在智能体设置中完成配置。"
+            : null);
+          if (configError) {
+            // Inject the error directly into the conversation so the user
+            // can see it in context and click "修改模型设置".
+            const errorMsgId = genSessionId();
+            patchTopicState(topicId, (s) => ({
+              ...s,
+              messages: [
+                ...s.messages,
+                {
+                  id: errorMsgId,
+                  role: "assistant" as const,
+                  content: configError,
+                  error: true,
+                  errorKind: "model_config" as const,
+                  timestamp: Date.now(),
+                },
+              ],
+            }));
             return;
           }
         }
 
         if (!apiConfig?.apiHost || !apiConfig.modelName) {
-          warning("请先在智能体设置中配置后端 Provider 与模型。");
+          // already handled above — this branch is dead but keeps type-safety
           return;
         }
 
@@ -1561,6 +1584,7 @@ export default function ChatPage({
               });
               window.dispatchEvent(new CustomEvent("knowledge:reveal"));
             }}
+            onEditAgent={topicAgent ? () => setEditingAgentId(topicAgent.id) : undefined}
             emptyContent={emptyContent}
           />
         </ToolCancelContext.Provider>

@@ -184,7 +184,7 @@ class BrowserAutomation {
     if (typeof actionId !== 'undefined' && (typeof actionId !== 'string' || !actionId.length || actionId.length > 160)) return resultMeta({ ok: false, error: 'invalid_action_id' });
     if (args.instanceId && args.instanceId !== this.instanceId) return resultMeta({ ok: false, error: 'session_restarted', ...this.state() });
     try { deps.assertEnvironment?.(); } catch (e) { return resultMeta({ ok: false, error: e.message }); }
-    if (deps.context !== 'local' || deps.signal?.aborted) return resultMeta({ ok: false, error: deps.context !== 'local' ? 'browser_not_available' : 'aborted' });
+    if (deps.signal?.aborted) return resultMeta({ ok: false, error: 'aborted' });
     const key = actionId && `${deps.topicId}:${actionId}`;
     const fingerprint = JSON.stringify([name, args]);
     if (key && this.actions.has(key)) {
@@ -204,8 +204,6 @@ class BrowserAutomation {
     let effectPossible = false;
     const deadline = Date.now() + (args.action === 'wait_for' ? Math.min(30000, Math.max(1, args.timeoutMs || 10000)) : this.timeoutMs);
     try {
-      if (deps.context !== 'local') throw new Error('browser_not_available: 仅普通聊天 agent 可用');
-      deps.assertEnvironment?.();
       if (deps.signal?.aborted) throw new Error('aborted');
       if (deps.agentConfig?.chatMode === 'plan' && !(name === 'browser_snapshot' || name === 'browser_tabs' && args.action === 'list')) throw new Error('plan_mode_read_only');
       if (name === 'browser_tabs' && args.action === 'list') return { ok: true, ...this.state() };
@@ -304,7 +302,12 @@ class BrowserAutomation {
           if (['fill', 'select'].includes(args.action) && (typeof args.value !== 'string' || args.value.length > 20000)) throw new Error('invalid_value');
           if (args.action === 'press') BrowserCdp.key(args.key);
           if (args.action === 'upload') {
-            if (!Array.isArray(args.files) || args.files.length > 20 || !args.files.every((f) => typeof f === 'string' && require('node:path').isAbsolute(f) && require('node:fs').statSync(f).isFile())) throw new Error('invalid_files');
+            if (!Array.isArray(args.files) || args.files.length > 20) throw new Error('invalid_files');
+            for (const f of args.files) {
+              if (typeof f !== 'string' || !require('node:path').isAbsolute(f)) throw new Error('invalid_files: 必须提供绝对路径');
+              try { if (!require('node:fs').statSync(f).isFile()) throw new Error('invalid_files: 路径不是文件'); }
+              catch (e) { if (e.message.startsWith('invalid_files')) throw e; throw new Error('invalid_files: 文件不存在或无法访问'); }
+            }
           }
           if (args.action === 'scroll' && !['up', 'down', 'left', 'right'].includes(args.direction)) throw new Error('invalid_direction');
           if (!tab.cdp && wc.debugger) { tab.cdp = new BrowserCdp(wc, () => this.changed()); await tab.cdp.ready(); }

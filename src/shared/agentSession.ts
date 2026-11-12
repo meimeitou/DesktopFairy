@@ -12,6 +12,7 @@ import type { SelectedHost } from "./hostSelection";
 import type { ChatMsg } from "./chatMessages";
 import {
   applyStreamTextPart,
+  classifyStreamError,
   filterForAgentHistory,
   findFirstAssistantReplyIndex,
   findLastAssistantReplyIndex,
@@ -325,10 +326,13 @@ export function applyError(
   if (idx >= 0) {
     const next = reconciled.slice();
     const target = next[idx];
+    const errorMessage = target.content || `请求失败：${event.message}`;
+    const errorKind = classifyStreamError(event.message) ?? undefined;
     next[idx] = {
       ...target,
-      content: target.content || `请求失败：${event.message}`,
+      content: errorMessage,
       error: true,
+      ...(errorKind ? { errorKind } : {}),
     };
     messages = next;
   }
@@ -405,12 +409,13 @@ export function applySendFail(
   state: AgentSessionState,
   requestId: string,
   message: string,
+  errorKind?: "model_config",
 ): AgentSessionState {
   const owns = state.requestId === requestId;
   const idx = findLastAssistantReplyIndex(state.messages);
   const nextMsgs = state.messages.slice();
   if (idx >= 0) {
-    nextMsgs[idx] = { ...nextMsgs[idx], content: message, error: true };
+    nextMsgs[idx] = { ...nextMsgs[idx], content: message, error: true, ...(errorKind ? { errorKind } : {}) };
   }
   return {
     ...state,

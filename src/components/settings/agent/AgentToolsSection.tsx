@@ -155,9 +155,8 @@ export default function AgentToolsSection({
                 onChange={(value) => setPreviewContext(value as AgentEnvironment)}
                 options={[
                   { key: "local", label: "本机对话" },
-                  { key: "terminal", label: "终端 / 快速连接" },
-                  { key: "terminal-ssh", label: "已保存 SSH 主机终端" },
-                  { key: "host", label: "主机对话" },
+                  { key: "terminal", label: "终端（本机 / SSH）" },
+                  { key: "host", label: "SSH 主机对话" },
                 ]}
               />
               <p>工具偏好在各环境共用；SSH 文件工具始终作用于绑定主机和配置账号。</p>
@@ -170,14 +169,12 @@ export default function AgentToolsSection({
             <HintTip
               tip={
                 hideWebFetch
-                  ? `当前场景（${context.startsWith("terminal") ? "终端" : context === "host" ? "主机" : "本地"}）下强制与默认规则已体现。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。`
+                  ? `当前场景（${context === "terminal" || context === "terminal-local" ? "终端" : context === "host" ? "主机" : "本地"}）下强制与默认规则已体现。已绑定 MCP Fetch，内置 WebFetch 已隐藏以免重复。`
                   : context === "host"
-                  ? "主机场景强制禁用本地文件与命令工具；ssh_* 远程工具默认可用，MCP 与 McpManager 同本地智能体。"
-                  : context === "terminal-ssh"
-                  ? "Terminal 操作当前交互会话；SSH 文件工具操作原绑定主机。二次 SSH、sudo 或进入容器不会改变文件工具目标。"
-                  : context === "terminal"
-                  ? "终端场景强制禁用 bash；Terminal、ssh_exec 与 ssh_hosts 默认可用。"
-                    : "本地场景强制禁用 Terminal、ssh_exec 与 ssh_hosts；bash 需手动启用。"
+                  ? "SSH 主机对话：Terminal 与本地文件工具强制禁用；McpManager 不可用；ssh_* 远程工具默认可用。"
+                  : context === "terminal" || context === "terminal-local"
+                  ? "终端场景：所有本地文件与命令工具强制禁用，全部通过 Terminal 执行；ssh_* 可用。"
+                    : "本机对话：Terminal 强制禁用；bash 与 ssh_* 工具默认关闭，可手动开启。"
               }
             />
           </div>

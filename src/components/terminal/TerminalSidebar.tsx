@@ -1,6 +1,6 @@
 import { Button } from "@cherrystudio/ui";
 import { NamedIcon } from "../NamedIcon";
-import { Bot, ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Settings, SquareTerminal, Trash2 } from "lucide-react";
+import { Bot, ChevronRight, MessageSquare, PanelLeftClose, PanelLeftOpen, Pencil, Settings, SquareTerminal, Trash2 } from "lucide-react";
 
 import { useEffect, useRef, useState } from "react";
 import type { SidebarGroup, SidebarItem } from "./terminalSidebarGroups";
@@ -26,10 +26,6 @@ export interface TerminalSidebarProps {
   onOpenAgentSettings: () => void;
 }
 
-/** 分组菜单的最小宽度（含 padding 与边框），用于右边界收敛。 */
-const MENU_WIDTH = 168;
-/** 两项菜单的高度（2×30 + padding 4×2 + 边框），用于下边界收敛。 */
-const MENU_HEIGHT = 68;
 
 export default function TerminalSidebar({
   collapsed,
@@ -48,12 +44,6 @@ export default function TerminalSidebar({
   onOpenSettings,
   onOpenAgentSettings,
 }: TerminalSidebarProps) {
-  const [addMenu, setAddMenu] = useState<{
-    group: SidebarGroup;
-    top: number;
-    left: number;
-  } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const groupsRef = useRef<HTMLDivElement>(null);
   // 折叠状态按分组 key 记忆；数据刷新（新建/删除会话）不会把它冲掉。
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
@@ -69,55 +59,6 @@ export default function TerminalSidebar({
     });
   };
 
-  const handlePlusClick = (group: SidebarGroup, btn: HTMLElement) => {
-    // 快速连接没有可选的「终端 / 对话」，直接重连同一地址。
-    if (group.kind === "quick") {
-      onNewTerminalForGroup(group);
-      return;
-    }
-    // 再点同一个 + 收起菜单（pointerdown 不在这里关闭，见下方 effect）。
-    if (addMenu?.group.key === group.key) {
-      setAddMenu(null);
-      return;
-    }
-    const rect = btn.getBoundingClientRect();
-    // 底部放不下就翻到按钮上方：分组列表可滚动，末尾分组的菜单会越出窗口。
-    const below = rect.bottom + 4;
-    const top =
-      below + MENU_HEIGHT > window.innerHeight
-        ? Math.max(8, rect.top - MENU_HEIGHT - 4)
-        : below;
-    setAddMenu({
-      group,
-      top,
-      left: Math.max(8, Math.min(rect.left, window.innerWidth - MENU_WIDTH)),
-    });
-  };
-
-  useEffect(() => {
-    if (!addMenu) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Element | null;
-      if (target && menuRef.current?.contains(target)) return;
-      // 触发按钮自己处理开关，否则「按下去关闭、点击后又打开」.
-      if (target?.closest?.(".terminal-sidebar-group-btn")) return;
-      setAddMenu(null);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAddMenu(null);
-    };
-    const onScroll = () => setAddMenu(null);
-    const groupsEl = groupsRef.current;
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    groupsEl?.addEventListener("scroll", onScroll);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-      groupsEl?.removeEventListener("scroll", onScroll);
-    };
-  }, [addMenu]);
-
   return (
     <>
       <aside className={`terminal-sidebar${collapsed ? " collapsed" : ""}`}>
@@ -127,7 +68,7 @@ export default function TerminalSidebar({
         </div>
 
         <div className="terminal-sidebar-actions">
-          <Button variant="ghost" size="sm" className="terminal-sidebar-action" title="新建终端" onClick={(e) => onCreateTerminal(e.currentTarget as HTMLElement)}><Plus size={16} />
+          <Button variant="ghost" size="sm" className="terminal-sidebar-action" title="新建终端" onClick={(e) => onCreateTerminal(e.currentTarget as HTMLElement)}><SquareTerminal size={16} />
             {!collapsed && "新建终端"}
           </Button>
           <Button variant="ghost" size="sm" className="terminal-sidebar-action" title="新建对话" onClick={(e) => onCreateConversation(e.currentTarget as HTMLElement)}><MessageSquare size={16} />
@@ -175,16 +116,29 @@ export default function TerminalSidebar({
                     </span>
                   )}
                   <span className="terminal-sidebar-group-actions">
+                    {group.kind !== "quick" && (
+                      <button
+                        type="button"
+                        className="terminal-sidebar-group-btn"
+                        title="新建对话"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNewConversationForGroup(group);
+                        }}
+                      >
+                        <MessageSquare size={13} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="terminal-sidebar-group-btn"
-                      title="新建"
+                      title={group.kind === "quick" ? "新建终端" : "新建终端"}
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePlusClick(group, e.currentTarget);
+                        onNewTerminalForGroup(group);
                       }}
                     >
-                      <Plus size={13} />
+                      <SquareTerminal size={13} />
                     </button>
                     {group.kind === "host" && group.hostId && (
                       <button
@@ -267,40 +221,6 @@ export default function TerminalSidebar({
           </Button>
         </div>
       </aside>
-
-      {addMenu && (
-        <div
-          ref={menuRef}
-          className="terminal-group-menu"
-          style={{ top: addMenu.top, left: addMenu.left }}
-          role="menu"
-        >
-          <button
-            type="button"
-            className="terminal-group-menu-item"
-            onClick={() => {
-              const { group } = addMenu;
-              setAddMenu(null);
-              onNewTerminalForGroup(group);
-            }}
-          >
-            <SquareTerminal size={13} />
-            <span>新建终端</span>
-          </button>
-          <button
-            type="button"
-            className="terminal-group-menu-item"
-            onClick={() => {
-              const { group } = addMenu;
-              setAddMenu(null);
-              onNewConversationForGroup(group);
-            }}
-          >
-            <MessageSquare size={13} />
-            <span>新建对话</span>
-          </button>
-        </div>
-      )}
     </>
   );
 }

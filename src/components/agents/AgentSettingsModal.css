@@ -6,6 +6,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* DialogContent 默认居中在 top:50%。聊天窗口底部有悬浮输入框（约 96px + 8px 间距
+     = 104px），弹窗底边会落到输入框下方约 48px 处。
+     将垂直中心点上移 60px，让弹窗底边高于输入框顶部，同时防止极短窗口裁切。
+     该规则优先级高于 Tailwind @layer utilities 的 .top-[50%]，无需 !important。 */
+  top: calc(50% - 60px);
+  max-height: calc(100dvh - 150px);
 }
 
 .agent-settings-modal-body {

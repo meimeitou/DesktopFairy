@@ -181,6 +181,13 @@
   color: var(--rust);
 }
 
+.msg-edit-agent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+}
+
 /* Message header: timestamp only */
 .msg-header {
   display: flex;

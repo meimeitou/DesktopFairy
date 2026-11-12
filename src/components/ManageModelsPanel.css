@@ -37,7 +37,8 @@
 
 .manage-models-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 6px;
   padding-bottom: 10px;
 }

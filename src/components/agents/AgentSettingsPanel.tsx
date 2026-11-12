@@ -80,7 +80,13 @@ export default function AgentSettingsPanel({
             panel="builtin"
             agent={agent}
             onAgentChange={onChange}
-            context={isTerminal ? "terminal" : "local"}
+            context={
+              isTerminal || agent.builtinRole === "terminal-assistant"
+                ? "terminal"
+                : agent.builtinRole === "host-assistant"
+                ? "host"
+                : "local"
+            }
           />
         );
       case "mcp":

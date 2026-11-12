@@ -495,8 +495,73 @@ function createHostConversationService({
     return ranked.map((row) => row.h);
   }
 
+  /**
+   * Builds a hostRuntime for a topic that has no bound SSH host
+   * (origin === 'terminal' local conversations in the terminal page).
+   * Identical shape to resolveTerminalRuntime but backed by an in-memory
+   * per-request grant map instead of a terminal session's agentHostState.
+   */
+  function resolveLocalConversationRuntime(topicId) {
+    const topic = topicStore.getTopic(topicId);
+    if (!topic) throw new Error('对话不存在或已被删除');
+    const validate = () => {
+      if (!topicStore.getTopic(topicId)) throw new Error('对话已被删除');
+    };
+    validate();
+    // Per-request in-memory state; not persisted (same semantics as terminal drawer).
+    const state = { grants: {}, cwdByHost: {} };
+    return {
+      topicId,
+      hostId: null,
+      defaultHostId: null,
+      hostName: undefined,
+      hostUser: undefined,
+      assertValid: validate,
+      describeHost, fingerprintOf, resolveConnectParams, resolveHostIdByName,
+      searchSavedHosts, listSavedHosts, applyHostSettingsMutation, forceApproval,
+      operationFingerprintOf,
+      captureOperation: (targetHostId, options) => captureOperation(
+        targetHostId,
+        options,
+        () => {
+          const entry = state.cwdByHost[targetHostId];
+          return entry?.identity === fingerprintOf(targetHostId) ? entry.path : null;
+        },
+      ),
+      assertOperation: (operation) => {
+        validate();
+        return assertOperation(operation);
+      },
+      isGranted: (target) => {
+        validate();
+        const fp = fingerprintOf(target);
+        return !!fp && state.grants[target] === fp;
+      },
+      ensureGrant: (_scope, target) => {
+        validate();
+        const fp = fingerprintOf(target);
+        if (!fp) return false;
+        state.grants[target] = fp;
+        return true;
+      },
+      getCwd: (_scope, target) => {
+        validate();
+        const entry = state.cwdByHost[target];
+        return entry?.identity === fingerprintOf(target) ? entry.path : null;
+      },
+      setCwd: (_scope, target, cwdPath) => {
+        validate();
+        const fp = fingerprintOf(target);
+        if (!fp) return false;
+        state.cwdByHost[target] = { identity: fp, path: cwdPath };
+        return true;
+      },
+    };
+  }
+
   return {
     resolveHostRuntime,
+    resolveLocalConversationRuntime,
     resolveTerminalRuntime,
     resolveSelectedHostsRuntime,
     getTopic: (topicId) => topicStore.getTopic(topicId),

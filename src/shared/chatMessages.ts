@@ -22,6 +22,10 @@ export interface ChatMsg {
   partId?: string;
   type?: "clear" | "tool";
   error?: boolean;
+  /** Set when error is true: categorizes why the reply failed.
+   *  "model_config" = auth failure, connection refused, model not configured, etc.
+   *  Triggers an actionable "修改模型设置" button in the bubble. */
+  errorKind?: "model_config";
   attachments?: ChatAttachment[];
   timestamp?: number;
   toolName?: string;
@@ -219,18 +223,22 @@ export function upsertAgentToolMessage(
             m.toolStatus === "awaiting_input"),
       );
   const prevTool = existingIdx >= 0 ? messages[existingIdx] : null;
-  const nextStatus = shouldApplyToolStatus(prevTool?.toolStatus, fields.toolStatus)
-    ? fields.toolStatus
-    : prevTool?.toolStatus;
+  const statusApplied = shouldApplyToolStatus(prevTool?.toolStatus, fields.toolStatus);
+  const nextStatus = statusApplied ? fields.toolStatus : prevTool?.toolStatus;
+  // If the incoming event's status is lower priority (rejected), it must not
+  // overwrite toolName/toolArgs/toolApprovalId set by a higher-priority event
+  // (e.g. a streaming chunk from the bridge must not clobber toolName:'AskUserQuestion'
+  // already written by askUserInStream's awaiting_input event).
+  const prevWins = !statusApplied && prevTool != null;
   const toolMsg: ChatMsg = {
     id: prevTool?.id || newChatMsgId(),
     role: "assistant",
     type: "tool",
     content: "",
     toolCallId: toolCallId || prevTool?.toolCallId,
-    toolName: toolName ?? prevTool?.toolName,
-    toolArgs: fields.toolArgs ?? prevTool?.toolArgs,
-    toolApprovalId: fields.toolApprovalId ?? prevTool?.toolApprovalId,
+    toolName: prevWins ? (prevTool.toolName ?? toolName) : (toolName ?? prevTool?.toolName),
+    toolArgs: prevWins ? (prevTool.toolArgs ?? fields.toolArgs) : (fields.toolArgs ?? prevTool?.toolArgs),
+    toolApprovalId: prevWins ? (prevTool.toolApprovalId ?? fields.toolApprovalId) : (fields.toolApprovalId ?? prevTool?.toolApprovalId),
     toolStatus: nextStatus,
     toolMessage: fields.toolMessage ?? prevTool?.toolMessage,
     toolResultPreview: fields.toolResultPreview ?? prevTool?.toolResultPreview,
@@ -517,4 +525,26 @@ export function reconcileToolMessages(
 
 export function isSupportedFileName(name: string): boolean {
   return isSupportedAttachmentName(name);
+}
+
+/**
+ * Classify a stream error message: returns "model_config" when the error
+ * is due to authentication failure, unreachable host, model not found, or
+ * quota exhaustion — anything the user must fix via model/provider settings.
+ */
+export function classifyStreamError(message: string): "model_config" | null {
+  const m = message.toLowerCase();
+  // HTTP 401 / 403 / auth keywords
+  if (/\b(401|unauthorized|authentication|invalid.{0,20}(api.?key|token)|api.?key.{0,20}(invalid|expired|missing)|incorrect.{0,20}key)\b/.test(m)) return "model_config";
+  // HTTP 403
+  if (/\b403\b/.test(m)) return "model_config";
+  // HTTP 404 model-not-found
+  if (/\b404\b/.test(m) && /model|endpoint|path/.test(m)) return "model_config";
+  // quota / rate-limit billing
+  if (/\b(429|quota.{0,20}exceeded|insufficient.{0,20}(quota|credit|balance)|rate.{0,20}limit|billing)\b/.test(m)) return "model_config";
+  // network unreachable
+  if (/\b(econnrefused|enotfound|econnreset|etimedout|failed.{0,10}fetch|network.{0,10}error|connection.{0,10}refused|no route to host|ssl.*error|certificate)\b/.test(m)) return "model_config";
+  // model doesn't exist
+  if (/\b(model.{0,30}(not found|does not exist|unavailable)|does not exist|no such model)\b/.test(m)) return "model_config";
+  return null;
 }

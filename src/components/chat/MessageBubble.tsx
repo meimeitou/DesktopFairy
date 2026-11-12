@@ -1,5 +1,5 @@
 import { Button } from "@cherrystudio/ui";
-import { Check, Copy, File, Flame, GitFork, Pencil, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, Copy, File, Flame, GitFork, Pencil, RefreshCw, Settings, Trash2, X } from "lucide-react";
 import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatMsg } from "../../shared/chatMessages";
 import { formatMsgTime } from "../../shared/time";
@@ -26,6 +26,8 @@ export interface MessageBubbleProps {
   onCancelEdit?: () => void;
   onDelete?: (msgId: string) => void;
   onOpenCitation?: (citation: KnowledgeCitation) => void;
+  /** Opens agent/model settings — shown as an action button on model_config errors. */
+  onEditAgent?: () => void;
 }
 
 function MessageBubble({
@@ -42,6 +44,7 @@ function MessageBubble({
   onDelete,
   onFork,
   onOpenCitation,
+  onEditAgent,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
   const [editDraft, setEditDraft] = useState(msg.content);
@@ -134,7 +137,20 @@ function MessageBubble({
           />
         )}
         {isError ? (
-          <span className="msg-plain">{msg.content}</span>
+          <>
+            <span className="msg-plain">{msg.content}</span>
+            {msg.errorKind === "model_config" && onEditAgent && (
+              <Button
+                variant="default"
+                size="sm"
+                className="msg-edit-agent-btn"
+                onClick={onEditAgent}
+              >
+                <Settings size={13} />
+                修改模型设置
+              </Button>
+            )}
+          </>
         ) : showTyping ? (
           <span className="msg-typing">
             <span />

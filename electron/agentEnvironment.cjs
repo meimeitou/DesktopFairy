@@ -19,7 +19,9 @@ function resolveAgentEnvironment({
     const session = service.getOwnedSession(terminalSessionId, sender);
     const assertValid = () => service.getOwnedSession(terminalSessionId, sender);
     const hostRuntime = hostConversationService.resolveTerminalRuntime(session, terminalSessionId, assertValid);
-    const context = session.savedHostId ? 'terminal-ssh' : 'terminal';
+    // Both local and SSH terminal sessions use the same 'terminal' context.
+    // The system prompt differentiates via terminalState.kind (local vs remote).
+    const context = 'terminal';
     return {
       context,
       hostRuntime,
@@ -39,9 +41,25 @@ function resolveAgentEnvironment({
     const hostRuntime = hostConversationService.resolveHostRuntime(topicId);
     return { context: 'host', hostRuntime, assertValid: hostRuntime.assertValid };
   }
+  // Terminal-page local conversations (origin === 'terminal') share SSH tools
+  // with the terminal drawer but run commands via bash (no terminal session).
+  // Terminal tool is blocked; bash is opt-in (defaultDisabled).
+  if (topic?.origin === 'terminal') {
+    const hostRuntime = hostConversationService.resolveLocalConversationRuntime(topicId);
+    return {
+      context: 'terminal-local',
+      hostRuntime,
+      assertValid: hostRuntime.assertValid,
+    };
+  }
+  // Local conversations: ssh_* are defaultDisabled but can be enabled.
+  // Provide a hostRuntime so they work when turned on.
+  const localHostRuntime = topicId && topic && hostConversationService?.resolveLocalConversationRuntime
+    ? (() => { try { return hostConversationService.resolveLocalConversationRuntime(topicId); } catch { return null; } })()
+    : null;
   return {
     context: 'local',
-    hostRuntime: null,
+    hostRuntime: localHostRuntime,
     assertValid: () => {
       if (topic && !hostConversationService.getTopic(topicId)) throw new Error('对话已被删除');
     },

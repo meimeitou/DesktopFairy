@@ -143,10 +143,15 @@ class BrowserCdp {
   async fill(value) {
     await this.ready();
     {
-      if (value) await this.send('Input.insertText', { text: value });
-      else {
-        await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
-        await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+      // Select all existing text first, then replace or clear.
+      const editMod = process.platform === 'darwin' ? 4 : 2; // Meta on mac, Ctrl elsewhere
+      await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: editMod, commands: ['selectAll'] });
+      await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: editMod });
+      if (value) {
+        await this.send('Input.insertText', { text: value });
+      } else {
+        await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+        await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
       }
     }
   }

@@ -91,14 +91,18 @@ export function collectDataTransferFiles(
     seen.add(key);
     out.push(file);
   };
-  if (dt.files) {
-    for (const file of Array.from(dt.files)) add(file);
-  }
-  if (dt.items) {
+  // Prefer dt.items (modern API) to avoid double-counting: dt.files and
+  // dt.items both expose the same files but as separate File instances whose
+  // lastModified or name can differ, breaking the key-based dedup.
+  if (dt.items && dt.items.length > 0) {
     for (let i = 0; i < dt.items.length; i++) {
       const item = dt.items[i];
       if (item.kind === "file") add(item.getAsFile() ?? undefined);
     }
+    return out;
+  }
+  if (dt.files) {
+    for (const file of Array.from(dt.files)) add(file);
   }
   return out;
 }

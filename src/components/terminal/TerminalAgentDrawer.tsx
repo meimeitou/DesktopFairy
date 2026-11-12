@@ -29,6 +29,7 @@ import ComposerQuickMenu from "../chat/ComposerQuickMenu";
 import ReasoningEffortSelector from "../chat/ReasoningEffortSelector";
 import {
   buildAgentApiMessages,
+  classifyStreamError,
   filterForAgentHistory,
   trimMessagesForApi,
 } from "../../shared/chatMessages";
@@ -168,6 +169,10 @@ export default function TerminalAgentDrawer({
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(
     null,
   );
+  // browser resume: keyed by topicId so the right tab picks it up
+  const browserResumeByTopicRef = useRef<Map<string, { topicId: string; tabId: string }>>(new Map());
+  // stable ref to handleSend so the resume effect doesn't re-subscribe on every send
+  const handleSendRef = useRef<(text: string) => Promise<void>>(async () => {});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
 
@@ -493,18 +498,28 @@ export default function TerminalAgentDrawer({
           );
         if (!agent) return;
         const guidance = getAgentBackendGuidance(currentSettings, agent);
-        if (guidance) {
-          warning(guidance);
-          return;
-        }
-
         const apiConfig = getChatApiConfig(currentSettings, agent);
-        if (!apiConfig?.apiHost || !apiConfig.modelName) {
-          warning(
-            "请先在智能体弹窗中配置终端助手的后端 Provider 与模型。",
-          );
+        const configError = guidance ?? (!apiConfig?.apiHost || !apiConfig.modelName
+          ? "智能体尚未配置后端 Provider 或模型，请在智能体设置中完成配置。"
+          : null);
+        if (configError) {
+          updateTabState(activeTabId, (s) => ({
+            ...s,
+            messages: [
+              ...s.messages,
+              {
+                id: genSessionId(),
+                role: "assistant" as const,
+                content: configError,
+                error: true,
+                errorKind: "model_config" as const,
+                timestamp: Date.now(),
+              },
+            ],
+          }));
           return;
         }
+        if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
         const history = trimMessagesForApi(
           filterForAgentHistory(sendMessages),
@@ -598,6 +613,34 @@ export default function TerminalAgentDrawer({
       terminalAgent?.id,
     ],
   );
+
+  // Keep handleSendRef current so the browser resume effect can call it without
+  // re-subscribing to the IPC event on every render.
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  }, [handleSend]);
+
+  // Subscribe to browser-resume events (fires when the user clicks "继续" in the
+  // browser pane after manually taking over a paused browser task).
+  useEffect(() => {
+    const off = api.onBrowserResume?.((task) => {
+      if (!task.topicId.startsWith("terminal:")) return;
+      browserResumeByTopicRef.current.set(task.topicId, task);
+    });
+    return () => off?.();
+  }, []);
+
+  // Auto-send the resume prompt once the right tab is active and not streaming.
+  useEffect(() => {
+    const topicId = `terminal:${activeTabId}`;
+    const task = browserResumeByTopicRef.current.get(topicId);
+    if (!task || activeState.streaming) return;
+    browserResumeByTopicRef.current.delete(topicId);
+    void api.invoke("browser:ui", { action: "discard", topicId: task.topicId });
+    void handleSendRef.current(
+      `继续之前的浏览器任务。用户已手动接管过页面，请先用 browser_tabs 确认标签页，再重新读取标签页 ${task.tabId} 的快照，根据当前页面继续；不要重放之前的提交动作。`,
+    );
+  }, [activeTabId, activeState.streaming]);
 
   const resendFromUserMessage = useCallback(
     (msgId: string, newText: string) => {
@@ -829,6 +872,7 @@ export default function TerminalAgentDrawer({
             onCancelEdit={handleCancelEdit}
             editingMsgId={editingMsgId}
             emptyContent={emptyContent}
+            onEditAgent={() => onOpenSettings()}
           />
         </ToolCancelContext.Provider>
 
