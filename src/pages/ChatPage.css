@@ -1076,3 +1076,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.agent-pending-inputs { padding: 12px 20px; display: grid; gap: 10px; position: relative; z-index: 1; }
+.agent-pending-input { margin-left: auto; max-width: min(85%, 640px); padding: 10px 14px; border: 1px dashed var(--color-border, #8886); border-radius: 12px; background: var(--color-background, transparent); }
+.agent-pending-input-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 12px; opacity: .75; }
+.agent-pending-input p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-pending-input small { overflow-wrap: anywhere; }

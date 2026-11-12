@@ -237,6 +237,13 @@ class AiStreamManager {
     entry.graceTimer = setTimeout(() => {
       const cur = this.activeStreams.get(topicId);
       if (cur !== entry || cur.status === 'streaming') return;
+      // Queue subscriptions outlive the completed stream's replay buffer.
+      if (cur.listeners.size) {
+        if (!this.pendingListeners.has(topicId)) this.pendingListeners.set(topicId, new Set());
+        for (const listener of cur.listeners) {
+          if (!listener.isDestroyed()) this.pendingListeners.get(topicId).add(listener);
+        }
+      }
       this.activeStreams.delete(topicId);
     }, GRACE_MS);
   }

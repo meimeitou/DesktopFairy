@@ -119,6 +119,8 @@ declare global {
         callback: (payload: { serverId: string } & McpServerLogEntry) => void
       ) => () => void;
       onMcpToolsChanged: (callback: (payload: { serverId: string }) => void) => () => void;
+      onAgentInputUpdated?: (callback: (payload: import("./shared/agentInputs").AgentInputSnapshot) => void) => () => void;
+      onAgentStreamInput?: (callback: (payload: import("./shared/agentInputs").AgentInputEvent) => void) => () => void;
       onAiStreamChunk?: (
         callback: (payload: {
           topicId: string;

@@ -110,6 +110,7 @@ function createAgentTextStream(ctx) {
 
     return streamText({
       messages: apiMessages,
+      inputs: ctx.inputs,
       systemPrompt,
       apiConfig,
       toolDefinitions,

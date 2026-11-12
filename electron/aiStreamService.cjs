@@ -1,6 +1,8 @@
+const inputRuntime = require('./ai/agentInputRuntime.cjs');
+const { toCoreMessages } = require('./ai/messages.cjs');
 const { manager } = require('./ai/streamManager/AiStreamManager.cjs');
 const { createChunkBridge } = require('./ai/chunkBridge.cjs');
-const { broadcastToTopic } = require('./ai/topicBroadcast.cjs');
+const { broadcastToTopic, sendToWebContents } = require('./ai/topicBroadcast.cjs');
 const {
   createAgentTextStream,
 } = require('./ai/prepareAgentStream.cjs');
@@ -29,8 +31,46 @@ function registerAiStreamHandlers(ipcMain, deps) {
     if (typeof tabId === 'string') {
       const topicId = `terminal:${tabId}`;
       manager.abort(topicId);
+      inputRuntime.queue.clear(topicId);
       require('./sudoPasswordCache.cjs').clearTopic(topicId);
     }
+  });
+
+  const publishInputs = (topicId, sender) => {
+    const payload = { topicId, items: inputRuntime.queue.snapshot(topicId) };
+    // Queue snapshots are authoritative; don't add them to the stream's replay buffer.
+    const recipients = new Set([
+      ...(manager.activeStreams.get(topicId)?.listeners || []),
+      ...(manager.pendingListeners?.get(topicId) || []),
+    ]);
+    if (sender) recipients.add(sender);
+    for (const listener of recipients) sendToWebContents(listener, 'agent:input:updated', payload);
+    return payload;
+  };
+  ipcMain.handle('ai:stream_enqueue', (event, { topicId, requestId, input } = {}) => {
+    if (typeof topicId !== 'string' || !topicId) throw new Error('Invalid topicId');
+    const entry = manager.activeStreams.get(topicId);
+    if (!entry || entry.requestId !== requestId || entry.status !== 'streaming' ||
+        entry.controller.signal.aborted || entry.acceptingInput === false) return { mode: 'inactive' };
+    toCoreMessages([input?.apiMessage]);
+    inputRuntime.queue.enqueue(topicId, input);
+    return { mode: 'queued', ...publishInputs(topicId, event.sender) };
+  });
+  ipcMain.handle('ai:stream_withdraw', (event, { topicId, messageId } = {}) => {
+    if (typeof topicId !== 'string' || !topicId) throw new Error('Invalid topicId');
+    const message = inputRuntime.queue.withdraw(topicId, messageId);
+    publishInputs(topicId, event.sender);
+    return { message };
+  });
+  ipcMain.handle('ai:stream_inputs', (_event, { topicId } = {}) => {
+    if (typeof topicId !== 'string' || !topicId) throw new Error('Invalid topicId');
+    return { topicId, items: inputRuntime.queue.snapshot(topicId) };
+  });
+  ipcMain.handle('ai:stream_inputs_clear', (event, { topicId } = {}) => {
+    if (typeof topicId !== 'string' || !topicId) throw new Error('Invalid topicId');
+    if (manager.isTopicStreaming(topicId)) throw new Error('请先停止当前执行');
+    inputRuntime.queue.clear(topicId);
+    publishInputs(topicId, event.sender);
   });
 
   ipcMain.handle('ai:stream_open', async (event, payload) => {
@@ -45,6 +85,9 @@ function registerAiStreamHandlers(ipcMain, deps) {
     if (!topicId || !requestId || !Array.isArray(messages)) {
       throw new Error('ai:stream_open invalid payload');
     }
+
+    const existing = manager.activeStreams?.get(topicId);
+    if (existing?.status === 'streaming') return { mode: 'blocked', requestId: existing.requestId };
 
     // Authoritative resolve from main snapshot — ignore stale renderer apiConfig/model.
     const resolved = settingsSnapshot.resolveForSend({
@@ -88,6 +131,17 @@ function registerAiStreamHandlers(ipcMain, deps) {
 
     const maxTurns = Math.max(1, Number(agentConfig.maxTurns) || 30);
     const bridge = createChunkBridge({ requestId, safeSend: legacySend });
+    // A new manual send joins existing pending inputs in FIFO order.
+    // Hoist the candidate message BEFORE calling enqueue so the duplicate-ID
+    // guard can run before the pop — a stale ID in the queue must not cause the
+    // user's latest message to be silently dropped from both apiMessages and the queue.
+    const lastApiMsg = apiMessages.at(-1);
+    if (inputRuntime.queue.pending(topicId).length && payload.userMessage && lastApiMsg?.role === 'user' &&
+        !inputRuntime.queue.pending(topicId).some((r) => r.message.id === payload.userMessage.id)) {
+      apiMessages.pop();
+      inputRuntime.queue.enqueue(topicId, { message: payload.userMessage, apiMessage: lastApiMsg });
+      publishInputs(topicId, sender);
+    }
     const streamCtx = {
       manager,
       topicId,
@@ -111,12 +165,28 @@ function registerAiStreamHandlers(ipcMain, deps) {
       mcpRuntime: null,
     };
 
+    streamCtx.inputs = {
+      hasPending: () => inputRuntime.queue.pending(topicId).length > 0,
+      consume: () => {
+        const items = inputRuntime.queue.consume(topicId, requestId, { selectedHosts: selected.hosts, selectedSkillIds: selectedSkills.ids });
+        if (items.length) publishInputs(topicId, sender);
+        return { items: items.map((row) => row.message), messages: toCoreMessages(items.map((row) => row.apiMessage)) };
+      },
+      seal: () => {
+        const entry = manager.activeStreams?.get(topicId);
+        if (entry?.requestId === requestId) entry.acceptingInput = false;
+      },
+    };
     topicAgentState.set(topicId, { bypassApproval: false });
     const startResult = manager.startStream({
       topicId,
       requestId,
       createStream: createAgentTextStream(streamCtx),
-      onChunk: (chunk) => bridge.handleChunk(chunk),
+      onChunk: (chunk) => {
+        if (chunk.type === 'agent-input') {
+          legacySend('agent:stream:input', { requestId, items: chunk.items });
+        } else bridge.handleChunk(chunk);
+      },
       onDone: (donePayload) => {
         legacySend('chat:stream:done', {
           requestId,
@@ -154,7 +224,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
   ipcMain.handle('ai:stream_attach', async (event, payload) => {
     const { topicId } = payload || {};
     if (!topicId) return { attached: false, chunks: [], legacyEvents: [] };
-    return manager.attach(topicId, event.sender);
+    return { ...manager.attach(topicId, event.sender), inputs: inputRuntime.queue.snapshot(topicId) };
   });
 
   ipcMain.handle('ai:stream_detach', async (event, payload) => {

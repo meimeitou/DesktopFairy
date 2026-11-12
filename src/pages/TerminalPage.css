@@ -1808,3 +1808,15 @@ button.terminal-context-menu-item {
 .ssh-modal-card--compact {
   width: min(360px, calc(100vw - 32px));
 }
+
+.terminal-agent-recovery {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 560px;
+  margin: auto;
+  padding: 32px;
+  text-align: center;
+}

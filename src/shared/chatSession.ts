@@ -210,6 +210,8 @@ function normalizeToolFields(m: ChatMsg): ChatMsg {
     type: "tool",
     error: m.error,
     attachments: m.attachments,
+    agentInputContent: (typeof m.agentInputContent === 'string' || Array.isArray(m.agentInputContent))
+      ? m.agentInputContent : undefined,
     timestamp: m.timestamp,
     toolName: typeof m.toolName === "string" ? m.toolName : undefined,
     toolCallId: typeof m.toolCallId === "string" ? m.toolCallId : undefined,
@@ -264,6 +266,8 @@ function normalizeChatMessage(raw: unknown): ChatMsg | null {
     type: m.type === "clear" ? "clear" : undefined,
     error: m.error === true,
     attachments: m.attachments,
+    agentInputContent: (typeof m.agentInputContent === 'string' || Array.isArray(m.agentInputContent))
+      ? m.agentInputContent : undefined,
     timestamp: m.timestamp,
     knowledgeCitations: Array.isArray(m.knowledgeCitations)
       ? m.knowledgeCitations

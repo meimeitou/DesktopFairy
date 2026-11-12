@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'ssh:import_configs',
       'agent:abort',
       'ai:stream_open',
+      'ai:stream_enqueue',
+      'ai:stream_withdraw',
+      'ai:stream_inputs',
+      'ai:stream_inputs_clear',
       'ai:stream_attach',
       'ai:stream_detach',
       'ai:stream_abort',
@@ -253,6 +257,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('agent:stream:tool', listener);
   },
 
+  onAgentInputUpdated: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('agent:input:updated', listener);
+    return () => ipcRenderer.removeListener('agent:input:updated', listener);
+  },
+  onAgentStreamInput: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('agent:stream:input', listener);
+    return () => ipcRenderer.removeListener('agent:stream:input', listener);
+  },
   onAiStreamChunk: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on('ai:stream:chunk', listener);

@@ -48,7 +48,29 @@ class BrowserAutomation {
     wc.on('page-title-updated', () => this.changed());
     wc.on('render-process-gone', () => this.disconnect(id, wc, 'guest_process_gone'));
     wc.once('destroyed', () => this.disconnect(id, wc, 'guest_destroyed'));
+    // Guests attach at about:blank. Arm CDP before any agent-owned page scripts run.
+    const target = tab.url;
+    const owner = tab.control;
+    if (['', 'about:blank'].includes(wc.getURL()) && target !== 'about:blank') {
+      tab.bootstrap = Promise.resolve().then(async () => {
+        if (tab.control) await this.ensureCdp(tab);
+        if (tab.wc !== wc || wc.isDestroyed() || !this.tabs.has(id)) return;
+        if (owner && (tab.control?.topicId !== owner.topicId || tab.control?.requestId !== owner.requestId)) return;
+        tab.cancelNavigation = () => { if (!wc.isDestroyed()) wc.stop(); };
+        const navigation = Promise.resolve(wc.loadURL(target));
+        tab.initialNavigation = navigation;
+        navigation.finally(() => {
+          if (tab.wc !== wc || tab.initialNavigation !== navigation) return;
+          tab.initialNavigation = null;
+          if (!tab.dialogOperation) tab.cancelNavigation = null;
+          this.changed();
+        }).catch(() => {});
+      });
+      // Keep rejection visible to ready()/IPC without creating an unhandled promise.
+      tab.bootstrap.catch(() => {});
+    }
     this.changed();
+    return tab.bootstrap;
   }
   disconnect(id, wc, reason) {
     const tab = this.tabs.get(id);
@@ -56,8 +78,13 @@ class BrowserAutomation {
     try { tab.url = wc.getURL() || tab.url; tab.title = wc.getTitle() || tab.title; } catch { /* disposed guest */ }
     tab.invalidatedSnapshotId = tab.snapshotId;
     tab.snapshotId = null;
+    this.disposeCdp(tab, true);
     tab.wc = null;
+    tab.cleaning = false;
     tab.cdp = null;
+    tab.bootstrap = null;
+    tab.initialNavigation = null;
+    tab.dialogOperation = null;
     tab.pending = false;
     tab.generation++;
     tab.resetReason = reason;
@@ -92,17 +119,23 @@ class BrowserAutomation {
     this.paused.clear();
     this.changed();
   }
-  disposeCdp(tab) {
-    if (!tab.cdp || tab.cleaning || tab.pending || tab.dialogOperation) return;
+  disposeCdp(tab, force = false) {
+    if (!tab.cdp || tab.cleaning) return tab.cdpDisposal?.promise;
+    if (!force && (tab.pending || tab.dialogOperation)) return;
     const cdp = tab.cdp;
+    const cleanup = { wc: tab.wc, generation: tab.generation, promise: null };
+    tab.cdpDisposal = cleanup;
     tab.cleaning = true;
     tab.pending = true;
-    void cdp.dispose().catch(() => {}).finally(() => {
+    cleanup.promise = cdp.dispose().catch(() => {}).finally(() => {
       if (tab.cdp === cdp) tab.cdp = null;
+      if (tab.cdpDisposal === cleanup) tab.cdpDisposal = null;
+      if (tab.wc !== cleanup.wc || tab.generation !== cleanup.generation) return;
       tab.cleaning = false;
-      tab.pending = false;
+      tab.pending = Boolean(tab.dialogOperation);
       this.changed();
     });
+    return cleanup.promise;
   }
   release(topicId, requestId) {
     const key = `${topicId}:${requestId}`;
@@ -171,6 +204,34 @@ class BrowserAutomation {
       signal?.addEventListener('abort', aborted, { once: true });
       check();
     });
+    if (tab.bootstrap) await this.bounded(() => tab.bootstrap, signal, () => {}, Math.max(1, deadline - Date.now()));
+  }
+  async ensureCdp(tab) {
+    if (!tab.wc?.debugger) return;
+    if (tab.cdpDisposal?.wc === tab.wc) await tab.cdpDisposal.promise;
+    if (!tab.cdp) tab.cdp = new BrowserCdp(tab.wc, () => this.changed());
+    await tab.cdp.ready();
+  }
+  async observeOperation(tab, work, args = {}) {
+    if (!tab.cdp) return work();
+    const wc = tab.wc;
+    const generation = tab.generation;
+    const observed = await tab.cdp.observe(work, tab.dialogOperation || tab.initialNavigation);
+    if (!observed.dialog) return observed.value;
+    tab.dialogOperation = observed.operation;
+    observed.operation.finally(() => {
+      if (tab.wc !== wc || tab.generation !== generation || tab.dialogOperation !== observed.operation) return;
+      tab.dialogOperation = null;
+      tab.cancelNavigation = null;
+      tab.pending = Boolean(tab.cleaning);
+      if (!tab.control) this.disposeCdp(tab);
+      this.changed();
+    }).catch(() => {});
+    if (args.dialog && typeof args.dialog.accept === 'boolean') {
+      await tab.cdp.answer(args.dialog.accept, args.dialog.promptText || '');
+      return this.observeOperation(tab, () => observed.operation);
+    }
+    return { outcome: 'unknown', dialog: observed.dialog, verify: '原生对话框等待决定；使用 browser_act action=dialog 明确 accept/dismiss，不要重复原动作。' };
   }
   async page(wc, command, userGesture = false) {
     const result = await wc.executeJavaScriptInIsolatedWorld(998, [{ code: pageScript(command) }], userGesture);
@@ -226,8 +287,9 @@ class BrowserAutomation {
         if (typeof args.accept !== 'boolean' || !tab.cdp?.dialog) throw new Error('invalid_dialog_decision');
         effectPossible = true;
         await tab.cdp.answer(args.accept, args.promptText || '');
-        if (tab.dialogOperation) await this.bounded(() => tab.dialogOperation, deps.signal);
-        return { ok: true, tabId: tab.id, ...this.info(tab), outcome: 'applied', verify: '先重新读取页面确认结果；不要自动重试提交。' };
+        const operation = tab.dialogOperation;
+        const next = operation ? await this.bounded(() => this.observeOperation(tab, () => operation), deps.signal) : {};
+        return { ok: true, tabId: tab.id, ...this.info(tab), ...next, outcome: next?.dialog ? 'unknown' : 'applied', verify: next?.verify || '先重新读取页面确认结果；不要自动重试提交。' };
       }
       if (tab.cdp?.dialog) return { ok: false, error: 'dialog_pending', dialog: tab.cdp.dialog };
       this.lease(tab, deps, ACTION_LABELS[name]?.[args.action || 'read'] || '操作页面');
@@ -243,11 +305,13 @@ class BrowserAutomation {
       await this.ready(tab, deps.signal, deadline);
       deps.assertEnvironment?.();
       const wc = tab.wc;
+      const generation = tab.generation;
       if (!wc || wc.isDestroyed()) throw new Error('tab_closed');
       // No following command may overtake a timed-out/aborted Electron call.
       tab.pending = true;
       const operation = async () => {
-        if (deps.signal.aborted || !this.tabs.has(tab.id)) throw new Error('aborted');
+        if (deps.signal.aborted || !this.tabs.has(tab.id) || tab.wc !== wc || tab.generation !== generation) throw new Error('aborted');
+        if (name !== 'browser_navigate' && tab.initialNavigation) await tab.initialNavigation;
         if (name === 'browser_navigate') {
           if (!['open', 'back', 'forward', 'reload'].includes(args.action)) throw new Error('invalid_action');
           if (args.action === 'open') httpUrl(args.url);
@@ -310,11 +374,10 @@ class BrowserAutomation {
             }
           }
           if (args.action === 'scroll' && !['up', 'down', 'left', 'right'].includes(args.direction)) throw new Error('invalid_direction');
-          if (!tab.cdp && wc.debugger) { tab.cdp = new BrowserCdp(wc, () => this.changed()); await tab.cdp.ready(); }
           const command = { kind: 'act', snapshotId: args.snapshotId, action: args.action, elementId: args.elementId, locator: args.locator, value: args.value, direction: args.direction, key: args.key };
           const run = async () => {
             if (['press', 'hover', 'upload', 'fill'].includes(args.action) && tab.cdp) return BrowserCdp.input(async () => {
-              if (deps.signal.aborted || Date.now() >= deadline) throw Object.assign(new Error('aborted_before_dispatch'), { outcome: 'not_applied' });
+              if (deps.signal.aborted || Date.now() >= deadline || tab.wc !== wc || tab.generation !== generation) throw Object.assign(new Error('aborted_before_dispatch'), { outcome: 'not_applied' });
               await this.page(wc, { ...command, action: 'validate', forAction: args.action });
               const token = randomUUID();
               // Preparation can run page focus/scroll handlers too. A timeout
@@ -335,20 +398,15 @@ class BrowserAutomation {
             effectPossible = true;
             return this.page(wc, command, true);
           };
-          if (!tab.cdp) return run();
-          const observed = await tab.cdp.observe(run);
-          if (observed.dialog) {
-            tab.dialogOperation = observed.operation;
-            observed.operation.finally(() => { if (tab.wc !== wc) return; tab.dialogOperation = null; tab.pending = Boolean(tab.cleaning); if (!tab.control) this.disposeCdp(tab); this.changed(); }).catch(() => {});
-            if (args.dialog && typeof args.dialog.accept === 'boolean') { await tab.cdp.answer(args.dialog.accept, args.dialog.promptText || ''); return observed.operation; }
-            return { outcome: 'unknown', dialog: observed.dialog, verify: '原生对话框等待决定；使用 browser_act action=dialog 明确 accept/dismiss，不要重复原动作。' };
-          }
-          return observed.value;
+          return run();
         }
         throw new Error('unknown_browser_tool');
       };
       dispatched = true;
-      const pending = Promise.resolve().then(operation).finally(() => { if (tab.wc !== wc) return; tab.cancelNavigation = null; tab.pending = Boolean(tab.dialogOperation || tab.cleaning); if (!tab.control) this.disposeCdp(tab); this.changed(); });
+      const pending = Promise.resolve().then(async () => {
+        await this.ensureCdp(tab);
+        return this.observeOperation(tab, operation, args);
+      }).finally(() => { if (tab.wc !== wc || tab.generation !== generation) return; if (!tab.dialogOperation) tab.cancelNavigation = null; tab.pending = Boolean(tab.dialogOperation || tab.cleaning); if (!tab.control) this.disposeCdp(tab); this.changed(); });
       const result = await this.bounded(() => pending, deps.signal, () => { tab.snapshotId = null; tab.cancelNavigation?.(); }, Math.max(1, deadline - Date.now()));
       const response = { ok: true, tabId: tab.id, ...this.info(tab), ...result, verify: result.verify || (name === 'browser_snapshot' ? undefined : '先重新读取页面确认结果；不要自动重试提交。') };
       if (name === 'browser_snapshot' && Buffer.byteLength(JSON.stringify(response), 'utf8') > MAX_SNAPSHOT_BYTES) return { ok: false, error: 'snapshot_too_large: 页面输出超过大小上限，请人工接管' };

@@ -47,6 +47,7 @@ export type MessageListHandle = {
 
 export interface MessageListProps {
   messages: ChatMsg[];
+  pendingContent?: ReactNode;
   streaming: boolean;
   invalidAttachmentPaths?: Set<string>;
   emptyContent?: ReactNode;
@@ -67,6 +68,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
   function MessageList(
     {
       messages,
+      pendingContent,
       streaming,
       invalidAttachmentPaths = EMPTY_SET,
       emptyContent,
@@ -197,7 +199,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       },
       overscan: 6,
       getItemKey: (index) => items[index]?.id ?? index,
-      paddingEnd: overlayPad,
+      paddingEnd: 0,
       scrollPaddingEnd: overlayPad,
     });
 
@@ -357,6 +359,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       return (
         <div className={className} ref={parentRef} {...scrollProps}>
           {emptyContent}
+          {pendingContent}
         </div>
       );
     }
@@ -369,56 +372,59 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         ref={parentRef}
         {...scrollProps}
       >
-        <div
-          className="chat-messages-virtual-inner"
-          style={{
-            height: virtualizer.getTotalSize(),
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {virtualItems.map((virtualRow) => {
-            const item = items[virtualRow.index];
-            if (!item) return null;
-            return (
-              <div
-                key={virtualRow.key}
-                data-index={virtualRow.index}
-                ref={virtualizer.measureElement}
-                className="chat-messages-virtual-row"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                {item.kind === "clear" ? (
-                  <ContextClearDivider />
-                ) : item.kind === "tool" ? (
-                  <ToolCallBubble msg={item.msg} />
-                ) : (
-                  <MessageBubble
-                    msg={item.msg}
-                    isStreamingTarget={item.msg.id === streamingAssistantId}
-                    streaming={streaming}
-                    thinkingClockLive={item.msg.id === thinkingClockLiveId}
-                    invalidAttachmentPaths={invalidAttachmentPaths}
-                    isEditing={item.msg.id === editingMsgId}
-                    onRetry={item.msg.role === "user" ? onRetry : undefined}
-                    onStartEdit={item.msg.role === "user" ? onStartEdit : undefined}
-                    onFork={item.msg.role === "assistant" ? onFork : undefined}
-                    onConfirmEdit={onConfirmEdit}
-                    onCancelEdit={onCancelEdit}
-                    onDelete={onDelete}
-                    onOpenCitation={onOpenCitation}
-                    onEditAgent={item.msg.errorKind === "model_config" ? onEditAgent : undefined}
-                  />
-                )}
-              </div>
-            );
-          })}
+        <div>
+          <div
+            className="chat-messages-virtual-inner"
+            style={{
+              height: virtualizer.getTotalSize(),
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {virtualItems.map((virtualRow) => {
+              const item = items[virtualRow.index];
+              if (!item) return null;
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  className="chat-messages-virtual-row"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {item.kind === "clear" ? (
+                    <ContextClearDivider />
+                  ) : item.kind === "tool" ? (
+                    <ToolCallBubble msg={item.msg} />
+                  ) : (
+                    <MessageBubble
+                      msg={item.msg}
+                      isStreamingTarget={item.msg.id === streamingAssistantId}
+                      streaming={streaming}
+                      thinkingClockLive={item.msg.id === thinkingClockLiveId}
+                      invalidAttachmentPaths={invalidAttachmentPaths}
+                      isEditing={item.msg.id === editingMsgId}
+                      onRetry={item.msg.role === "user" ? onRetry : undefined}
+                      onStartEdit={item.msg.role === "user" ? onStartEdit : undefined}
+                      onFork={item.msg.role === "assistant" ? onFork : undefined}
+                      onConfirmEdit={onConfirmEdit}
+                      onCancelEdit={onCancelEdit}
+                      onDelete={onDelete}
+                      onOpenCitation={onOpenCitation}
+                      onEditAgent={item.msg.errorKind === "model_config" ? onEditAgent : undefined}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ paddingBottom: overlayPad }}>{pendingContent}</div>
         </div>
       </div>
     );

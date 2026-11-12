@@ -15,9 +15,11 @@ import {
   attachTopicStream,
   replayLegacyStreamEvents,
   type LegacyStreamHandlers,
+  type StreamAttachResult,
 } from "../services/aiTransport/IpcChatTransport";
 import {
   applyChunks,
+  applyInputMessages,
   emptyAgentSessionState,
   applyCitations,
   applyDone,
@@ -174,13 +176,24 @@ export function useAgentChatSession(options: UseAgentChatSessionOptions) {
       patchState(key, (prev) => applyKnowledgeError(prev, event));
     };
 
+    const handleInput = (event: import('../shared/agentInputs').AgentInputEvent) => {
+      chunkBuffer.flushRequest(event.requestId);
+      const { resolveKey, patchState, events } = optionsRef.current;
+      const key = resolveKey(event.requestId);
+      if (!key) return;
+      patchState(key, (prev) => applyInputMessages(prev, event.items));
+      events?.onPersist?.(key);
+    };
+
     handlersRef.current = {
+      onAgentInput: handleInput,
       onChatChunk: handleChunk,
       onChatDone: handleDone,
       onChatError: handleError,
       onAgentTool: handleTool,
     };
 
+    const offInput = api.onAgentStreamInput?.(handleInput);
     const offChunk = api.onChatStreamChunk(handleChunk);
     const offDone = api.onChatStreamDone(handleDone);
     const offError = api.onChatStreamError(handleError);
@@ -190,6 +203,7 @@ export function useAgentChatSession(options: UseAgentChatSessionOptions) {
 
     return () => {
       chunkBuffer.dispose();
+      offInput?.();
       offChunk?.();
       offDone?.();
       offError?.();
@@ -200,8 +214,9 @@ export function useAgentChatSession(options: UseAgentChatSessionOptions) {
   }, []);
 
   /** 手动 attach（宿主需要控制 hydrate→attach 顺序时用）。 */
-  const attachManually = useRef(async (topicId: string) => {
+  const attachManually = useRef(async (topicId: string, beforeReplay?: (result: StreamAttachResult) => void) => {
     const result = await attachTopicStream(topicId);
+    beforeReplay?.(result);
     replayLegacyStreamEvents(result.legacyEvents, handlersRef.current);
     return result;
   });

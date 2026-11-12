@@ -87,8 +87,9 @@ class BrowserCdp {
       await this.wc.hostWebContents.executeJavaScript('{const state=globalThis.__dfBrowserPriorFocus;delete globalThis.__dfBrowserPriorFocus;if(state?.guest===document.activeElement&&state.previous?.isConnected)state.previous.focus()}').catch(() => {});
     }
   }
-  async observe(work) {
+  async observe(work, existingOperation) {
     await this.ready();
+    if (this.dialog) return { dialog: this.dialog, operation: existingOperation || Promise.resolve({}) };
     let resolveDialog;
     const dialog = new Promise((resolve) => { resolveDialog = resolve; this.waiters.add(resolve); });
     const operation = Promise.resolve().then(work);
@@ -100,18 +101,19 @@ class BrowserCdp {
   async answer(accept, promptText = '') {
     await this.ready();
     if (!this.dialog) throw new Error('dialog_not_found');
-    if (this.promptFrame) {
-      await this.send('Debugger.evaluateOnCallFrame', { callFrameId: this.promptFrame, expression: `answer = ${JSON.stringify(accept ? promptText : null)}` });
-      this.promptFrame = null;
-      this.dialog = null;
-      this.onDialog(null);
+    const current = this.dialog;
+    const frame = current.type === 'prompt' ? this.promptFrame : null;
+    if (frame) {
+      await this.send('Debugger.evaluateOnCallFrame', { callFrameId: frame, expression: `answer = ${JSON.stringify(accept ? promptText : null)}` });
       await this.send('Debugger.resume');
-      return;
+      if (this.promptFrame === frame && (this.dialog === current || this.dialog?.type !== 'prompt')) this.promptFrame = null;
+    } else {
+      await this.send('Page.handleJavaScriptDialog', { accept, promptText });
     }
-    this.dialog = null;
-    this.onDialog(null);
-    await this.send('Page.handleJavaScriptDialog', { accept, promptText });
+    // Closing one dialog may synchronously open the next. Never erase that new decision.
+    if (this.dialog === current) { this.dialog = null; this.onDialog(null); }
   }
+
   static key(raw) {
     if (typeof raw !== 'string') throw new Error('unsupported_key');
     const parts = raw === '+' ? ['+'] : raw.endsWith('++') ? [...raw.slice(0, -2).split('+').filter(Boolean), '+'] : raw.split('+');

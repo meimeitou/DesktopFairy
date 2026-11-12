@@ -125,7 +125,7 @@ function ChatInputBar({
   useComposerOverlay(dockRef);
 
   const composerDisabled = streaming || awaitingInteraction || editingMessage;
-  const draftDisabled = editingMessage || (streaming && !awaitingInteraction);
+  const draftDisabled = editingMessage;
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -311,19 +311,19 @@ function ChatInputBar({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (!composerDisabled) onSend();
+      if (!draftDisabled) onSend();
     }
   };
 
   const canSend =
-    !composerDisabled && (input.trim().length > 0 || (attachments.length > 0 && !selectedSkillIds?.length && !selectedHosts?.length));
+    !draftDisabled && (input.trim().length > 0 || (attachments.length > 0 && !selectedSkillIds?.length && !selectedHosts?.length));
 
   const placeholder = editingMessage
     ? "正在编辑上方消息…"
-    : awaitingInteraction
-      ? "可继续编辑草稿，请先处理上方请求…"
-      : streaming
-        ? "生成中…"
+    : streaming
+      ? "输入补充，下一步生效…"
+      : awaitingInteraction
+        ? "请先处理上方请求…"
         : "输入消息，@ 选择技能，可拖拽文件…";
 
   return (
@@ -354,7 +354,7 @@ function ChatInputBar({
         <SkillComposerEditor
           textareaRef={textareaRef} rows={1} placeholder={placeholder}
           input={input} onInputChange={onInputChange}
-          commands={awaitingInteraction ? slashCommands?.filter((cmd) => cmd.group === "skill" || cmd.group === "host") : slashCommands} onCommand={onSlashCommand}
+          commands={streaming ? [] : awaitingInteraction ? slashCommands?.filter((cmd) => cmd.group === "skill" || cmd.group === "host") : slashCommands} onCommand={onSlashCommand}
           selectedSkillIds={selectedSkillIds} onSelectedSkillIdsChange={onSelectedSkillIdsChange}
           selectedHosts={selectedHosts} onSelectedHostsChange={onSelectedHostsChange} hostErrors={hostErrors}
           skillErrors={skillErrors} onKeyDown={handleKeyDown} onPaste={handlePaste}
@@ -451,6 +451,9 @@ function ChatInputBar({
               disabled={composerDisabled}
             />
           )}
+          {streaming && <NormalTooltip content="发送补充 (Enter)" side="top">
+            <Button variant="ghost" className="chat-send-btn" onClick={onSend} disabled={!canSend} aria-label="发送补充"><Send size={16} /></Button>
+          </NormalTooltip>}
           {streaming ? (
             <NormalTooltip content="停止生成" side="top">
               <Button variant="ghost" className="chat-send-btn chat-stop-btn" onClick={onStop} aria-label="停止生成"><CircleStop size={16} /></Button>

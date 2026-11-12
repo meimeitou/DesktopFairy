@@ -727,6 +727,7 @@ const setupIPC = () => {
   registerToolAbortHandlers(ipcMain);
   registerToolApprovalHandlers(ipcMain);
   registerAgentHandlers(ipcMain);
+  require('./ai/agentInputRuntime.cjs').configure(path.join(app.getPath('userData'), 'agent_inputs'));
   registerAiStreamHandlers(ipcMain, {
     getWindows: getScreenshotWindows,
     getParentWindow: () => {

@@ -116,12 +116,12 @@ function registerBrowserHandlers(ipcMain, handlerDeps = {}) {
     browser.changed();
   });
   ipcMain.handle('browser:open', (_event, payload) => openBrowserTab(typeof payload?.url === 'string' ? payload.url : '', { baseUrl: payload?.baseUrl }));
-  ipcMain.handle('browser:register', (event, payload) => {
+  ipcMain.handle('browser:register', async (event, payload) => {
     assertSender(event.sender);
     const { webContents } = require('electron');
     const wc = webContents.fromId(payload?.webContentsId);
     if (!wc || verifiedGuests.get(wc.id) !== event.sender.id || wc.getType() !== 'webview' || wc.session !== require('electron').session.fromPartition('persist:browser')) throw new Error('browser_invalid_guest');
-    browser.register(payload.tabId, wc);
+    await browser.register(payload.tabId, wc);
     return { ok: true };
   });
   ipcMain.handle('browser:ui', async (event, payload = {}) => {

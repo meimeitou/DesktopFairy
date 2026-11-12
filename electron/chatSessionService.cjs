@@ -92,6 +92,8 @@ function normalizeChatMessage(raw) {
     role: m.role,
     content: m.content,
     selectedHosts: normalizeSelectedHosts(m.selectedHosts),
+    attachments: Array.isArray(m.attachments) ? m.attachments : undefined,
+    agentInputContent: m.agentInputContent,
     rawText: typeof m.rawText === 'string' ? m.rawText : undefined,
     selectedSkillIds: Array.isArray(m.selectedSkillIds) ? [...new Set(m.selectedSkillIds.filter((id) => typeof id === 'string'))] : undefined,
     type: m.type === 'clear' ? 'clear' : undefined,
@@ -244,6 +246,7 @@ function registerChatSessionHandlers({
   /** Abort any live stream for a topic and drop its session/tool-result/log files. */
   function deleteTopicFiles(topicId) {
     require('./sudoPasswordCache.cjs').clearTopic(topicId);
+    require('./ai/agentInputRuntime.cjs').queue.clear(topicId);
     try {
       const abort = getAbortHandler ? getAbortHandler(topicId) : null;
       if (abort) abort();
@@ -311,7 +314,14 @@ function registerChatSessionHandlers({
   ipcMain.handle('chat:session:load', async (_event, topicId) => {
     const filePath = getSessionFilePath(topicId);
     const raw = readJsonOrEmpty(filePath, emptySession);
-    return normalizeSession(raw);
+    const session = normalizeSession(raw);
+    const known = new Set(session.messages.map((m) => m.id));
+    const { queue } = require('./ai/agentInputRuntime.cjs');
+    // Recover consumed inputs that were not yet included in a renderer save before exit.
+    for (const row of typeof topicId === 'string' ? queue.snapshot(topicId) : []) {
+      if (row.status === 'injected' && !row.saved && !known.has(row.message.id)) session.messages.push(row.message);
+    }
+    return session;
   });
 
   ipcMain.handle('chat:session:save', async (_event, { topicId, session }) => {
@@ -338,7 +348,9 @@ function registerChatSessionHandlers({
     }
     const filePath = getSessionFilePath(topicId);
     const processed = processSessionForSave(session, topicId, toolResultsDir);
-    return writeJson(filePath, processed);
+    const result = writeJson(filePath, processed);
+    if (result.ok) require('./ai/agentInputRuntime.cjs').queue.acknowledge(topicId, processed.messages.map((m) => m.id));
+    return result;
   });
 
   ipcMain.handle('chat:tool-result:read', async (_event, { topicId, toolCallId, ref }) => {

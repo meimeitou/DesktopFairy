@@ -1,3 +1,5 @@
+import AgentPendingInputs from "../chat/AgentPendingInputs";
+import { useAgentInputs } from "../../hooks/useAgentInputs";
 import AgentInteractionPanel from "../chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
@@ -105,6 +107,7 @@ export default function HostChatPanel({
   onEditAgent?: () => void;
 }) {
   const settings = useSettings();
+  const agentInputs = useAgentInputs(topicId);
   const stateRef = useRef<AgentSessionState>(emptyAgentSessionState());
   const [state, setState] = useState<AgentSessionState>(stateRef.current);
   const [chatMode, setChatMode] = useState<ChatMode>(topic.chatMode);
@@ -115,7 +118,7 @@ export default function HostChatPanel({
   const chatMessagesRef = useRef<ChatMsg[]>([]);
   const sendLockRef = useRef(false);
   const browserResumeRef = useRef<{ topicId: string; tabId: string } | null>(null);
-  const handleSendRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const handleSendRef = useRef<(text?: string) => Promise<void>>(async () => {});
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [maxTurnsPending, setMaxTurnsPending] = useState(false);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
@@ -201,8 +204,8 @@ export default function HostChatPanel({
   }, [topicId]);
 
   const { attachManually } = useAgentChatSession({
-    // 单会话面：一切 requestId 都归当前 topic。
-    resolveKey: () => topicId,
+    // Multiple panels stay mounted in one renderer; only route this panel's request.
+    resolveKey: (requestId) => requestIdRef.current === requestId ? topicId : null,
     patchState: (_key, updater) => patchState(updater),
     isCompactRequest: (requestId) => compactRequestIdRef.current === requestId,
     settleCompactRequest: () => {
@@ -268,11 +271,12 @@ export default function HostChatPanel({
         // 避免后续把空会话回写、覆盖磁盘上的历史。
       }
 
-      const result = await attachManually(topicId);
+      const result = await attachManually(topicId, (attached) => {
+        if (attached.requestId) requestIdRef.current = attached.requestId;
+      });
       if (cancelled) return;
       // requestIdRef 是 chunk/done 的路由判据，必须在回放之前就位，
       // 否则关标签期间产生的事件会被全部丢弃。
-      if (result.requestId) requestIdRef.current = result.requestId;
       if (result.attached && result.status === "streaming" && result.requestId) {
         patchState((s) => ({ ...s, streaming: true, requestId: result.requestId! }));
       }
@@ -390,7 +394,25 @@ export default function HostChatPanel({
 
   const handleSend = useCallback(async (overrideText?: string, options?: SkillResendOptions) => {
     const s = stateRef.current;
-    if (s.streaming || sendLockRef.current) return;
+    if (sendLockRef.current) return;
+    if (s.streaming) {
+      if (overrideText !== undefined || !s.requestId || (!s.input.trim() && !attachments.length)) return;
+      sendLockRef.current = true;
+      try {
+        if (s.selectedSkillIds?.length || s.selectedHosts?.length) { warning('执行中补充请先移除技能或主机选择，当前执行配置保持不变。'); return; }
+        const payloads = await loadAttachmentPayloads(attachments);
+        const queued = await agentInputs.enqueue(s.requestId, { message: {
+          id: genSessionId(), role: 'user', content: s.input.trim(), attachments, timestamp: Date.now(),
+        }, apiMessage: buildAgentApiMessages([], s.input.trim(), payloads).at(-1)! });
+        if (!queued) { setTimeout(() => void handleSendRef.current(undefined), 0); return; }
+        patchState((live) => ({ ...live, input: live.input === s.input ? '' : live.input }));
+        setAttachments((live) => live === attachments ? [] : live);
+        void persistSession();
+        scrollToBottom();
+      } catch (e) { warning(`补充发送失败：${String(e)}`); }
+      finally { sendLockRef.current = false; }
+      return;
+    }
 
     const isResend = overrideText !== undefined;
     const isCompactRequest = overrideText === COMPACT_PROMPT;
@@ -515,6 +537,7 @@ export default function HostChatPanel({
       };
       try {
         const result = await openAgentStream({
+          userMessage: isCompactRequest ? undefined : stateRef.current.messages.slice().reverse().find((m) => m.role === 'user'),
           selectedSkillIds: invocation.selectedSkillIds,
           selectedHosts,
           topicId,
@@ -546,7 +569,7 @@ export default function HostChatPanel({
     } finally {
       sendLockRef.current = false;
     }
-  }, [attachments, chatMode, effectiveKbIds, handleClearContext, loadAttachmentPayloads, onTopicRenamed, patchState, persistSession, scrollToBottom, skills, topic.agentId, topic.name, topicId]);
+  }, [agentInputs, attachments, chatMode, effectiveKbIds, handleClearContext, loadAttachmentPayloads, onTopicRenamed, patchState, persistSession, scrollToBottom, skills, topic.agentId, topic.name, topicId]);
 
   useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
@@ -681,9 +704,10 @@ export default function HostChatPanel({
       content: "确定清空所有消息吗？",
     });
     if (!ok) return;
+    await api.invoke('ai:stream_inputs_clear', { topicId });
     patchState(clearSessionMessages);
     void persistSession();
-  }, [confirm, patchState, persistSession]);
+  }, [confirm, patchState, persistSession, topicId]);
 
   const handleCompact = useCallback(() => {
     const s = stateRef.current;
@@ -807,6 +831,12 @@ export default function HostChatPanel({
         <ToolCancelContext.Provider value={handleCancelTool}>
           <MessageList
             ref={messageListRef}
+            pendingContent={<AgentPendingInputs pending={agentInputs.pending} streaming={streaming} withdraw={agentInputs.withdraw}
+              onContinue={handleContinue} onRestore={(message) => {
+                patchState((s) => ({ ...s, input: [s.input, message.content].filter(Boolean).join('\n') }));
+                setAttachments((live) => [...live, ...(message.attachments || []).filter((a) => !live.some((b) => b.path === a.path))]);
+                void persistSession();
+              }} />}
             messages={messages}
             streaming={streaming}
             invalidAttachmentPaths={invalidAttachmentPaths}

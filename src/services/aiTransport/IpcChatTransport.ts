@@ -14,6 +14,7 @@ export interface LegacyStreamEvent {
 }
 
 export interface StreamAttachResult {
+  inputs?: import("../../shared/agentInputs").AgentInputItem[];
   attached: boolean;
   chunks: Array<Record<string, unknown>>;
   legacyEvents?: LegacyStreamEvent[];
@@ -29,6 +30,7 @@ export interface AgentStreamOpenResult {
 }
 
 export interface AgentStreamOpenPayload {
+  userMessage?: import("../../shared/chatMessages").ChatMsg;
   selectedHosts?: SelectedHost[];
   selectedSkillIds?: string[];
   topicId: string;
@@ -62,6 +64,7 @@ export function abortTopicStream(topicId: string, requestId?: string): void {
 }
 
 export interface LegacyStreamHandlers {
+  onAgentInput?: (data: import("../../shared/agentInputs").AgentInputEvent) => void;
   onChatChunk?: (data: {
     requestId: string;
     partId?: string;
@@ -85,6 +88,9 @@ export function replayLegacyStreamEvents(
   for (const event of events || []) {
     const { channel, data } = event;
     switch (channel) {
+      case "agent:stream:input":
+        handlers.onAgentInput?.(data as unknown as import("../../shared/agentInputs").AgentInputEvent);
+        break;
       case "chat:stream:chunk":
         handlers.onChatChunk?.(data as { requestId: string; partId?: string; delta?: string; reasoning?: string });
         break;

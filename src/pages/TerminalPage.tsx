@@ -1,3 +1,4 @@
+import { readTerminalAgentRecovery, forgetTerminalAgent } from "../shared/terminalAgentRecovery";
 import { Button } from "@cherrystudio/ui";
 import { Smile } from "lucide-react";
 
@@ -515,6 +516,28 @@ export default function TerminalPage({
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>("");
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [awaitingReconnect, setAwaitingReconnect] = useState<Set<string>>(new Set());
+  const recoveredTabIds = useRef(new Set<string>());
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const recovered: Tab[] = [];
+      for (const row of readTerminalAgentRecovery()) {
+        try {
+          const snapshot = await api.invoke('ai:stream_inputs', { topicId: `terminal:${row.tab.id}` }) as import('../shared/agentInputs').AgentInputSnapshot;
+          if (snapshot.items.some((r) => r.status === 'pending')) recovered.push(row.tab);
+          else forgetTerminalAgent(row.tab.id);
+        } catch { /* Retry restoration on the next mount if IPC is temporarily unavailable. */ }
+      }
+      if (!active || !recovered.length) return;
+      for (const tab of recovered) recoveredTabIds.current.add(tab.id);
+      setAwaitingReconnect((prev) => new Set([...prev, ...recovered.map((tab) => tab.id)]));
+      setTabs((prev) => [...prev, ...recovered.filter((r) => !prev.some((t) => t.id === r.id))]);
+      setActiveTabId((prev) => prev || recovered[0].id);
+      setDrawerOpen(true);
+    })();
+    return () => { active = false; };
+  }, []);
   const [settingsSectionRequest, setSettingsSectionRequest] = useState<{
     section: TerminalSettingsSection;
     nonce: number;
@@ -632,6 +655,9 @@ export default function TerminalPage({
     if (idx < 0) return;
     const nextTabs = prev.filter((t) => t.id !== id);
     const closed = prev[idx];
+    forgetTerminalAgent(id);
+    recoveredTabIds.current.delete(id);
+    setAwaitingReconnect((prev) => { const next = new Set(prev); next.delete(id); return next; });
     if (closed.kind === "terminal" || closed.kind === "ssh") {
       void api.invoke("ai:terminal:clear_sudo", { tabId: id });
     }
@@ -683,6 +709,10 @@ export default function TerminalPage({
   const handleSessionExit = useCallback((tabId: string) => {
     const tab = tabsRef.current.find((t) => t.id === tabId);
     if (!tab) return;
+    if (recoveredTabIds.current.has(tabId)) {
+      setAwaitingReconnect((prev) => new Set([...prev, tabId]));
+      return;
+    }
     const autoClose = tab.kind === "ssh" || Boolean(tab.launchCommand);
     if (!autoClose) return;
     closeTabById(tabId);
@@ -1270,6 +1300,18 @@ export default function TerminalPage({
                 />
               );
             }
+            if (awaitingReconnect.has(tab.id)) {
+              return <div key={tab.id} className={`terminal-instance${tab.id === activeTabId ? ' active' : ''}`}>
+                <div className="terminal-agent-recovery">
+                  <p>已恢复待处理补充。请重新连接终端后手动继续，原终端运行状态不会恢复。</p>
+                  <Button onClick={() => setAwaitingReconnect((prev) => {
+                    const next = new Set(prev);
+                    next.delete(tab.id);
+                    return next;
+                  })}>重新连接终端</Button>
+                </div>
+              </div>;
+            }
             return (
               <TerminalInstance
                 key={tab.id}
@@ -1353,6 +1395,7 @@ export default function TerminalPage({
           onToggle={() => setDrawerOpen((v) => !v)}
           activeTabId={activeTabId}
           getActiveSessionId={getActiveSessionId}
+          terminalTabs={tabs}
           tabIds={tabs.map((t) => t.id)}
           onOpenSettings={handleOpenTerminalAgentSettings}
         />

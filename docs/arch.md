@@ -201,6 +201,13 @@ Main (aiStreamService.cjs)
 
 同 topic 已有流时 `ai:stream_open` 返回 `{ mode: 'blocked' }`。
 
+执行中可发送文本与附件作为补充：主进程 `AgentInputQueue` 按 topic 持久化到 `userData/agent_inputs/`，`AiService` 通过 SDK `prepareStep` 在本轮工具结束后按序注入全部待处理消息，并将其保留在后续上下文。`steerableStream` 只协调自然结束后的 SDK 续跑，工具循环仍由 `ToolLoopAgent` 执行；自动续跑共用原轮数预算和 requestId，仅发送一次最终 done。停止、错误或达到上限后，补充保持待处理，等待用户继续。
+
+三个 agent 界面均显示可撤回的待处理消息；审批和提问不会因补充而解除等待。`agent:stream:input` 在 step 边界插入正式用户消息，共享 hook 先 flush 旧 chunk，再更新会话。attach 回放前绑定 requestId，避免恢复时漏掉补充或将其路由到其他主机面板。重启后不自动执行；终端抽屉为含补充的标签保存恢复上下文，需先手动重连终端，再继续处理；重建终端时不重放 launchCommand。
+
+
+**内置浏览器弹窗**：`ChatBrowserPane` 先以 `about:blank` 挂接 webview，主进程 `browser:register` 在 agent 控制的标签中完成 CDP 监听后才加载目标 URL，覆盖新标签 onload 弹窗。`BrowserAutomation.observeOperation` 同时观察导航和元素操作；弹窗出现时先返回 `dialog`，原操作保持登记，模型通过 `browser_act { action: 'dialog', accept, promptText? }` 明确回答后再读取页面，不能靠重复点击或按键解除。连续弹窗逐个返回决定，关闭命令失败保留当前决定；断开重连需等待同一 guest 的旧 CDP 清理完成，旧清理不能释放新一代操作锁。
+
 **配置模型**（`src/shared/providers.ts` + `settings.ts`）：
 
 ```ts
@@ -385,7 +392,10 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 | `chat:check` | 连通性检测 |
 | **智能体** | |
 | `ai:stream_open` | `{ topicId, requestId, messages, agentConfig, apiConfig, terminalSessionId? }` → `{ mode, requestId }` |
-| `ai:stream_attach` | `{ topicId }` → `{ attached, legacyEvents, status?, requestId? }` |
+| `ai:stream_attach` | `{ topicId }` → `{ attached, legacyEvents, inputs, status?, requestId? }` |
+| `ai:stream_enqueue` | `{ topicId, requestId, input: { message, apiMessage } }` → `{ mode: 'queued' \| 'inactive', items? }` |
+| `ai:stream_withdraw` | `{ topicId, messageId }` → `{ message }`；仅待处理项可撤回 |
+| `ai:stream_inputs` / `ai:stream_inputs_clear` | `{ topicId }` — 查询 / 清空补充存档 |
 | `ai:stream_detach` | `{ topicId }` |
 | `ai:stream_abort` | `{ topicId?, requestId? }` |
 | `ai:tool:bypass_approval` | `{ topicId }` — 本次 topic 后续工具免审批 |
@@ -421,6 +431,7 @@ macOS 自动模式需辅助功能权限（`selection:check_accessibility`）。
 
 | 事件 | 说明 |
 |------|------|
+| `agent:input:updated` / `agent:stream:input` | 待处理队列快照 / step 边界正式注入的用户消息 |
 | `chat:stream:chunk` / `done` / `error` | 流式对话（普通 + 智能体共用） |
 | `agent:stream:tool` | 智能体工具调用进度（审批、running、done/error） |
 | `ai:stream:chunk` / `done` / `error` | AI SDK 原始 chunk（可选订阅；UI 主要听 legacy 事件） |

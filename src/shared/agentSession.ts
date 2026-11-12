@@ -145,7 +145,7 @@ export function beginSend(
   const now = Date.now();
   const messages = [
     ...state.messages,
-    ...(opts.isCompact || opts.userText === ""
+    ...(opts.isCompact || (opts.userText === "" && !opts.attachments?.length)
       ? []
       : [
           {
@@ -487,4 +487,14 @@ export function clearMessages(state: AgentSessionState): AgentSessionState {
     ...emptyAgentSessionState(),
     sessionReady: state.sessionReady,
   };
+}
+
+/** Called only at a model-step boundary, after flushing preceding chunks. */
+export function applyInputMessages(state: AgentSessionState, items: ChatMsg[]): AgentSessionState {
+  const known = new Set(state.messages.map((m) => m.id));
+  const added = items.filter((m) => !known.has(m.id));
+  if (!added.length) return state;
+  const ids = new Set(items.map((m) => m.id));
+  return { ...state, messages: [...pruneEmptyAssistantMessages(state.messages.filter((m) => !ids.has(m.id))), ...items,
+    { id: genSessionId(), role: 'assistant', content: '', timestamp: Date.now() }] };
 }

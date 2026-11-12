@@ -1,3 +1,8 @@
+import { hostsForContinuation } from "../../shared/hostSelection";
+import { readTerminalAgentRecovery, rememberTerminalAgent, restoreTerminalAgent } from "../../shared/terminalAgentRecovery";
+import type { Tab } from "./terminalSidebarGroups";
+import AgentPendingInputs from "../chat/AgentPendingInputs";
+import { useAgentInputs } from "../../hooks/useAgentInputs";
 import AgentInteractionPanel from "../chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
@@ -31,7 +36,6 @@ import ComposerQuickMenu from "../chat/ComposerQuickMenu";
 import ReasoningEffortSelector from "../chat/ReasoningEffortSelector";
 import {
   buildAgentApiMessages,
-  classifyStreamError,
   filterForAgentHistory,
   trimMessagesForApi,
 } from "../../shared/chatMessages";
@@ -124,6 +128,7 @@ interface TerminalAgentDrawerProps {
   getActiveSessionId: () => string | undefined;
   // 当前所有终端 tab 的 id 列表 — 用于清理已关闭 tab 的孤立状态与 inflight 请求。
   tabIds: string[];
+  terminalTabs: Tab[];
   /** 跳到终端设置页的「终端助手」分区 */
   onOpenSettings: () => void;
 }
@@ -141,12 +146,14 @@ export default function TerminalAgentDrawer({
   activeTabId,
   getActiveSessionId,
   tabIds,
+  terminalTabs,
   onOpenSettings,
 }: TerminalAgentDrawerProps) {
   const [tabStates, setTabStates] = useState<Record<string, DrawerTabState>>(
     {},
   );
   const settings = useSettings();
+  const agentInputs = useAgentInputs(`terminal:${activeTabId}`);
   const terminalAgent =
     findAgentById(settings.agents, settings.terminalAgentId) ??
     settings.agents.find((a) => a.builtinRole === "terminal-assistant") ??
@@ -176,7 +183,7 @@ export default function TerminalAgentDrawer({
   // browser resume: keyed by topicId so the right tab picks it up
   const browserResumeByTopicRef = useRef<Map<string, { topicId: string; tabId: string }>>(new Map());
   // stable ref to handleSend so the resume effect doesn't re-subscribe on every send
-  const handleSendRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const handleSendRef = useRef<(text?: string) => Promise<void>>(async () => {});
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
 
@@ -242,18 +249,31 @@ export default function TerminalAgentDrawer({
     [],
   );
 
+  useEffect(() => {
+    const tracked = new Set(readTerminalAgentRecovery().map((r) => r.tab.id));
+    const timer = setTimeout(() => {
+      for (const tab of terminalTabs) {
+        const state = tabStates[tab.id];
+        if (!state || !tracked.has(tab.id)) continue;
+        try { rememberTerminalAgent(tab, state); }
+        catch { /* Main-owned pending inputs remain on disk even if renderer storage is full. */ }
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [tabStates, terminalTabs]);
+
   // Ensure a session exists for the active tab.
   useEffect(() => {
     setTabStates((prev) => {
       if (prev[activeTabId]) return prev;
-      return { ...prev, [activeTabId]: emptyTabState() };
+      return { ...prev, [activeTabId]: restoreTerminalAgent(activeTabId) };
     });
   }, [activeTabId]);
 
   const activeState = tabStates[activeTabId] ?? emptyTabState();
   const awaitingInteraction = getPendingInteractions(activeState.messages).length > 0;
   const composerDisabled = activeState.streaming || awaitingInteraction || !!editingMsgId;
-  const draftDisabled = !!editingMsgId || (activeState.streaming && !awaitingInteraction);
+  const draftDisabled = !!editingMsgId;
 
   const slashCommands = useMemo(
     () => [...getBuiltinCommands(), ...buildHostCommands(settings.sshHosts), ...buildSkillCommands(skills, terminalAgent?.enabledSkillIds)],
@@ -374,10 +394,9 @@ export default function TerminalAgentDrawer({
     const topicId = `terminal:${activeTabId}`;
 
     void (async () => {
-      const result = await attachManually(topicId);
-      if (result.requestId) {
-        requestIdToTabIdRef.current.set(result.requestId, activeTabId);
-      }
+      const result = await attachManually(topicId, (attached) => {
+        if (attached.requestId) requestIdToTabIdRef.current.set(attached.requestId, activeTabId);
+      });
       if (
         result.attached &&
         result.status === "streaming" &&
@@ -463,12 +482,31 @@ export default function TerminalAgentDrawer({
   const handleSend = useCallback(
     async (overrideText?: string, options?: SkillResendOptions) => {
       const state = tabStatesRef.current[activeTabId];
-      if (!state || state.streaming) return;
+      if (!state) return;
       if (agentSendLockRef.current.has(activeTabId)) return;
+      if (state.streaming) {
+        if (overrideText !== undefined || !state.requestId || !state.input.trim()) return;
+        agentSendLockRef.current.add(activeTabId);
+        try {
+          if (state.selectedSkillIds?.length || state.selectedHosts?.length) { warning('执行中补充请先移除技能或主机选择，当前执行配置保持不变。'); return; }
+          const recoveryTab = terminalTabs.find((t) => t.id === activeTabId);
+          if (recoveryTab) rememberTerminalAgent(recoveryTab, state);
+          const queued = await agentInputs.enqueue(state.requestId, { message: {
+            id: genSessionId(), role: 'user', content: state.input.trim(), timestamp: Date.now(),
+          }, apiMessage: { role: 'user', content: state.input.trim() } });
+          if (!queued) { setTimeout(() => void handleSendRef.current(), 0); return; }
+          updateTabState(activeTabId, (live) => ({ ...live, input: live.input === state.input ? '' : live.input }));
+          const tab = terminalTabs.find((t) => t.id === activeTabId);
+          if (tab) rememberTerminalAgent(tab, tabStatesRef.current[activeTabId]);
+          scrollToBottom();
+        } catch (e) { warning(`补充发送失败：${String(e)}`); }
+        finally { agentSendLockRef.current.delete(activeTabId); }
+        return;
+      }
       const isResend = overrideText !== undefined;
       const isCompactRequest = overrideText === COMPACT_PROMPT;
       const text = (overrideText ?? state.input).trim();
-      if (!isCompactRequest && !text) return;
+      if (!isCompactRequest && !text && !(overrideText === '' && agentInputs.pending.length)) return;
 
       if (!overrideText && parseSlashCommand(text)?.command === "clear") {
         handleClearContextRef.current();
@@ -476,7 +514,7 @@ export default function TerminalAgentDrawer({
         return;
       }
 
-      const selectedHosts = isResend ? (options?.selectedHosts || []) : (state.selectedHosts || []);
+      const selectedHosts = overrideText === '' ? hostsForContinuation(state.messages) : isResend ? (options?.selectedHosts || []) : (state.selectedHosts || []);
       // Capture the session before awaiting settings; switching tabs must not retarget this request.
       const sessionId = getActiveSessionId();
       if (!sessionId && !selectedHosts.length) {
@@ -487,11 +525,11 @@ export default function TerminalAgentDrawer({
       try {
         const invocation = prepareSkillInvocation(text,
           isResend ? (options?.selectedSkillIds || []) : (state.selectedSkillIds || []), skills.map((sk) => sk.id), selectedHosts);
-        if ((invocation.selectedSkillIds.length || selectedHosts.length) && !hasReferenceTask(invocation.rawText, invocation.selectedSkillIds, selectedHosts)) {
+        if (overrideText !== '' && (invocation.selectedSkillIds.length || selectedHosts.length) && !hasReferenceTask(invocation.rawText, invocation.selectedSkillIds, selectedHosts)) {
           warning("请输入要执行的任务。");
           return;
         }
-        const finalText = invocation.text;
+        const finalText = overrideText === '' ? '' : invocation.text;
         const sendMessages = options?.resendMessageId
           ? state.messages.slice(0, state.messages.findIndex((m) => m.id === options.resendMessageId)) : state.messages;
 
@@ -544,6 +582,7 @@ export default function TerminalAgentDrawer({
           undefined,
         );
 
+        if (overrideText === '') payloadMessages.pop();
         const requestId = genSessionId();
         const topicId = `terminal:${activeTabId}`;
         topicIdRef.current = topicId;
@@ -572,6 +611,7 @@ export default function TerminalAgentDrawer({
 
         try {
           const result = await openAgentStream({
+            userMessage: text && !isCompactRequest ? tabStatesRef.current[activeTabId]?.messages.slice().reverse().find((m) => m.role === 'user') : undefined,
             selectedSkillIds: invocation.selectedSkillIds,
             selectedHosts,
             topicId,
@@ -611,12 +651,14 @@ export default function TerminalAgentDrawer({
     },
     [
       activeTabId,
+      agentInputs,
       chatMode,
       getActiveSessionId,
       updateTabState,
       scrollToBottom,
       skills,
       terminalAgent?.id,
+      terminalTabs,
     ],
   );
 
@@ -709,12 +751,12 @@ export default function TerminalAgentDrawer({
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
-        if (!composerDisabled) {
+        if (!draftDisabled) {
           void handleSend();
         }
       }
     },
-    [composerDisabled, handleSend],
+    [draftDisabled, handleSend],
   );
 
   const handleClearContext = useCallback(() => {
@@ -777,6 +819,7 @@ export default function TerminalAgentDrawer({
       content: "确定清空当前终端标签的 Agent 对话吗？",
     });
     if (!ok) return;
+    await api.invoke('ai:stream_inputs_clear', { topicId: `terminal:${activeTabId}` });
     updateTabState(activeTabId, clearSessionMessages);
   }, [
     activeState.streaming,
@@ -864,6 +907,9 @@ export default function TerminalAgentDrawer({
           <MessageList
             ref={messageListRef}
             className="terminal-agent-messages"
+            pendingContent={<AgentPendingInputs pending={agentInputs.pending} streaming={activeState.streaming} withdraw={agentInputs.withdraw}
+              onContinue={() => void handleSend('')}
+              onRestore={(message) => updateTabState(activeTabId, (s) => ({ ...s, input: [s.input, message.content].filter(Boolean).join('\n') }))} />}
             messages={activeState.messages}
             streaming={activeState.streaming}
             onRetry={activeState.streaming ? undefined : handleRetry}
@@ -889,9 +935,9 @@ export default function TerminalAgentDrawer({
           <div className="terminal-agent-editor">
             <SkillComposerEditor key={activeTabId}
               textareaRef={textareaRef} rows={1}
-              placeholder={awaitingInteraction ? "可继续编辑草稿，请先处理上方请求…" : composerDisabled ? (editingMsgId ? "正在编辑上方消息…" : "生成中…") : "输入消息，@ 选择技能，Enter 发送…"}
+              placeholder={activeState.streaming ? "输入补充，下一步生效…" : awaitingInteraction ? "可继续编辑草稿，请先处理上方请求…" : composerDisabled ? (editingMsgId ? "正在编辑上方消息…" : "生成中…") : "输入消息，@ 选择技能，Enter 发送…"}
               input={activeState.input} onInputChange={setActiveInput}
-              commands={awaitingInteraction ? slashCommands.filter((cmd) => cmd.group === "skill" || cmd.group === "host") : slashCommands} onCommand={handleSlashCommand}
+              commands={activeState.streaming ? [] : awaitingInteraction ? slashCommands.filter((cmd) => cmd.group === "skill" || cmd.group === "host") : slashCommands} onCommand={handleSlashCommand}
               selectedHosts={activeState.selectedHosts} hostErrors={activeState.hostErrors}
               onSelectedHostsChange={(hosts) => updateTabState(activeTabId, (s) => ({ ...s, selectedHosts: hosts, hostErrors: undefined }))}
               selectedSkillIds={activeState.selectedSkillIds} skillErrors={activeState.skillErrors}
@@ -950,6 +996,7 @@ export default function TerminalAgentDrawer({
                 usage={contextUsage}
                 disabled={composerDisabled}
               />
+              {activeState.streaming && <Button variant="ghost" size="sm" className="chat-send-btn" onClick={() => void handleSend()} disabled={draftDisabled || !activeState.input.trim()} aria-label="发送补充" title="发送补充 (Enter)"><SendIcon /></Button>}
               {activeState.streaming ? (
                 <Button variant="ghost" size="sm" className="chat-send-btn chat-stop-btn" onClick={handleStop} aria-label="停止生成" title="停止生成"><StopIcon /></Button>
               ) : (

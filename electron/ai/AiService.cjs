@@ -4,6 +4,7 @@ const { toCoreMessages } = require('./messages.cjs');
 const { buildToolSet } = require('./buildToolSet.cjs');
 const { createChunkBridge } = require('./chunkBridge.cjs');
 const { resolveStreamUsage } = require('./extractUsage.cjs');
+const { createSteerableStream } = require('./steerableStream.cjs');
 
 /**
  * AiService.streamText — Cherry Studio pattern (agent-session branch omitted).
@@ -16,6 +17,7 @@ async function streamText({
   toolDefinitions,
   toolDeps,
   maxTurns = 30,
+  inputs,
   reasoningEffort,
   signal,
 }) {
@@ -38,17 +40,12 @@ async function streamText({
     agentOptions.providerOptions = { openai: { reasoningEffort } };
   }
 
-  const agent = new ToolLoopAgent(agentOptions);
-  const coreMessages = toCoreMessages(messages);
-  const result = await agent.stream({
-    messages: coreMessages,
-    abortSignal: signal,
+  return createSteerableStream({
+    messages: toCoreMessages(messages), maxTurns: Math.max(1, maxTurns), signal, inputs,
+    createAgent: ({ remainingTurns, prepareStep, onStepFinish }) => new ToolLoopAgent({
+      ...agentOptions, stopWhen: stepCountIs(remainingTurns), prepareStep, onStepFinish,
+    }),
   });
-
-  return {
-    stream: result.toUIMessageStream(),
-    usagePromise: resolveStreamUsage(result),
-  };
 }
 
 /**

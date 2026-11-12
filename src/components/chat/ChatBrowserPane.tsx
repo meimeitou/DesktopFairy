@@ -40,7 +40,6 @@ function BrowserWebview({ tab, active, onError }: {
   onError: (message: string) => void;
 }) {
   const ref = useRef<WebviewElement | null>(null);
-  const initialUrl = useRef(tab.url);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -65,7 +64,8 @@ function BrowserWebview({ tab, active, onError }: {
     el.addEventListener("dom-ready", register);
     // StrictMode/HMR can reconnect effects after did-attach was dispatched.
     const poll = setInterval(register, 50);
-    if (!el.getAttribute("src")) el.src = initialUrl.current;
+    // Main registers the guest and its dialog listener before loading the real URL.
+    if (!el.getAttribute("src")) el.src = "about:blank";
     register(); // Also recover an already attached guest after renderer HMR.
     return () => {
       disposed = true;

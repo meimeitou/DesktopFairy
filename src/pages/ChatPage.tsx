@@ -1,3 +1,5 @@
+import AgentPendingInputs from "../components/chat/AgentPendingInputs";
+import { useAgentInputs } from "../hooks/useAgentInputs";
 import AgentInteractionPanel from "../components/chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../components/chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../shared/composerReferences";
@@ -168,6 +170,7 @@ export default function ChatPage({
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [topics, setTopics] = useState<ChatTopic[]>([]);
   const topicsRef = useRef<ChatTopic[]>([]);
+  const agentInputs = useAgentInputs(activeTopicId);
   const [topicsLoaded, setTopicsLoaded] = useState(false);
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const chatSettings = useSettings();
@@ -803,10 +806,9 @@ export default function ChatPage({
     if (!activeTopicId) return;
 
     void (async () => {
-      const result = await attachManually(activeTopicId);
-      if (result.requestId) {
-        requestIdToTopicIdRef.current.set(result.requestId, activeTopicId);
-      }
+      const result = await attachManually(activeTopicId, (attached) => {
+        if (attached.requestId) requestIdToTopicIdRef.current.set(attached.requestId, activeTopicId);
+      });
       if (
         result.attached &&
         result.status === "streaming" &&
@@ -1062,8 +1064,29 @@ export default function ChatPage({
       const topicId = activeTopicIdRef.current;
       if (!topicId) return;
       const state = topicStatesRef.current[topicId];
-      if (!state || state.streaming) return;
+      if (!state) return;
       if (agentSendLockRef.current.has(topicId)) return;
+      if (state.streaming) {
+        if (overrideText !== undefined || !state.requestId || (!state.input.trim() && !state.attachments.length)) return;
+        agentSendLockRef.current.add(topicId);
+        try {
+          if (state.selectedSkillIds?.length) { warning('执行中补充暂不支持切换技能，请先移除技能选择。'); return; }
+          const payloads = await loadAttachmentPayloads(state.attachments);
+          const apiMessage = buildAgentApiMessages([], state.input.trim(), payloads).at(-1)!;
+          const queued = await agentInputs.enqueue(state.requestId, { message: {
+            id: genSessionId(), role: 'user', content: state.input.trim(), attachments: state.attachments, timestamp: Date.now(),
+          }, apiMessage });
+          if (!queued) { setTimeout(() => handleSendRef.current(), 0); return; }
+          patchTopicState(topicId, (live) => ({ ...live,
+            input: live.input === state.input ? '' : live.input,
+            attachments: live.attachments === state.attachments ? [] : live.attachments,
+          }));
+          scheduleTopicSave(topicId);
+          scrollToBottom();
+        } catch (e) { warning(`补充发送失败：${String(e)}`); }
+        finally { agentSendLockRef.current.delete(topicId); }
+        return;
+      }
 
       const isResend = overrideText !== undefined;
       const sendAttachments = isResend
@@ -1228,6 +1251,7 @@ export default function ChatPage({
         };
         try {
           const result = await openAgentStream({
+            userMessage: isCompactRequest ? undefined : nextTopic.messages.slice().reverse().find((m) => m.role === 'user'),
             selectedSkillIds: invocation.selectedSkillIds,
             topicId,
             requestId,
@@ -1285,6 +1309,8 @@ export default function ChatPage({
     },
     [
       skills,
+      agentInputs,
+      patchTopicState,
       loadAttachmentPayloads,
       scheduleTopicSave,
       scrollToBottom,
@@ -1380,6 +1406,7 @@ export default function ChatPage({
       content: "确定清空所有消息吗？",
     });
     if (!ok) return;
+    await api.invoke('ai:stream_inputs_clear', { topicId });
     setTopicStates((prev) => ({
       ...prev,
       [topicId]: {
@@ -1566,6 +1593,14 @@ export default function ChatPage({
         <ToolCancelContext.Provider value={handleCancelTool}>
           <MessageList
             ref={messageListRef}
+            pendingContent={<AgentPendingInputs pending={agentInputs.pending} streaming={streaming} withdraw={agentInputs.withdraw}
+              onContinue={() => { if (activeTopicId) void handleContinue(activeTopicId); }}
+              onRestore={(message) => {
+                if (!activeTopicId) return;
+                patchTopicState(activeTopicId, (s) => ({ ...s, input: [s.input, message.content].filter(Boolean).join('\n'),
+                  attachments: [...s.attachments, ...(message.attachments || []).filter((a) => !s.attachments.some((b) => b.path === a.path))] }));
+                scheduleTopicSave(activeTopicId);
+              }} />}
             messages={messages}
             streaming={streaming}
             invalidAttachmentPaths={invalidAttachmentPaths}

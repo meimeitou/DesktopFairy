@@ -27,6 +27,8 @@ export interface ChatMsg {
    *  Triggers an actionable "修改模型设置" button in the bubble. */
   errorKind?: "model_config";
   attachments?: ChatAttachment[];
+  /** Prepared content of an injected input, including text files and image parts. */
+  agentInputContent?: ApiMessage["content"];
   timestamp?: number;
   toolName?: string;
   toolCallId?: string;
@@ -168,7 +170,7 @@ export function applyStreamTextPart(
     !last.error;
   if (
     lastIsPlain &&
-    (last.partId === partId || isEmptyAssistantPlaceholder(last))
+    (last.partId === partId || isEmptyAssistantPlaceholder(last) || (!last.partId && !last.content?.trim()))
   ) {
     const next = messages.slice();
     next[next.length - 1] = {
@@ -391,7 +393,7 @@ export function buildAgentHistoryMessages(messages: ChatMsg[]): ApiMessage[] {
       i++;
       continue;
     }
-    result.push({ role: m.role, content: m.content });
+    result.push({ role: m.role, content: m.role === "user" ? (m.agentInputContent ?? m.content) : m.content });
     i++;
   }
   return result;
