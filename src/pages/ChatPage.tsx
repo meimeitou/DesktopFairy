@@ -1,3 +1,5 @@
+import AgentInteractionPanel from "../components/chat/AgentInteractionPanel";
+import { getPendingInteractions } from "../components/chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../shared/composerReferences";
 import { Button, error, warning } from "@cherrystudio/ui";
 import { PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
@@ -150,10 +152,12 @@ function persistSettingsWithAlert(settings: AppSettings): void {
 
 export default function ChatPage({
   embedded = false,
+  isActive = true,
   clearRef,
   onMetaChange,
 }: {
   embedded?: boolean;
+  isActive?: boolean;
   clearRef?: MutableRefObject<(() => void) | null>;
   onMetaChange?: (meta: { streaming: boolean; hasMessages: boolean }) => void;
 }) {
@@ -1565,11 +1569,6 @@ export default function ChatPage({
             messages={messages}
             streaming={streaming}
             invalidAttachmentPaths={invalidAttachmentPaths}
-            onApprove={handleApproveTool}
-            onDeny={handleDenyTool}
-            onAlwaysAllow={handleAlwaysAllowTool}
-            onAnswer={submitToolAnswer}
-            submittingApprovalId={submittingApprovalId}
             onRetry={streaming ? undefined : handleRetry}
             onStartEdit={streaming ? undefined : handleStartEdit}
             onFork={streaming ? undefined : handleFork}
@@ -1606,6 +1605,10 @@ export default function ChatPage({
           )}
 
         <ChatInputBar key={activeTopicId}
+          awaitingInteraction={getPendingInteractions(messages).length > 0}
+          interactionPanel={<AgentInteractionPanel sessionId={`chat:${activeTopicId}`} messages={messages} active={isActive}
+            submittingApprovalId={submittingApprovalId} onApprove={handleApproveTool}
+            onDeny={handleDenyTool} onAlwaysAllow={handleAlwaysAllowTool} onAnswer={submitToolAnswer} />}
           selectedSkillIds={activeState.selectedSkillIds} skillErrors={activeState.skillErrors}
           onSelectedSkillIdsChange={(ids) => {
             if (!activeTopicId) return;

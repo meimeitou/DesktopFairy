@@ -44,19 +44,23 @@ export function reuseStableMessageListItems(
     return out;
   }
 
-  // Same length: scan from the tail — streaming typically changes only the
-  // last item, so the loop exits on the first iteration.
-  let lastChanged = -1;
+  // Same length: scan every item, keeping prev refs where nothing changed.
+  // Streaming almost always changes only the last item — we still visit each
+  // position, but the assignment only fires when the item actually differs.
+  let anyChanged = false;
+  const out = prev.slice(); // start from prev so unchanged items keep their refs
   for (let i = next.length - 1; i >= 0; i--) {
     const item = next[i], old = prev[i];
-    if (old.kind !== item.kind || old.id !== item.id) { lastChanged = i; break; }
-    if (item.kind !== "clear" && old.kind !== "clear" && old.msg !== item.msg) { lastChanged = i; break; }
+    const changed =
+      old.kind !== item.kind ||
+      old.id !== item.id ||
+      (item.kind !== "clear" && old.kind !== "clear" && old.msg !== item.msg);
+    if (changed) {
+      out[i] = next[i];
+      anyChanged = true;
+    }
   }
-  if (lastChanged === -1) return prev; // nothing changed
-
-  const out = prev.slice(); // start from prev so unchanged items keep their refs
-  for (let i = lastChanged; i < next.length; i++) out[i] = next[i];
-  return out;
+  return anyChanged ? out : prev;
 }
 
 export function messageListStickKey(messages: ChatMsg[]): string {

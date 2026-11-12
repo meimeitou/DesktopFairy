@@ -1,229 +1,145 @@
 import { Button, Input } from "@cherrystudio/ui";
 import { Checkbox, Radio } from "../../Choice";
-import { useMemo, useState } from "react";
-
+import { useId, useMemo, useRef, useState } from "react";
 import type { ChatMsg } from "../../../shared/chatMessages";
-import { getToolDisplayName } from "../../../shared/toolCallDisplay";
 import {
-  canSubmitAskUserAnswer,
-  encodeSecretAnswer,
-  parseAskUserQuestions,
-  type AskUserAnswers,
-  type QuestionItem,
+  canSubmitAskUserAnswer, encodeSecretAnswer, parseAskUserQuestions,
+  type AskUserAnswers, type QuestionItem,
 } from "./askUserQuestionParse";
+import {
+  isQuestionAnswered, readQuestionDraft, saveQuestionDraft, type QuestionDraft,
+} from "./interactionState";
 
 export type { AskUserAnswers };
-
 const OTHER_VALUE = "__other__";
 
 function questionChoiceOptions(q: QuestionItem) {
   return [
     ...q.options.map((opt) => ({
       value: opt.label,
-      label: opt.description ? (
-        <span className="radio-option-label">
-          {opt.label}
-          <small className="radio-desc">{opt.description}</small>
-        </span>
-      ) : (
-        opt.label
-      ),
+      label: <span className="radio-option-label">{opt.label}{opt.description && <small className="radio-desc">{opt.description}</small>}</span>,
     })),
-    {
-      value: OTHER_VALUE,
-      label: (
-        <span className="radio-option-label">
-          其他
-          <small className="radio-desc">自行输入</small>
-        </span>
-      ),
-    },
+    { value: OTHER_VALUE, label: <span className="radio-option-label">其他<small className="radio-desc">自行输入</small></span> },
   ];
 }
 
 interface Props {
   msg: ChatMsg;
-  onAnswer?: (
-    answerId: string,
-    answers: AskUserAnswers,
-  ) => void | boolean | Promise<void | boolean>;
+  sessionId: string;
+  onAnswer: (answerId: string, answers: AskUserAnswers) => void | boolean | Promise<void | boolean>;
   submitting?: boolean;
 }
 
-export default function AskUserQuestionCard({
-  msg,
-  onAnswer,
-  submitting = false,
-}: Props) {
-  const questions = useMemo(
-    () => parseAskUserQuestions(msg),
-    [msg.toolArgs, msg.toolName],
-  );
-  const answerReady = canSubmitAskUserAnswer(msg);
+export default function AskUserQuestionCard({ msg, sessionId, onAnswer, submitting = false }: Props) {
+  const questions = useMemo(() => parseAskUserQuestions(msg), [msg.toolArgs, msg.toolName]);
+  const [draft, setDraft] = useState(() => readQuestionDraft(sessionId, msg.id));
   const [secretText, setSecretText] = useState<Record<string, string>>({});
   const [useDefaultSecret, setUseDefaultSecret] = useState<Record<string, boolean>>({});
-  const [selected, setSelected] = useState<Record<string, string[]>>({});
-  const [otherSelected, setOtherSelected] = useState<Record<string, boolean>>({});
-  const [otherText, setOtherText] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const submitLock = useRef(false);
+  const headingId = useId();
+  const answerReady = canSubmitAskUserAnswer(msg);
+  const disabled = submitting || submitted || !answerReady;
+  const page = Math.min(draft.page, Math.max(0, questions.length - 1));
+  const q = questions[page];
+  const lastPage = page === questions.length - 1;
 
-  const canSubmit =
-    answerReady &&
-    !submitted &&
-    questions.length > 0 &&
-    questions.every((q) => {
-      if (q.secret) return (q.secretDefaultLabel && useDefaultSecret[q.question]) || String(secretText[q.question] || "").length > 0;
-      const picks = selected[q.question] || [];
-      const useOther = otherSelected[q.question];
-      const other = String(otherText[q.question] || "").trim();
-      if (useOther && other) return true;
-      if (useOther && !other) return false;
-      if (picks.length > 0) return true;
-      // 无预设选项时仅允许「其他」
-      return q.options.length === 0 && useOther && other.length > 0;
-    });
+  const updateDraft = (patch: Partial<QuestionDraft>) => {
+    const next = { ...draft, ...patch };
+    saveQuestionDraft(sessionId, msg.id, next);
+    setDraft(next);
+  };
+  const answered = (question: QuestionItem) => question.secret
+    ? !!((question.secretDefaultLabel && useDefaultSecret[question.question]) || secretText[question.question]?.length)
+    : isQuestionAnswered(question, draft);
+  const canSubmit = answerReady && questions.length > 0 && questions.every(answered);
 
-  const handleSubmit = () => {
-    if (!msg.toolApprovalId || !canSubmit || submitting || submitted) return;
-    const answers: AskUserAnswers = {};
-    for (const q of questions) {
-      if (q.secret) {
-        answers[q.question] = encodeSecretAnswer(q, secretText[q.question] || "", useDefaultSecret[q.question] === true);
-        continue;
-      }
-      const parts: string[] = [...(selected[q.question] || [])];
-      if (otherSelected[q.question]) {
-        const text = String(otherText[q.question] || "").trim();
-        if (text) parts.push(text);
-      }
-      answers[q.question] = parts.join(", ");
-    }
+  const handleSubmit = async () => {
+    if (!msg.toolApprovalId || !canSubmit || disabled || submitLock.current) return;
+    submitLock.current = true;
     setSubmitted(true);
-    void Promise.resolve(onAnswer?.(msg.toolApprovalId, answers)).then((ok) => {
+    const answers: AskUserAnswers = {};
+    for (const question of questions) {
+      const text = draft.otherText[question.question]?.trim() || "";
+      if (question.secret) {
+        answers[question.question] = encodeSecretAnswer(question, secretText[question.question] || "", useDefaultSecret[question.question] === true);
+      } else if (!question.options.length || draft.otherSelected[question.question]) {
+        const picks = question.multiSelect ? (draft.selected[question.question] || []) : [];
+        answers[question.question] = [...picks, text].filter(Boolean).join(", ");
+      } else {
+        answers[question.question] = (draft.selected[question.question] || []).join(", ");
+      }
+    }
+    try {
+      const ok = await onAnswer(msg.toolApprovalId, answers);
       if (ok === false) setSubmitted(false);
       else setSecretText({});
-    });
+    } catch {
+      setSubmitted(false);
+    } finally {
+      submitLock.current = false;
+    }
+  };
+  const advance = () => {
+    if (!q || disabled || !answered(q)) return;
+    if (lastPage) void handleSubmit();
+    else updateDraft({ page: page + 1 });
   };
 
   return (
-    <div
-      className="agent-tool-ask"
-      data-tool-approval-id={msg.toolApprovalId ?? undefined}
-    >
-      <div className="agent-tool-ask-head">
-        <span className="agent-tool-ask-title">
-          {getToolDisplayName(msg.toolName || "AskUserQuestion")}
-        </span>
-        <span className="agent-tool-ask-badge">
-          {answerReady ? "等待回答" : "准备问题…"}
-        </span>
-      </div>
+    <div className="agent-tool-ask" data-tool-approval-id={msg.toolApprovalId ?? undefined}>
       <div className="agent-tool-ask-body">
-        {questions.length === 0 ? (
-          <p className="agent-tool-permission-empty">正在等待模型返回问题…</p>
-        ) : (
-          questions.map((q) => (
-            <div key={q.question} className="agent-tool-ask-question">
-              {q.header && (
-                <div className="agent-tool-ask-question-header">{q.header}</div>
-              )}
-              <div className="agent-tool-ask-question-text">{q.question}</div>
-              {q.secret ? (
-                <>
-                  {q.secretDefaultLabel && (
-                    <Radio
-                      direction="vertical"
-                      disabled={submitting || submitted || !answerReady}
-                      value={useDefaultSecret[q.question] ? "connection" : "manual"}
-                      options={[
-                        { value: "manual", label: "手动输入密码" },
-                        { value: "connection", label: q.secretDefaultLabel },
-                      ]}
-                      onChange={(next) => {
-                        const useDefault = next === "connection";
-                        setUseDefaultSecret((prev) => ({ ...prev, [q.question]: useDefault }));
-                        if (useDefault) setSecretText((prev) => ({ ...prev, [q.question]: "" }));
-                      }}
-                    />
-                  )}
-                  {!useDefaultSecret[q.question] && (
-                    <Input
-                      className="agent-tool-ask-other-input"
-                      type="password"
-                      autoFocus
-                      value={secretText[q.question] || ""}
-                      disabled={submitting || submitted || !answerReady}
-                      placeholder="输入密码（不会显示明文）…"
-                      onChange={(e) =>
-                        setSecretText((prev) => ({ ...prev, [q.question]: e.target.value }))
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && canSubmit) {
-                          e.preventDefault();
-                          handleSubmit();
-                        }
-                      }}
-                    />
-                  )}
-                </>
-              ) : q.multiSelect ? (
-                <Checkbox
-                  direction="vertical"
-                  disabled={submitting || submitted || !answerReady}
-                  value={[
-                    ...(selected[q.question] || []),
-                    ...(otherSelected[q.question] ? [OTHER_VALUE] : []),
-                  ]}
-                  options={questionChoiceOptions(q)}
+        {!q ? <p className="agent-tool-permission-empty">正在等待模型返回问题…</p> : (
+          <div className="agent-tool-ask-question" role="group" aria-labelledby={headingId}>
+            {questions.length > 1 && <div className="agent-tool-ask-progress" aria-live="polite">问题 {page + 1} / {questions.length}</div>}
+            <div id={headingId} className="agent-tool-ask-question-text">{q.question}</div>
+            {q.secret ? (
+              <>
+                {q.secretDefaultLabel && <Radio direction="vertical" disabled={disabled}
+                  value={useDefaultSecret[q.question] ? "connection" : "manual"}
+                  options={[{ value: "manual", label: "手动输入密码" }, { value: "connection", label: q.secretDefaultLabel }]}
                   onChange={(next) => {
-                    const values = next.map(String);
-                    const useOther = values.includes(OTHER_VALUE);
-                    setOtherSelected((prev) => ({ ...prev, [q.question]: useOther }));
-                    setSelected((prev) => ({
-                      ...prev,
-                      [q.question]: values.filter((v) => v !== OTHER_VALUE),
-                    }));
-                  }}
-                />
-              ) : (
-                <Radio
-                  direction="vertical"
-                  disabled={submitting || submitted || !answerReady}
-                  value={
-                    otherSelected[q.question]
-                      ? OTHER_VALUE
-                      : (selected[q.question]?.[0] ?? "")
-                  }
-                  options={questionChoiceOptions(q)}
-                  onChange={(next) => {
-                    const value = String(next);
-                    if (value === OTHER_VALUE) {
-                      setOtherSelected((prev) => ({ ...prev, [q.question]: true }));
-                      setSelected((prev) => ({ ...prev, [q.question]: [] }));
-                      return;
-                    }
-                    setOtherSelected((prev) => ({ ...prev, [q.question]: false }));
-                    setSelected((prev) => ({ ...prev, [q.question]: [value] }));
-                  }}
-                />
-              )}
-              {otherSelected[q.question] && (
-                <Input className="agent-tool-ask-other-input" type="text" value={otherText[q.question] || ""} disabled={submitting || submitted || !answerReady} placeholder="请输入你的回答…" onChange={(e) =>
-                    setOtherText((prev) => ({ ...prev, [q.question]: e.target.value }))
-                  } onKeyDown={(e) => {
-                    if (e.key === "Enter" && canSubmit) {
-                      e.preventDefault();
-                      handleSubmit();
-                    }
-                  }} />
-              )}
-            </div>
-          ))
+                    const useDefault = next === "connection";
+                    setUseDefaultSecret((prev) => ({ ...prev, [q.question]: useDefault }));
+                    if (useDefault) setSecretText((prev) => ({ ...prev, [q.question]: "" }));
+                  }} />}
+                {!useDefaultSecret[q.question] && <Input className="agent-tool-ask-other-input" type="password"
+                  aria-label={q.question} autoComplete="off" value={secretText[q.question] || ""} disabled={disabled}
+                  placeholder="输入密码（不会显示明文）…"
+                  onChange={(e) => setSecretText((prev) => ({ ...prev, [q.question]: e.target.value }))} />}
+              </>
+            ) : (
+              <>
+                {q.options.length > 0 && (q.multiSelect ? (
+                  <Checkbox direction="vertical" disabled={disabled}
+                    value={[...(draft.selected[q.question] || []), ...(draft.otherSelected[q.question] ? [OTHER_VALUE] : [])]}
+                    options={questionChoiceOptions(q)}
+                    onChange={(values) => updateDraft({
+                      otherSelected: { ...draft.otherSelected, [q.question]: values.includes(OTHER_VALUE) },
+                      selected: { ...draft.selected, [q.question]: values.filter((v) => v !== OTHER_VALUE) },
+                    })} />
+                ) : (
+                  <Radio direction="vertical" disabled={disabled}
+                    value={draft.otherSelected[q.question] ? OTHER_VALUE : (draft.selected[q.question]?.[0] ?? "")}
+                    options={questionChoiceOptions(q)}
+                    onChange={(value) => updateDraft({
+                      otherSelected: { ...draft.otherSelected, [q.question]: value === OTHER_VALUE },
+                      selected: { ...draft.selected, [q.question]: value === OTHER_VALUE ? [] : [value] },
+                    })} />
+                ))}
+                {(!q.options.length || draft.otherSelected[q.question]) && <Input
+                  className="agent-tool-ask-other-input" type="text" aria-label={q.question}
+                  value={draft.otherText[q.question] || ""} disabled={disabled} placeholder="请输入你的回答…"
+                  onChange={(e) => updateDraft({ otherText: { ...draft.otherText, [q.question]: e.target.value } })} />}
+              </>
+            )}
+          </div>
         )}
       </div>
       <div className="agent-tool-ask-actions">
-        <Button variant="default" size="sm" disabled={submitting || submitted || !canSubmit} onClick={handleSubmit}>
-          {submitted ? "已提交" : answerReady ? "提交回答" : "等待工具就绪…"}
+        {page > 0 && <Button variant="outline" size="sm" disabled={disabled} onClick={() => updateDraft({ page: page - 1 })}>上一题</Button>}
+        <Button variant="default" size="sm" disabled={disabled || !q || (lastPage ? !canSubmit : !answered(q))} onClick={advance}>
+          {submitted || submitting ? "提交中…" : !answerReady ? "等待工具就绪…" : lastPage ? "提交回答" : "下一题"}
         </Button>
       </div>
     </div>

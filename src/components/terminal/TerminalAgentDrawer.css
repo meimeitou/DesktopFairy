@@ -151,6 +151,8 @@
 }
 
 .terminal-agent-dock {
+  container-name: composer;
+  container-type: inline-size;
   position: absolute;
   left: 12px;
   right: 12px;

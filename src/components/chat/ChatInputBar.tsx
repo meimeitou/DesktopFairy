@@ -10,6 +10,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { useComposerOverlay } from "../../hooks/useComposerOverlay";
 
@@ -44,6 +45,8 @@ interface Props {
   attachments: ChatAttachment[];
   onAttachmentsChange: (files: ChatAttachment[]) => void;
   streaming: boolean;
+  awaitingInteraction?: boolean;
+  interactionPanel?: ReactNode;
   hasMessages: boolean;
   chatMode: ChatMode;
   onChatModeChange: (mode: ChatMode) => void;
@@ -83,6 +86,8 @@ function ChatInputBar({
   attachments,
   onAttachmentsChange,
   streaming,
+  awaitingInteraction = false,
+  interactionPanel,
   hasMessages,
   chatMode,
   onChatModeChange,
@@ -119,7 +124,8 @@ function ChatInputBar({
 
   useComposerOverlay(dockRef);
 
-  const composerDisabled = streaming || editingMessage;
+  const composerDisabled = streaming || awaitingInteraction || editingMessage;
+  const draftDisabled = editingMessage || (streaming && !awaitingInteraction);
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -208,7 +214,7 @@ function ChatInputBar({
   }, []);
 
   const handleSelectFiles = useCallback(async () => {
-    if (selectingRef.current || composerDisabled) return;
+    if (selectingRef.current || draftDisabled) return;
     selectingRef.current = true;
     try {
       const picked = (await api.invoke("file:select")) as
@@ -219,10 +225,10 @@ function ChatInputBar({
     } finally {
       selectingRef.current = false;
     }
-  }, [addAttachments, composerDisabled]);
+  }, [addAttachments, draftDisabled]);
 
   const handleScreenshot = useCallback(async () => {
-    if (capturingRef.current || composerDisabled) return;
+    if (capturingRef.current || draftDisabled) return;
     capturingRef.current = true;
     try {
       await api.invoke("screenshot:capture_to_chat");
@@ -231,11 +237,11 @@ function ChatInputBar({
     } finally {
       capturingRef.current = false;
     }
-  }, [composerDisabled]);
+  }, [draftDisabled]);
 
   const handlePaste = useCallback(
     async (e: ClipboardEvent<HTMLTextAreaElement>) => {
-      if (composerDisabled) return;
+      if (draftDisabled) return;
       const files = collectDataTransferFiles(e.clipboardData);
       if (files.length === 0) return;
       e.preventDefault();
@@ -248,7 +254,7 @@ function ChatInputBar({
         );
       }
     },
-    [addAttachments, attachmentsFromFiles, composerDisabled],
+    [addAttachments, attachmentsFromFiles, draftDisabled],
   );
 
   const clearDragOver = () => {
@@ -259,7 +265,7 @@ function ChatInputBar({
   const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types))
+    if (draftDisabled || !dataTransferHasFiles(e.dataTransfer?.types))
       return;
     dragDepthRef.current += 1;
     setDragOver(true);
@@ -275,7 +281,7 @@ function ChatInputBar({
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (composerDisabled || !dataTransferHasFiles(e.dataTransfer?.types))
+    if (draftDisabled || !dataTransferHasFiles(e.dataTransfer?.types))
       return;
     e.dataTransfer.dropEffect = "copy";
   };
@@ -285,7 +291,7 @@ function ChatInputBar({
       e.preventDefault();
       e.stopPropagation();
       clearDragOver();
-      if (composerDisabled) return;
+      if (draftDisabled) return;
 
       const files = collectDataTransferFiles(e.dataTransfer);
       if (files.length === 0) return;
@@ -299,7 +305,7 @@ function ChatInputBar({
         );
       }
     },
-    [addAttachments, attachmentsFromFiles, composerDisabled],
+    [addAttachments, attachmentsFromFiles, draftDisabled],
   );
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -314,9 +320,11 @@ function ChatInputBar({
 
   const placeholder = editingMessage
     ? "正在编辑上方消息…"
-    : streaming
-      ? "生成中…"
-      : "输入消息，@ 选择技能，可拖拽文件…";
+    : awaitingInteraction
+      ? "可继续编辑草稿，请先处理上方请求…"
+      : streaming
+        ? "生成中…"
+        : "输入消息，@ 选择技能，可拖拽文件…";
 
   return (
     <div
@@ -329,6 +337,7 @@ function ChatInputBar({
       onDragLeave={handleDragLeave}
     >
       <ComposerBusyHalo />
+      {interactionPanel}
       {dragOver && (
         <div className="chat-input-drop-mask" aria-hidden>
           松开以添加文件
@@ -345,11 +354,11 @@ function ChatInputBar({
         <SkillComposerEditor
           textareaRef={textareaRef} rows={1} placeholder={placeholder}
           input={input} onInputChange={onInputChange}
-          commands={slashCommands} onCommand={onSlashCommand}
+          commands={awaitingInteraction ? slashCommands?.filter((cmd) => cmd.group === "skill" || cmd.group === "host") : slashCommands} onCommand={onSlashCommand}
           selectedSkillIds={selectedSkillIds} onSelectedSkillIdsChange={onSelectedSkillIdsChange}
           selectedHosts={selectedHosts} onSelectedHostsChange={onSelectedHostsChange} hostErrors={hostErrors}
           skillErrors={skillErrors} onKeyDown={handleKeyDown} onPaste={handlePaste}
-          disabled={composerDisabled} autoFocus
+          disabled={draftDisabled} autoFocus
         />
       </div>
 
@@ -373,7 +382,7 @@ function ChatInputBar({
             />
           )}
           <ComposerQuickMenu
-            disabled={composerDisabled}
+            disabled={draftDisabled}
             actions={[
               ...(attachmentsEnabled
                 ? [
@@ -381,14 +390,14 @@ function ChatInputBar({
                       key: "upload",
                       label: "上传文件",
                       icon: <Upload size={16} />,
-                      disabled: composerDisabled,
+                      disabled: draftDisabled,
                       onSelect: () => void handleSelectFiles(),
                     },
                     {
                       key: "screenshot",
                       label: "区域截图",
                       icon: <Camera size={16} />,
-                      disabled: composerDisabled,
+                      disabled: draftDisabled,
                       onSelect: () => void handleScreenshot(),
                     },
                   ]

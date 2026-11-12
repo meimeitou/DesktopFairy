@@ -18,7 +18,6 @@ import { findLastAssistantReplyIndex } from "../../shared/chatMessages";
 import { isThinkingClockLive } from "../../shared/thinkingElapsed";
 import MessageBubble from "./MessageBubble";
 import ToolCallBubble from "./ToolCallBubble";
-import type { AskUserAnswers } from "./agentTools/askUserQuestionParse";
 import {
   buildMessageListItems,
   messageListStickKey,
@@ -52,12 +51,6 @@ export interface MessageListProps {
   invalidAttachmentPaths?: Set<string>;
   emptyContent?: ReactNode;
   className?: string;
-  alwaysAllowLabel?: string;
-  onApprove?: (approvalId: string) => void;
-  onDeny?: (approvalId: string) => void;
-  onAlwaysAllow?: (approvalId: string) => void;
-  onAnswer?: (answerId: string, answers: AskUserAnswers) => void;
-  submittingApprovalId?: string | null;
   onRetry?: (msgId: string) => void;
   onStartEdit?: (msgId: string) => void;
   onConfirmEdit?: (msgId: string, newText: string) => void;
@@ -78,12 +71,6 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       invalidAttachmentPaths = EMPTY_SET,
       emptyContent,
       className = "chat-messages",
-      alwaysAllowLabel,
-      onApprove,
-      onDeny,
-      onAlwaysAllow,
-      onAnswer,
-      submittingApprovalId,
       onRetry,
       onStartEdit,
       onConfirmEdit,
@@ -107,9 +94,6 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       typeof setTimeout
     > | null>(null);
     const lastTouchYRef = useRef<number | null>(null);
-    const lastApprovalKeyRef = useRef<string | null>(null);
-    /** Pause follow-bottom while an approval card is centered — do not detach. */
-    const pauseForApprovalRef = useRef(false);
     const pinGenRef = useRef(0);
     const prevItemsRef = useRef<MessageListItem[] | null>(null);
     const [overlayPad, setOverlayPad] = useState(120);
@@ -201,22 +185,6 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       return null;
     }, [items, messages, streaming, streamingAssistantId]);
 
-    // Narrow approval key so the effect does not re-run every stream frame.
-    const approvalInfo = useMemo(() => {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind !== "tool") continue;
-        const tool = item.msg;
-        if (
-          (tool.toolStatus === "awaiting_approval" || tool.toolStatus === "awaiting_input") &&
-          tool.toolApprovalId
-        ) {
-          return { index: i, key: tool.toolApprovalId };
-        }
-      }
-      return null;
-    }, [items]);
-
     const virtualizer = useVirtualizer({
       count: items.length,
       getScrollElement: () => parentRef.current,
@@ -238,8 +206,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       if (
         !el ||
         items.length === 0 ||
-        !stickToBottomRef.current ||
-        pauseForApprovalRef.current
+        !stickToBottomRef.current
       ) {
         return;
       }
@@ -252,7 +219,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         pinRafRef.current = requestAnimationFrame(() => {
           pinRafRef.current = null;
           if (gen !== pinGenRef.current) return;
-          if (!stickToBottomRef.current || pauseForApprovalRef.current) return;
+          if (!stickToBottomRef.current) return;
           const node = parentRef.current;
           if (node) node.scrollTop = node.scrollHeight;
         });
@@ -378,36 +345,6 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       return () => ro.disconnect();
     }, [messages.length, pinToBottom]);
 
-    // Position awaiting-approval cards just above the composer, not at the
-    // viewport's mathematical center — "center" ignores the floating input dock
-    // and can land the card's bottom under it. "end" respects scroll-margin-bottom
-    // (defined on .agent-tool-permission / .agent-tool-ask) which already reserves
-    // composerHeight + 24px so the card's action buttons are fully visible.
-    useEffect(() => {
-      if (!approvalInfo) {
-        const hadApproval = lastApprovalKeyRef.current != null;
-        lastApprovalKeyRef.current = null;
-        if (!hadApproval) return;
-        pauseForApprovalRef.current = false;
-        if (!suppressReattachRef.current) {
-          stickToBottomRef.current = true;
-          pinToBottom();
-        }
-        return;
-      }
-      if (lastApprovalKeyRef.current === approvalInfo.key) return;
-      lastApprovalKeyRef.current = approvalInfo.key;
-      pauseForApprovalRef.current = true;
-      cancelPendingPin();
-      virtualizer.scrollToIndex(approvalInfo.index, { align: "end" });
-      requestAnimationFrame(() => {
-        const card = parentRef.current?.querySelector<HTMLElement>(
-          "[data-tool-approval-id]",
-        );
-        card?.scrollIntoView({ block: "end", behavior: "auto" });
-      });
-    }, [approvalInfo, cancelPendingPin, pinToBottom, virtualizer]);
-
     const scrollProps = {
       onScroll: handleScroll,
       onWheel: handleWheel,
@@ -460,15 +397,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                 {item.kind === "clear" ? (
                   <ContextClearDivider />
                 ) : item.kind === "tool" ? (
-                  <ToolCallBubble
-                    msg={item.msg}
-                    onApprove={onApprove}
-                    onDeny={onDeny}
-                    onAlwaysAllow={onAlwaysAllow}
-                    onAnswer={onAnswer}
-                    submittingApprovalId={submittingApprovalId}
-                    alwaysAllowLabel={alwaysAllowLabel}
-                  />
+                  <ToolCallBubble msg={item.msg} />
                 ) : (
                   <MessageBubble
                     msg={item.msg}

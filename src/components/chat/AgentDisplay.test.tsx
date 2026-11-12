@@ -9,6 +9,7 @@ vi.mock("./ChatMarkdown", () => ({ default: ({ content }: { content: string }) =
 
 import ThinkingBlock from "./ThinkingBlock";
 import ToolCallBubble from "./ToolCallBubble";
+import AgentInteractionPanel from "./AgentInteractionPanel";
 import { ToolCancelContext } from "./agentTools/ToolCancelContext";
 
 const tool: ChatMsg = {
@@ -47,10 +48,25 @@ describe("compact agent display", () => {
     expect(html).not.toContain("FULL OUTPUT");
   });
 
-  it("keeps approval actions visible", () => {
-    const html = renderToStaticMarkup(<ToolCallBubble msg={{ ...tool, toolStatus: "awaiting_approval", toolApprovalId: "approval-1" }} onApprove={() => {}} onDeny={() => {}} />);
-    expect(html).toContain("允许");
-    expect(html).not.toContain("agent-tool-card-collapsed");
+  it("keeps history compact and moves approval actions to the composer panel", () => {
+    const msg: ChatMsg = { ...tool, toolStatus: "awaiting_approval", toolApprovalId: "approval-1" };
+    const html = renderToStaticMarkup(<ToolCallBubble msg={msg} />);
+    expect(html).toContain("等待审批");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain("agent-tool-permission-actions");
+    const panel = renderToStaticMarkup(<AgentInteractionPanel sessionId="test" messages={[msg]} onApprove={() => {}} onDeny={() => {}} onAlwaysAllow={() => {}} onAnswer={() => {}} />);
+    expect(panel).toContain("允许");
+    expect(panel).toContain("拒绝");
+    expect(panel).toContain("npm test");
+  });
+
+  it("keeps forced approvals explicit and inactive surfaces quiet", () => {
+    const msg: ChatMsg = { ...tool, toolStatus: "awaiting_approval", toolApprovalId: "forced", toolForce: true };
+    const props = { sessionId: "forced", messages: [msg], onApprove: () => {}, onDeny: () => {}, onAlwaysAllow: () => {}, onAnswer: () => {} };
+    const html = renderToStaticMarkup(<AgentInteractionPanel {...props} />);
+    expect(html).toContain("拒绝");
+    expect(html).not.toContain("始终允许");
+    expect(renderToStaticMarkup(<AgentInteractionPanel {...props} active={false} />)).toBe("");
   });
 
   it("shows questions and options immediately while awaiting an answer", () => {
@@ -58,7 +74,7 @@ describe("compact agent display", () => {
       ...tool, toolName: "AskUserQuestion", toolStatus: "awaiting_input", toolApprovalId: "answer-1",
       toolArgs: JSON.stringify({ questions: [{ question: "选择目标环境？", options: [{ label: "本地" }, { label: "远程" }] }] }),
     };
-    const html = renderToStaticMarkup(<ToolCallBubble msg={msg} onAnswer={() => {}} />);
+    const html = renderToStaticMarkup(<AgentInteractionPanel sessionId="test" messages={[msg]} onApprove={() => {}} onDeny={() => {}} onAlwaysAllow={() => {}} onAnswer={() => {}} />);
     expect(html).toContain("选择目标环境？");
     expect(html).toContain("本地");
     expect(html).toContain("远程");
@@ -70,10 +86,11 @@ describe("compact agent display", () => {
       ...tool, toolName: "AskUserQuestion", toolStatus: "awaiting_input", toolApprovalId: "sudo-answer",
       toolArgs: JSON.stringify({ questions: [{ question: "sudo 密码", secret: true, secretDefaultLabel: "使用当前连接用户 user 的已保存密码", options: [] }] }),
     };
-    const html = renderToStaticMarkup(<ToolCallBubble msg={msg} onAnswer={() => {}} />);
+    const html = renderToStaticMarkup(<AgentInteractionPanel sessionId="test" messages={[msg]} onApprove={() => {}} onDeny={() => {}} onAlwaysAllow={() => {}} onAnswer={() => {}} />);
     expect(html).toContain("手动输入密码");
     expect(html).toContain("使用当前连接用户 user 的已保存密码");
     expect(html).toContain('type="password"');
+    expect(html).not.toContain('autofocus');
   });
 
 });

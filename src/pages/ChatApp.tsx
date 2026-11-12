@@ -154,7 +154,7 @@ export default function ChatApp() {
               aria-hidden={view !== "chat"}
             >
               <Suspense fallback={null}>
-                <ChatPage embedded />
+                <ChatPage embedded isActive={view === "chat"} />
               </Suspense>
             </div>
           )}

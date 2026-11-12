@@ -1,4 +1,4 @@
-import { error, warning } from "@cherrystudio/ui";
+import { error } from "@cherrystudio/ui";
 import { useCallback, useState, type MutableRefObject } from "react";
 import type { ChatMsg } from "../shared/chatMessages";
 
@@ -23,10 +23,12 @@ export function useToolApproval(
           approved,
         })) as boolean;
         if (!ok) {
-          warning("审批请求已失效，可能任务已结束。");
+          // Let AgentInteractionPanel show the inline error; no toast.
         }
+        return ok;
       } catch (e) {
         error(e instanceof Error ? e.message : "审批失败");
+        return false;
       } finally {
         setSubmittingApprovalId(null);
       }
@@ -43,7 +45,7 @@ export function useToolApproval(
           answers,
         })) as boolean;
         if (!ok) {
-          warning("提问已失效，可能任务已结束。");
+          // Let AgentInteractionPanel show the inline error; no toast.
           return false;
         }
         return true;
@@ -59,14 +61,14 @@ export function useToolApproval(
 
   const handleApproveTool = useCallback(
     (approvalId: string) => {
-      void respondToolApproval(approvalId, true);
+      return respondToolApproval(approvalId, true);
     },
     [respondToolApproval],
   );
 
   const handleDenyTool = useCallback(
     (approvalId: string) => {
-      void respondToolApproval(approvalId, false);
+      return respondToolApproval(approvalId, false);
     },
     [respondToolApproval],
   );
@@ -80,14 +82,15 @@ export function useToolApproval(
   // 先走 bypass（主进程会按 requestId/topicId 放行所有已挂起的审批），
   // 再补发 UI 已知的 approve — 避免并行工具仍停在「准备中」却已在等审批的竞态。
   const handleAlwaysAllowTool = useCallback(
-    (_originApprovalId: string) => {
+    async (_originApprovalId: string) => {
+      const calls: Promise<unknown>[] = [];
       const requestId = requestIdRef.current;
       if (requestId) {
-        void api.invoke("agent:tool:bypass_approval", { requestId });
+        calls.push(api.invoke("agent:tool:bypass_approval", { requestId }));
       }
       const topicId = topicIdRef?.current;
       if (topicId) {
-        void api.invoke("ai:tool:bypass_approval", { topicId });
+        calls.push(api.invoke("ai:tool:bypass_approval", { topicId }));
       }
 
       const pendingIds = chatMessagesRef.current
@@ -104,13 +107,20 @@ export function useToolApproval(
         .filter(Boolean);
 
       for (const id of pendingIds) {
-        void api.invoke("agent:tool:approve", {
+        calls.push(api.invoke("agent:tool:approve", {
           approvalId: id,
           approved: true,
-        });
+        }));
       }
 
+      // Keep the mode change bound to the session that initiated the action.
       onSwitchToFullAuto();
+      const results = await Promise.allSettled(calls);
+      if (results.some((result) => result.status === "rejected")) {
+        // Let AgentInteractionPanel show the inline error; no toast.
+        return false;
+      }
+      return true;
     },
     [chatMessagesRef, requestIdRef, topicIdRef, onSwitchToFullAuto],
   );

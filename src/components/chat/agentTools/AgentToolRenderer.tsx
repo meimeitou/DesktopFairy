@@ -28,6 +28,7 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
 const STATUS_LABEL: Record<string, string> = {
   streaming: "准备中",
   running: "执行中",
+  awaiting_approval: "等待审批",
   awaiting_input: "等待回答",
   done: "完成",
   error: "失败",
@@ -316,7 +317,7 @@ function AskUserQuestionBody({ msg }: { msg: ChatMsg }) {
                       选项：{q.options.map((o) => o.label).join("、")}
                     </div>
                   )}
-                  {answer && (
+                  {answer && !q.secret && (
                     <div className="agent-tool-ask-result-a">答：{answer}</div>
                   )}
                 </li>
@@ -432,7 +433,12 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
     : "";
 
   const input = getToolInput(msg.toolName || "", msg.toolArgs);
+  const askQuestions = msg.toolName === "AskUserQuestion" ? parseAskUserQuestions(msg) : [];
+  const questionSummary = askQuestions.length
+    ? (status === "done" ? `已回答 ${askQuestions.length} 个问题` : askQuestions[0].question)
+    : "";
   const summary =
+    questionSummary ||
     getToolCommandLine(msg.toolName || "", msg.toolArgs) ||
     extractFilePath(input) ||
     (typeof input.query === "string" ? input.query : "") ||

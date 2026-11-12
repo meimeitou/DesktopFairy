@@ -1349,6 +1349,7 @@ export default function TerminalPage({
           // 抽屉的一切状态都以 activeTabId 为键、发送时还要取该标签的 PTY 会话；
           // 对话标签没有会话，展开只会挤压面板并产出无会话的请求。
           isOpen={drawerOpen && activeIsSession}
+          isActive={isActive}
           onToggle={() => setDrawerOpen((v) => !v)}
           activeTabId={activeTabId}
           getActiveSessionId={getActiveSessionId}

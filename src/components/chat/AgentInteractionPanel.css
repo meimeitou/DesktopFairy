@@ -1,0 +1,101 @@
+/* Part of the measured composer: opening a request also reserves message space. */
+.agent-interaction-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 8px 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 12px;
+  background: var(--ink-850);
+  color: var(--bone-200);
+  overflow: hidden;
+}
+
+.agent-interaction-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.agent-interaction-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+}
+
+.agent-interaction-title > svg { flex-shrink: 0; }
+.agent-interaction-title strong { white-space: nowrap; }
+.agent-interaction-tool {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bone-500);
+  font-size: 12px;
+}
+
+.agent-interaction-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-interaction-content:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.agent-interaction-content > .agent-tool-permission,
+.agent-interaction-content > .agent-tool-ask {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(40vh, 360px);
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.agent-interaction-panel .agent-tool-permission-head-static { display: none; }
+.agent-interaction-panel .agent-tool-permission-body,
+.agent-interaction-panel .agent-tool-ask-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.agent-interaction-panel .agent-tool-permission-actions,
+.agent-interaction-panel .agent-tool-ask-actions {
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--ink-800);
+}
+
+.agent-tool-ask-progress {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--bone-400);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-interaction-error {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--rust);
+  overflow-wrap: anywhere;
+}
+
+@container composer (max-width: 380px) {
+  .agent-interaction-tool { display: none; }
+  .agent-interaction-header { gap: 4px; }
+}

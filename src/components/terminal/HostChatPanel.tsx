@@ -1,3 +1,5 @@
+import AgentInteractionPanel from "../chat/AgentInteractionPanel";
+import { getPendingInteractions } from "../chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
 import { hostsForContinuation } from "../../shared/hostSelection";
 import { error, warning } from "@cherrystudio/ui";
@@ -26,6 +28,7 @@ import {
   filterForAgentHistory,
   trimMessagesForApi,
   buildAgentApiMessages,
+  buildAgentHistoryMessages,
 } from "../../shared/chatMessages";
 import {
   applySendFail,
@@ -820,11 +823,6 @@ export default function HostChatPanel({
                 </div>
               ) : null
             }
-            onApprove={handleApproveTool}
-            onDeny={handleDenyTool}
-            onAlwaysAllow={handleAlwaysAllowTool}
-            onAnswer={submitToolAnswer}
-            submittingApprovalId={submittingApprovalId}
             onRetry={streaming ? undefined : handleRetry}
             onFork={streaming ? undefined : handleFork}
             onStartEdit={streaming ? undefined : handleStartEdit}
@@ -850,6 +848,10 @@ export default function HostChatPanel({
           />
         )}
         <ChatInputBar
+          awaitingInteraction={getPendingInteractions(messages).length > 0}
+          interactionPanel={<AgentInteractionPanel sessionId={`host:${topicId}`} messages={messages} active={isActive}
+            submittingApprovalId={submittingApprovalId} onApprove={handleApproveTool}
+            onDeny={handleDenyTool} onAlwaysAllow={handleAlwaysAllowTool} onAnswer={submitToolAnswer} />}
           selectedHosts={state.selectedHosts} hostErrors={state.hostErrors}
           onSelectedHostsChange={(hosts) => {
             patchState((s) => ({ ...s, selectedHosts: hosts, hostErrors: undefined }));

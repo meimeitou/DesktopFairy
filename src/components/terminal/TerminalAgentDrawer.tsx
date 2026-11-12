@@ -1,3 +1,5 @@
+import AgentInteractionPanel from "../chat/AgentInteractionPanel";
+import { getPendingInteractions } from "../chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
 import { Button, NormalTooltip, warning } from "@cherrystudio/ui";
 import { CircleStop, Eraser, FoldVertical, Send, Settings, Sparkles, Trash2, X } from "lucide-react";
@@ -116,6 +118,7 @@ function StopIcon() {
 
 interface TerminalAgentDrawerProps {
   isOpen: boolean;
+  isActive?: boolean;
   onToggle: () => void;
   activeTabId: string;
   getActiveSessionId: () => string | undefined;
@@ -133,6 +136,7 @@ function emptyTabState(): DrawerTabState {
 
 export default function TerminalAgentDrawer({
   isOpen,
+  isActive = true,
   onToggle,
   activeTabId,
   getActiveSessionId,
@@ -247,7 +251,9 @@ export default function TerminalAgentDrawer({
   }, [activeTabId]);
 
   const activeState = tabStates[activeTabId] ?? emptyTabState();
-  const composerDisabled = activeState.streaming || !!editingMsgId;
+  const awaitingInteraction = getPendingInteractions(activeState.messages).length > 0;
+  const composerDisabled = activeState.streaming || awaitingInteraction || !!editingMsgId;
+  const draftDisabled = !!editingMsgId || (activeState.streaming && !awaitingInteraction);
 
   const slashCommands = useMemo(
     () => [...getBuiltinCommands(), ...buildHostCommands(settings.sshHosts), ...buildSkillCommands(skills, terminalAgent?.enabledSkillIds)],
@@ -860,12 +866,6 @@ export default function TerminalAgentDrawer({
             className="terminal-agent-messages"
             messages={activeState.messages}
             streaming={activeState.streaming}
-            onApprove={handleApproveTool}
-            onDeny={handleDenyTool}
-            onAlwaysAllow={handleAlwaysAllowTool}
-            onAnswer={submitToolAnswer}
-            submittingApprovalId={submittingApprovalId}
-            alwaysAllowLabel="本次全部允许"
             onRetry={activeState.streaming ? undefined : handleRetry}
             onStartEdit={activeState.streaming ? undefined : handleStartEdit}
             onConfirmEdit={handleConfirmEdit}
@@ -882,17 +882,21 @@ export default function TerminalAgentDrawer({
           aria-busy={activeState.streaming}
         >
           <ComposerBusyHalo />
+          <AgentInteractionPanel sessionId={`terminal:${activeTabId}`} messages={activeState.messages} active={isOpen && isActive}
+            submittingApprovalId={submittingApprovalId} alwaysAllowLabel="本次全部允许"
+            onApprove={handleApproveTool} onDeny={handleDenyTool}
+            onAlwaysAllow={handleAlwaysAllowTool} onAnswer={submitToolAnswer} />
           <div className="terminal-agent-editor">
             <SkillComposerEditor key={activeTabId}
               textareaRef={textareaRef} rows={1}
-              placeholder={composerDisabled ? (editingMsgId ? "正在编辑上方消息…" : "生成中…") : "输入消息，@ 选择技能，Enter 发送…"}
+              placeholder={awaitingInteraction ? "可继续编辑草稿，请先处理上方请求…" : composerDisabled ? (editingMsgId ? "正在编辑上方消息…" : "生成中…") : "输入消息，@ 选择技能，Enter 发送…"}
               input={activeState.input} onInputChange={setActiveInput}
-              commands={slashCommands} onCommand={handleSlashCommand}
+              commands={awaitingInteraction ? slashCommands.filter((cmd) => cmd.group === "skill" || cmd.group === "host") : slashCommands} onCommand={handleSlashCommand}
               selectedHosts={activeState.selectedHosts} hostErrors={activeState.hostErrors}
               onSelectedHostsChange={(hosts) => updateTabState(activeTabId, (s) => ({ ...s, selectedHosts: hosts, hostErrors: undefined }))}
               selectedSkillIds={activeState.selectedSkillIds} skillErrors={activeState.skillErrors}
               onSelectedSkillIdsChange={(ids) => updateTabState(activeTabId, (s) => ({ ...s, selectedSkillIds: ids, skillErrors: undefined }))}
-              onKeyDown={handleKeyDown} disabled={composerDisabled}
+              onKeyDown={handleKeyDown} disabled={draftDisabled}
             />
           </div>
           <div className="chat-input-toolbar">
