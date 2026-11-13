@@ -32,10 +32,10 @@ const REATTACH_THRESHOLD = 8;
 const COMPOSER_SCROLL_GAP = 24;
 const EMPTY_SET = new Set<string>();
 
-function ContextClearDivider() {
+function ContextClearDivider({ compacted = false }: { compacted?: boolean }) {
   return (
     <div className="msg-context-clear" role="separator">
-      <span>上下文已清除</span>
+      <span>{compacted ? '上下文已压缩 · 保留近期对话' : '上下文已清除'}</span>
     </div>
   );
 }
@@ -399,7 +399,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(
                   }}
                 >
                   {item.kind === "clear" ? (
-                    <ContextClearDivider />
+                    <ContextClearDivider compacted={item.compacted} />
                   ) : item.kind === "tool" ? (
                     <ToolCallBubble msg={item.msg} />
                   ) : (

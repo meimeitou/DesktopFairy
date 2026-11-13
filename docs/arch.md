@@ -253,7 +253,7 @@ interface LlmProvider {
 
 | 指令 | 说明 |
 |------|------|
-| `/compact` | 发送压缩 prompt，LLM 回复摘要后自动插入 clear 标记 + 摘要作为新上下文 |
+| `/compact` | 主进程使用禁工具的专用摘要请求，提交 checkpoint，并保留近期原文 |
 | `/<skill-id>` | 补全到输入框，用户可追加说明后发送；`handleSend` 解析前缀并注入 skill 调用指令 |
 
 **ChatPage**（`src/pages/ChatPage.tsx`）：
@@ -262,10 +262,18 @@ interface LlmProvider {
 - 智能体模式：`IpcChatTransport.openAgentStream`，监听 `chat:stream:*` / `agent:stream:tool`；`attachTopicStream` 重连并回放 `legacyEvents`
 - 中断：`abortTopicStream` + `agent:abort`；删除 topic 时同样 abort
 - **上下文清除**：插入 `type: 'clear'` 标记，`filterAfterContextClear` 过滤历史
-- **AI 压缩上下文**：`/compact` 发送 `COMPACT_PROMPT`，流结束后在 `onChatStreamDone` 中插入 clear + 摘要
+- **AI 压缩上下文**：`/compact` 经 `ai:stream_open` 的 `compact: true` 进入专用摘要流程；自动压缩与手动压缩共用 `electron/ai/contextCompaction.cjs`。成功后通过既有 `chat:stream:chunk` 的 `checkpoint` 字段提交显式上下文边界，原聊天记录仍可查看。
 - **多会话**：侧边栏 `AgentChatSidebar` 上区为 agent 列表（`getChatAgents` 排除终端助手）、下区 `TopicSidebar` 按 `topic.agentId` 过滤；删除 agent 级联删除其 topics
-- **API 上下文裁剪**：`trimMessagesForApi` 默认最近 40 条 / 24k 字符
+- **API 上下文预算**：renderer 传递完整 active history，不静默截断；主进程在每个 `prepareStep` 检查预算并按需压缩，聊天页、终端抽屉、主机面板及 maxTurns 续跑共用同一策略。
 - **附件**：文本嵌入消息 / 图片 multimodal
+
+**压缩策略与恢复**：
+
+- `electron/ai/contextWindows.json` 为 renderer 和 main 共用的模型窗口估计；默认在 80% 窗口处压缩，预留 20% 给输出（输出上限最多 16k）。计入实际 system prompt、工具定义、工具参数、结果和执行中注入的消息，并用最近一个成功模型步骤的 input usage 校准估算；累计账单不当作当前占用。
+- 优先保留最近两个 user 轮次，目标预算最多 12k tokens。内容过大时改用完整 tool-call/result 边界切分，保留最新 user 要求；旧历史生成「目标、用户要求与约束、关键决定、已完成工作、进行中与阻塞、下一步、关键证据」摘要。旧工具长输出先保留头尾，再分段合并历史，不先丢弃旧 user 要求。最新输入本身过大或固定开销占满窗口时明确失败。
+- 摘要调用不传工具，空结果、截断、失败及取消均不提交 checkpoint；手动摘要若反而增大上下文，也保留原文。摘要请求自身超窗会缩小当前分段后有界重试。普通执行遇到上下文超限且被拒步骤尚无输出时，最多压缩恢复一次，从现有 ledger 续跑，不重复已完成工具。
+- `ContextCheckpoint`（`src/shared/contextCheckpoint.ts`）保存在 `type: 'clear'` 标记上，记录版本、摘要、完整保留窗口、覆盖/保留消息数和压缩前后估算。`filterAfterContextClear` 重建 checkpoint + 后续新消息；普通 clear 仍清空模型上下文。保存/读取同时支持 main 与 renderer 的 normalizer。存储限制优先淘汰 checkpoint 之前的展示历史，不拆散 active window；active window 单独超过存储软上限时完整保留。
+- checkpoint 使用现有 legacy 事件回放，按 ID 幂等提交；手动请求的 done 带 `isCompact`，重连不依赖 renderer 临时 ref 判定。后续推理文本、错误及工具行写入新边界之后。
 
 **ChatInputBar**（`src/components/chat/ChatInputBar.tsx`）：
 
@@ -719,8 +727,8 @@ await openAgentStream({
 // 监听 chat:stream:chunk / agent:stream:tool / chat:stream:done（与旧版相同）
 // 关窗重连：attachTopicStream(topicId) 回放 legacyEvents
 
-// 快捷指令 /compact — 发送压缩 prompt，流结束后自动清除旧上下文
-handleSend(COMPACT_PROMPT);  // 在 onChatStreamDone 中检测并插入 clear + 摘要
+// 快捷指令 /compact — 入口将操作编码为 compact: true，历史不包含摘要指令
+handleSend(COMPACT_PROMPT);  // main 生成结构化摘要，checkpoint 事件提交摘要 + 近期原文
 ```
 
 ---

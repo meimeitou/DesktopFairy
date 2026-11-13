@@ -1,14 +1,14 @@
 import type { ChatMsg } from "../../shared/chatMessages";
 
 export type MessageListItem =
-  | { kind: "clear"; id: string }
+  | { kind: "clear"; id: string; compacted?: boolean }
   | { kind: "tool"; id: string; msg: ChatMsg }
   | { kind: "message"; id: string; msg: ChatMsg };
 
 export function buildMessageListItems(messages: ChatMsg[]): MessageListItem[] {
   return messages.map((msg) =>
     msg.type === "clear"
-      ? { kind: "clear", id: msg.id }
+      ? { kind: "clear", id: msg.id, ...(msg.contextCheckpoint ? { compacted: true } : {}) }
       : { kind: msg.type === "tool" ? "tool" : "message", id: msg.id, msg },
   );
 }

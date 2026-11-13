@@ -15,6 +15,8 @@
     "read",
     "glob",
     "grep",
+    "WebSearch",
+    "WebFetch",
     "ssh_read",
     "ssh_glob",
     "ssh_grep",
@@ -67,13 +69,13 @@
       "id": "WebFetch",
       "description": "Fetch the readable content from one or more known web page URLs.\n\nUse this when:\n- You already have specific URLs from the user, prior context, or WebSearch\n- You need page content from an article, documentation page, or reference URL\n- Search snippets are not enough and you need the source page text\n\nDon't use this when you only have a topic or question; call WebSearch first.",
       "category": "context",
-      "defaultPrompt": true
+      "defaultPrompt": false
     },
     {
       "id": "WebSearch",
       "description": "Search the web for current information, news, and real-time data.\n\nUse this when:\n- The user asks about recent events, current prices, or live data\n- You need to verify facts you're uncertain about or that may have changed\n- The user references something you don't have context on\n\nDon't use for:\n- Math, code reasoning, or things you can answer from your training\n- Well-known facts unlikely to have changed\n\nYou may call this multiple times with different queries to broaden coverage.",
       "category": "context",
-      "defaultPrompt": true
+      "defaultPrompt": false
     },
     {
       "id": "write",

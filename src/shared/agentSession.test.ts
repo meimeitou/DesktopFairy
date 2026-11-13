@@ -163,27 +163,10 @@ describe("applyDone", () => {
     const last = next.messages[next.messages.length - 1];
     expect(last.webCitations).toBeUndefined();
   });
-  it("compact done appends clear marker + summary and wipes usage", () => {
-    const state = beginSend(emptyAgentSessionState(), {
-      requestId: "r1",
-      userText: "q",
-      isCompact: true,
-    });
-    const withAnswer = {
-      ...state,
-      messages: [...state.messages.slice(0, -1), assistantMsg("摘要正文")],
-      lastPromptTokens: 99,
-    };
-    const { state: next, meta } = applyDone(
-      withAnswer,
-      { requestId: "r1" },
-      { isCompact: true },
-    );
-    const tail = next.messages.slice(-2);
-    expect(tail[0].type).toBe("clear");
-    expect(tail[1].content).toContain("[上下文摘要]");
-    expect(tail[1].content).toContain("摘要正文");
-    expect(next.lastPromptTokens).toBeUndefined();
+  it("compact done does not reinterpret a normal reply as a summary", () => {
+    const state = seeded([userMsg("original"), assistantMsg("not a checkpoint")]);
+    const { state: next, meta } = applyDone(state, { requestId: "r1", isCompact: true });
+    expect(next.messages).toEqual(state.messages);
     expect(meta.compact).toBe(true);
   });
 

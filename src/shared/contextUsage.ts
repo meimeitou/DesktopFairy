@@ -1,6 +1,7 @@
+import contextWindows from "../../electron/ai/contextWindows.json";
 import type { ChatAttachment } from "./chatAttachments";
 import { isImageExt } from "./chatAttachments";
-import type { ChatMsg } from "./chatMessages";
+import { filterAfterContextClear, type ChatMsg } from "./chatMessages";
 import { formatToolEvidenceForApi } from "./toolEvidence";
 import type { AgentConfig } from "./agent";
 
@@ -16,33 +17,7 @@ export const AGENT_SYSTEM_OVERHEAD_TOKENS = 2_000;
 /** ponytail: vision images are not counted precisely — upgrade path: provider-specific vision token API */
 export const IMAGE_ATTACHMENT_TOKEN_ESTIMATE = 1_024;
 
-const CONTEXT_WINDOW_BY_PREFIX: [string, number][] = [
-  ["gpt-4o-mini", 128_000],
-  ["gpt-4o", 128_000],
-  ["gpt-4-turbo", 128_000],
-  ["gpt-4", 128_000],
-  ["gpt-3.5-turbo", 16_385],
-  ["o1-mini", 128_000],
-  ["o1-preview", 128_000],
-  ["o1", 200_000],
-  ["o3-mini", 200_000],
-  ["claude-3-5-sonnet", 200_000],
-  ["claude-3-5-haiku", 200_000],
-  ["claude-3-opus", 200_000],
-  ["claude-3-sonnet", 200_000],
-  ["claude-3-haiku", 200_000],
-  ["claude-sonnet-4", 200_000],
-  ["claude-opus-4", 200_000],
-  ["deepseek-chat", 64_000],
-  ["deepseek-reasoner", 64_000],
-  ["qwen2.5", 128_000],
-  ["qwen3", 128_000],
-  ["llama3.1", 128_000],
-  ["llama3.2", 128_000],
-  ["llama3.3", 128_000],
-  ["gemini-2", 1_000_000],
-  ["gemini-1.5", 1_000_000],
-];
+const CONTEXT_WINDOW_BY_PREFIX = contextWindows.prefixes as [string, number][];
 
 const CJK_RE = /[\u3000-\u9fff\uf900-\ufaff\uac00-\ud7af]/;
 
@@ -87,7 +62,10 @@ function messageTextForEstimate(msg: ChatMsg): string {
 }
 
 export function estimateMessageTokens(msg: ChatMsg): number {
-  return estimateTokens(messageTextForEstimate(msg));
+  if (msg.contextCheckpoint) return estimateTokens(JSON.stringify(msg.contextCheckpoint.messages,
+    (_key, value) => value?.type === 'image_url' ? '[图片约1024tokens]' : value)) +
+      msg.contextCheckpoint.messages.reduce((n, m) => n + (Array.isArray(m.content) ? m.content.filter((p) => p.type === 'image_url').length * 1024 : 0), 0);
+  return estimateTokens(messageTextForEstimate(msg)) + (msg.type === 'tool' ? estimateTokens(msg.toolArgs || '') : 0);
 }
 
 export function estimateMessagesTokens(messages: ChatMsg[]): number {
@@ -209,9 +187,7 @@ export function trimMessagesForTokenBudget(
 }
 
 function messagesAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
-  const clearIndex = messages.findLastIndex((m) => m.type === "clear");
-  if (clearIndex === -1) return messages;
-  return messages.slice(clearIndex + 1).filter((m) => m.type !== "clear");
+  return filterAfterContextClear(messages).filter((m) => m.type !== 'clear');
 }
 
 export function estimateContextUsage(
@@ -233,13 +209,10 @@ export function estimateContextUsage(
   const sendBudget = sendTokenBudget(contextWindow);
   const draftInputTokens = estimateTokens(draftInput);
   const draftAttachmentTokens = estimateAttachmentTokens(attachments);
-  const reserveTokens =
-    systemTokens + draftInputTokens + draftAttachmentTokens;
-
-  const { kept, discardedCount } = trimMessagesForTokenBudget(messages, {
-    maxTokens: sendBudget,
-    reserveTokens,
-  });
+  // Main compacts the whole active context. Do not hide pressure by displaying
+  // a silently trimmed suffix that no longer matches the actual request.
+  const kept = messages;
+  const discardedCount = 0;
 
   const historyFromTrim = estimateMessagesTokens(kept);
 

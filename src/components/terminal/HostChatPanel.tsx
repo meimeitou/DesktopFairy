@@ -28,7 +28,6 @@ import {
   type ChatMsg,
   classifyStreamError,
   filterForAgentHistory,
-  trimMessagesForApi,
   buildAgentApiMessages,
   buildAgentHistoryMessages,
 } from "../../shared/chatMessages";
@@ -65,7 +64,6 @@ import {
   type SlashCommand,
 } from "../../shared/slashCommands";
 import {
-  buildTrimOptions,
   estimateAgentSystemPromptTokens,
   estimateContextUsage,
   resolveActiveModelName,
@@ -474,16 +472,7 @@ export default function HostChatPanel({
 
       const sendAgent = agent;
 
-      const trimOpts = buildTrimOptions({
-        contextWindow: resolveContextWindow(resolveActiveModelName(sendAgent)),
-        systemTokens: estimateAgentSystemPromptTokens(sendAgent),
-        draftInput: finalText,
-        draftAttachments: isResend ? (options?.resendAttachments ?? []) : attachments,
-      });
-      const history = trimMessagesForApi(
-        filterForAgentHistory(sendMessages),
-        trimOpts,
-      );
+      const history = filterForAgentHistory(sendMessages);
 
       const sendAttachments = isResend
         ? (options?.resendAttachments ?? [])
@@ -504,6 +493,8 @@ export default function HostChatPanel({
         attachmentPayloads,
         sendAgent.soul,
       );
+
+      if (isCompactRequest) payloadMessages.pop();
 
       const requestId = genSessionId();
       requestIdRef.current = requestId;
@@ -537,6 +528,7 @@ export default function HostChatPanel({
       };
       try {
         const result = await openAgentStream({
+          compact: isCompactRequest,
           userMessage: isCompactRequest ? undefined : stateRef.current.messages.slice().reverse().find((m) => m.role === 'user'),
           selectedSkillIds: invocation.selectedSkillIds,
           selectedHosts,
@@ -746,14 +738,7 @@ export default function HostChatPanel({
         const apiConfig = getChatApiConfig(currentSettings, agent);
         if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
-        const trimOpts = buildTrimOptions({
-          contextWindow: resolveContextWindow(resolveActiveModelName(agent)),
-          systemTokens: estimateAgentSystemPromptTokens(agent),
-        });
-        const history = trimMessagesForApi(
-          filterForAgentHistory(s.messages),
-          trimOpts,
-        );
+        const history = filterForAgentHistory(s.messages);
         const payloadMessages = buildAgentHistoryMessages(history);
 
         const requestId = genSessionId();

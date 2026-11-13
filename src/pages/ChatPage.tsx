@@ -34,7 +34,6 @@ import {
   classifyStreamError,
   filterForAgentHistory,
   findLastAssistantReplyIndex,
-  trimMessagesForApi,
 } from "../shared/chatMessages";
 import {
   applySendFail,
@@ -48,7 +47,6 @@ import {
   type AgentSessionState,
 } from "../shared/agentSession";
 import {
-  buildTrimOptions,
   estimateAgentSystemPromptTokens,
   estimateContextUsage,
   type ContextUsageResult,
@@ -994,15 +992,7 @@ export default function ChatPage({
         const apiConfig = getChatApiConfig(settings, agent);
         if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
-        const trimOpts = buildTrimOptions({
-          contextWindow: resolveContextWindow(resolveActiveModelName(agent)),
-          systemTokens: estimateAgentSystemPromptTokens(agent),
-        });
-
-        const agentHistory = trimMessagesForApi(
-          filterForAgentHistory(state.messages),
-          trimOpts,
-        );
+        const agentHistory = filterForAgentHistory(state.messages);
         const payloadMessages = buildAgentHistoryMessages(agentHistory);
 
         const requestId = genSessionId();
@@ -1186,25 +1176,15 @@ export default function ChatPage({
           return;
         }
 
-        const trimOpts = buildTrimOptions({
-          contextWindow: resolveContextWindow(
-            resolveActiveModelName(sendAgent),
-          ),
-          systemTokens: estimateAgentSystemPromptTokens(sendAgent),
-          draftInput: finalText,
-          draftAttachments: sendAttachments,
-        });
-
-        const agentHistory = trimMessagesForApi(
-          filterForAgentHistory(sendMessages),
-          trimOpts,
-        );
+        const agentHistory = filterForAgentHistory(sendMessages);
         const payloadMessages = buildAgentApiMessages(
           agentHistory,
           finalText,
           attachmentPayloads,
           sendAgent.soul,
         );
+
+        if (isCompactRequest) payloadMessages.pop();
 
         const requestId = genSessionId();
         requestIdToTopicIdRef.current.set(requestId, topicId);
@@ -1251,6 +1231,7 @@ export default function ChatPage({
         };
         try {
           const result = await openAgentStream({
+            compact: isCompactRequest,
             userMessage: isCompactRequest ? undefined : nextTopic.messages.slice().reverse().find((m) => m.role === 'user'),
             selectedSkillIds: invocation.selectedSkillIds,
             topicId,

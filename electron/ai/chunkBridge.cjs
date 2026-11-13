@@ -34,6 +34,9 @@ function createChunkBridge({ requestId, safeSend, onToolEvent }) {
     if (!chunk || !chunk.type) return;
 
     switch (chunk.type) {
+      case 'context-checkpoint':
+        safeSend('chat:stream:chunk', { requestId, checkpoint: chunk.checkpoint });
+        break;
       case 'text-delta':
         if (chunk.delta) {
           safeSend('chat:stream:chunk', { requestId, delta: chunk.delta, partId: chunk.id });

@@ -45,6 +45,8 @@ function createAgentTextStream(ctx) {
     const signal = entry?.controller?.signal;
     abortIfNeeded(signal);
 
+    if (ctx.compact) return streamText({ messages: apiMessages, apiConfig, signal, compact: true });
+
     const environment = resolveAgentEnvironment({
       topicId,
       terminalSessionId,

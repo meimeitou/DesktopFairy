@@ -111,7 +111,6 @@ function shouldPromptForTool(toolName, toolApprovalMode, invocationArgs) {
   if (name === 'ssh_hosts') {
     return invocationArgs?.action !== 'list';
   }
-  if (['WebFetch', 'WebSearch'].includes(name)) return true;
   return true;
 }
 

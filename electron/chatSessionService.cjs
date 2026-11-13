@@ -2,6 +2,7 @@ const { normalizeSelectedHosts } = require('./hostSelection.cjs');
 const fs = require('fs');
 const path = require('path');
 const { readChatLog } = require('./chatSessionLog.cjs');
+const { normalizeContextCheckpoint } = require('./ai/contextCheckpoint.cjs');
 
 const CHAT_SESSION_VERSION = 2;
 const INLINE_PREVIEW_MAX = 16 * 1024;
@@ -97,6 +98,7 @@ function normalizeChatMessage(raw) {
     rawText: typeof m.rawText === 'string' ? m.rawText : undefined,
     selectedSkillIds: Array.isArray(m.selectedSkillIds) ? [...new Set(m.selectedSkillIds.filter((id) => typeof id === 'string'))] : undefined,
     type: m.type === 'clear' ? 'clear' : undefined,
+    contextCheckpoint: m.type === 'clear' ? normalizeContextCheckpoint(m.contextCheckpoint) : undefined,
     error: m.error === true,
     timestamp: m.timestamp,
     knowledgeCitations: Array.isArray(m.knowledgeCitations)

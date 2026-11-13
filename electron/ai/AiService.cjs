@@ -1,10 +1,11 @@
-const { ToolLoopAgent, stepCountIs, streamText: aiStreamText } = require('ai');
+const { ToolLoopAgent, stepCountIs, generateText, streamText: aiStreamText } = require('ai');
 const { resolveProviderModel } = require('./providerModel.cjs');
 const { toCoreMessages } = require('./messages.cjs');
 const { buildToolSet } = require('./buildToolSet.cjs');
 const { createChunkBridge } = require('./chunkBridge.cjs');
 const { resolveStreamUsage } = require('./extractUsage.cjs');
 const { createSteerableStream } = require('./steerableStream.cjs');
+const { createContextCompactor } = require('./contextCompaction.cjs');
 
 /**
  * AiService.streamText — Cherry Studio pattern (agent-session branch omitted).
@@ -20,14 +21,27 @@ async function streamText({
   inputs,
   reasoningEffort,
   signal,
+  compact = false,
 }) {
   const model = resolveProviderModel(apiConfig);
+  const compactor = createContextCompactor({ model, systemPrompt, toolDefinitions, apiConfig, signal, generateSummary: generateText });
+  if (compact) {
+    // A dedicated, tool-free call: never run the normal agent loop to summarize.
+    const result = await compactor.compact(toCoreMessages(messages), 'manual');
+    return { stream: new ReadableStream({ start(controller) {
+      if (result) controller.enqueue({ type: 'context-checkpoint', checkpoint: result.checkpoint });
+      else controller.enqueue({ type: 'text-delta', id: 'compact-noop', delta: '当前上下文无需压缩，已保留原文。' });
+      controller.enqueue({ type: 'finish', finishReason: 'stop' });
+      controller.close();
+    } }) };
+  }
   const tools = buildToolSet(toolDefinitions, toolDeps);
 
   const agentOptions = {
     model,
     tools,
     instructions: systemPrompt,
+    maxOutputTokens: compactor.maxOutputTokens,
     stopWhen: stepCountIs(Math.max(1, maxTurns)),
   };
 
@@ -41,7 +55,7 @@ async function streamText({
   }
 
   return createSteerableStream({
-    messages: toCoreMessages(messages), maxTurns: Math.max(1, maxTurns), signal, inputs,
+    messages: toCoreMessages(messages), maxTurns: Math.max(1, maxTurns), signal, inputs, compactor,
     createAgent: ({ remainingTurns, prepareStep, onStepFinish }) => new ToolLoopAgent({
       ...agentOptions, stopWhen: stepCountIs(remainingTurns), prepareStep, onStepFinish,
     }),

@@ -23,6 +23,8 @@ import {
 import type { ToolTerminalState } from "./ai/stream";
 import type { KnowledgeCitation } from "./knowledge";
 import { extractWebCitations } from "./webCitation";
+import { normalizeContextCheckpoint, type ContextCheckpoint } from './contextCheckpoint';
+import { hostsForContinuation } from './hostSelection';
 
 export type { ToolTerminalState };
 
@@ -58,6 +60,7 @@ export interface StreamUsage {
 }
 
 export interface ChatChunkEvent {
+  checkpoint?: ContextCheckpoint;
   requestId: string;
   partId?: string;
   delta?: string;
@@ -65,6 +68,7 @@ export interface ChatChunkEvent {
 }
 
 export interface ChatDoneEvent {
+  isCompact?: boolean;
   requestId: string;
   aborted?: boolean;
   maxTurnsReached?: boolean;
@@ -273,45 +277,29 @@ export function applyDone(
     };
   }
 
-  if (opts.isCompact) {
-    const assistantIdx = findLastAssistantReplyIndex(messages);
-    const summary =
-      assistantIdx >= 0 && !messages[assistantIdx].error
-        ? messages[assistantIdx].content
-        : "";
-    if (summary.trim()) {
-      const now = Date.now();
-      return {
-        state: {
-          ...base,
-          lastPromptTokens: undefined,
-          lastCompletionTokens: undefined,
-          lastUsageMessageCount: undefined,
-          messages: [
-            ...messages,
-            {
-              id: genSessionId(),
-              role: "user" as const,
-              type: "clear" as const,
-              content: "",
-              timestamp: now,
-            } satisfies ChatMsg,
-            {
-              id: genSessionId(),
-              role: "user" as const,
-              content: `[上下文摘要]\n\n${summary.trim()}`,
-              timestamp: now,
-            } satisfies ChatMsg,
-          ],
-        },
-        meta: { persist: true, compact: true },
-      };
-    }
-  }
+  // The main process commits a checkpoint explicitly, before any continuation.
+  // Never turn an arbitrary final reply into a summary (also on reconnect).
+  if (opts.isCompact || event.isCompact) return { state: base, meta: { persist: true, compact: true } };
 
   return {
     state: base,
     meta: { persist: true, maxTurnsReached: Boolean(event.maxTurnsReached) },
+  };
+}
+
+export function applyContextCheckpoint(state: AgentSessionState, raw: ContextCheckpoint): AgentSessionState {
+  const checkpoint = normalizeContextCheckpoint(raw);
+  if (!checkpoint || state.messages.some((m) => m.contextCheckpoint?.id === checkpoint.id)) return state;
+  return {
+    ...state,
+    messages: [...pruneEmptyAssistantMessages(state.messages), {
+      id: `context:${checkpoint.id}`, role: 'user', type: 'clear', content: '',
+      timestamp: checkpoint.createdAt, contextCheckpoint: checkpoint,
+      selectedHosts: hostsForContinuation(state.messages),
+    }, { id: genSessionId(), role: 'assistant', content: '', timestamp: checkpoint.createdAt }],
+    lastPromptTokens: undefined,
+    lastCompletionTokens: undefined,
+    lastUsageMessageCount: undefined,
   };
 }
 
@@ -429,7 +417,7 @@ export function applySendFail(
 export function toggleClearMarker(state: AgentSessionState): AgentSessionState {
   const last = state.messages[state.messages.length - 1];
   const messages =
-    last?.type === "clear"
+    last?.type === "clear" && !last.contextCheckpoint
       ? state.messages.slice(0, -1)
       : [
           ...state.messages,

@@ -7,7 +7,7 @@ import AgentInteractionPanel from "../chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../chat/agentTools/interactionState";
 import { hasReferenceTask, retainedReferences } from "../../shared/composerReferences";
 import { Button, NormalTooltip, warning } from "@cherrystudio/ui";
-import { CircleStop, Eraser, FoldVertical, Send, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { CircleStop, Eraser, Send, Settings, Sparkles, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -37,7 +37,6 @@ import ReasoningEffortSelector from "../chat/ReasoningEffortSelector";
 import {
   buildAgentApiMessages,
   filterForAgentHistory,
-  trimMessagesForApi,
 } from "../../shared/chatMessages";
 import {
   beginSend,
@@ -49,7 +48,6 @@ import {
   type AgentSessionState,
 } from "../../shared/agentSession";
 import {
-  buildTrimOptions,
   estimateAgentSystemPromptTokens,
   estimateContextUsage,
   resolveActiveModelName,
@@ -102,14 +100,6 @@ const api = window.electronAPI;
 
 function EraserIcon() {
   return <Eraser size={16} />;
-}
-
-function CompactIcon() {
-  return <FoldVertical size={16} />;
-}
-
-function TrashIcon() {
-  return <Trash2 size={16} />;
 }
 
 function SendIcon() {
@@ -175,6 +165,7 @@ export default function TerminalAgentDrawer({
   const requestIdToTabIdRef = useRef<Map<string, string>>(new Map());
   // 多标签可同时流式，压缩请求必须按 requestId 记，不能用单值（会被别的标签的 done 清掉）。
   const compactRequestIdsRef = useRef<Set<string>>(new Set());
+  const savedCheckpointIdsRef = useRef(new Map<string, string>());
   const handleClearContextRef = useRef<() => void>(() => {});
   const agentSendLockRef = useRef(new Set<string>());
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(
@@ -251,6 +242,18 @@ export default function TerminalAgentDrawer({
 
   useEffect(() => {
     const tracked = new Set(readTerminalAgentRecovery().map((r) => r.tab.id));
+    // A checkpoint is a durable boundary, so save it on commit rather than
+    // waiting for the 500ms stream debounce to become idle.
+    for (const tab of terminalTabs) {
+      const state = tabStates[tab.id];
+      if (!state || !tracked.has(tab.id)) continue;
+      const checkpointId = state.messages.findLast((m) => m.contextCheckpoint)?.contextCheckpoint?.id;
+      if (!checkpointId || savedCheckpointIdsRef.current.get(tab.id) === checkpointId) continue;
+      try {
+        rememberTerminalAgent(tab, state);
+        savedCheckpointIdsRef.current.set(tab.id, checkpointId);
+      } catch { /* Keep the live state and retry after the next commit. */ }
+    }
     const timer = setTimeout(() => {
       for (const tab of terminalTabs) {
         const state = tabStates[tab.id];
@@ -517,7 +520,7 @@ export default function TerminalAgentDrawer({
       const selectedHosts = overrideText === '' ? hostsForContinuation(state.messages) : isResend ? (options?.selectedHosts || []) : (state.selectedHosts || []);
       // Capture the session before awaiting settings; switching tabs must not retarget this request.
       const sessionId = getActiveSessionId();
-      if (!sessionId && !selectedHosts.length) {
+      if (!isCompactRequest && !sessionId && !selectedHosts.length) {
         warning("终端已断开，请重新连接后再发送。");
         return;
       }
@@ -565,16 +568,7 @@ export default function TerminalAgentDrawer({
         }
         if (!apiConfig?.apiHost || !apiConfig.modelName) return;
 
-        const history = trimMessagesForApi(
-          filterForAgentHistory(sendMessages),
-          buildTrimOptions({
-            contextWindow: resolveContextWindow(
-              resolveActiveModelName(agent),
-            ),
-            systemTokens: estimateAgentSystemPromptTokens(agent),
-            draftInput: finalText,
-          }),
-        );
+        const history = filterForAgentHistory(sendMessages);
         const payloadMessages = buildAgentApiMessages(
           history,
           finalText,
@@ -582,7 +576,7 @@ export default function TerminalAgentDrawer({
           undefined,
         );
 
-        if (overrideText === '') payloadMessages.pop();
+        if (overrideText === '' || isCompactRequest) payloadMessages.pop();
         const requestId = genSessionId();
         const topicId = `terminal:${activeTabId}`;
         topicIdRef.current = topicId;
@@ -611,6 +605,7 @@ export default function TerminalAgentDrawer({
 
         try {
           const result = await openAgentStream({
+            compact: isCompactRequest,
             userMessage: text && !isCompactRequest ? tabStatesRef.current[activeTabId]?.messages.slice().reverse().find((m) => m.role === 'user') : undefined,
             selectedSkillIds: invocation.selectedSkillIds,
             selectedHosts,
@@ -959,23 +954,7 @@ export default function TerminalAgentDrawer({
               />
               <ComposerQuickMenu
                 disabled={composerDisabled}
-                actions={[
-                  {
-                    key: "compact",
-                    label: "压缩上下文",
-                    icon: <CompactIcon />,
-                    disabled: activeState.messages.length === 0,
-                    onSelect: handleCompact,
-                  },
-                  {
-                    key: "clear",
-                    label: "清空消息",
-                    icon: <TrashIcon />,
-                    danger: true,
-                    disabled: activeState.messages.length === 0,
-                    onSelect: () => void handleClearMessages(),
-                  },
-                ]}
+                actions={[]}
                 knowledge={{
                   selectedIds: knowledgeIdsByTab[activeTabId] ?? terminalAgent?.knowledgeBaseIds ?? [],
                   onChange: (ids) =>
@@ -995,6 +974,9 @@ export default function TerminalAgentDrawer({
               <ContextUsageMeter
                 usage={contextUsage}
                 disabled={composerDisabled}
+                hasMessages={activeState.messages.length > 0}
+                onCompact={handleCompact}
+                onClearMessages={() => void handleClearMessages()}
               />
               {activeState.streaming && <Button variant="ghost" size="sm" className="chat-send-btn" onClick={() => void handleSend()} disabled={draftDisabled || !activeState.input.trim()} aria-label="发送补充" title="发送补充 (Enter)"><SendIcon /></Button>}
               {activeState.streaming ? (

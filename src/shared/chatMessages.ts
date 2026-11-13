@@ -10,6 +10,7 @@ import type { WebCitation } from "./webCitation";
 export type ChatRole = "user" | "assistant";
 
 export interface ChatMsg {
+  contextCheckpoint?: import('./contextCheckpoint').ContextCheckpoint;
   id: string;
   role: ChatRole;
   content: string;
@@ -78,7 +79,11 @@ export type ApiMessage = {
 export function filterAfterContextClear(messages: ChatMsg[]): ChatMsg[] {
   const clearIndex = messages.findLastIndex((m) => m.type === "clear");
   if (clearIndex === -1) return messages;
-  return messages.slice(clearIndex + 1);
+  const marker = messages[clearIndex];
+  const after = messages.slice(clearIndex + 1);
+  return marker.contextCheckpoint
+    ? [{ ...marker, type: undefined, content: `[上下文摘要]\n${marker.contextCheckpoint.summary}` }, ...after]
+    : after;
 }
 
 
@@ -97,10 +102,10 @@ export function filterForAgentHistory(messages: ChatMsg[]): ChatMsg[] {
 export function findLastAssistantReplyIndex(messages: ChatMsg[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
+    if (m.type === 'clear') break;
     if (
       m.role === "assistant" &&
       m.type !== "tool" &&
-      m.type !== "clear" &&
       !m.error
     ) {
       return i;
@@ -114,7 +119,8 @@ export function findFirstAssistantReplyIndex(messages: ChatMsg[]): number {
   let lastUserIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === "user" && m.type !== "clear" && m.type !== "tool") {
+    if (m.type === 'clear') { lastUserIdx = i; break; }
+    if (m.role === "user" && m.type !== "tool") {
       lastUserIdx = i;
       break;
     }
@@ -352,6 +358,13 @@ export function buildAgentHistoryMessages(messages: ChatMsg[]): ApiMessage[] {
   let i = 0;
   while (i < filtered.length) {
     const m = filtered[i];
+    if (m.contextCheckpoint) {
+      // Later tool groups may attach tool_calls to the last assistant message.
+      // Do not mutate the durable checkpoint while assembling one request.
+      result.push(...m.contextCheckpoint.messages.map((message) => ({ ...message })));
+      i++;
+      continue;
+    }
     if (m.type === "tool") {
       const tools: ChatMsg[] = [];
       while (i < filtered.length && filtered[i].type === "tool") {

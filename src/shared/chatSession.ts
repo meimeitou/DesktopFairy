@@ -2,6 +2,7 @@ import { normalizeSelectedHosts, type SelectedHost } from "./hostSelection";
 import { type ChatMode, normalizeChatMode } from "./chatMode";
 import type { ChatAttachment } from "./chatAttachments";
 import type { ChatMsg } from "./chatMessages";
+import { normalizeContextCheckpoint } from './contextCheckpoint';
 
 export const CHAT_SESSION_VERSION = 2 as const;
 export type ChatSessionVersion = 1 | typeof CHAT_SESSION_VERSION;
@@ -264,6 +265,7 @@ function normalizeChatMessage(raw: unknown): ChatMsg | null {
     selectedSkillIds: Array.isArray(m.selectedSkillIds) ? [...new Set(m.selectedSkillIds.filter((id) => typeof id === "string"))] : undefined,
     reasoning: typeof m.reasoning === "string" ? m.reasoning : undefined,
     type: m.type === "clear" ? "clear" : undefined,
+    contextCheckpoint: m.type === 'clear' ? normalizeContextCheckpoint(m.contextCheckpoint) : undefined,
     error: m.error === true,
     attachments: m.attachments,
     agentInputContent: (typeof m.agentInputContent === 'string' || Array.isArray(m.agentInputContent))
@@ -375,6 +377,22 @@ function sessionJsonSize(session: ChatSession): number {
 
 export function trimSessionForStorage(session: ChatSession): ChatSession {
   let messages = [...session.messages];
+  const checkpointIndex = messages.findLastIndex((m) => m.type === 'clear' && m.contextCheckpoint);
+  if (checkpointIndex >= 0) {
+    // Checkpoint + its unsummarized suffix form one active window. Storage
+    // limits may evict archived display history, never part of that window.
+    const active = messages.slice(checkpointIndex);
+    const next = { ...session, version: CHAT_SESSION_VERSION, messages: active, updatedAt: Date.now() };
+    let remaining = MAX_SESSION_BYTES - sessionJsonSize(next);
+    let start = checkpointIndex;
+    while (start > 0 && messages.length - start < MAX_STORED_MESSAGES) {
+      const size = JSON.stringify(messages[start - 1]).length + 1;
+      if (size > remaining) break;
+      remaining -= size;
+      start--;
+    }
+    return { ...next, messages: messages.slice(start) };
+  }
   if (messages.length > MAX_STORED_MESSAGES) {
     messages = messages.slice(messages.length - MAX_STORED_MESSAGES);
   }

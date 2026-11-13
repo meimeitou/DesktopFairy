@@ -143,6 +143,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
       publishInputs(topicId, sender);
     }
     const streamCtx = {
+      compact: payload.compact === true,
       manager,
       topicId,
       requestId,
@@ -190,6 +191,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
       onDone: (donePayload) => {
         legacySend('chat:stream:done', {
           requestId,
+          isCompact: streamCtx.compact,
           maxTurnsReached: donePayload.maxTurnsReached || undefined,
           tools: bridge.getToolSnapshot(),
           usage: donePayload.usage || undefined,
@@ -201,6 +203,7 @@ function registerAiStreamHandlers(ipcMain, deps) {
         if (errPayload.aborted) {
           legacySend('chat:stream:done', {
             requestId,
+            isCompact: streamCtx.compact,
             aborted: true,
             tools: bridge.getToolSnapshot(),
           });

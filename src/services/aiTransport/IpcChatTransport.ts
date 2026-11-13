@@ -30,6 +30,7 @@ export interface AgentStreamOpenResult {
 }
 
 export interface AgentStreamOpenPayload {
+  compact?: boolean;
   userMessage?: import("../../shared/chatMessages").ChatMsg;
   selectedHosts?: SelectedHost[];
   selectedSkillIds?: string[];
@@ -66,12 +67,14 @@ export function abortTopicStream(topicId: string, requestId?: string): void {
 export interface LegacyStreamHandlers {
   onAgentInput?: (data: import("../../shared/agentInputs").AgentInputEvent) => void;
   onChatChunk?: (data: {
+    checkpoint?: import('../../shared/contextCheckpoint').ContextCheckpoint;
     requestId: string;
     partId?: string;
     delta?: string;
     reasoning?: string;
   }) => void;
   onChatDone?: (data: {
+    isCompact?: boolean;
     requestId: string;
     aborted?: boolean;
     tools?: ToolTerminalState[];

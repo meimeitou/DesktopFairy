@@ -1,5 +1,6 @@
 import { Button, NormalTooltip } from "@cherrystudio/ui";
 import { useEffect, useRef, useState } from "react";
+import { FoldVertical, Trash2 } from "lucide-react";
 
 import type { ContextUsageResult } from "../../shared/contextUsage";
 import "./ContextUsageMeter.css";
@@ -20,9 +21,12 @@ function ringColor(percent: number): string {
 interface Props {
   usage: ContextUsageResult;
   disabled?: boolean;
+  hasMessages?: boolean;
+  onCompact?: () => void;
+  onClearMessages?: () => void;
 }
 
-export default function ContextUsageMeter({ usage, disabled = false }: Props) {
+export default function ContextUsageMeter({ usage, disabled = false, hasMessages = false, onCompact, onClearMessages }: Props) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const percent = Math.min(100, Math.max(0, usage.percent));
@@ -52,7 +56,7 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
     };
   }, [open]);
 
-  const tip = `上下文 ${Math.round(percent)}%`;
+  const tip = `上下文管理 · ${Math.round(percent)}%`;
 
   return (
     <div className="context-usage-meter" ref={containerRef}>
@@ -89,9 +93,9 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
       </NormalTooltip>
 
       {open && (
-        <div className="context-usage-panel" role="dialog" aria-label="上下文用量">
+        <div className="context-usage-panel" role="dialog" aria-label="上下文管理">
           <div className="context-usage-panel-header">
-            <span>上下文用量</span>
+            <span>上下文管理</span>
             <span className="context-usage-estimate">估算</span>
           </div>
           <div className="context-usage-summary">
@@ -135,6 +139,28 @@ export default function ContextUsageMeter({ usage, disabled = false }: Props) {
                 <> · {formatTokenCount(usage.lastServerCompletionTokens)} completion</>
               )}
             </p>
+          )}
+          {(onCompact || onClearMessages) && (
+            <div className="context-usage-actions">
+              {onCompact && (
+                <Button variant="ghost" size="sm" disabled={disabled || !hasMessages} onClick={() => {
+                  setOpen(false);
+                  onCompact();
+                }}>
+                  <FoldVertical size={14} aria-hidden="true" />
+                  压缩上下文
+                </Button>
+              )}
+              {onClearMessages && (
+                <Button variant="destructive" size="sm" disabled={disabled || !hasMessages} onClick={() => {
+                  setOpen(false);
+                  onClearMessages();
+                }}>
+                  <Trash2 size={14} aria-hidden="true" />
+                  清空消息
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -15,10 +15,10 @@ function modelStream(parts) {
 function finish(reason = 'stop') { return { type: 'finish', finishReason: { unified: reason, raw: reason }, usage }; }
 function text(value) { return [ { type: 'text-start', id: 'same-id' }, { type: 'text-delta', id: 'same-id', delta: value }, { type: 'text-end', id: 'same-id' }, finish() ]; }
 function add(q, id) { q.enqueue('t', { message: { id, content: id }, apiMessage: { role: 'user', content: id } }); }
-function run(model, { queue = new AgentInputQueue(), maxTurns = 5, tools = {}, controller = new AbortController() } = {}) {
+function run(model, { queue = new AgentInputQueue(), maxTurns = 5, tools = {}, controller = new AbortController(), compactor } = {}) {
   let sealed = false;
   const result = createSteerableStream({
-    messages: [{ role: 'user', content: 'original' }], maxTurns, signal: controller.signal,
+    messages: [{ role: 'user', content: 'original' }], maxTurns, signal: controller.signal, compactor,
     inputs: {
       consume() { const rows = queue.consume('t', 'r'); return { messages: rows.map((r) => r.apiMessage), items: rows.map((r) => r.message) }; },
       hasPending: () => queue.pending('t').length > 0,
@@ -60,6 +60,72 @@ it('injects all inputs after tools, preserves them across subsequent steps, and 
   expect(chunks.slice(0, injectionIndex).some((c) => c.type === 'tool-output-available')).toBe(true);
   expect(chunks.filter((c) => c.type === 'finish')).toHaveLength(1);
   expect(await result.usagePromise).toEqual({ promptTokens: 30, completionTokens: 9 });
+});
+
+it('auto compacts after a large tool result, emits checkpoint after the result, then continues the same task', async () => {
+  const { createContextCompactor } = require('./contextCompaction.cjs');
+  let executions = 0;
+  const compactor = createContextCompactor({ apiConfig: { modelName: 'gpt-3.5-turbo' },
+    generateSummary: async () => ({ text: '已执行 work，结果存于 /tmp/result。下一步验证。' }) });
+  const model = new MockLanguageModelV3({ doStream: async () => modelStream(model.doStreamCalls.length === 1 ? [
+    { type: 'tool-call', toolCallId: 'large', toolName: 'work', input: '{}' }, finish('tool-calls'),
+  ] : text('continued')) });
+  const result = run(model, { compactor, tools: { work: tool({ inputSchema: z.object({}), execute: async () => { executions++; return 'x'.repeat(100000); } }) } });
+  const chunks = await drain(result);
+  const checkpointIndex = chunks.findIndex((c) => c.type === 'context-checkpoint');
+  expect(checkpointIndex).toBeGreaterThan(chunks.findIndex((c) => c.type === 'tool-output-available'));
+  expect(chunks.slice(checkpointIndex + 1).some((c) => c.type === 'text-delta')).toBe(true);
+  expect(JSON.stringify(model.doStreamCalls[1].prompt)).toContain('已执行 work');
+  expect(JSON.stringify(model.doStreamCalls[1].prompt)).toContain('original');
+  expect(executions).toBe(1);
+});
+
+it('retries only the rejected model step once, retaining completed tool results', async () => {
+  let executions = 0, recoveries = 0;
+  const compactor = {
+    prepare: async () => null, recordUsage() {},
+    compact: async (messages, reason) => { recoveries++; expect(reason).toBe('overflow'); return { messages: [...messages], checkpoint: { id: 'recovery' } }; },
+  };
+  const model = new MockLanguageModelV3({ doStream: async () => {
+    if (model.doStreamCalls.length === 1) return modelStream([
+      { type: 'tool-call', toolCallId: 'side-effect', toolName: 'work', input: '{}' }, finish('tool-calls'),
+    ]);
+    if (model.doStreamCalls.length === 2) throw new Error('maximum context length exceeded');
+    return modelStream(text('recovered'));
+  } });
+  const chunks = await drain(run(model, { compactor, tools: { work: tool({ inputSchema: z.object({}), execute: async () => { executions++; return 'already written'; } }) } }));
+  expect(executions).toBe(1);
+  expect(recoveries).toBe(1);
+  expect(model.doStreamCalls).toHaveLength(3);
+  expect(JSON.stringify(model.doStreamCalls[2].prompt)).toContain('already written');
+  expect(chunks.some((c) => c.type === 'error')).toBe(false);
+  expect(chunks.filter((c) => c.type === 'finish')).toHaveLength(1);
+});
+
+it('reports a second overflow and never loops indefinitely', async () => {
+  let recoveries = 0;
+  const compactor = { prepare: async () => null, recordUsage() {}, compact: async (messages) => {
+    recoveries++; return { messages, checkpoint: { id: 'once' } };
+  } };
+  const model = new MockLanguageModelV3({ doStream: async () => { throw new Error('context_length_exceeded'); } });
+  const chunks = await drain(run(model, { compactor }));
+  expect(recoveries).toBe(1);
+  expect(model.doStreamCalls).toHaveLength(2);
+  expect(chunks.filter((c) => c.type === 'error')).toHaveLength(1);
+});
+
+it('does not retry a partially generated response even when the error mentions context', async () => {
+  let recoveries = 0;
+  const compactor = { prepare: async () => null, recordUsage() {}, compact: async () => { recoveries++; } };
+  const model = new MockLanguageModelV3({ doStream: async () => modelStream([
+    { type: 'text-start', id: 'partial' }, { type: 'text-delta', id: 'partial', delta: 'already visible' },
+    { type: 'error', error: new Error('context_length_exceeded') },
+  ]) });
+  const chunks = await drain(run(model, { compactor }));
+  expect(recoveries).toBe(0);
+  expect(model.doStreamCalls).toHaveLength(1);
+  expect(chunks.some((c) => c.type === 'text-delta')).toBe(true);
+  expect(chunks.some((c) => c.type === 'error')).toBe(true);
 });
 it('continues a natural final answer with pending inputs using the remaining budget and unique text ids', async () => {
   const queue = new AgentInputQueue();

@@ -1,6 +1,6 @@
 import type { SelectedHost } from "../../shared/hostSelection";
 import { Button, NormalTooltip, error, warning } from "@cherrystudio/ui";
-import { Camera, CircleStop, Eraser, FoldVertical, MessageSquare, Send, Trash2, Upload } from "lucide-react";
+import { Camera, CircleStop, Eraser, MessageSquare, Send, Upload } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -402,29 +402,6 @@ function ChatInputBar({
                     },
                   ]
                 : []),
-              ...(onCompact
-                ? [
-                    {
-                      key: "compact",
-                      label: "压缩上下文",
-                      icon: <FoldVertical size={16} />,
-                      disabled: composerDisabled || !hasMessages,
-                      onSelect: onCompact,
-                    },
-                  ]
-                : []),
-              ...(onClearMessages
-                ? [
-                    {
-                      key: "clear",
-                      label: "清空消息",
-                      icon: <Trash2 size={16} />,
-                      disabled: composerDisabled || !hasMessages,
-                      danger: true,
-                      onSelect: onClearMessages,
-                    },
-                  ]
-                : []),
             ]}
             knowledge={
               onKnowledgeBaseIdsChange
@@ -449,6 +426,9 @@ function ChatInputBar({
             <ContextUsageMeter
               usage={contextUsage}
               disabled={composerDisabled}
+              hasMessages={hasMessages}
+              onCompact={onCompact}
+              onClearMessages={onClearMessages}
             />
           )}
           {streaming && <NormalTooltip content="发送补充 (Enter)" side="top">

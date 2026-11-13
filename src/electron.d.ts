@@ -49,11 +49,12 @@ declare global {
       ) => () => void;
       onSwitchModel: (callback: (modelPath: string) => void) => () => void;
       onChatStreamChunk: (
-        callback: (payload: { requestId: string; partId?: string; delta?: string; reasoning?: string }) => void
+        callback: (payload: { requestId: string; partId?: string; delta?: string; reasoning?: string; checkpoint?: import('./shared/contextCheckpoint').ContextCheckpoint }) => void
       ) => () => void;
       onChatStreamDone: (
         callback: (payload: {
           requestId: string;
+          isCompact?: boolean;
           aborted?: boolean;
           maxTurnsReached?: boolean;
           usage?: { promptTokens?: number; completionTokens?: number };

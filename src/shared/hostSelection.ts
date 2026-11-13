@@ -37,9 +37,9 @@ export function selectedHostLabel(host: SelectedHost) {
 }
 
 /** Continue only the latest user task, never targets from an older task or before /clear. */
-export function hostsForContinuation(messages: Array<{ role: string; type?: string; selectedHosts?: SelectedHost[] }>) {
+export function hostsForContinuation(messages: Array<{ role: string; type?: string; selectedHosts?: SelectedHost[]; contextCheckpoint?: unknown }>) {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].type === "clear") return [];
+    if (messages[i].type === "clear") return messages[i].contextCheckpoint ? messages[i].selectedHosts || [] : [];
     if (messages[i].role === "user" && !messages[i].type) return messages[i].selectedHosts || [];
   }
   return [];

@@ -5,13 +5,28 @@ import { finalizeSettings, DEFAULT_SETTINGS } from './settings';
 import environmentPolicy from '../../electron/agentEnvironmentPolicy.json';
 
 const require = createRequire(import.meta.url);
-const { getEnabledOpenAiToolDefinitions } = require('../../electron/agentBuiltinCatalog.cjs');
+const { getEnabledOpenAiToolDefinitions, shouldPromptForTool, resolveToolApprovalMode } = require('../../electron/agentBuiltinCatalog.cjs');
 const { migrateTerminalSettings } = require('../../electron/terminalAssistantMigration.cjs');
 const { resolveAgentEnvironment } = require('../../electron/agentEnvironment.cjs');
 const { executeAgentTool } = require('../../electron/agentTools.cjs');
 const { createChunkBridge } = require('../../electron/ai/chunkBridge.cjs');
 
 describe('environment capabilities', () => {
+  it('normal mode auto-approves web and file lookups consistently in UI and runtime', () => {
+    const agent = createTerminalAssistantDefaults({ chatMode: 'normal' });
+    const ui = getEnabledAgentBuiltinTools(agent, 'local');
+    const main = getEnabledOpenAiToolDefinitions(agent, 'local');
+    const approvalMode = resolveToolApprovalMode(agent);
+    for (const id of ['WebSearch', 'WebFetch', 'read', 'glob', 'grep']) {
+      expect(ui.find((tool) => tool.id === id)?.approval).toBe('auto');
+      expect(main.find((tool: { function: { name: string } }) => tool.function.name === id)?._approval).toBe('auto');
+      expect(shouldPromptForTool(id, approvalMode, {})).toBe(false);
+    }
+    for (const id of ['write', 'edit', 'bash', 'Terminal', 'ssh_write', 'ssh_edit']) {
+      expect(shouldPromptForTool(id, approvalMode, {})).toBe(true);
+    }
+  });
+
   it('upgrades defaults consistently in renderer and main, without changing USER or custom SOUL', () => {
     for (const soul of [environmentPolicy.legacyTerminalSoul, ...environmentPolicy.previousTerminalSouls, '我的自定义 SOUL']) {
       const input = { ...DEFAULT_SETTINGS, agents: [createTerminalAssistantDefaults({ soul, user: '保留我的档案' })] };

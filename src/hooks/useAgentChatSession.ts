@@ -19,6 +19,7 @@ import {
 } from "../services/aiTransport/IpcChatTransport";
 import {
   applyChunks,
+  applyContextCheckpoint,
   applyInputMessages,
   emptyAgentSessionState,
   applyCitations,
@@ -96,6 +97,12 @@ export function useAgentChatSession(options: UseAgentChatSessionOptions) {
     const handleChunk = (event: ChatChunkEvent) => {
       const key = optionsRef.current.resolveKey(event.requestId);
       if (!key) return;
+      if (event.checkpoint) {
+        chunkBuffer.flushRequest(event.requestId);
+        optionsRef.current.patchState(key, (prev) => applyContextCheckpoint(prev, event.checkpoint!));
+        optionsRef.current.events?.onPersist?.(key);
+        return;
+      }
       chunkBuffer.push(
         event.requestId,
         event.partId,
@@ -115,7 +122,7 @@ export function useAgentChatSession(options: UseAgentChatSessionOptions) {
       } = optionsRef.current;
       const key = resolveKey(event.requestId);
       if (!key) return;
-      const isCompact = isCompactRequest(event.requestId);
+      const isCompact = event.isCompact || isCompactRequest(event.requestId);
       settleCompactRequest?.(event.requestId);
       forgetRequest?.(event.requestId);
       const applyTo = (prev: AgentSessionState) =>

@@ -11,6 +11,7 @@ export interface ToolTerminalState {
 }
 
 export interface AiStreamOpenRequest {
+  compact?: boolean;
   topicId: string;
   requestId: string;
   messages: Array<Record<string, unknown>>;
