@@ -147,7 +147,7 @@ export default function SettingsPage({
           <section className="settings-section about-section">
             <div className="about-version-row">
               <span className="about-version-name">DesktopFairy</span>
-              <span className="about-version-tag">v0.3.0</span>
+              <span className="about-version-tag">v0.6.0</span>
             </div>
             <ul className="about-roadmap">
               <li className="done">UI 与基础功能</li>
