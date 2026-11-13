@@ -16,14 +16,16 @@ const browser = new BrowserAutomation({
   describeTopic: (id) => deps.getTopicName?.(id) || '当前会话',
   emit: (state) => {
     if (manifestPath) { clearTimeout(persistTimer); persistTimer = setTimeout(() => saveManifest(state), 250); }
-    const win = chatWindow();
-    if (!win) return;
-    // The renderer may have just died (render-process-gone) even though the
-    // BrowserWindow itself is not yet destroyed. Guard before every send.
-    const frame = win.webContents.mainFrame;
-    if (!frame || frame.isDestroyed()) return;
     try {
-      win.webContents.send('browser:state', state);
+      const win = chatWindow();
+      if (!win) return;
+      // WebContents can be destroyed before its BrowserWindow. Accessing
+      // mainFrame can itself throw during teardown, so guard it inside try.
+      const contents = win.webContents;
+      if (!contents || contents.isDestroyed()) return;
+      const frame = contents.mainFrame;
+      if (!frame || frame.isDestroyed()) return;
+      contents.send('browser:state', state);
       const owned = new Set(state.tabs.filter((tab) => tab.control).map((tab) => `${tab.control.topicId}:${tab.control.requestId}:${tab.id}`));
       for (const key of announcedRequests) if (!owned.has(key)) announcedRequests.delete(key);
       const active = state.tabs.find((tab) => tab.id === state.activeTabId && tab.control);
@@ -31,7 +33,7 @@ const browser = new BrowserAutomation({
         const key = `${active.control.topicId}:${active.control.requestId}:${active.id}`;
         if (!announcedRequests.has(key)) {
           announcedRequests.add(key);
-          win.webContents.send('browser:pane:open', { tabId: active.id, url: active.url });
+          contents.send('browser:pane:open', { tabId: active.id, url: active.url });
         }
       }
     } catch { /* renderer disposed during teardown or navigation */ }

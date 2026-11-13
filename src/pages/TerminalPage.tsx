@@ -50,6 +50,7 @@ import type { ChatTopic } from "../shared/chatSession";
 import { takeTerminalCommands } from "../shared/panelHandoff";
 import { TERMINAL_ASSISTANT_ID, findAgentById } from "../shared/agent";
 import { abortTopicStream } from "../services/aiTransport/IpcChatTransport";
+import { pasteTerminalText } from "../shared/terminalPaste";
 
 const api = window.electronAPI;
 
@@ -110,10 +111,6 @@ function TerminalInstance({
   const isActiveRef = useRef(isActive);
   const pendingOutputRef = useRef("");
   isActiveRef.current = isActive;
-  // Bracketed paste mode tracking — shell emits \x1b[?2004h on prompt entry
-  // and \x1b[?2004l on exit. When active, pasted input must be wrapped in
-  // \x1b[200~...\x1b[201~ so the shell treats it as literal text.
-  const bracketedPasteRef = useRef(false);
   // Use a ref for settings so the main useEffect (terminal creation) doesn't
   // re-run on every settings change. Live updates are applied in a separate
   // useEffect below.
@@ -273,9 +270,6 @@ function TerminalInstance({
 
     const offOutput = onOutput?.(({ sessionId, data }) => {
       if (sessionId !== sessionIdRef.current) return;
-      // Track bracketed paste mode toggles emitted by the shell.
-      if (data.includes("\x1b[?2004h")) bracketedPasteRef.current = true;
-      if (data.includes("\x1b[?2004l")) bracketedPasteRef.current = false;
       if (!isActiveRef.current) {
         pendingOutputRef.current += data;
         return;
@@ -298,19 +292,8 @@ function TerminalInstance({
 
     const pasteFromClipboard = async () => {
       const text = await navigator.clipboard.readText();
-      if (!text) return;
-      const normalized = text.replace(/\r\n|\n/g, "\r");
-      if (
-        normalized.includes("\r") &&
-        !(await requestPasteConfirm(normalized))
-      ) {
-        return;
-      }
-      const pasteData = bracketedPasteRef.current
-        ? `\x1b[200~${normalized}\x1b[201~`
-        : normalized;
       if (sessionIdRef.current) {
-        api.invoke(inputChannel, { sessionId: sessionIdRef.current, data: pasteData });
+        await pasteTerminalText(xterm, text, requestPasteConfirm);
       }
     };
 
