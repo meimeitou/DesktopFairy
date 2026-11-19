@@ -62,11 +62,14 @@ it('injects all inputs after tools, preserves them across subsequent steps, and 
   expect(await result.usagePromise).toEqual({ promptTokens: 30, completionTokens: 9 });
 });
 
-it('auto compacts after a large tool result, emits checkpoint after the result, then continues the same task', async () => {
+it.each([false, true])('auto compacts after a large tool result and continues without replaying tools (truncated first summary: %s)', async (truncateFirst) => {
   const { createContextCompactor } = require('./contextCompaction.cjs');
   let executions = 0;
+  let summaries = 0;
   const compactor = createContextCompactor({ apiConfig: { modelName: 'gpt-3.5-turbo' },
-    generateSummary: async () => ({ text: '已执行 work，结果存于 /tmp/result。下一步验证。' }) });
+    generateSummary: async () => ++summaries === 1 && truncateFirst
+      ? { text: 'partial', finishReason: 'length' }
+      : { text: '已执行 work，结果存于 /tmp/result。下一步验证。', finishReason: 'stop' } });
   const model = new MockLanguageModelV3({ doStream: async () => modelStream(model.doStreamCalls.length === 1 ? [
     { type: 'tool-call', toolCallId: 'large', toolName: 'work', input: '{}' }, finish('tool-calls'),
   ] : text('continued')) });
@@ -78,6 +81,52 @@ it('auto compacts after a large tool result, emits checkpoint after the result, 
   expect(JSON.stringify(model.doStreamCalls[1].prompt)).toContain('已执行 work');
   expect(JSON.stringify(model.doStreamCalls[1].prompt)).toContain('original');
   expect(executions).toBe(1);
+  expect(chunks.some((c) => c.type === 'error')).toBe(false);
+});
+
+it('does not auto compact a small context after calibrating a short request against server usage', async () => {
+  const { createContextCompactor } = require('./contextCompaction.cjs');
+  let summaries = 0;
+  const compactor = createContextCompactor({ apiConfig: { modelName: 'gpt-3.5-turbo' },
+    generateSummary: async () => { summaries++; return { text: 'summary' }; } });
+  const serverUsage = { ...usage, inputTokens: { total: 2000, noCache: 2000, cacheRead: 0, cacheWrite: 0 } };
+  const model = new MockLanguageModelV3({ doStream: async () => modelStream(model.doStreamCalls.length === 1 ? [
+    { type: 'tool-call', toolCallId: 'modest', toolName: 'work', input: '{}' },
+    { ...finish('tool-calls'), usage: serverUsage },
+  ] : text('continued')) });
+  const chunks = await drain(run(model, { compactor, tools: { work: tool({
+    inputSchema: z.object({}), execute: async () => 'x'.repeat(8000),
+  }) } }));
+  // About 4k tokens including the server overhead, far below the 13k input budget.
+  expect(chunks.filter((c) => c.type === 'error')).toEqual([]);
+  expect(chunks.filter((c) => c.type === 'context-checkpoint')).toEqual([]);
+  expect(summaries).toBe(0);
+  expect(model.doStreamCalls).toHaveLength(2);
+  expect(JSON.stringify(model.doStreamCalls[1].prompt)).toContain('x'.repeat(8000));
+});
+
+it('keeps a single research question and four web results below the 128k compaction threshold', async () => {
+  const { createContextCompactor } = require('./contextCompaction.cjs');
+  let summaries = 0;
+  let executions = 0;
+  const compactor = createContextCompactor({
+    apiConfig: { modelName: 'gpt-4o' }, systemPrompt: 's'.repeat(1000),
+    generateSummary: async () => { summaries++; return { text: 'research checkpoint' }; },
+  });
+  const serverUsage = { ...usage, inputTokens: { total: 2000, noCache: 2000, cacheRead: 0, cacheWrite: 0 } };
+  const model = new MockLanguageModelV3({ doStream: async () => modelStream(model.doStreamCalls.length === 1 ? [
+    ...Array.from({ length: 4 }, (_, i) => ({ type: 'tool-call', toolCallId: `web-${i}`, toolName: 'WebFetch', input: '{}' })),
+    { ...finish('tool-calls'), usage: serverUsage },
+  ] : text('research answer')) });
+  const chunks = await drain(run(model, { compactor, tools: { WebFetch: tool({
+    inputSchema: z.object({}), execute: async () => { executions++; return 'web evidence '.repeat(1600); },
+  }) } }));
+  expect(executions).toBe(4);
+  expect(summaries).toBe(0);
+  expect(chunks.filter((c) => c.type === 'context-checkpoint' || c.type === 'error')).toEqual([]);
+  expect(model.doStreamCalls).toHaveLength(2);
+  expect(model.doStreamCalls[1].prompt.filter((m) => m.role === 'tool').flatMap((m) => m.content)).toHaveLength(4);
+  expect(chunks.some((c) => c.type === 'text-delta' && c.delta === 'research answer')).toBe(true);
 });
 
 it('retries only the rejected model step once, retaining completed tool results', async () => {

@@ -31,6 +31,7 @@ import type { SlashCommand } from "../../shared/slashCommands";
 import { isSupportedFileName } from "../../shared/chatMessages";
 import type { ContextUsageResult } from "../../shared/contextUsage";
 import ComposerQuickMenu from "./ComposerQuickMenu";
+import type { ComposerMcpSelection } from "./ComposerMcpSection";
 import ComposerBusyHalo from "./ComposerBusyHalo";
 import "./ChatInputBar.css";
 
@@ -40,6 +41,7 @@ const UNSUPPORTED_FILES_HINT =
   "部分文件格式不支持，仅支持文本文件与常见图片格式。";
 
 interface Props {
+  mcp?: ComposerMcpSelection;
   input: string;
   onInputChange: (value: string) => void;
   attachments: ChatAttachment[];
@@ -114,6 +116,7 @@ function ChatInputBar({
   contextUsage,
   knowledgeBaseIds,
   onKnowledgeBaseIdsChange,
+  mcp,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dockRef = useRef<HTMLDivElement>(null);
@@ -382,6 +385,7 @@ function ChatInputBar({
             />
           )}
           <ComposerQuickMenu
+            mcp={mcp}
             disabled={draftDisabled}
             actions={[
               ...(attachmentsEnabled

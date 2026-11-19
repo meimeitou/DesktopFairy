@@ -2,6 +2,7 @@ import { hostsForContinuation } from "../../shared/hostSelection";
 import { readTerminalAgentRecovery, rememberTerminalAgent, restoreTerminalAgent } from "../../shared/terminalAgentRecovery";
 import type { Tab } from "./terminalSidebarGroups";
 import AgentPendingInputs from "../chat/AgentPendingInputs";
+import { resolveKnowledgeBaseIds } from "../../shared/knowledgeSelection";
 import { useAgentInputs } from "../../hooks/useAgentInputs";
 import AgentInteractionPanel from "../chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../chat/agentTools/interactionState";
@@ -361,6 +362,7 @@ export default function TerminalAgentDrawer({
     if (!terminalAgent) return null;
     const contextWindow = resolveContextWindow(
       resolveActiveModelName(terminalAgent),
+      settings.providers.find(p => p.id === terminalAgent.providerId)?.modelContextWindows?.[terminalAgent.modelName],
     );
     return estimateContextUsage({
       messages: filterForAgentHistory(activeState.messages),
@@ -373,6 +375,7 @@ export default function TerminalAgentDrawer({
     });
   }, [
     terminalAgent,
+    settings.providers,
     activeState.messages,
     activeState.input,
     activeState.lastPromptTokens,
@@ -621,9 +624,7 @@ export default function TerminalAgentDrawer({
             agentConfig,
             terminalSessionId: selectedHosts.length ? undefined : sessionId,
             // 抽屉按标签维护知识库勾选；没勾就回落到智能体自身的配置。
-            knowledgeBaseIds:
-              knowledgeIdsByTabRef.current[activeTabId] ??
-              agent.knowledgeBaseIds,
+            knowledgeBaseIds: resolveKnowledgeBaseIds(knowledgeIdsByTabRef.current[activeTabId], agent.knowledgeBaseIds),
           });
           const rejection = agentStreamRejection(result);
           if (rejection) {
@@ -953,10 +954,11 @@ export default function TerminalAgentDrawer({
                 disabled={composerDisabled}
               />
               <ComposerQuickMenu
-                disabled={composerDisabled}
+                disabled={draftDisabled}
+                mcp={activeTabId && terminalAgent ? { topicId: `terminal:${activeTabId}`, defaultServerIds: terminalAgent.mcpServerIds, streaming: activeState.streaming } : undefined}
                 actions={[]}
                 knowledge={{
-                  selectedIds: knowledgeIdsByTab[activeTabId] ?? terminalAgent?.knowledgeBaseIds ?? [],
+                  selectedIds: resolveKnowledgeBaseIds(knowledgeIdsByTab[activeTabId], terminalAgent?.knowledgeBaseIds),
                   onChange: (ids) =>
                     setKnowledgeIdsByTab((prev) => ({
                       ...prev,

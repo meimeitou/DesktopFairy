@@ -26,10 +26,15 @@ export default function ToolPermissionCard({
   alwaysAllowLabel = "始终允许",
 }: Props) {
   const toolName = msg.toolName || "工具";
-  const command = getToolCommandLine(toolName, msg.toolArgs);
+  // awaiting_approval is emitted by the executor after input is complete.
+  // A parameterless call ({}) has no summary, but is still ready for approval.
+  const ready = msg.toolStatus === "awaiting_approval";
+  const rawArgs = msg.toolArgs?.trim() || "";
+  const noArgs = ready && (!rawArgs || /^\{\s*\}$/.test(rawArgs));
+  const command = noArgs ? "" : getToolCommandLine(toolName, msg.toolArgs);
   const summary = formatToolSummary(toolName, msg.toolArgs);
-  const display = command || summary;
-  const canApprove = !!msg.toolApprovalId && !!display;
+  const display = noArgs ? "此操作无需参数" : command || summary || (ready ? rawArgs : "");
+  const canApprove = !!msg.toolApprovalId && ready;
 
   return (
     <div className="agent-tool-permission" data-tool-approval-id={msg.toolApprovalId ?? undefined}>

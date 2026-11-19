@@ -729,6 +729,7 @@ const setupIPC = () => {
   registerAgentHandlers(ipcMain);
   require('./ai/agentInputRuntime.cjs').configure(path.join(app.getPath('userData'), 'agent_inputs'));
   registerAiStreamHandlers(ipcMain, {
+    getTopicMcpServerIds: (topicId) => topicStore.getMcpServerIds(topicId),
     getWindows: getScreenshotWindows,
     getParentWindow: () => {
       if (chatWindow && !chatWindow.isDestroyed()) return chatWindow;

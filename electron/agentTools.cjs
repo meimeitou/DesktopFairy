@@ -2,6 +2,7 @@ const { shouldPromptForTool, resolveToolApprovalMode } = require('./agentBuiltin
 const { executeBuiltinTool } = require('./agentBuiltinExecutors.cjs');
 const { executeSkillTool, executeSkillsTool } = require('./agentSkillService.cjs');
 const { parseToolArgumentsStrict } = require('./toolCallDisplay.cjs');
+const { randomUUID } = require('node:crypto');
 const {
   makeApprovalId,
   askUserInStream,
@@ -297,7 +298,9 @@ async function confirmSavedSshHost(deps, args, toolCallId) {
     safeSend: deps.safeSend,
     onApprovalWaitStart: deps.onApprovalWaitStart,
     signal: deps.signal,
-    toolCallId,
+    // The completed question must not mark the SSH operation itself done:
+    // its subsequent approval/running events would be rejected as regressions.
+    toolCallId: `askhost_${toolCallId}_${randomUUID()}`,
     questions,
   });
   if (askResult.kind === 'aborted') return { aborted: true };

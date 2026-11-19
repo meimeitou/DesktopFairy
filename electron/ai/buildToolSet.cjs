@@ -1,5 +1,16 @@
 const { tool, jsonSchema } = require('ai');
 const agentTools = require('../agentTools.cjs');
+const { boundToolOutput } = require('./toolResultStore.cjs');
+const READ_TOOL_RESULT_DEFINITION = {
+  type: 'function', function: {
+    name: 'read_tool_result',
+    description: '分页读取之前工具输出中 resultId 对应的完整原文。无需重新执行工具；offset 使用上一次结果的 nextOffset（JS 字符索引）。',
+    parameters: { type: 'object', properties: {
+      resultId: { type: 'string' }, offset: { type: 'integer', minimum: 0 },
+      maxTokens: { type: 'integer', minimum: 1, maximum: 4000 },
+    }, required: ['resultId'] },
+  },
+};
 const {
   registerToolAbort,
   unregisterToolAbort,
@@ -31,6 +42,7 @@ function mergeSignals(streamSignal, toolSignal) {
  */
 function buildToolSet(definitions, deps) {
   const tools = {};
+  const outputBudget = Math.max(256, Math.min(8000, Math.floor((deps.contextWindow || 128000) * 0.05)));
   for (const def of definitions || []) {
     const fn = def?.function;
     if (!fn?.name) continue;
@@ -77,18 +89,32 @@ function buildToolSet(definitions, deps) {
             return { ok: false, error: 'User denied tool execution' };
           }
           const text = result.resultText || '';
+          let output;
           try {
-            return JSON.parse(text);
+            output = JSON.parse(text);
           } catch {
-            return { ok: true, content: text };
+            output = { ok: true, content: text };
           }
+          return deps.resultStore ? await boundToolOutput(output, deps.resultStore, outputBudget) : output;
         } finally {
           unregisterToolAbort(toolCallId);
         }
       },
     });
   }
+  if (deps.resultStore) {
+    tools.read_tool_result = tool({
+      description: READ_TOOL_RESULT_DEFINITION.function.description,
+      inputSchema: jsonSchema(READ_TOOL_RESULT_DEFINITION.function.parameters),
+      execute: async ({ resultId, offset, maxTokens }, { abortSignal }) => {
+        abortSignal?.throwIfAborted();
+        const page = await deps.resultStore.read(resultId, { offset, maxTokens: Math.min(maxTokens || 2000, Math.max(128, outputBudget - 200)) });
+        abortSignal?.throwIfAborted();
+        return page;
+      },
+    });
+  }
   return tools;
 }
 
-module.exports = { buildToolSet, mergeSignals };
+module.exports = { buildToolSet, mergeSignals, READ_TOOL_RESULT_DEFINITION };

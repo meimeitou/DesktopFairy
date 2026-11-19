@@ -1,11 +1,12 @@
 const { ToolLoopAgent, stepCountIs, generateText, streamText: aiStreamText } = require('ai');
 const { resolveProviderModel } = require('./providerModel.cjs');
 const { toCoreMessages } = require('./messages.cjs');
-const { buildToolSet } = require('./buildToolSet.cjs');
+const { buildToolSet, READ_TOOL_RESULT_DEFINITION } = require('./buildToolSet.cjs');
 const { createChunkBridge } = require('./chunkBridge.cjs');
 const { resolveStreamUsage } = require('./extractUsage.cjs');
 const { createSteerableStream } = require('./steerableStream.cjs');
-const { createContextCompactor } = require('./contextCompaction.cjs');
+const { createContextCompactor, resolveContextWindow } = require('./contextCompaction.cjs');
+const { createToolResultStore } = require('./toolResultStore.cjs');
 
 /**
  * AiService.streamText — Cherry Studio pattern (agent-session branch omitted).
@@ -24,7 +25,8 @@ async function streamText({
   compact = false,
 }) {
   const model = resolveProviderModel(apiConfig);
-  const compactor = createContextCompactor({ model, systemPrompt, toolDefinitions, apiConfig, signal, generateSummary: generateText });
+  const resultStore = toolDeps?.resultStore || createToolResultStore({ topicId: toolDeps?.topicId });
+  const compactor = createContextCompactor({ model, systemPrompt, toolDefinitions: [...(toolDefinitions || []), ...(compact ? [] : [READ_TOOL_RESULT_DEFINITION])], apiConfig, signal, generateSummary: generateText, resultStore });
   if (compact) {
     // A dedicated, tool-free call: never run the normal agent loop to summarize.
     const result = await compactor.compact(toCoreMessages(messages), 'manual');
@@ -35,7 +37,7 @@ async function streamText({
       controller.close();
     } }) };
   }
-  const tools = buildToolSet(toolDefinitions, toolDeps);
+  const tools = buildToolSet(toolDefinitions, { ...toolDeps, resultStore, contextWindow: resolveContextWindow(apiConfig.modelName, apiConfig.contextWindow) });
 
   const agentOptions = {
     model,

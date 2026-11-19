@@ -41,7 +41,8 @@ export function estimateTokens(text: string): number {
   return tokens;
 }
 
-export function resolveContextWindow(modelName: string): number {
+export function resolveContextWindow(modelName: string, override?: number): number {
+  if (Number.isSafeInteger(override) && override >= 4096 && override <= 10000000) return override;
   const normalized = modelName.trim().toLowerCase();
   if (!normalized) return DEFAULT_CONTEXT_WINDOW;
   for (const [prefix, window] of CONTEXT_WINDOW_BY_PREFIX) {

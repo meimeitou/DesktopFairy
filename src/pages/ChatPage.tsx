@@ -1,4 +1,5 @@
 import AgentPendingInputs from "../components/chat/AgentPendingInputs";
+import { resolveKnowledgeBaseIds } from "../shared/knowledgeSelection";
 import { useAgentInputs } from "../hooks/useAgentInputs";
 import AgentInteractionPanel from "../components/chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../components/chat/agentTools/interactionState";
@@ -319,6 +320,7 @@ export default function ChatPage({
     if (!topicAgent) { frozenContextUsageRef.current = null; return null; }
     const contextWindow = resolveContextWindow(
       resolveActiveModelName(topicAgent),
+      chatSettings.providers.find(p => p.id === topicAgent.providerId)?.modelContextWindows?.[topicAgent.modelName],
     );
     const systemTokens = estimateAgentSystemPromptTokens(topicAgent);
     const result = estimateContextUsage({
@@ -336,6 +338,7 @@ export default function ChatPage({
   }, [
     streaming,
     topicAgent,
+    chatSettings.providers,
     contextMessages,
     input,
     attachments,
@@ -1026,9 +1029,7 @@ export default function ChatPage({
             ...agent,
             chatMode: topic?.chatMode ?? agent.chatMode,
           },
-          knowledgeBaseIds:
-            topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
-            [],
+          knowledgeBaseIds: resolveKnowledgeBaseIds(topic?.knowledgeBaseIds, agent.knowledgeBaseIds),
         })
           .then((result) => {
             if (!result || typeof result !== "object") return;
@@ -1247,9 +1248,7 @@ export default function ChatPage({
               ...sendAgent,
               chatMode: topic?.chatMode ?? sendAgent.chatMode,
             },
-            knowledgeBaseIds:
-              topicsRef.current.find((t) => t.id === topicId)?.knowledgeBaseIds ||
-              [],
+            knowledgeBaseIds: resolveKnowledgeBaseIds(topic?.knowledgeBaseIds, sendAgent.knowledgeBaseIds),
           });
           const rejection = agentStreamRejection(result);
           if (rejection) {
@@ -1621,6 +1620,7 @@ export default function ChatPage({
           )}
 
         <ChatInputBar key={activeTopicId}
+          mcp={activeTopicId && topicAgent ? { topicId: activeTopicId, defaultServerIds: topicAgent.mcpServerIds, streaming } : undefined}
           awaitingInteraction={getPendingInteractions(messages).length > 0}
           interactionPanel={<AgentInteractionPanel sessionId={`chat:${activeTopicId}`} messages={messages} active={isActive}
             submittingApprovalId={submittingApprovalId} onApprove={handleApproveTool}
@@ -1654,7 +1654,7 @@ export default function ChatPage({
           onSlashCommand={handleSlashCommand}
           contextUsage={contextUsage}
           knowledgeBaseIds={
-            topics.find((t) => t.id === activeTopicId)?.knowledgeBaseIds || []
+            resolveKnowledgeBaseIds(topics.find((t) => t.id === activeTopicId)?.knowledgeBaseIds, topicAgent?.knowledgeBaseIds)
           }
           onKnowledgeBaseIdsChange={(ids) => {
             if (!activeTopicId) return;

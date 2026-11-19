@@ -14,6 +14,8 @@ export interface LlmProvider {
   isSystem: boolean;
   /** Curated chat / completion model ids shown in selectors */
   models: string[];
+  /** Actual context capacity for a provider's custom model ids / gateway aliases. */
+  modelContextWindows?: Record<string, number>;
   /** Enabled embedding models for future knowledge-base use */
   embeddingModels: string[];
   /** Enabled rerank models for future knowledge-base use */
@@ -96,6 +98,9 @@ function normalizeIdList(value: unknown): string[] {
 export function normalizeProvider(provider: LlmProvider): LlmProvider {
   return {
     ...provider,
+    modelContextWindows: Object.fromEntries(Object.entries(provider.modelContextWindows || {}).filter(
+      ([, value]) => Number.isSafeInteger(value) && value >= 4096 && value <= 10000000,
+    )),
     models: normalizeIdList(provider.models),
     embeddingModels: normalizeIdList(provider.embeddingModels),
     rerankModels: normalizeIdList(provider.rerankModels),

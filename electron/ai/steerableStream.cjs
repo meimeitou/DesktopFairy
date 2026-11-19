@@ -35,7 +35,7 @@ function createSteerableStream({ createAgent, messages, maxTurns, signal, inputs
               signal?.throwIfAborted();
               if (replacement) {
                 ledger.splice(0, ledger.length, ...replacement.messages);
-                batch.push({ type: 'context-checkpoint', checkpoint: replacement.checkpoint });
+                if (replacement.checkpoint) batch.push({ type: 'context-checkpoint', checkpoint: replacement.checkpoint });
               }
               return { messages: [...ledger] };
             },
@@ -87,7 +87,7 @@ function createSteerableStream({ createAgent, messages, maxTurns, signal, inputs
             signal?.throwIfAborted();
             if (replacement) {
               ledger.splice(0, ledger.length, ...replacement.messages);
-              controller.enqueue({ type: 'context-checkpoint', checkpoint: replacement.checkpoint });
+              if (replacement.checkpoint) controller.enqueue({ type: 'context-checkpoint', checkpoint: replacement.checkpoint });
               segment++;
               finish = undefined;
               continue;

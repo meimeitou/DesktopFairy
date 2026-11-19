@@ -19,13 +19,13 @@ function truncateMcpTextSummary(text) {
 
 function mcpResultToTextSummary(result) {
   if (!result || typeof result !== 'object') {
-    return truncateMcpTextSummary(String(result ?? ''));
+    return String(result ?? '');
   }
 
   const content = result.content;
   if (!Array.isArray(content)) {
-    if (typeof result === 'string') return truncateMcpTextSummary(result);
-    return truncateMcpTextSummary(JSON.stringify(result, null, 2));
+    if (typeof result === 'string') return result;
+    return JSON.stringify(result, null, 2);
   }
 
   if (content.length === 0) {
@@ -66,7 +66,9 @@ function mcpResultToTextSummary(result) {
   }
 
   const joined = parts.join('\n\n').trim() || JSON.stringify(result, null, 2);
-  return truncateMcpTextSummary(joined);
+  // Keep originals intact here. AI SDK's model-facing budget layer stores the
+  // complete result before returning a bounded preview with a read-back id.
+  return joined;
 }
 
 function hasMultimodalContent(result) {

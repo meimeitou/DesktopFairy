@@ -109,6 +109,12 @@ export default function ChatApp() {
     return () => window.removeEventListener("knowledge:reveal", reveal);
   }, []);
 
+  useEffect(() => {
+    const reveal = () => setView("settings");
+    window.addEventListener("settings:open-mcp", reveal);
+    return () => window.removeEventListener("settings:open-mcp", reveal);
+  }, []);
+
   return (
     <div
       className={`chat-app${isMac ? " chat-app-mac" : " chat-app-frameless"}${isFullscreen ? " chat-app-fullscreen" : ""}`}

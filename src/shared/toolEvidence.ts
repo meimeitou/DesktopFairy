@@ -95,7 +95,7 @@ const LEGACY_TOOL_ID_MAP: Record<string, string> = {
   Grep: "grep",
 };
 
-export function formatToolEvidenceForApi(msg: ChatMsg): string {
+function formatToolEvidence(msg: ChatMsg): string {
   const name = msg.toolName || "tool";
   const normalized = LEGACY_TOOL_ID_MAP[name] || name;
   const status = msg.toolStatus || "done";
@@ -146,6 +146,14 @@ export function formatToolEvidenceForApi(msg: ChatMsg): string {
 
   const fallback = msg.toolResultPreview || msg.toolMessage || "";
   return `[${name}] (${status}) ${truncate(String(fallback), API_FALLBACK_MAX)}`.trim();
+}
+
+export function formatToolEvidenceForApi(msg: ChatMsg): string {
+  const evidence = formatToolEvidence(msg);
+  // The stored preview may be truncated JSON. Keep read-back ids even when
+  // content-specific summaries or fallback snippets omit them.
+  const ids = [...new Set(msg.toolResultPreview?.match(/context-[a-f0-9]{64}/g) || [])];
+  return ids.length ? `${evidence}\n完整原文可用 read_tool_result 补读，resultId: ${ids.join(', ')}` : evidence;
 }
 
 export interface ToolLogEntry {

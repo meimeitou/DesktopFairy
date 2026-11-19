@@ -87,6 +87,8 @@ function SettingsSidebar({
   );
 }
 
+import { consumeMcpSettingsRequest } from "../shared/mcpSettingsNavigation";
+
 export default function SettingsPage({
   onClose,
   standalone = false,
@@ -94,7 +96,13 @@ export default function SettingsPage({
 }: Props) {
   const settings = useSettings();
   const persistError = useSettingsPersistError();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => consumeMcpSettingsRequest() ? "tools" : "model");
+
+  useEffect(() => {
+    const reveal = () => { consumeMcpSettingsRequest(); setActiveTab("tools"); };
+    window.addEventListener("settings:open-mcp", reveal);
+    return () => window.removeEventListener("settings:open-mcp", reveal);
+  }, []);
 
   useEffect(() => {
     (async () => {

@@ -27,6 +27,7 @@ import {
   type CuratedModelKind,
 } from "../../shared/modelKind";
 import "./ProviderSettingsSection.css";
+import { resolveContextWindow } from "../../shared/contextUsage";
 
 const api = window.electronAPI;
 
@@ -304,6 +305,32 @@ export default function ProviderSettingsSection({ settings, onChange }: Props) {
                 </Button>
               </div>
             </div>
+          )}
+          {selected.models.length > 0 && (
+            <details className="field">
+              <summary>上下文窗口</summary>
+              <p className="provider-endpoint">按服务商实际支持的 tokens 填写。留空使用默认估算；自定义模型别名可在这里修正。</p>
+              {selected.models.map(model => (
+                <div className="field" key={model}>
+                  <label htmlFor={`context-${selected.id}-${model}`}>{model}</label>
+                  <Input
+                    key={`${selected.id}:${model}:${selected.modelContextWindows?.[model] ?? ''}`}
+                    id={`context-${selected.id}-${model}`}
+                    type="number" min={4096} max={10000000} step={1}
+                    defaultValue={selected.modelContextWindows?.[model] ?? ''}
+                    placeholder={`默认 ${resolveContextWindow(model).toLocaleString()} tokens`}
+                    onBlur={event => {
+                      const input = event.currentTarget;
+                      if (!input.checkValidity()) { input.reportValidity(); return; }
+                      const windows = { ...selected.modelContextWindows };
+                      if (input.value === '') delete windows[model];
+                      else windows[model] = input.valueAsNumber;
+                      patchProvider(selected.id, { modelContextWindows: windows });
+                    }}
+                  />
+                </div>
+              ))}
+            </details>
           )}
 
           {!providerNeedsApiKey(selected) && (

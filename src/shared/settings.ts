@@ -723,6 +723,7 @@ export function getAgentApiConfig(
   providerType: LlmProvider["type"];
   modelName: string;
   providerId: string;
+  contextWindow?: number;
 } | null {
   if (getAgentBackendGuidance(settings, agent)) return null;
   const provider = getAgentProvider(settings, agent);
@@ -735,6 +736,7 @@ export function getAgentApiConfig(
     providerType: provider.type,
     modelName,
     providerId: provider.id,
+    contextWindow: provider.modelContextWindows?.[modelName],
   };
 }
 
@@ -747,6 +749,7 @@ export function getChatApiConfig(
   providerType: LlmProvider["type"];
   modelName: string;
   providerId: string;
+  contextWindow?: number;
 } | null {
   return getAgentApiConfig(settings, agent);
 }

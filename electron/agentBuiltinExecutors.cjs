@@ -58,7 +58,8 @@ const snapshots = require('./agentSnapshotStore.cjs');
 const { applyHashlinePatch, applyHashlinePatchAsync } = require('./hashlinePatch.cjs');
 
 const execFileAsync = promisify(execFile);
-const MAX_FETCH_BYTES = 512 * 1024;
+const { createToolResultStore } = require('./ai/toolResultStore.cjs');
+const { webResultPreview, readWebResponse } = require('./webContent.cjs');
 
 function broadcastSettingsUpdated(settings, getWindows) {
   let revision;
@@ -854,7 +855,7 @@ async function toolGrep(args, signal) {
   const note = missing.length > 0 ? output + `\n\nSkipped missing paths: ${missing.join(', ')}` : output;
   return ok({ output: note, matchCount: totalMatchCount, fileCount: pageFiles.length });
 }
-async function toolWebFetch(args) {
+async function toolWebFetch(args, deps = {}) {
   const urlList = [];
   if (Array.isArray(args?.urls)) {
     for (const u of args.urls) {
@@ -868,22 +869,21 @@ async function toolWebFetch(args) {
   if (urlList.length > 20) return fail('Fetch at most 20 URLs per call');
 
   const results = [];
+  const store = deps.resultStore || createToolResultStore({ topicId: deps.topicId });
+  const perPageTokens = Math.min(2000, Math.floor(3000 / urlList.length));
   for (let i = 0; i < urlList.length; i++) {
+    deps.signal?.throwIfAborted();
     const url = urlList[i];
     try {
       const res = await fetch(url, {
         headers: { 'User-Agent': 'DesktopFairy/0.2' },
-        signal: AbortSignal.timeout(30_000),
+        signal: deps.signal ? AbortSignal.any([deps.signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       });
-      const text = await res.text();
-      const content = text.slice(0, MAX_FETCH_BYTES);
-      results.push({
-        id: i + 1,
-        title: url,
-        url,
-        content,
-      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await readWebResponse(res);
+      results.push({ id: i + 1, ...await webResultPreview({ text, url, contentType: res.headers.get('content-type'), store, maxTokens: perPageTokens }) });
     } catch (e) {
+      deps.signal?.throwIfAborted();
       results.push({
         id: i + 1,
         title: url,
@@ -892,7 +892,9 @@ async function toolWebFetch(args) {
       });
     }
   }
+  const resultId = await store.put(JSON.stringify({ results }));
   return ok({
+    resultId,
     results,
     prompt: String(args?.prompt || ''),
   });
@@ -1045,7 +1047,7 @@ async function webSearchZhipu(query, config) {
   }));
 }
 
-async function toolWebSearch(args, config) {
+async function toolWebSearch(args, config, deps = {}) {
   const query = String(args?.query || "").trim();
   if (!query) return fail("query required");
   const cfg = config || { provider: "duckduckgo" };
@@ -1072,13 +1074,18 @@ async function toolWebSearch(args, config) {
         results = await webSearchDuckDuckGo(query, cfg);
         break;
     }
+    const store = deps.resultStore || createToolResultStore({ topicId: deps.topicId });
+    const original = { query, results: results.map((item, index) => ({ id: index + 1, ...item })) };
+    const resultId = await store.put(JSON.stringify(original));
+    const { textPrefix } = require('./ai/contextTokens.cjs');
     return ok({
+      resultId,
       query,
       results: results.map((item, index) => ({
         id: index + 1,
         title: item.title,
         url: item.url,
-        content: item.content,
+        content: textPrefix(String(item.content || ''), 600),
       })),
     });
   } catch (e) {
@@ -1547,9 +1554,9 @@ async function executeBuiltinTool(toolName, args, deps = {}) {
     case 'grep':
       return toolGrep(args, deps.signal);
     case 'WebFetch':
-      return toolWebFetch(args);
+      return toolWebFetch(args, deps);
     case 'WebSearch':
-      return toolWebSearch(args, deps.webSearchConfig);
+      return toolWebSearch(args, deps.webSearchConfig, deps);
     case 'ssh_exec':
     case 'ssh_hosts':
     case 'ssh_read':

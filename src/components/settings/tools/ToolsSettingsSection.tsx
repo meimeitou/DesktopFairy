@@ -1,6 +1,6 @@
 import { Button } from "@cherrystudio/ui";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppSettings } from "../../../shared/settings";
 import McpServersPanel from "./mcp/McpServersPanel";
 import SkillsPanel from "./skills/SkillsPanel";
@@ -18,6 +18,11 @@ interface Props {
 
 export default function ToolsSettingsSection({ settings }: Props) {
   const [section, setSection] = useState<ToolsSection>("mcp");
+  useEffect(() => {
+    const reveal = () => setSection("mcp");
+    window.addEventListener("settings:open-mcp", reveal);
+    return () => window.removeEventListener("settings:open-mcp", reveal);
+  }, []);
 
   return (
     <div className="agent-settings">

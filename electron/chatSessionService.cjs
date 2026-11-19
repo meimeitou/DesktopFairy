@@ -512,11 +512,12 @@ function registerChatSessionHandlers({
           : PERSONAL_ASSISTANT_ID,
       chatMode: CHAT_MODES.has(sourceTopic.chatMode) ? sourceTopic.chatMode : 'normal',
     };
-    if (Array.isArray(sourceTopic.knowledgeBaseIds) && sourceTopic.knowledgeBaseIds.length > 0) {
+    if (Array.isArray(sourceTopic.knowledgeBaseIds)) {
       newTopic.knowledgeBaseIds = sourceTopic.knowledgeBaseIds.filter(
         (id) => typeof id === 'string' && id,
       );
     }
+    if (Array.isArray(sourceTopic.mcpServerIds)) newTopic.mcpServerIds = [...sourceTopic.mcpServerIds];
     if (sourceTopic.host && typeof sourceTopic.host === 'object') {
       // host 授权指纹对同一 host 仍有效，浅拷贝继承；fork 不重新校验 host 存活。
       newTopic.host = { ...sourceTopic.host };
@@ -529,6 +530,26 @@ function registerChatSessionHandlers({
     // （源话题删除后 fork 仍可查看完整结果）。单文件失败仅 warn 跳过，不中断 fork。
     if (toolResultsDir) {
       const srcPrefix = `${sourceTopicId}/`;
+      // Content-addressed resources may be cited inside checkpoints or textual
+      // evidence. Their ids stay stable in a fork, scoped to its own directory.
+      const resourceIds = new Set(JSON.stringify(forkMessages).match(/context-[a-f0-9]{64}/g) || []);
+      if (resourceIds.size) {
+        const destDir = path.join(toolResultsDir(), newTopic.id);
+        ensureDirLocal(destDir);
+        // A batch resource can itself reference page resources. Follow only
+        // reachable ids, preserving the fork's boundary rather than later work.
+        const srcDir = path.join(toolResultsDir(), sourceTopicId);
+        const pending = [...resourceIds];
+        for (let i = 0; i < pending.length; i++) {
+          const filename = `${pending[i]}.json`;
+          const sourceFile = path.join(srcDir, filename);
+          if (!fs.existsSync(sourceFile)) continue;
+          fs.copyFileSync(sourceFile, path.join(destDir, filename));
+          for (const id of fs.readFileSync(sourceFile, 'utf8').match(/context-[a-f0-9]{64}/g) || []) {
+            if (!resourceIds.has(id)) { resourceIds.add(id); pending.push(id); }
+          }
+        }
+      }
       for (const m of forkMessages) {
         if (!m || m.type !== 'tool' || typeof m.toolResultRef !== 'string') continue;
         if (!m.toolResultRef.startsWith(srcPrefix)) continue;
@@ -651,8 +672,22 @@ function registerChatSessionHandlers({
     writeJson(topicsIndexPath(), store);
   });
 
-  ipcMain.handle('chat:topics:updateMeta', async (_event, { topicId, chatMode, knowledgeBaseIds }) => {
+  ipcMain.handle('chat:topics:updateMeta', async (_event, { topicId, chatMode, knowledgeBaseIds, mcpServerIds }) => {
     const store = readJsonOrEmpty(topicsIndexPath(), emptyTopicsStore);
+    if (mcpServerIds !== undefined && mcpServerIds !== null &&
+        (!Array.isArray(mcpServerIds) || mcpServerIds.some((id) => typeof id !== 'string' || !id.trim()))) {
+      return { ok: false, error: 'Invalid mcpServerIds' };
+    }
+    // Drawer streams intentionally keep their terminal:<tabId> identity.
+    // Store their preferences separately, without adding phantom sidebar topics.
+    if (/^terminal:[\w-]{1,128}$/.test(topicId) && mcpServerIds !== undefined) {
+      const selections = { ...(store.terminalMcpServerIds || {}) };
+      if (mcpServerIds === null) delete selections[topicId];
+      else selections[topicId] = [...new Set(mcpServerIds)];
+      store.terminalMcpServerIds = selections;
+      const result = writeJson(topicsIndexPath(), store);
+      return result.ok ? { ok: true, mcpServerIds: selections[topicId] ?? null } : { ok: false, error: 'Failed to save MCP selection' };
+    }
     const topic = store.topics.find((t) => t.id === topicId);
     if (!topic) return { ok: false, error: 'Topic not found' };
     // `host` state (grants/cwd) is intentionally NOT updatable from the renderer:
@@ -668,9 +703,13 @@ function registerChatSessionHandlers({
         ? knowledgeBaseIds.filter((id) => typeof id === 'string' && id)
         : [];
     }
+    if (mcpServerIds !== undefined) {
+      if (mcpServerIds === null) delete topic.mcpServerIds;
+      else topic.mcpServerIds = [...new Set(mcpServerIds)];
+    }
     topic.updatedAt = Date.now();
-    writeJson(topicsIndexPath(), store);
-    return { ok: true, topic };
+    const result = writeJson(topicsIndexPath(), store);
+    return result.ok ? { ok: true, topic, mcpServerIds: topic.mcpServerIds ?? null } : { ok: false, error: 'Failed to save topic' };
   });
 
   ipcMain.handle('chat:topics:setActive', async (_event, topicIdOrPayload) => {
@@ -718,6 +757,13 @@ function registerChatSessionHandlers({
     getTopic(topicId) {
       const store = topicStore.readStore();
       return store.topics.find((t) => t.id === topicId) || null;
+    },
+    getMcpServerIds(topicId) {
+      const store = topicStore.readStore();
+      const ids = String(topicId).startsWith('terminal:')
+        ? store.terminalMcpServerIds?.[topicId]
+        : store.topics.find((t) => t.id === topicId)?.mcpServerIds;
+      return Array.isArray(ids) ? ids.filter((id) => typeof id === 'string' && id.trim()) : undefined;
     },
     updateHostState(topicId, updater) {
       const store = topicStore.readStore();

@@ -5,6 +5,7 @@ import type { SelectedHost } from "../../shared/hostSelection";
 import type { AgentConfig } from "../../shared/agent";
 import type { ToolTerminalState } from "../../shared/ai/stream";
 import type { ProviderType } from "../../shared/providers";
+import { mcpSelectionStore } from "../mcpSelectionStore";
 
 const api = window.electronAPI;
 
@@ -49,6 +50,7 @@ export interface AgentStreamOpenPayload {
 }
 
 export async function openAgentStream(payload: AgentStreamOpenPayload) {
+  await mcpSelectionStore.flush(payload.topicId);
   return api.invoke("ai:stream_open", payload) as Promise<AgentStreamOpenResult>;
 }
 

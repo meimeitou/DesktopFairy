@@ -75,6 +75,7 @@ function getAgentApiConfig(settings, agent) {
     providerType: provider.type,
     modelName,
     providerId: provider.id,
+    contextWindow: provider.modelContextWindows?.[modelName],
   };
 }
 

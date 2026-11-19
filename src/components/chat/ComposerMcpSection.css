@@ -1,0 +1,20 @@
+.composer-mcp { flex-basis: 100%; min-width: 0; }
+.composer-mcp-heading { width: 100%; }
+.composer-mcp-heading > svg:last-child { margin-left: auto; }
+.composer-mcp-content { display: flex; flex-direction: column; gap: 8px; padding: 4px 8px 8px; }
+.composer-mcp-description { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; font-size: 12px; color: var(--bone-500); }
+.composer-mcp-list { max-height: 220px; overflow-y: auto; }
+.composer-mcp-server { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; }
+.composer-mcp-server:hover { background: var(--accent); }
+.composer-mcp-server:has(input:focus-visible) { outline: 2px solid var(--persimmon); outline-offset: -2px; }
+.composer-mcp-server:has(input:disabled) { cursor: default; color: var(--bone-500); }
+.composer-mcp-server input { accent-color: var(--persimmon); flex-shrink: 0; }
+.composer-mcp-name { min-width: 0; overflow-wrap: anywhere; }
+.composer-mcp-status { margin-left: auto; flex-shrink: 0; font-size: 12px; color: var(--bone-500); }
+.composer-mcp-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.composer-mcp-content p { margin: 4px 8px; font-size: 14px; color: var(--bone-500); }
+.composer-mcp-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--rust-bright); }
+@media (max-width: 480px) {
+  .composer-mcp-server { flex-wrap: wrap; }
+  .composer-mcp-status { flex-basis: calc(100% - 22px); margin-left: 22px; }
+}

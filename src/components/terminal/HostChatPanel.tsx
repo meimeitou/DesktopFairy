@@ -1,4 +1,5 @@
 import AgentPendingInputs from "../chat/AgentPendingInputs";
+import { resolveKnowledgeBaseIds } from "../../shared/knowledgeSelection";
 import { useAgentInputs } from "../../hooks/useAgentInputs";
 import AgentInteractionPanel from "../chat/AgentInteractionPanel";
 import { getPendingInteractions } from "../chat/agentTools/interactionState";
@@ -150,15 +151,15 @@ export default function HostChatPanel({
     () => [...getBuiltinCommands(), ...buildHostCommands(settings.sshHosts), ...buildSkillCommands(skills, findAgentById(settings.agents, topic.agentId)?.enabledSkillIds)],
     [skills, settings.agents, settings.sshHosts, topic.agentId],
   );
-  const effectiveKbIds = useMemo(
-    () => kbIdsOverride ?? (topic.knowledgeBaseIds || []),
-    [kbIdsOverride, topic.knowledgeBaseIds],
-  );
   const { messages, input, streaming, sessionReady } = state;
   chatMessagesRef.current = messages;
 
   // 终端页的本机与主机对话统一使用终端助手，以迁移后的 topic 为准。
   const agent = findAgentById(settings.agents, topic.agentId) ?? null;
+  const effectiveKbIds = useMemo(
+    () => kbIdsOverride ?? resolveKnowledgeBaseIds(topic.knowledgeBaseIds, agent?.knowledgeBaseIds),
+    [kbIdsOverride, topic.knowledgeBaseIds, agent?.knowledgeBaseIds],
+  );
 
   const contextUsage = useMemo(() => {
     if (!agent) return null;
@@ -166,13 +167,14 @@ export default function HostChatPanel({
       messages: filterForAgentHistory(messages),
       input,
       systemTokens: estimateAgentSystemPromptTokens(agent),
-      contextWindow: resolveContextWindow(resolveActiveModelName(agent)),
+      contextWindow: resolveContextWindow(resolveActiveModelName(agent), settings.providers.find(p => p.id === agent.providerId)?.modelContextWindows?.[agent.modelName]),
       lastPromptTokens: state.lastPromptTokens,
       lastCompletionTokens: state.lastCompletionTokens,
       lastUsageMessageCount: state.lastUsageMessageCount,
     });
   }, [
     agent,
+    settings.providers,
     messages,
     input,
     state.lastPromptTokens,
@@ -298,7 +300,7 @@ export default function HostChatPanel({
   // topic prop 被外部刷新（如 topics 重载）且回灌值与本地 override 一致时，
   // 丢弃 override，回到跟随 prop；不一致时保留本地最新选择。
   useEffect(() => {
-    const propIds = topic.knowledgeBaseIds || [];
+    const propIds = resolveKnowledgeBaseIds(topic.knowledgeBaseIds, agent?.knowledgeBaseIds);
     if (
       kbIdsOverride &&
       kbIdsOverride.length === propIds.length &&
@@ -306,7 +308,7 @@ export default function HostChatPanel({
     ) {
       setKbIdsOverride(null);
     }
-  }, [topic.knowledgeBaseIds, kbIdsOverride]);
+  }, [topic.knowledgeBaseIds, agent?.knowledgeBaseIds, kbIdsOverride]);
   const handleChatModeChange = useCallback(
     (mode: ChatMode) => {
       propChatModeRef.current = mode;
@@ -863,6 +865,7 @@ export default function HostChatPanel({
           />
         )}
         <ChatInputBar
+        mcp={agent ? { topicId, defaultServerIds: agent.mcpServerIds, streaming } : undefined}
           awaitingInteraction={getPendingInteractions(messages).length > 0}
           interactionPanel={<AgentInteractionPanel sessionId={`host:${topicId}`} messages={messages} active={isActive}
             submittingApprovalId={submittingApprovalId} onApprove={handleApproveTool}

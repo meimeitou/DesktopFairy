@@ -1,5 +1,5 @@
 import { Button } from "@cherrystudio/ui";
-import { Plus } from "lucide-react";
+import { BookOpen, ChevronRight, Plus } from "lucide-react";
 import {
   useEffect,
   useRef,
@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import KnowledgeBaseList from "../knowledge/KnowledgeBaseList";
+import ComposerMcpSection, { type ComposerMcpSelection } from "./ComposerMcpSection";
 import "./ComposerQuickMenu.css";
 
 export interface ComposerQuickAction {
@@ -21,6 +22,7 @@ export interface ComposerQuickAction {
 
 interface Props {
   actions: ComposerQuickAction[];
+  mcp?: ComposerMcpSelection;
   /** 传入则菜单底部追加「知识库」可勾选列表 */
   knowledge?: {
     selectedIds: string[];
@@ -37,6 +39,7 @@ interface Props {
 export default function ComposerQuickMenu({
   actions,
   knowledge,
+  mcp,
   disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -67,7 +70,7 @@ export default function ComposerQuickMenu({
 
   const count = knowledge?.selectedIds.length ?? 0;
   // 没有可收进菜单的操作、也没有知识库 → 不渲染触发按钮
-  if (actions.length === 0 && !knowledge) return null;
+  if (actions.length === 0 && !knowledge && !mcp) return null;
 
   return (
     <div className="composer-quick" ref={rootRef}>
@@ -104,16 +107,22 @@ export default function ComposerQuickMenu({
                 {action.label}
               </button>
             ))}
+            {mcp && <ComposerMcpSection key={mcp.topicId} {...mcp} onOpenSettings={() => setOpen(false)} />}
             {knowledge && (
-              <>
-                {actions.length > 0 && <div className="composer-quick-sep" />}
-                <div className="composer-quick-label">知识库</div>
-                <KnowledgeBaseList
-                  selectedIds={knowledge.selectedIds}
-                  onChange={knowledge.onChange}
-                  disabled={disabled}
-                />
-              </>
+              <details className="composer-quick-group">
+                <summary className="composer-quick-row composer-quick-group-heading">
+                  <BookOpen size={16} aria-hidden />
+                  <span>知识库 · 已选 {count}</span>
+                  <ChevronRight size={14} aria-hidden />
+                </summary>
+                <div className="composer-quick-group-content">
+                  <KnowledgeBaseList
+                    selectedIds={knowledge.selectedIds}
+                    onChange={knowledge.onChange}
+                    disabled={disabled}
+                  />
+                </div>
+              </details>
             )}
           </div>
         </div>

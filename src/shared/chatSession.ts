@@ -52,6 +52,8 @@ export interface ChatTopic {
   /** Session-level conversation mode. */
   chatMode: ChatMode;
   knowledgeBaseIds?: string[];
+  /** Missing follows the agent; [] explicitly disables MCP for this topic. */
+  mcpServerIds?: string[];
   /** Present only for host conversations (Terminal page host-chat view). */
   host?: HostTopicState;
   /**
@@ -67,6 +69,8 @@ export interface ChatTopicsStore {
   /** Active topic within the host-chat view (independent of activeId). */
   activeHostId: string | null;
   topics: ChatTopic[];
+  /** Drawer streams have terminal:<tabId> keys, not sidebar topics. */
+  terminalMcpServerIds?: Record<string, string[]>;
 }
 
 function normalizeHostTopicState(raw: unknown): HostTopicState | undefined {
@@ -127,6 +131,9 @@ export function normalizeChatTopicsStore(
               ? (t as ChatTopic).agentId
               : defaultAgentId,
           chatMode: normalizeChatMode((t as ChatTopic).chatMode),
+          mcpServerIds: Array.isArray(t.mcpServerIds)
+            ? [...new Set(t.mcpServerIds.filter((id) => typeof id === "string" && id.trim()))]
+            : undefined,
           knowledgeBaseIds: Array.isArray(t.knowledgeBaseIds)
             ? t.knowledgeBaseIds.filter(
                 (id): id is string => typeof id === "string",
@@ -152,6 +159,9 @@ export function normalizeChatTopicsStore(
         ? data.activeHostId
         : null,
     topics,
+    terminalMcpServerIds: Object.fromEntries(Object.entries(data.terminalMcpServerIds || {})
+      .filter(([key, ids]) => /^terminal:[\w-]{1,128}$/.test(key) && Array.isArray(ids))
+      .map(([key, ids]) => [key, [...new Set(ids.filter((id) => typeof id === "string" && id.trim()))]])),
   };
 }
 

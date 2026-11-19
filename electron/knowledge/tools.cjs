@@ -5,7 +5,7 @@ function knowledgeToolDefinitions() {
   const baseId = { type: 'string', description: 'Vault id returned by kb_search' };
   const filePath = { type: 'string', description: 'Vault-relative Markdown file path' };
   return [
-    def('kb_search', 'Search selected local Obsidian vaults by keywords (Chinese supported). Returns current source snippets and line numbers. Try alternative keywords when no matches. Never assume this is semantic search.', {
+    def('kb_search', 'Proactively search selected local knowledge vaults before answering knowledge-based questions about projects, technical decisions, operations, internal conventions or user notes, even when the user does not explicitly ask for a knowledge-base search. Prefer retrieved evidence over model memory or web search. Search by keywords (Chinese supported); returns current source snippets and line numbers. Read relevant matches with kb_read before citing them. Try alternative keywords when no matches. Never assume this is semantic search.', {
       query: { type: 'string' }, baseIds: { type: 'array', items: { type: 'string' }, description: 'Optional subset of selected vault ids' }, limit: { type: 'integer', minimum: 1, maximum: 50 },
     }, ['query']),
     def('kb_read', 'Read current Markdown source in a selected vault. Returns line numbers and nextLine for continuation. Cite vault name, relative path and lines in your answer. Vaults are read-only.', {

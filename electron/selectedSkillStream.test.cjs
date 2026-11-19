@@ -12,6 +12,8 @@ let starts;
 let configs;
 let snapshot;
 let restore;
+let mcpOverride;
+let activeMcpIds;
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-stream-'));
   handlers = {};
@@ -19,7 +21,9 @@ beforeEach(() => {
   starts = [];
   configs = [];
   snapshot = { sshHosts: [] };
-  const diskConfig = { id: 'agent', enabledSkillIds: ['automatic'], maxTurns: 4 };
+  mcpOverride = undefined;
+  activeMcpIds = new Set(['default', 'dns', 'logs']);
+  const diskConfig = { id: 'agent', enabledSkillIds: ['automatic'], mcpServerIds: ['default'], maxTurns: 4 };
   const originalLoad = Module._load;
   const entry = require.resolve('./aiStreamService.cjs');
   const oldEntry = require.cache[entry];
@@ -36,6 +40,7 @@ beforeEach(() => {
       return { ok: true, agentConfig: diskConfig, apiConfig: { apiHost: 'https://example.com', modelName: 'test' } };
     } },
     './knowledge/vaultService.cjs': { validIds: () => [] },
+    './mcpServerService.cjs': { getServersByIds: (ids) => ids.filter((id) => activeMcpIds.has(id)).map((id) => ({ id })) },
   };
   Module._load = function(request, parent, isMain) {
     if (parent?.filename === entry && stubs[request]) return stubs[request];
@@ -45,7 +50,9 @@ beforeEach(() => {
   delete require.cache[entry];
   try {
     const { registerAiStreamHandlers } = require(entry);
-    registerAiStreamHandlers({ handle: (channel, fn) => { handlers[channel] = fn; } }, { getWindows: () => [] });
+    registerAiStreamHandlers({ handle: (channel, fn) => { handlers[channel] = fn; } }, {
+      getWindows: () => [], getTopicMcpServerIds: () => mcpOverride,
+    });
   } catch (e) {
     Module._load = originalLoad;
     throw e;
@@ -64,6 +71,23 @@ function send(ids, selectedHosts, topicId = "terminal:preview") {
     selectedSkillsPrompt: 'Renderer content must be ignored',
   });
 }
+it('snapshots topic MCP choices only for new requests, preserving defaults and explicit empty selection', async () => {
+  await send();
+  expect(contexts[0].agentConfig.mcpServerIds).toEqual(['default']);
+  mcpOverride = ['dns', 'logs', 'deleted'];
+  activeMcpIds.delete('logs');
+  await send();
+  expect(contexts[1].agentConfig.mcpServerIds).toEqual(['dns']);
+  expect(contexts[0].agentConfig.mcpServerIds).toEqual(['default']);
+  mcpOverride.splice(0, mcpOverride.length);
+  await send();
+  expect(contexts[2].agentConfig.mcpServerIds).toEqual([]);
+  expect(contexts[1].agentConfig.mcpServerIds).toEqual(['dns']);
+  expect(configs[0].mcpServerIds).toEqual(['default']);
+  mcpOverride = undefined;
+  await send();
+  expect(contexts[3].agentConfig.mcpServerIds).toEqual(['default']);
+});
 it('fails preflight before starting a stream and returns the failed skill ids', async () => {
   const result = await send(['missing']);
   expect(result.mode).toBe('invalid_skills');

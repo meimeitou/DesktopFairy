@@ -36,6 +36,39 @@ function readStore(h) {
 }
 
 describe('chat:topics:fork', () => {
+  it('keeps transitive context resources readable after forking and deleting the source', async () => {
+    const h = makeHarness();
+    try {
+      const { createToolResultStore } = require('./ai/toolResultStore.cjs');
+      const source = await createTopic(h);
+      const options = { baseDir: () => path.join(h.tmp, 'toolresults') };
+      const sourceStore = createToolResultStore({ ...options, topicId: source.id });
+      const pageId = await sourceStore.put('complete original page');
+      const batchId = await sourceStore.put(JSON.stringify({ pageId }));
+      const result = await h.handlers['chat:topics:fork']({}, { sourceTopicId: source.id, uptoMessageId: 'u1',
+        messages: [{ id: 'u1', role: 'user', content: `继续读取 ${batchId}` }] });
+      expect(result.ok).toBe(true);
+      await h.handlers['chat:topics:delete']({}, source.id);
+      const forkStore = createToolResultStore({ ...options, topicId: result.topic.id });
+      expect((await forkStore.read(batchId)).content).toContain(pageId);
+      expect((await forkStore.read(pageId)).content).toBe('complete original page');
+    } finally { fs.rmSync(h.tmp, { recursive: true, force: true }); }
+  });
+
+  it('preserves an explicit knowledge-base deselection instead of re-inheriting agent defaults', async () => {
+    const h = makeHarness();
+    try {
+      const src = await createTopic(h, { knowledgeBaseIds: [] });
+      const result = await h.handlers['chat:topics:fork']({}, {
+        sourceTopicId: src.id, uptoMessageId: 'u1',
+        messages: [{ id: 'u1', role: 'user', content: 'hi' }],
+      });
+      expect(result.ok).toBe(true);
+      expect(result.topic.knowledgeBaseIds).toEqual([]);
+      expect(readStore(h).topics.find((topic) => topic.id === result.topic.id).knowledgeBaseIds).toEqual([]);
+    } finally { fs.rmSync(h.tmp, { recursive: true, force: true }); }
+  });
+
   it('forks messages, rewrites tool result refs, and leaves the source untouched', async () => {
     const h = makeHarness();
     const src = await createTopic(h, { name: '工作会话', chatMode: 'plan' });

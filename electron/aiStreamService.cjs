@@ -114,8 +114,17 @@ function registerAiStreamHandlers(ipcMain, deps) {
     }
     const agentConfig = {
       ...resolved.agentConfig,
+      mcpServerIds: [...(deps.getTopicMcpServerIds?.(topicId)
+        ?? deps.hostConversationService?.getTopic(topicId)?.mcpServerIds
+        ?? resolved.agentConfig.mcpServerIds ?? [])],
       enabledSkillIds: [...new Set([...(resolved.agentConfig.enabledSkillIds || []), ...selectedSkills.ids])],
     };
+    // Keep prompt/tool policies aligned with the servers that can actually load.
+    // This array belongs to the request snapshot; later topic edits cannot change it.
+    if (agentConfig.mcpServerIds.length) {
+      agentConfig.mcpServerIds = require('./mcpServerService.cjs').getServersByIds(agentConfig.mcpServerIds)
+        .map((server) => server.id);
+    }
     assertHttpUrl(apiConfig.apiHost);
 
     const sender = event.sender;

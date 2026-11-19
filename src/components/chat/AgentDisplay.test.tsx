@@ -19,6 +19,28 @@ const tool: ChatMsg = {
 };
 
 describe("compact agent display", () => {
+  it.each(["{}", "{ }", "", undefined])("allows approving a parameterless MCP tool (args=%s)", (toolArgs) => {
+    const msg: ChatMsg = {
+      ...tool, toolName: "mcp_mwk1h3zo_0__dns_get_security_summary",
+      toolArgs, toolStatus: "awaiting_approval", toolApprovalId: "approval-empty",
+    };
+    const html = renderToStaticMarkup(<AgentInteractionPanel sessionId="empty-args" messages={[msg]}
+      onApprove={() => {}} onDeny={() => {}} onAlwaysAllow={() => {}} onAnswer={() => {}} />);
+    const approveButton = html.match(/<button\b[^>]*>允许<\/button>/)?.[0];
+    expect(approveButton).toBeDefined();
+    expect(approveButton).not.toMatch(/\sdisabled(?:=|\s|>)/);
+    expect(html).not.toContain("正在等待模型返回参数");
+    expect(html).toContain("此操作无需参数");
+  });
+
+  it("keeps approval disabled until the executor requests it", () => {
+    const msg: ChatMsg = { ...tool, toolStatus: "streaming", toolApprovalId: "not-ready" };
+    const html = renderToStaticMarkup(<AgentInteractionPanel sessionId="not-ready" messages={[msg]}
+      onApprove={() => {}} onDeny={() => {}} onAlwaysAllow={() => {}} onAnswer={() => {}} />);
+    // Ordinary streaming tools are not queued for approval at all.
+    expect(html).not.toContain("agent-tool-permission-actions");
+  });
+
   it.each([true, false])("hides reasoning initially (streaming=%s)", (streaming) => {
     const html = renderToStaticMarkup(<ThinkingBlock msg={{ ...tool, type: undefined, reasoning: "FULL REASONING" }} isStreaming={streaming} />);
     expect(html).toContain('aria-expanded="false"');

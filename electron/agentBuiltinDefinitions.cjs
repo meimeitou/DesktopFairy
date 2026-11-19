@@ -121,7 +121,7 @@ function getOpenAiToolParameters(toolId) {
             items: { type: 'string' },
             description: 'One or more URLs to fetch',
           },
-          prompt: { type: 'string', description: 'Optional focus hint' },
+          prompt: { type: 'string', description: 'Optional focus hint. Returns bounded page text with resultId (extracted text) and rawResultId (original response). Use read_tool_result to read more, using nextOffset.' },
         },
         required: [],
       };

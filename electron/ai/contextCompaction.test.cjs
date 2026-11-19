@@ -57,10 +57,25 @@ it('counts tool inputs, schemas and system instructions when deciding to auto co
 });
 
 it('calibrates against a single step input usage rather than cumulative billing', async () => {
-  const messages = [user('a'.repeat(12000)), assistant('old'), user('b'.repeat(4000)), assistant('recent'), user('latest')];
+  const messages = [user('a'.repeat(36000)), assistant('old'), user('b'.repeat(12000)), assistant('recent'), user('latest')];
   const { compactor } = setup();
   expect(await compactor.prepare(messages)).toBeNull();
   compactor.recordUsage({ inputTokens: 16000 });
+  expect((await compactor.prepare(messages)).checkpoint.reason).toBe('auto');
+});
+
+it('recalibrates overhead per request without accumulating it or scaling new tool output', async () => {
+  const messages = [user('goal')];
+  const { compactor, calls } = setup();
+  expect(await compactor.prepare(messages)).toBeNull();
+  compactor.recordUsage({ inputTokens: 2000 });
+  messages.push(...pair('modest', 'x'.repeat(8000)));
+  for (let i = 0; i < 5; i++) {
+    expect(await compactor.prepare(messages)).toBeNull();
+    compactor.recordUsage({ inputTokens: 4000 });
+  }
+  expect(calls).toHaveLength(0);
+  messages.push(...pair('large', 'x'.repeat(50000)));
   expect((await compactor.prepare(messages)).checkpoint.reason).toBe('auto');
 });
 
@@ -74,6 +89,50 @@ it('never commits an empty, truncated, failed or cancelled summary', async () =>
   const controller = new AbortController();
   const { compactor } = setup({ signal: controller.signal, generateSummary: async () => { controller.abort(); return { text: 'late' }; } });
   await expect(compactor.compact(messages, 'manual')).rejects.toMatchObject({ name: 'AbortError' });
+});
+
+it.each(['partial checkpoint', ''])('recovers a truncated summary (%j) without committing or consuming it', async (text) => {
+  const calls = [];
+  const messages = [user('EARLY_REQUIREMENT ' + 'x'.repeat(12000) + ' END_REQUIREMENT'), assistant('done'), user('latest')];
+  const before = JSON.stringify(messages);
+  const { compactor } = setup({ generateSummary: async (args) => {
+    calls.push(args);
+    return calls.length === 1 ? { text, finishReason: 'length' } : { text: '目标：保留 EARLY_REQUIREMENT，继续 latest。', finishReason: 'stop' };
+  } });
+  const result = await compactor.compact(messages, 'manual');
+  expect(calls.length).toBeGreaterThan(1);
+  expect(calls[1].maxOutputTokens).toBeGreaterThan(calls[0].maxOutputTokens);
+  expect(calls[1].messages[0].content).toContain('EARLY_REQUIREMENT');
+  expect(calls[1].messages[0].content).not.toContain('partial checkpoint');
+  expect(calls.at(-1).messages[0].content).toContain('END_REQUIREMENT');
+  expect(result.checkpoint.summary).toContain('EARLY_REQUIREMENT');
+  expect(JSON.stringify(messages)).toBe(before);
+});
+
+it('bounds truncation retries and keeps the original history when all attempts fail', async () => {
+  const calls = [];
+  const messages = [user('old'), assistant('reply'), user('new')];
+  const before = JSON.stringify(messages);
+  const { compactor } = setup({ generateSummary: async (args) => {
+    calls.push(args);
+    return { text: 'partial', finishReason: 'length' };
+  } });
+  await expect(compactor.compact(messages, 'manual')).rejects.toThrow('被截断');
+  expect(calls).toHaveLength(3);
+  expect(calls.at(-1).maxOutputTokens).toBeLessThanOrEqual(Math.floor(16385 * 0.8 * 0.4));
+  expect(JSON.stringify(messages)).toBe(before);
+});
+
+it('does not retry truncation after the user cancels', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const { compactor } = setup({ signal: controller.signal, generateSummary: async () => {
+    calls++;
+    controller.abort();
+    return { text: '', finishReason: 'length' };
+  } });
+  await expect(compactor.compact([user('old'), assistant('reply'), user('new')])).rejects.toMatchObject({ name: 'AbortError' });
+  expect(calls).toBe(1);
 });
 
 it('shrinks a rejected summary chunk and retries without consuming that text', async () => {

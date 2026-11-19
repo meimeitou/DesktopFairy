@@ -77,6 +77,11 @@ function createAgentTextStream(ctx) {
       enabledToolNames,
       settingsSnapshot.getSnapshot()?.sshHosts || [],
       hostInfo,
+      knowledgeBaseIds.length
+        ? require('../knowledge/vaultService.cjs').listBases()
+          .filter((base) => knowledgeBaseIds.includes(base.id))
+          .map((base) => ({ id: base.id, name: base.name }))
+        : [],
     );
 
     const selectedHostsPrompt = require('../hostSelection.cjs').buildSelectedHostsPrompt(hostRuntime?.selectedHosts);

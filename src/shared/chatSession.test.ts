@@ -32,6 +32,21 @@ describe("chatSession lastServerUsage", () => {
 });
 
 describe("normalizeChatTopicsStore", () => {
+  it("preserves MCP inheritance and explicit empty overrides, sanitizing persisted selections", () => {
+    const store = normalizeChatTopicsStore({
+      topics: [
+        { id: "old", createdAt: 1 },
+        { id: "empty", createdAt: 1, mcpServerIds: [] },
+        { id: "custom", createdAt: 1, mcpServerIds: ["dns", "dns", 1, ""] },
+      ],
+      terminalMcpServerIds: { "terminal:one": ["dns", 1, "dns"], "terminal:empty": [], invalid: ["dns"] },
+    });
+    expect(store.topics[0].mcpServerIds).toBeUndefined();
+    expect(store.topics[1].mcpServerIds).toEqual([]);
+    expect(store.topics[2].mcpServerIds).toEqual(["dns"]);
+    expect(store.terminalMcpServerIds).toEqual({ "terminal:one": ["dns"], "terminal:empty": [] });
+  });
+
   it("backfills agentId with default and chatMode with normal", () => {
     const store = normalizeChatTopicsStore({
       topics: [{ id: "t1", name: "旧会话", createdAt: 1, orderKey: 1 }],
