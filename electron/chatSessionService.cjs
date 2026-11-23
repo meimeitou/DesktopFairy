@@ -142,6 +142,26 @@ function readToolResultFile(toolResultsDir, relRef) {
   return fs.readFileSync(absPath, 'utf8');
 }
 
+function previewForStorage(message, preview, maxLength) {
+  if (preview.length <= maxLength) return preview;
+  if (message.toolName === 'WebSearch' || message.toolName === 'WebFetch') {
+    try {
+      const { ok, resultId, results } = JSON.parse(preview);
+      if (Array.isArray(results)) {
+        const sources = [];
+        for (const { id, title, url, resultId: sourceId, date } of results) {
+          const source = { id, title, url, resultId: sourceId, date };
+          const candidate = JSON.stringify({ ok, resultId, truncated: true, results: [...sources, source] });
+          if (candidate.length > maxLength) break;
+          sources.push(source);
+        }
+        return JSON.stringify({ ok, resultId, truncated: true, results: sources });
+      }
+    } catch { /* Legacy results may already be truncated or plain text. */ }
+  }
+  return `${preview.slice(0, maxLength)}…`;
+}
+
 function processSessionForSave(session, topicId, toolResultsDir) {
   if (!session || !topicId || !toolResultsDir) return normalizeSession(session);
   const base = normalizeSession(session);
@@ -157,8 +177,7 @@ function processSessionForSave(session, topicId, toolResultsDir) {
     }
 
     const maxPreview = ref ? STORAGE_PREVIEW_MAX : INLINE_PREVIEW_MAX;
-    const truncated =
-      preview.length > maxPreview ? `${preview.slice(0, maxPreview)}…` : preview;
+    const truncated = previewForStorage(m, preview, maxPreview);
 
     return {
       ...m,

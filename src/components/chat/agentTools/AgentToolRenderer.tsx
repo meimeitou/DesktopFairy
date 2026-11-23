@@ -423,6 +423,15 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
   const status = msg.toolStatus || "streaming";
   const label = STATUS_LABEL[status] || status;
   const [expanded, setExpanded] = useState(false);
+  const [storedResult, setStoredResult] = useState<{ ref: string; preview: string }>();
+  const toggleExpanded = () => {
+    setExpanded(!expanded);
+    const ref = msg.toolResultRef;
+    if (expanded || !ref || storedResult?.ref === ref) return;
+    void window.electronAPI.invoke('chat:tool-result:read', { ref }).then((preview) => {
+      if (typeof preview === "string") setStoredResult({ ref, preview });
+    }).catch(() => { /* Use the saved preview if the complete result is unavailable. */ });
+  };
   const isRunning = status === "running" || status === "streaming";
   const isFailed = status === "error" || status === "denied";
   const output = isFailed ? parseToolOutput(msg.toolResultPreview) : null;
@@ -462,7 +471,7 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
           status={<StatusBadge status={status} label={label} />}
           collapsible
           expanded={expanded}
-          onToggle={() => setExpanded((v) => !v)}
+          onToggle={toggleExpanded}
         />
         {isRunning && cancelTool && msg.toolCallId && (
           <div className="agent-tool-summary-actions">
@@ -477,7 +486,9 @@ function AgentToolRenderer({ msg }: { msg: ChatMsg }) {
           {errorText}
         </p>
       )}
-      {expanded && renderToolBody(msg)}
+      {expanded && renderToolBody(storedResult && storedResult.ref === msg.toolResultRef
+        ? { ...msg, toolResultPreview: storedResult.preview }
+        : msg)}
     </div>
   );
 }

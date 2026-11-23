@@ -1,3 +1,4 @@
+const { findResultPassages } = require('./ai/resultSearch.cjs');
 const { parse } = require('parse5');
 const { textPrefix } = require('./ai/contextTokens.cjs');
 
@@ -42,13 +43,17 @@ async function readWebResponse(response, maxBytes = 4 * 1024 * 1024) {
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-async function webResultPreview({ text, url, contentType = '', store, maxTokens = 2000 }) {
-  const { title, content } = extractWebText(text, contentType);
+async function webResultPreview({ text, url, contentType = '', store, maxTokens = 2000, prompt = '' }) {
+  const { title: pageTitle, content } = extractWebText(text, contentType);
+  const title = textPrefix(pageTitle, 80) || url;
   const resultId = await store.put(content);
   const rawResultId = content === text ? resultId : await store.put(text);
+  const passages = prompt ? findResultPassages(content, prompt, maxTokens) : [];
+  if (passages.length) return { title, url, resultId, rawResultId,
+    totalChars: content.length, passages, truncated: true };
   const preview = textPrefix(content, maxTokens);
-  return { title: title || url, url, resultId, rawResultId, totalChars: content.length,
-    truncated: preview.length < content.length, nextOffset: preview.length < content.length ? preview.length : null, content: preview };
+  return { title, url, resultId, rawResultId, totalChars: content.length,
+    ...(prompt ? { matchedPrompt: false } : {}), truncated: preview.length < content.length, nextOffset: preview.length < content.length ? preview.length : null, content: preview };
 }
 
 module.exports = { extractWebText, readWebResponse, webResultPreview };

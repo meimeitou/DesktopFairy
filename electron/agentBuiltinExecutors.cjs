@@ -881,7 +881,7 @@ async function toolWebFetch(args, deps = {}) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await readWebResponse(res);
-      results.push({ id: i + 1, ...await webResultPreview({ text, url, contentType: res.headers.get('content-type'), store, maxTokens: perPageTokens }) });
+      results.push({ id: i + 1, ...await webResultPreview({ text, url, contentType: res.headers.get('content-type'), store, maxTokens: perPageTokens, prompt: String(args?.prompt || '') }) });
     } catch (e) {
       deps.signal?.throwIfAborted();
       results.push({
@@ -896,18 +896,18 @@ async function toolWebFetch(args, deps = {}) {
   return ok({
     resultId,
     results,
-    prompt: String(args?.prompt || ''),
   });
 }
 
-async function webSearchDuckDuckGo(query, config) {
+async function webSearchDuckDuckGo(query, config, capture) {
   const base = String(config?.duckduckgoApiUrl || "https://api.duckduckgo.com").replace(/\/$/, "");
   const res = await fetch(
     `${base}/?q=${encodeURIComponent(query)}&format=json&no_redirect=1`,
     { signal: AbortSignal.timeout(15_000) }
   );
   if (!res.ok) throw new Error(`DuckDuckGo HTTP ${res.status}`);
-  const data = await res.json();
+  const data = JSON.parse(await readWebResponse(res));
+  capture?.(data);
   const results = [];
   if (data?.AbstractText) {
     results.push({
@@ -931,7 +931,7 @@ async function webSearchDuckDuckGo(query, config) {
   return results;
 }
 
-async function webSearchTavily(query, config) {
+async function webSearchTavily(query, config, capture) {
   if (!config?.tavilyApiKey) throw new Error("Tavily API Key not configured");
   const base = String(config?.tavilyApiUrl || "https://api.tavily.com").replace(/\/$/, "");
   const res = await fetch(`${base}/search`, {
@@ -947,17 +947,19 @@ async function webSearchTavily(query, config) {
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`Tavily HTTP ${res.status}: ${await res.text().catch(() => "")}`);
-  const data = await res.json();
+  const data = JSON.parse(await readWebResponse(res));
+  capture?.(data);
   return (data?.results || [])
     .slice(0, 8)
     .map((item) => ({
       title: String(item?.title || "").trim(),
       url: String(item?.url || ""),
+      date: item?.published_date || item?.publishedDate || item?.page_age || item?.date || undefined,
       content: String(item?.content || "").trim(),
     }));
 }
 
-async function webSearchSerpAPI(query, config) {
+async function webSearchSerpAPI(query, config, capture) {
   if (!config?.serpapiApiKey) throw new Error("SerpAPI Key not configured");
   const base = String(config?.serpapiApiUrl || "https://serpapi.com").replace(/\/$/, "");
   const params = new URLSearchParams({
@@ -973,16 +975,18 @@ async function webSearchSerpAPI(query, config) {
   const url = `${base}/search?${params.toString()}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`SerpAPI HTTP ${res.status}: ${await res.text().catch(() => "")}`);
-  const data = await res.json();
+  const data = JSON.parse(await readWebResponse(res));
+  capture?.(data);
   const organic = data?.organic_results || [];
   return organic.slice(0, 8).map((item) => ({
     title: String(item?.title || ""),
     url: String(item?.link || ""),
+    date: item?.published_date || item?.publishedDate || item?.page_age || item?.date || undefined,
     content: String(item?.snippet || ""),
   }));
 }
 
-async function webSearchBrave(query, config) {
+async function webSearchBrave(query, config, capture) {
   if (!config?.braveApiKey) throw new Error("Brave Search API Key not configured");
   const base = String(config?.braveApiUrl || "https://api.search.brave.com").replace(/\/$/, "");
   const url =
@@ -996,29 +1000,33 @@ async function webSearchBrave(query, config) {
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`Brave HTTP ${res.status}`);
-  const data = await res.json();
+  const data = JSON.parse(await readWebResponse(res));
+  capture?.(data);
   const web = data?.web?.results || [];
   return web.slice(0, 8).map((item) => ({
     title: String(item?.title || ""),
     url: String(item?.url || ""),
+    date: item?.published_date || item?.publishedDate || item?.page_age || item?.date || undefined,
     content: String(item?.description || ""),
   }));
 }
 
-async function webSearchSearXNG(query, config) {
+async function webSearchSearXNG(query, config, capture) {
   const base = String(config?.searxngUrl || "https://searx.be").replace(/\/$/, "");
   const url = `${base}/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
   const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
   if (!res.ok) throw new Error(`SearXNG HTTP ${res.status}`);
-  const data = await res.json();
+  const data = JSON.parse(await readWebResponse(res));
+  capture?.(data);
   return (data?.results || []).slice(0, 8).map((item) => ({
     title: String(item?.title || ""),
     url: String(item?.url || ""),
+    date: item?.published_date || item?.publishedDate || item?.page_age || item?.date || undefined,
     content: String(item?.content || ""),
   }));
 }
 
-async function webSearchZhipu(query, config) {
+async function webSearchZhipu(query, config, capture) {
   if (!config?.zhipuApiKey) throw new Error("Zhipu API Key not configured");
   const base = String(config?.zhipuApiUrl || "https://open.bigmodel.cn").replace(/\/$/, "");
   const url = `${base}/api/paas/v4/web_search`;
@@ -1038,11 +1046,13 @@ async function webSearchZhipu(query, config) {
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`Zhipu HTTP ${res.status}: ${await res.text().catch(() => "")}`);
-  const data = await res.json();
+  const data = JSON.parse(await readWebResponse(res));
+  capture?.(data);
   const results = data?.search_result || [];
   return results.slice(0, 8).map((item) => ({
     title: String(item?.title || "").trim(),
     url: String(item?.link || ""),
+    date: item?.published_date || item?.publishedDate || item?.page_age || item?.date || undefined,
     content: String(item?.content || "").trim(),
   }));
 }
@@ -1053,39 +1063,55 @@ async function toolWebSearch(args, config, deps = {}) {
   const cfg = config || { provider: "duckduckgo" };
   try {
     let results = [];
+    let providerData;
+    const capture = (data) => { providerData = data; };
     switch (cfg.provider) {
       case "tavily":
-        results = await webSearchTavily(query, cfg);
+        results = await webSearchTavily(query, cfg, capture);
         break;
       case "serpapi":
-        results = await webSearchSerpAPI(query, cfg);
+        results = await webSearchSerpAPI(query, cfg, capture);
         break;
       case "brave":
-        results = await webSearchBrave(query, cfg);
+        results = await webSearchBrave(query, cfg, capture);
         break;
       case "searxng":
-        results = await webSearchSearXNG(query, cfg);
+        results = await webSearchSearXNG(query, cfg, capture);
         break;
       case "zhipu":
-        results = await webSearchZhipu(query, cfg);
+        results = await webSearchZhipu(query, cfg, capture);
         break;
       case "duckduckgo":
       default:
-        results = await webSearchDuckDuckGo(query, cfg);
+        results = await webSearchDuckDuckGo(query, cfg, capture);
         break;
     }
     const store = deps.resultStore || createToolResultStore({ topicId: deps.topicId });
-    const original = { query, results: results.map((item, index) => ({ id: index + 1, ...item })) };
-    const resultId = await store.put(JSON.stringify(original));
+    const seen = new Set();
+    const unique = results.filter((item) => {
+      if (!item.url) return true;
+      const key = item.url.split('#')[0];
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 8);
+    const sources = await Promise.all(unique.map(async (item, index) => {
+      const source = { id: index + 1, ...item };
+      return { ...source, resultId: await store.put(JSON.stringify(source)) };
+    }));
+    const resultId = await store.put(JSON.stringify({ query, results: sources, providerData }));
     const { textPrefix } = require('./ai/contextTokens.cjs');
+    const snippetBudget = Math.min(350, Math.floor(1100 / Math.max(1, unique.length)));
     return ok({
       resultId,
-      query,
-      results: results.map((item, index) => ({
-        id: index + 1,
-        title: item.title,
+      query: textPrefix(query, 100),
+      results: sources.map((item) => ({
+        id: item.id,
+        title: textPrefix(item.title, 60),
         url: item.url,
-        content: textPrefix(String(item.content || ''), 600),
+        date: typeof item.date === 'string' ? textPrefix(item.date, 24) : undefined,
+        resultId: item.resultId,
+        content: textPrefix(String(item.content || ''), snippetBudget),
       })),
     });
   } catch (e) {

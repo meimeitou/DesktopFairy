@@ -39,6 +39,15 @@ function summarizeWebSearch(output: unknown): string {
 
 function summarizeWebFetch(output: unknown): string {
   if (!isRecord(output)) return "";
+  if (Array.isArray(output.results)) {
+    return output.results.slice(0, 5).filter(isRecord).map((item) => {
+      const passages = Array.isArray(item.passages) ? item.passages : [];
+      const passage = passages.find(isRecord);
+      const content = String(passage?.content || item.content || "");
+      const location = typeof passage?.offset === "number" ? ` @${passage.offset}` : "";
+      return [String(item.url || ""), content ? `${truncate(content, 160)}${location}` : ""].filter(Boolean).join(" ");
+    }).join("\n");
+  }
   const url = String(output.url || "");
   const status = output.status != null ? ` HTTP ${output.status}` : "";
   const content = typeof output.content === "string" ? output.content : "";

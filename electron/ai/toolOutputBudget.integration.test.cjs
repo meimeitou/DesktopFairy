@@ -6,7 +6,7 @@ const provider = require('./providerModel.cjs');
 const { createToolResultStore } = require('./toolResultStore.cjs');
 const { mcpResultToTextSummary } = require('../mcpResultFormat.cjs');
 
-it('two oversized MCP fetches stay bounded through the real agent loop and can read the original tail without rerunning tools', async () => {
+it('two oversized MCP fetches stay bounded through the real agent loop and can find and read the original tail without rerunning tools', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-loop-budget-'));
   const resultStore = createToolResultStore({ topicId: 'terminal:tab-1', baseDir: () => root });
   const entry = require.resolve('./AiService.cjs');
@@ -19,15 +19,17 @@ it('two oversized MCP fetches stay bounded through the real agent loop and can r
     const count = model.doStreamCalls.length;
     let parts;
     if (count <= 2) parts = [{ type: 'tool-call', toolCallId: `fetch-${count}`, toolName: 'mcp__server__fetch', input: '{}' }];
-    else if (count === 3) {
+    else if (count <= 4) {
       const prompt = JSON.stringify(model.doStreamCalls.at(-1).prompt);
       const resultId = prompt.match(/context-[a-f0-9]{64}/)[0];
-      parts = [{ type: 'tool-call', toolCallId: 'read-tail', toolName: 'read_tool_result', input: JSON.stringify({ resultId, offset: 699900 }) }];
+      parts = count === 3
+        ? [{ type: 'tool-call', toolCallId: 'find-tail', toolName: 'search_tool_result', input: JSON.stringify({ resultId, query: 'IMPORTANT-END-EVIDENCE' }) }]
+        : [{ type: 'tool-call', toolCallId: 'read-tail', toolName: 'read_tool_result', input: JSON.stringify({ resultId, offset: 699900 }) }];
     } else parts = [{ type: 'text-start', id: 'reply' }, { type: 'text-delta', id: 'reply', delta: '已依据原文完成回答。' }, { type: 'text-end', id: 'reply' }];
     return { stream: new ReadableStream({ start(controller) {
       controller.enqueue({ type: 'stream-start', warnings: [] });
       for (const part of parts) controller.enqueue(part);
-      controller.enqueue({ type: 'finish', finishReason: { unified: count <= 3 ? 'tool-calls' : 'stop', raw: 'stop' }, usage });
+      controller.enqueue({ type: 'finish', finishReason: { unified: count <= 4 ? 'tool-calls' : 'stop', raw: 'stop' }, usage });
       controller.close();
     } }) };
   } });
@@ -45,9 +47,14 @@ it('two oversized MCP fetches stay bounded through the real agent loop and can r
     const chunks = [];
     for await (const chunk of result.stream) chunks.push(chunk);
     expect(executions).toBe(2);
-    expect(model.doStreamCalls).toHaveLength(4);
+    expect(model.doStreamCalls).toHaveLength(5);
     expect(chunks.filter(c => c.type === 'context-checkpoint' || c.type === 'error')).toEqual([]);
-    expect(JSON.stringify(model.doStreamCalls.at(-1).prompt)).toContain('IMPORTANT-END-EVIDENCE');
+    const lastPrompt = model.doStreamCalls.at(-1).prompt;
+    for (const toolName of ['read_tool_result', 'search_tool_result']) {
+      const result = lastPrompt.filter((m) => m.role === 'tool').flatMap((m) => m.content)
+        .find((item) => item.toolName === toolName);
+      expect(JSON.stringify(result)).toContain('IMPORTANT-END-EVIDENCE');
+    }
     for (const call of model.doStreamCalls) expect(JSON.stringify(call.prompt).length).toBeLessThan(100000);
     expect(chunks.some(c => c.type === 'text-delta' && c.delta.includes('完成回答'))).toBe(true);
   } finally {

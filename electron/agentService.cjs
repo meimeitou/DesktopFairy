@@ -145,7 +145,7 @@ function buildAgentSystemPrompt(agentConfig, context = 'local', terminalState = 
   );
   if (enabledToolNames.includes('WebSearch') || enabledToolNames.includes('WebFetch')) {
     parts.push(
-      '## 网络来源引用\n\n本轮使用了网络搜索/抓取时，回复正文中在对应结论后标注来源序号（如「……发布于 2024 年[1]」）。序号与本轮 WebSearch/WebFetch 结果的出现顺序一致（第 1 次调用的第 1 条结果为 [1]，依次累加）。界面会在回复下方按同一顺序生成可点击的来源列表，你**不要**自己罗列 URL 或链接，只写 [n] 序号即可。没有使用网络工具时不要标序号。'
+      '## 网络来源引用\n\n搜索片段用于筛选来源。需要验证结论时，传具体问题给 WebFetch；已保存的资料可用 search_tool_result 定位和 read_tool_result 补读。\n\n本轮使用了网络搜索/抓取时，回复正文中在对应结论后标注来源序号（如「……发布于 2024 年[1]」）。序号与本轮 WebSearch/WebFetch 结果的出现顺序一致（第 1 次调用的第 1 条结果为 [1]，依次累加）。界面会在回复下方按同一顺序生成可点击的来源列表，你**不要**自己罗列 URL 或链接，只写 [n] 序号即可。没有使用网络工具时不要标序号。'
     );
   }
   if (enabledToolNames.includes('AskUserQuestion')) {

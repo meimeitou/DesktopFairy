@@ -1,3 +1,4 @@
+const debug = require('node:util').debuglog('desktopfairy-context');
 const { randomUUID } = require('node:crypto');
 const windows = require('./contextWindows.json');
 const { estimateTokens, textPrefix } = require('./contextTokens.cjs');
@@ -9,10 +10,15 @@ const SUMMARY_PROMPT = `你负责为同一个智能体生成可继续执行任�
 保留准确的文件路径、命令、标识符、错误、工具执行结果及未解决问题；区分已验证事实与推测，不要把计划写成已完成。
 将已有摘要与本段历史合并，避免重复，不要遗漏此前尚有效的信息。输出简洁摘要，不要附加解释。`;
 
-function resolveContextWindow(modelName = '', override) {
-  if (Number.isSafeInteger(override) && override >= 4096 && override <= 10000000) return override;
-  const name = modelName.trim().toLowerCase();
-  return windows.prefixes.find(([prefix]) => name.includes(prefix))?.[1] || windows.default;
+function contextWindowInfo(modelName = '', override) {
+  if (Number.isSafeInteger(override) && override >= 4096 && override <= 10000000) return { size: override, source: 'configured' };
+  const name = String(modelName || '').trim().toLowerCase();
+  const matched = windows.prefixes.find(([prefix]) => name.includes(prefix));
+  return matched ? { size: matched[1], source: 'model-map' } : { size: windows.default, source: 'fallback' };
+}
+
+function resolveContextWindow(modelName, override) {
+  return contextWindowInfo(modelName, override).size;
 }
 
 function estimateValue(value) {
@@ -29,6 +35,10 @@ function estimateValue(value) {
 
 function estimateMessages(messages) {
   return messages.reduce((n, m) => n + 6 + estimateValue(m), 0);
+}
+
+function estimateToolBatch(messages) {
+  return Math.max(estimateMessages(messages), estimateTokens(JSON.stringify(messages)));
 }
 
 function isContextWindowError(error) {
@@ -109,7 +119,8 @@ function toApiMessages(messages) {
 }
 
 function createContextCompactor({ model, systemPrompt = '', toolDefinitions = [], apiConfig = {}, signal, generateSummary, resultStore }) {
-  const contextWindow = resolveContextWindow(apiConfig.modelName, apiConfig.contextWindow);
+  const window = contextWindowInfo(apiConfig.modelName, apiConfig.contextWindow);
+  const contextWindow = window.size;
   const inputBudget = Math.floor(contextWindow * 0.8);
   const overhead = estimateTokens(systemPrompt) + estimateValue(toolDefinitions);
   const maxSummaryTokens = Math.min(4096, Math.floor(contextWindow * 0.08));
@@ -117,8 +128,42 @@ function createContextCompactor({ model, systemPrompt = '', toolDefinitions = []
   let lastEstimate = 0;
 
   const estimate = (messages) => overhead + estimateMessages(messages) + usageOverhead;
+  async function capFreshBatch(messages, fresh, batchBudget) {
+    const indexes = messages.flatMap((message, index) => fresh.has(message) ? [index] : []);
+    if (!indexes.length) return messages;
+    const batch = (active) => indexes.map((index) => active[index]);
+    const seen = new Set();
+    let changed = false;
+    let active = messages.map((message) => {
+      if (!fresh.has(message)) return message;
+      const content = message.content.map((part) => {
+        const value = part.output?.value;
+        if (!/^context-[a-f0-9]{64}$/.test(value?.resultId) || part.output.type !== 'json' || value.ok === false) return part;
+        const key = JSON.stringify([part.toolName, value]);
+        if (!seen.has(key)) { seen.add(key); return part; }
+        changed = true;
+        return { ...part, output: { type: 'json', value: { ok: true, duplicate: true, resultId: value.resultId } } };
+      });
+      return content.some((part, index) => part !== message.content[index]) ? { ...message, content } : message;
+    });
+    if (!changed) active = messages;
+    if (estimateToolBatch(batch(active)) <= batchBudget) return active;
+
+    const parts = batch(messages).reduce((n, message) => n + message.content.length, 0);
+    let limit = Math.max(64, Math.floor(batchBudget / parts) - 80);
+    // Measure the actual serialized batch again. Very small windows or unusual
+    // tool IDs can leave room only for the mandatory call/result bookkeeping.
+    while (true) {
+      const selected = new Set(batch(active));
+      active = await pruneToolResults(active, resultStore, limit, (message) => selected.has(message)) || active;
+      const size = estimateToolBatch(batch(active));
+      if (size <= batchBudget || limit === 64) return active;
+      limit = Math.max(64, Math.min(Math.floor(limit * 0.8), limit - Math.ceil((size - batchBudget) / parts)));
+    }
+  }
   async function compact(messages, reason = 'auto') {
     signal?.throwIfAborted();
+    debug('compact %j', { reason, estimatedTokens: debug.enabled ? estimate(messages) : undefined, inputBudget });
     if (reason === 'overflow' && resultStore) {
       const pruned = await pruneToolResults(messages, resultStore, 1000);
       signal?.throwIfAborted();
@@ -168,6 +213,28 @@ function createContextCompactor({ model, systemPrompt = '', toolDefinitions = []
         chunkBudget = Math.max(256, Math.floor(chunkBudget / 2));
       }
     }
+    if (resultStore) {
+      // Keep a deterministic read-back index even if the model omits references.
+      const references = prefix.flatMap((message) => {
+        if (message.role === 'tool' && Array.isArray(message.content)) {
+          return message.content.flatMap((part) => {
+            const value = part.output?.value;
+            const ids = [...new Set(JSON.stringify(value ?? '').match(/context-[a-f0-9]{64}/g) || [])];
+            const sources = [value, ...(Array.isArray(value?.results) ? value.results : [])]
+              .filter((item) => typeof item?.url === 'string')
+              .map(({ title, url, resultId, passages }) => ({
+                title, url, resultId,
+                ...(Array.isArray(passages) ? { ranges: passages.map(({ offset, endOffset }) => ({ offset, endOffset })) } : {}),
+              }));
+            return ids.length ? [{ toolName: part.toolName, ids, sources }] : [];
+          });
+        }
+        const index = typeof message.content === 'string' && message.content.startsWith('[上下文摘要]')
+          ? message.content.match(/工具证据索引：(context-[a-f0-9]{64})/)?.[1] : null;
+        return index ? [{ previousIndex: index }] : [];
+      });
+      if (references.length) summary += `\n工具证据索引：${await resultStore.put(JSON.stringify(references))}（可用 read_tool_result 查阅）`;
+    }
     const replacement = [{ role: 'user', content: `[上下文摘要]\n${summary}` }, ...recent];
     const afterTokens = estimate(replacement);
     if (reason === 'manual' && afterTokens >= estimate(messages) && estimate(messages) < inputBudget) return null;
@@ -184,16 +251,38 @@ function createContextCompactor({ model, systemPrompt = '', toolDefinitions = []
   return {
     maxOutputTokens: Math.min(16384, Math.floor(contextWindow * 0.2)),
     compact,
-    async prepare(messages) {
-      let pruned = null;
-      if (estimate(messages) >= inputBudget && resultStore) {
-        const count = messages.reduce((n, m) => n + (m.role === 'tool' ? m.content.length : 0), 0);
-        const budget = Math.max(256, Math.min(2000, Math.floor((inputBudget - overhead - usageOverhead) / Math.max(8, count * 2))));
-        pruned = await pruneToolResults(messages, resultStore, budget);
+    async prepare(messages, fresh = []) {
+      const before = estimate(messages);
+      let active = messages;
+      const freshSet = new Set(fresh);
+      const available = Math.max(0, inputBudget - overhead - usageOverhead);
+      const batchBudget = Math.min(12000, Math.floor(available * 0.1));
+      if (resultStore) active = await capFreshBatch(active, freshSet, batchBudget);
+
+      if (resultStore) {
+        const old = active.filter((message, index) => message.role === 'tool' && !freshSet.has(messages[index]));
+        const pressure = estimate(active) / inputBudget;
+        if (estimateMessages(old) > Math.min(24000, available * 0.25) || pressure >= 1) {
+          const protectedRecent = pressure >= 1 ? 0 : 2;
+          const latestUser = messages.findLast((message) => message.role === 'user');
+          const pinned = JSON.stringify(latestUser?.content ?? '').match(/context-[a-f0-9]{64}/g) || [];
+          const selected = new Set(old.slice(0, Math.max(0, old.length - protectedRecent))
+            .filter((message) => !pinned.length || !pinned.some((id) => JSON.stringify(message).includes(id))));
+          active = await pruneToolResults(active, resultStore, pressure >= 1 ? 96 : 320,
+            (message) => selected.has(message)) || active;
+        }
         signal?.throwIfAborted();
       }
-      const active = pruned || messages;
-      const result = estimate(active) >= inputBudget ? await compact(active) : pruned ? { messages: pruned, pruned: true } : null;
+
+      const afterPrune = estimate(active);
+      const needsSummary = afterPrune >= inputBudget;
+      if (debug.enabled) debug('prepare %j', {
+        contextWindow, windowSource: window.source, inputBudget, overhead, usageOverhead, before, afterPrune,
+        batchBudget, batchBefore: fresh.length ? estimateToolBatch(fresh) : 0,
+        batchAfter: fresh.length ? estimateToolBatch(active.filter((_, index) => freshSet.has(messages[index]))) : 0,
+        reason: needsSummary ? 'auto' : active !== messages ? 'tool-budget' : 'none',
+      });
+      const result = needsSummary ? await compact(active) : active !== messages ? { messages: active, pruned: true } : null;
       lastEstimate = overhead + estimateMessages(result?.messages || messages);
       return result;
     },

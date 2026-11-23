@@ -42,3 +42,39 @@ it('does not turn a cancelled fetch into a successful tool result', async () => 
   global.fetch = async () => { controller.abort(); throw new DOMException('Aborted', 'AbortError'); };
   await expect(executeBuiltinTool('WebFetch', { url: 'https://example.test' }, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' });
 });
+
+it('fetches evidence from the middle of a long page and can find it again by its exact offset', async () => {
+  const evidence = '基准测试显示吞吐量提升 42%，主要来自批量写入。';
+  const html = '<main><p>' + '介绍。'.repeat(9000) + '</p><h2>基准测试</h2><p>' +
+    evidence + '</p><p>' + '附录。'.repeat(9000) + '</p></main>';
+  global.fetch = async () => new Response(html, { headers: { 'content-type': 'text/html' } });
+  const resultStore = createToolResultStore({ topicId: 't', baseDir: () => root });
+  const output = JSON.parse(await executeBuiltinTool('WebFetch', {
+    url: 'https://example.test/report', prompt: '基准测试的吞吐量结论',
+  }, { resultStore }));
+  const [{ passages, resultId }] = output.results;
+  const passage = passages.find((item) => item.content.includes(evidence));
+  expect(passage.offset).toBeGreaterThan(20000);
+  const page = await resultStore.read(resultId, { offset: passage.offset, maxTokens: 500 });
+  expect(page.content.startsWith(passage.content)).toBe(true);
+  const restarted = createToolResultStore({ topicId: 't', baseDir: () => root });
+  const found = await restarted.search(resultId, { query: '吞吐量提升 42%' });
+  expect(found.passages.some((item) => item.content.includes(evidence))).toBe(true);
+});
+
+it('deduplicates search URLs while preserving individual sources and provider data', async () => {
+  const providerData = { results: [
+    { title: 'Original', url: 'https://example.test/doc', content: '相关内容'.repeat(1000), score: 0.8 },
+    { title: 'Duplicate', url: 'https://example.test/doc#top', content: 'duplicate' },
+    { title: 'Other', url: 'https://example.test/other', content: 'other', published_date: '2026-01-01' },
+  ] };
+  global.fetch = async () => Response.json(providerData);
+  const resultStore = createToolResultStore({ topicId: 't', baseDir: () => root });
+  const output = JSON.parse(await executeBuiltinTool('WebSearch', { query: 'query' }, {
+    resultStore, webSearchConfig: { provider: 'tavily', tavilyApiKey: 'test' },
+  }));
+  expect(output.results.map(({ title }) => title)).toEqual(['Original', 'Other']);
+  expect(output.results[1].date).toBe('2026-01-01');
+  expect((await resultStore.read(output.resultId, { offset: 7500 })).content).toContain('"score":0.8');
+  expect((await resultStore.read(output.results[0].resultId, { maxTokens: 4000 })).content).toContain(providerData.results[0].content.slice(0, 3000));
+});

@@ -237,3 +237,41 @@ describe('chat:topics:fork', () => {
     expect(loaded.messages[1].toolStatus).toBe('done');
   });
 });
+
+it('retains structured web metadata on disk and restores an expanded result after forking', async () => {
+  const h = makeHarness();
+  try {
+    const source = await createTopic(h);
+    const { createToolResultStore } = require('./ai/toolResultStore.cjs');
+    const storeOptions = { baseDir: () => path.join(h.tmp, 'toolresults') };
+    const sourceStore = createToolResultStore({ ...storeOptions, topicId: source.id });
+    const original = '正文'.repeat(10000);
+    const pageId = await sourceStore.put(original);
+    const resultId = await sourceStore.put(JSON.stringify({ pageId }));
+    const payload = JSON.stringify({ ok: true, resultId, results: [
+      { id: 1, url: 'https://example.test', title: 'Report', resultId: pageId, content: original },
+    ] });
+    const messages = [
+      { id: 'u1', role: 'user', content: 'Read the report' },
+      { id: 't1', role: 'assistant', content: '', type: 'tool', toolName: 'WebFetch', toolCallId: 'call-web', toolStatus: 'done', toolResultPreview: payload },
+    ];
+    expect((await h.handlers['chat:session:save']({}, { topicId: source.id, session: { messages } })).ok).toBe(true);
+    const saved = await h.handlers['chat:session:load']({}, source.id);
+    const result = saved.messages.at(-1);
+    const preview = JSON.parse(result.toolResultPreview);
+    expect(preview).toMatchObject({ resultId, truncated: true, results: [{ url: 'https://example.test', resultId: pageId }] });
+    expect(await h.handlers['chat:tool-result:read']({}, { ref: result.toolResultRef })).toBe(payload);
+
+    const fork = await h.handlers['chat:topics:fork']({}, {
+      sourceTopicId: source.id, uptoMessageId: 't1', messages: saved.messages,
+    });
+    expect(fork.ok).toBe(true);
+    await h.handlers['chat:topics:delete']({}, source.id);
+    const forked = await h.handlers['chat:session:load']({}, fork.topic.id);
+    expect(await h.handlers['chat:tool-result:read']({}, { ref: forked.messages.at(-1).toolResultRef })).toBe(payload);
+    const forkStore = createToolResultStore({ ...storeOptions, topicId: fork.topic.id });
+    expect((await forkStore.search(pageId, { query: '正文' })).passages.length).toBeGreaterThan(0);
+  } finally {
+    fs.rmSync(h.tmp, { recursive: true, force: true });
+  }
+});

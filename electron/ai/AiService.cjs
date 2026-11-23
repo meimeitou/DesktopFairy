@@ -1,7 +1,7 @@
 const { ToolLoopAgent, stepCountIs, generateText, streamText: aiStreamText } = require('ai');
 const { resolveProviderModel } = require('./providerModel.cjs');
 const { toCoreMessages } = require('./messages.cjs');
-const { buildToolSet, READ_TOOL_RESULT_DEFINITION } = require('./buildToolSet.cjs');
+const { buildToolSet, RESULT_TOOL_DEFINITIONS } = require('./buildToolSet.cjs');
 const { createChunkBridge } = require('./chunkBridge.cjs');
 const { resolveStreamUsage } = require('./extractUsage.cjs');
 const { createSteerableStream } = require('./steerableStream.cjs');
@@ -26,7 +26,7 @@ async function streamText({
 }) {
   const model = resolveProviderModel(apiConfig);
   const resultStore = toolDeps?.resultStore || createToolResultStore({ topicId: toolDeps?.topicId });
-  const compactor = createContextCompactor({ model, systemPrompt, toolDefinitions: [...(toolDefinitions || []), ...(compact ? [] : [READ_TOOL_RESULT_DEFINITION])], apiConfig, signal, generateSummary: generateText, resultStore });
+  const compactor = createContextCompactor({ model, systemPrompt, toolDefinitions: [...(toolDefinitions || []), ...(compact ? [] : RESULT_TOOL_DEFINITIONS)], apiConfig, signal, generateSummary: generateText, resultStore });
   if (compact) {
     // A dedicated, tool-free call: never run the normal agent loop to summarize.
     const result = await compactor.compact(toCoreMessages(messages), 'manual');
@@ -37,7 +37,11 @@ async function streamText({
       controller.close();
     } }) };
   }
-  const tools = buildToolSet(toolDefinitions, { ...toolDeps, resultStore, contextWindow: resolveContextWindow(apiConfig.modelName, apiConfig.contextWindow) });
+  const displayResults = new Map();
+  const tools = buildToolSet(toolDefinitions, { ...toolDeps, resultStore,
+    contextWindow: resolveContextWindow(apiConfig.modelName, apiConfig.contextWindow),
+    onDisplayResult: (id, output) => displayResults.set(id, output),
+  });
 
   const agentOptions = {
     model,
@@ -57,7 +61,7 @@ async function streamText({
   }
 
   return createSteerableStream({
-    messages: toCoreMessages(messages), maxTurns: Math.max(1, maxTurns), signal, inputs, compactor,
+    messages: toCoreMessages(messages), maxTurns: Math.max(1, maxTurns), signal, inputs, compactor, displayResults,
     createAgent: ({ remainingTurns, prepareStep, onStepFinish }) => new ToolLoopAgent({
       ...agentOptions, stopWhen: stepCountIs(remainingTurns), prepareStep, onStepFinish,
     }),

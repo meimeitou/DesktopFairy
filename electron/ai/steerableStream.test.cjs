@@ -255,3 +255,30 @@ it('stop during a running tool retains pending inputs and never starts another m
   expect(queue.pending('t').map((r) => r.message.id)).toEqual(['keep']);
   expect(result.sealed()).toBe(true);
 });
+
+it('bounds a ten-result parallel batch before the next provider request without executing tools again', async () => {
+  const { createContextCompactor, estimateTokens } = require('./contextCompaction.cjs');
+  const originals = new Map();
+  const { createHash } = require('node:crypto');
+  const resultStore = { async put(value) {
+    const id = 'context-' + createHash('sha256').update(value).digest('hex');
+    originals.set(id, value);
+    return id;
+  } };
+  const compactor = createContextCompactor({ apiConfig: { contextWindow: 128000 }, resultStore,
+    generateSummary: async () => { throw new Error('unexpected compaction'); } });
+  let executions = 0;
+  const model = new MockLanguageModelV3({ doStream: async () => modelStream(model.doStreamCalls.length === 1 ? [
+    ...Array.from({ length: 10 }, (_, i) => ({ type: 'tool-call', toolCallId: `parallel-${i}`, toolName: 'work', input: '{}' })),
+    finish('tool-calls'),
+  ] : text('ready')) });
+  await drain(run(model, { compactor, tools: { work: tool({ inputSchema: z.object({}), execute: async () => {
+    executions++;
+    return { content: '"中文\\n'.repeat(1800) + 'END' };
+  } }) } }));
+  const results = model.doStreamCalls[1].prompt.filter((message) => message.role === 'tool');
+  expect(executions).toBe(10);
+  expect(results.flatMap((message) => message.content)).toHaveLength(10);
+  expect(estimateTokens(JSON.stringify(results))).toBeLessThanOrEqual(10240);
+  for (const id of JSON.stringify(results).match(/context-[a-f0-9]{64}/g)) expect(originals.get(id)).toContain('END');
+});

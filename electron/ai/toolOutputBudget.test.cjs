@@ -86,3 +86,40 @@ it('publishes duplicate parallel resources atomically without incomplete reads',
   expect(new Set(ids).size).toBe(1);
   expect(fs.readdirSync(path.join(root, 'topic'))).toHaveLength(1);
 });
+
+it('shrinks older evidence before context pressure requires compaction, keeping recent and pinned results', async () => {
+  const resultStore = store();
+  const pinnedId = await resultStore.put('pinned evidence');
+  const messages = [
+    { role: 'user', content: 'research' },
+    ...pair('pinned', { resultId: pinnedId, content: '甲'.repeat(4000) }),
+    ...Array.from({ length: 7 }, (_, i) => pair(`old-${i}`, { content: '乙'.repeat(4000) })).flat(),
+    { role: 'user', content: `Keep ${pinnedId}` },
+  ];
+  const compactor = createContextCompactor({ apiConfig: { contextWindow: 128000 }, resultStore,
+    generateSummary: async () => { throw new Error('unexpected compaction'); } });
+  const result = await compactor.prepare(messages);
+  const outputs = result.messages.filter((m) => m.role === 'tool').map((m) => m.content[0].output.value);
+  expect(result.checkpoint).toBeUndefined();
+  expect(outputs[0].content).toHaveLength(4000);
+  expect(outputs[1].truncated).toBe(true);
+  expect(outputs.at(-1).content).toHaveLength(4000);
+  expect((await resultStore.read(outputs[1].resultId, { maxTokens: 4000 })).content).toContain('乙'.repeat(3000));
+});
+
+it('writes an evidence index into the checkpoint independently of the model summary', async () => {
+  const resultStore = store();
+  const id = await resultStore.put('independent evidence');
+  const compactor = createContextCompactor({ apiConfig: { contextWindow: 16000 }, resultStore,
+    generateSummary: async () => ({ text: 'short summary' }) });
+  const result = await compactor.compact([
+    { role: 'user', content: 'old research' + '甲'.repeat(9000) },
+    ...pair('fetch', { results: [{ title: 'Report', url: 'https://example.test', resultId: id }] }),
+    { role: 'assistant', content: '乙'.repeat(6000) },
+    { role: 'user', content: 'follow-up' },
+  ], 'manual');
+  const indexId = result.checkpoint.summary.match(/工具证据索引：(context-[a-f0-9]{64})/)[1];
+  const index = JSON.parse((await store().read(indexId)).content);
+  expect(index[0].sources[0]).toMatchObject({ resultId: id, url: 'https://example.test' });
+  expect((await store().read(id)).content).toBe('independent evidence');
+});
